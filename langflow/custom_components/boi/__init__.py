@@ -15,6 +15,7 @@ from .boi_wiki_knowledge import BoIWikiKnowledge
 from .boi_wiki_save import BoIWikiSave
 from .boi_agent_slot import BoIAgentSlot
 from .boi_model_agent import BoIModelAgent
+from .boi_universal_simulation_mcp_agent import BoIUniversalSimulationMCPAgent
 
 __all__ = [
     "BoIContextNormalizer",
@@ -34,4 +35,5 @@ __all__ = [
     "BoIWikiSave",
     "BoIAgentSlot",
     "BoIModelAgent",
+    "BoIUniversalSimulationMCPAgent",
 ]

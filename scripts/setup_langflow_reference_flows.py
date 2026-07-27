@@ -21,6 +21,13 @@ BOI_WIKI_AGENT_LOOP_ARTIFACT = ROOT / "langflow" / "flows" / "boi_wiki_agent_loo
 BOI_MODEL_AGENT_LOOP_NAME = "BoI Wiki Agent Loop - Model Agent Example"
 BOI_MODEL_AGENT_LOOP_ENDPOINT = "boi-wiki-agent-loop-model-agent"
 BOI_MODEL_AGENT_LOOP_ARTIFACT = ROOT / "langflow" / "flows" / "boi_wiki_agent_loop_model_agent.json"
+BOI_UNIVERSAL_MCP_FLOW_NAME = "BoI Universal Simulation MCP"
+BOI_UNIVERSAL_MCP_FLOW_ENDPOINT = "boi-universal-simulation-mcp"
+BOI_UNIVERSAL_MCP_FLOW_VERSION = "1.0.0"
+BOI_UNIVERSAL_MCP_TOOL_NAME = "boi_universal_simulate"
+BOI_UNIVERSAL_MCP_ARTIFACT = (
+    ROOT / "langflow" / "flows" / "boi_universal_simulation_mcp.json"
+)
 DEFAULT_BOI_AGENT_ENDPOINT_NAME = os.getenv("LANGFLOW_BOI_AGENT_ENDPOINT", "boi-agent")
 DEFAULT_BOI_AGENT_LLM_MODEL = os.getenv("BOI_AGENT_LLM_MODEL") or os.getenv("BOI_LLM_MODEL") or "google/gemma-4-26b-a4b-qat"
 BOI_AGENT_ALLOWED_TOOLS = [
@@ -51,6 +58,7 @@ BOI_COMPONENT_KEYS = {
     "save": "ext:boi:BoIWikiSave@extra",
     "agent_slot": "ext:boi:BoIAgentSlot@extra",
     "model_agent": "ext:boi:BoIModelAgent@extra",
+    "universal_mcp_agent": "ext:boi:BoIUniversalSimulationMCPAgent@extra",
 }
 
 
@@ -166,6 +174,41 @@ def create_custom_node(
             "description": component.get("description", ""),
             "selected_output": output_name,
             "showNode": True,
+        },
+    }
+
+
+def create_note_node(
+    node_id: str,
+    *,
+    title: str,
+    description: str,
+    x: int,
+    y: int,
+    width: int = 360,
+    height: int = 250,
+    background_color: str = "neutral",
+) -> dict[str, Any]:
+    return {
+        "id": node_id,
+        "type": "noteNode",
+        "position": {"x": x, "y": y},
+        "positionAbsolute": {"x": x, "y": y},
+        "dragging": False,
+        "selected": False,
+        "measured": {"width": width, "height": height},
+        "width": width,
+        "height": height,
+        "style": {"width": width, "height": height},
+        "data": {
+            "id": node_id,
+            "type": "note",
+            "node": {
+                "display_name": title,
+                "description": description,
+                "documentation": "",
+                "template": {"backgroundColor": background_color},
+            },
         },
     }
 
@@ -851,6 +894,318 @@ def model_agent_loop_contract_sha256() -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
+def universal_mcp_flow_contract() -> dict[str, Any]:
+    return {
+        "name": BOI_UNIVERSAL_MCP_FLOW_NAME,
+        "endpoint_name": BOI_UNIVERSAL_MCP_FLOW_ENDPOINT,
+        "version": BOI_UNIVERSAL_MCP_FLOW_VERSION,
+        "nodes": [
+            "1. 요청 입력",
+            "2. Wiki·Ontology 업무 맥락",
+            "3. 업무 시뮬레이션 Agent",
+            "4. Wiki 지식 자산화",
+            "5. 결과 확인",
+        ],
+        "agent_slot_contract": "boi.agent-slot.v1",
+        "default_save_mode": "preview",
+        "write_policy": "action_token_required",
+        "credential_variables": [
+            "BOI_WIKI_PAT",
+            "BOI_LLM_BASE_URL",
+            "BOI_AGENT_EXAMPLE_MODEL",
+            "BOI_LLM_API_KEY",
+        ],
+        "request_variables": [
+            "BOI_RUN_TOKEN",
+            "BOI_ACTION_KEY",
+            "BOI_DEPLOYMENT_ID",
+            "BOI_ENDPOINT_ID",
+            "BOI_PROJECT_ID",
+            "BOI_FLOW_ID",
+            "BOI_TRACE_ID",
+            "BOI_EXECUTION_ID",
+        ],
+        "mcp": {
+            "enabled": True,
+            "tool_name": BOI_UNIVERSAL_MCP_TOOL_NAME,
+            "transport": "streamable_http",
+            "write_policy": "preview_only_without_action_token",
+        },
+        "model": {
+            "provider_protocol": "openai-compatible",
+            "validated_provider": "LM Studio",
+            "requires_real_inference_trace": True,
+        },
+        "context_profiles": [
+            "sop_task_execution",
+            "task_execution",
+            "wiki_context",
+            "knowledge_lookup",
+        ],
+        "inputs": [
+            "question",
+            "business_context",
+            "task_ref",
+            "page_ref",
+            "context_id",
+            "sop_ref",
+            "sop_stage",
+            "event_ref",
+            "action_ref",
+            "prior_results",
+            "required_evidence",
+            "missing_evidence",
+            "save_mode",
+            "title",
+        ],
+        "outputs": [
+            "simulation_label",
+            "answer",
+            "coverage_report",
+            "task_context",
+            "source_references",
+            "ontology_relationships",
+            "grounding_status",
+            "model_trace",
+            "draft_reference",
+            "wiki_url",
+            "provenance",
+        ],
+    }
+
+
+def universal_mcp_flow_contract_sha256() -> str:
+    import hashlib
+
+    serialized = json.dumps(
+        universal_mcp_flow_contract(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def create_universal_simulation_mcp_flow(
+    client: httpx.Client,
+    langflow_url: str,
+    headers: dict[str, str],
+    base_flow: dict[str, Any],
+    *,
+    project_id: str = "",
+) -> dict[str, Any]:
+    components = get_components(client, langflow_url, headers)
+    _ = base_flow
+    chat_input_key, chat_input_component = find_runtime_component(
+        components,
+        display_names=("Chat Input",),
+        key_contains=("ChatInput",),
+    )
+    chat_output_key, chat_output_component = find_runtime_component(
+        components,
+        display_names=("Chat Output",),
+        key_contains=("ChatOutput",),
+    )
+    chat_input = create_runtime_node(
+        chat_input_key,
+        chat_input_component,
+        "ChatInput-boi-universal-simulation-mcp",
+        80,
+        420,
+        display_name="1. 요청 입력",
+        values={"should_store_message": False},
+    )
+    chat_output = create_runtime_node(
+        chat_output_key,
+        chat_output_component,
+        "ChatOutput-boi-universal-simulation-mcp",
+        1820,
+        420,
+        display_name="5. 결과 확인",
+        values={"should_store_message": False},
+    )
+    for node, display_name in (
+        (chat_input, "1. 요청 입력"),
+        (chat_output, "5. 결과 확인"),
+    ):
+        node["data"]["display_name"] = display_name
+        node["data"]["node"]["display_name"] = display_name
+
+    knowledge = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["knowledge"],
+        "BoIWikiKnowledge-boi-universal-simulation-mcp",
+        500,
+        420,
+        {"business_context": "", "limit": 6},
+    )
+    knowledge["data"]["display_name"] = "2. Wiki·Ontology 업무 맥락"
+    knowledge["data"]["node"]["display_name"] = "2. Wiki·Ontology 업무 맥락"
+    simulation_agent = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["universal_mcp_agent"],
+        "BoIUniversalSimulationMCPAgent-boi-universal-simulation-mcp",
+        940,
+        420,
+    )
+    simulation_agent["data"]["display_name"] = "3. 업무 시뮬레이션 Agent"
+    simulation_agent["data"]["node"]["display_name"] = (
+        "3. 업무 시뮬레이션 Agent"
+    )
+    save = create_custom_node(
+        components,
+        BOI_COMPONENT_KEYS["save"],
+        "BoIWikiSave-boi-universal-simulation-mcp",
+        1380,
+        420,
+        {
+            "title": "Universal Simulation 개인 초안",
+            "save_mode": "preview",
+            "write_policy": "action_token_required",
+            "flow_id": BOI_UNIVERSAL_MCP_FLOW_ENDPOINT,
+        },
+    )
+    save["data"]["display_name"] = "4. Wiki 지식 자산화"
+    save["data"]["node"]["display_name"] = "4. Wiki 지식 자산화"
+
+    notes = [
+        create_note_node(
+            "Note-start-boi-universal-simulation-mcp",
+            title="1. 여기서 시작하세요",
+            description=(
+                "### 여기서 시작하세요\n"
+                "- 자연어 질문만 입력해도 됩니다.\n"
+                "- 예: `이 Task를 처리할 때 확인할 근거와 예상 결과를 정리해줘.`\n"
+                "- Task가 있다면 BoI Agent Playground에서 선택하세요.\n"
+                "- API Key나 token은 입력하지 마세요."
+            ),
+            x=60,
+            y=20,
+        ),
+        create_note_node(
+            "Note-context-boi-universal-simulation-mcp",
+            title="2. Wiki와 Ontology가 맥락을 준비합니다",
+            description=(
+                "### Wiki와 Ontology가 맥락을 준비합니다\n"
+                "- 확인된 관계와 접근 가능한 문서만 사용합니다.\n"
+                "- SOP를 억지로 생성하지 않습니다.\n"
+                "- Task·SOP·Wiki·일반 질문을 자동 판별합니다.\n"
+                "- provenance가 있는 Ontology 관계를 우선 사용합니다.\n"
+                "- 관계가 없을 때만 Wiki 문서 근거로 보완합니다."
+            ),
+            x=480,
+            y=20,
+        ),
+        create_note_node(
+            "Note-agent-boi-universal-simulation-mcp",
+            title="3. 이 Agent만 교체할 수 있습니다",
+            description=(
+                "### 이 Agent만 교체할 수 있습니다\n"
+                "- Agent Hub의 호환 Component로 이 노드만 바꿀 수 있습니다.\n"
+                "- `boi.agent-slot.v1`과 근거·Task Context·저장 계약을 유지해야 합니다.\n"
+                "- source·Ontology·Task Context를 그대로 반환해야 합니다.\n"
+                "- 결과에는 `SIMULATED`와 실제 시스템 미호출을 명시합니다."
+            ),
+            x=920,
+            y=20,
+        ),
+        create_note_node(
+            "Note-save-boi-universal-simulation-mcp",
+            title="4. 저장 전 반드시 확인합니다",
+            description=(
+                "### 저장 전 반드시 확인합니다\n"
+                "- MCP 호출은 미리보기만 수행합니다.\n"
+                "- BoI Action에서 명시적으로 선택한 경우에만 호출자 개인 초안을 만듭니다.\n"
+                "- Playground 테스트는 현재 사용자에 묶인 단기 실행 token으로만 저장합니다."
+            ),
+            x=1360,
+            y=20,
+        ),
+        create_note_node(
+            "Note-output-boi-universal-simulation-mcp",
+            title="5. 두 가지 방법으로 사용합니다",
+            description=(
+                "### 두 가지 방법으로 사용할 수 있습니다\n"
+                "- MCP tool로 호출하거나 BoI Action으로 등록합니다.\n"
+                "- Langflow 프로젝트 MCP tool은 `boi_universal_simulate`입니다.\n"
+                "- BoI Action은 exact Flow ID를 `/api/v1/run`으로 호출합니다.\n"
+                "- API Key·PAT·run token은 Flow나 메모에 입력하지 않습니다."
+            ),
+            x=1800,
+            y=20,
+        ),
+    ]
+    data = {
+        "nodes": [
+            chat_input,
+            knowledge,
+            simulation_agent,
+            save,
+            chat_output,
+            *notes,
+        ],
+        "edges": [
+            create_edge(chat_input, knowledge, "question"),
+            create_edge(
+                knowledge,
+                simulation_agent,
+                "agent_context",
+                source_output_name="knowledge",
+            ),
+            create_edge(
+                simulation_agent,
+                save,
+                "agent_result",
+                source_output_name="agent_result",
+            ),
+            create_edge(
+                save,
+                chat_output,
+                "input_value",
+                source_output_name="message",
+            ),
+        ],
+        "viewport": {"x": 20, "y": 20, "zoom": 0.6},
+        "boi_contract": universal_mcp_flow_contract(),
+        "boi_contract_sha256": universal_mcp_flow_contract_sha256(),
+    }
+    flow_payload: dict[str, Any] = {
+        "name": BOI_UNIVERSAL_MCP_FLOW_NAME,
+        "description": (
+            "대표 온보딩 Flow. Wiki·Ontology 업무 맥락을 LM Studio Gemma로 "
+            "근거 기반 시뮬레이션하고, MCP에서는 preview만 반환하며 BoI Action에서는 "
+            "호출자 개인 초안으로 자산화합니다."
+        ),
+        "endpoint_name": BOI_UNIVERSAL_MCP_FLOW_ENDPOINT,
+        "data": data,
+        "webhook": False,
+        "access_type": "PRIVATE",
+        "mcp_enabled": True,
+        "action_name": BOI_UNIVERSAL_MCP_TOOL_NAME,
+        "action_description": (
+            "Wiki·Ontology와 선택한 Task 맥락을 사용해 실제 시스템을 호출하지 않는 "
+            "업무 처리 시뮬레이션과 근거가 포함된 초안 후보를 만듭니다."
+        ),
+        "tags": [
+            "boi",
+            "agent-playground",
+            "wiki-ontology",
+            "universal-simulation",
+            "mcp",
+            BOI_UNIVERSAL_MCP_FLOW_VERSION,
+        ],
+    }
+    if project_id:
+        flow_payload.update({"folder_id": project_id, "project_id": project_id})
+    response = client.post(
+        f"{langflow_url}/api/v1/flows/",
+        headers=headers,
+        json=flow_payload,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def create_boi_wiki_agent_loop_flow(
     client: httpx.Client,
     langflow_url: str,
@@ -1068,6 +1423,50 @@ def write_model_agent_artifact(
     path.write_text(json.dumps(exported, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def write_universal_mcp_artifact(
+    flow: dict[str, Any],
+    path: Path = BOI_UNIVERSAL_MCP_ARTIFACT,
+) -> None:
+    exported = {
+        key: flow.get(key)
+        for key in (
+            "name",
+            "description",
+            "endpoint_name",
+            "data",
+            "webhook",
+            "access_type",
+            "mcp_enabled",
+            "action_name",
+            "action_description",
+            "tags",
+        )
+        if key in flow
+    }
+    exported["name"] = BOI_UNIVERSAL_MCP_FLOW_NAME
+    exported["endpoint_name"] = BOI_UNIVERSAL_MCP_FLOW_ENDPOINT
+    exported["mcp_enabled"] = True
+    exported["action_name"] = BOI_UNIVERSAL_MCP_TOOL_NAME
+    exported.setdefault("webhook", False)
+    exported.setdefault("access_type", "PRIVATE")
+    exported.setdefault(
+        "tags",
+        [
+            "boi",
+            "agent-playground",
+            "wiki-ontology",
+            "universal-simulation",
+            "mcp",
+            BOI_UNIVERSAL_MCP_FLOW_VERSION,
+        ],
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(exported, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def smoke_input_for_endpoint(endpoint_name: str) -> str:
     if str(endpoint_name) == DEFAULT_BOI_AGENT_ENDPOINT_NAME or "boi-agent" in str(endpoint_name):
         return json.dumps(
@@ -1076,6 +1475,16 @@ def smoke_input_for_endpoint(endpoint_name: str) -> str:
                 "employee_id": "100001",
                 "current_url": "/",
                 "page_context": {"title": "BoI Wiki"},
+            },
+            ensure_ascii=False,
+        )
+    if str(endpoint_name) == BOI_UNIVERSAL_MCP_FLOW_ENDPOINT:
+        return json.dumps(
+            {
+                "question": "설비 이상 대응 Task의 업무 맥락과 예상 처리 결과를 시뮬레이션해줘.",
+                "business_context": "근거가 부족하면 부족한 점을 명시해줘.",
+                "save_mode": "preview",
+                "title": "Universal Simulation MCP smoke",
             },
             ensure_ascii=False,
         )
@@ -1183,6 +1592,11 @@ def main() -> None:
         help="Only generate/install the model-backed BoI Wiki Agent Loop example.",
     )
     parser.add_argument(
+        "--universal-mcp-only",
+        action="store_true",
+        help="Only generate/install the BoI Universal Simulation MCP representative Flow.",
+    )
+    parser.add_argument(
         "--write-canonical-artifact",
         action="store_true",
         help="Write boi_wiki_agent_loop.json from this generator.",
@@ -1191,6 +1605,11 @@ def main() -> None:
         "--write-model-agent-artifact",
         action="store_true",
         help="Write boi_wiki_agent_loop_model_agent.json from this generator.",
+    )
+    parser.add_argument(
+        "--write-universal-mcp-artifact",
+        action="store_true",
+        help="Write boi_universal_simulation_mcp.json from this generator.",
     )
     args = parser.parse_args()
 
@@ -1202,6 +1621,50 @@ def main() -> None:
     with httpx.Client(timeout=args.timeout) as client:
         headers = get_auth_headers(client, langflow_url, args.langflow_api_key, args.auth_mode)
         base_flow = json.loads(flow_file.read_text(encoding="utf-8"))
+        if args.universal_mcp_only:
+            deleted = delete_flows_by_name(
+                client,
+                langflow_url,
+                headers,
+                {BOI_UNIVERSAL_MCP_FLOW_NAME},
+            )
+            flow = create_universal_simulation_mcp_flow(
+                client,
+                langflow_url,
+                headers,
+                base_flow,
+                project_id=args.project_id,
+            )
+            if args.write_universal_mcp_artifact:
+                write_universal_mcp_artifact(flow)
+            result = {
+                "ok": True,
+                "langflow_url": langflow_url,
+                "deleted_flow_ids": deleted,
+                "boi_universal_mcp_flow": {
+                    "id": flow.get("id"),
+                    "name": flow.get("name"),
+                    "endpoint_name": flow.get("endpoint_name"),
+                    "action_name": flow.get("action_name")
+                    or BOI_UNIVERSAL_MCP_TOOL_NAME,
+                    "nodes": len((flow.get("data") or {}).get("nodes") or []),
+                    "edges": len((flow.get("data") or {}).get("edges") or []),
+                    "contract_sha256": universal_mcp_flow_contract_sha256(),
+                },
+            }
+            if not args.skip_smoke:
+                result["smoke"] = smoke_run(
+                    client,
+                    langflow_url,
+                    headers,
+                    str(
+                        flow.get("endpoint_name")
+                        or flow.get("id")
+                        or BOI_UNIVERSAL_MCP_FLOW_ENDPOINT
+                    ),
+                )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return
         if args.model_agent_only:
             deleted = delete_flows_by_name(client, langflow_url, headers, {BOI_MODEL_AGENT_LOOP_NAME})
             flow = create_boi_model_agent_loop_flow(

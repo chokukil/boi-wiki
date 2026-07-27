@@ -15,14 +15,26 @@
     "GET|POST /api/v1/flows/",
     "GET /api/v1/flows/{flow_id}",
     "GET|POST|PATCH /api/v1/variables/",
-    "POST /api/v1/run/{flow_id}"
+    "POST /api/v1/run/{flow_id}",
+    "GET|PATCH /api/v1/mcp/project/{project_id}",
+    "POST /api/v1/mcp/project/{project_id}/streamable"
   ],
   "extension_contract": {
     "environment_variable": "LANGFLOW_COMPONENTS_PATH",
     "container_path": "/app/custom_components",
     "mount_mode": "read_only",
-    "bundle_version": "1.1.0",
+    "bundle_version": "1.2.0",
     "component_namespace": "BoI"
+  },
+  "representative_mcp_flow": {
+    "name": "BoI Universal Simulation MCP",
+    "endpoint_name": "boi-universal-simulation-mcp",
+    "version": "1.0.0",
+    "tool_name": "boi_universal_simulate",
+    "transport": "streamable_http",
+    "authentication": "apikey",
+    "external_save_policy": "preview_only",
+    "action_save_policy": "caller_bound_run_token"
   },
   "model_agent_runtime": {
     "provider_protocol": "openai-compatible",

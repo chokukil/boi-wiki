@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import base64
 import copy
 import hashlib
@@ -32,12 +33,21 @@ CANONICAL_FLOW_ENDPOINT = "boi-wiki-agent-loop"
 CANONICAL_FLOW_VERSION = "1.1.0"
 MODEL_AGENT_FLOW_NAME = "BoI Wiki Agent Loop - Model Agent Example"
 MODEL_AGENT_FLOW_ENDPOINT = "boi-wiki-agent-loop-model-agent"
-COMPONENT_BUNDLE_VERSION = "1.1.0"
+UNIVERSAL_MCP_FLOW_NAME = "BoI Universal Simulation MCP"
+UNIVERSAL_MCP_FLOW_ENDPOINT = "boi-universal-simulation-mcp"
+UNIVERSAL_MCP_FLOW_VERSION = "1.0.0"
+UNIVERSAL_MCP_TOOL_NAME = "boi_universal_simulate"
+UNIVERSAL_MCP_TOOL_DESCRIPTION = (
+    "Wiki·Ontology와 선택한 Task 맥락을 사용해 실제 시스템을 호출하지 않는 "
+    "업무 처리 시뮬레이션과 근거가 포함된 초안 후보를 만듭니다."
+)
+COMPONENT_BUNDLE_VERSION = "1.2.0"
 COMPONENT_BUNDLE_MODE = "read_only_extension"
 REQUIRED_BUNDLE_COMPONENTS = (
     "BoIWikiKnowledge",
     "BoIWikiSave",
     "BoIModelAgent",
+    "BoIUniversalSimulationMCPAgent",
 )
 PROJECT_PREFIX = "boi-"
 BOI_PAT_VARIABLE_NAME = "BOI_WIKI_PAT"
@@ -137,6 +147,36 @@ def normalize_langflow_endpoint(value: str) -> str:
     return normalized
 
 
+def public_langflow_endpoint(value: str) -> str:
+    """Keep container-only hostnames out of browser-facing responses."""
+
+    candidate = str(value or "").rstrip("/")
+    parsed = urlsplit(candidate)
+    if str(parsed.hostname or "").lower() != "host.docker.internal":
+        return candidate
+    configured = str(
+        os.getenv("LANGFLOW_EXTERNAL_URL")
+        or os.getenv("LANGFLOW_DEPLOY_URL")
+        or ""
+    ).rstrip("/")
+    if configured.startswith(("http://", "https://")):
+        return configured
+    return candidate
+
+
+def runtime_langflow_endpoint(value: str) -> str:
+    """Resolve a browser-visible Langflow URL to the server-side API origin."""
+
+    normalized = normalize_langflow_endpoint(value)
+    external = str(os.getenv("LANGFLOW_EXTERNAL_URL") or "").strip()
+    deploy = str(os.getenv("LANGFLOW_DEPLOY_URL") or "").strip()
+    if not external or not deploy:
+        return normalized
+    if normalized == normalize_langflow_endpoint(external):
+        return normalize_langflow_endpoint(deploy)
+    return normalized
+
+
 def agent_hub_api_origin() -> str:
     configured = str(
         os.getenv("AGENT_HUB_API_URL")
@@ -208,6 +248,27 @@ class PlaygroundFlowTestRequest(BaseModel):
     missing_evidence: list[str] = Field(default_factory=list, max_length=100)
     save_mode: Literal["preview", "private_draft"] = "preview"
     title: str = Field(default="Agent Playground 테스트 초안", max_length=200)
+
+
+class PlaygroundMCPUpdateRequest(BaseModel):
+    enabled: bool = True
+    action_name: str = Field(default=UNIVERSAL_MCP_TOOL_NAME, min_length=1, max_length=100)
+    action_description: str = Field(
+        default=UNIVERSAL_MCP_TOOL_DESCRIPTION,
+        min_length=1,
+        max_length=1000,
+    )
+    auth_type: Literal["apikey"] = "apikey"
+
+
+class PlaygroundMCPTestRequest(BaseModel):
+    question: str = Field(
+        default="현재 업무의 근거와 예상 처리 결과를 시뮬레이션해줘.",
+        min_length=1,
+        max_length=8000,
+    )
+    task_ref: str = Field(default="", max_length=1000)
+    save_mode: Literal["preview", "private_draft"] = "preview"
 
 
 class PlaygroundDeploymentRequest(BaseModel):
@@ -290,6 +351,7 @@ class LangflowPublicApiV1:
     VARIABLES_PATH = "/api/v1/variables/"
     CATALOG_PATH = "/api/v1/all"
     RUN_PATH = "/api/v1/run/{flow_id}"
+    PROJECT_MCP_PATH = "/api/v1/mcp/project/{project_id}"
 
     def __init__(self, transport: Any):
         self._transport = transport
@@ -463,24 +525,71 @@ class LangflowPublicApiV1:
         description: str,
         data: dict[str, Any],
         project_id: str,
+        endpoint_name: str = "",
+        mcp_enabled: bool | None = None,
+        action_name: str = "",
+        action_description: str = "",
     ) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "data": data,
+            "folder_id": project_id,
+            "project_id": project_id,
+        }
+        if endpoint_name:
+            body["endpoint_name"] = endpoint_name
+        if mcp_enabled is not None:
+            body["mcp_enabled"] = mcp_enabled
+        if action_name:
+            body["action_name"] = action_name
+        if action_description:
+            body["action_description"] = action_description
         payload = self._transport(
             "POST",
             endpoint,
             self.FLOWS_PATH,
             api_key,
             expected={200, 201},
-            json={
-                "name": name,
-                "description": description,
-                "data": data,
-                "folder_id": project_id,
-                "project_id": project_id,
-            },
+            json=body,
             timeout=120,
         ).json()
         if not isinstance(payload, dict):
             raise HTTPException(status_code=502, detail="Langflow create did not return a Flow")
+        return payload
+
+    def project_mcp(self, endpoint: str, api_key: str, project_id: str) -> dict[str, Any]:
+        payload = self._transport(
+            "GET",
+            endpoint,
+            self.PROJECT_MCP_PATH.format(project_id=project_id),
+            api_key,
+        ).json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=502, detail="Langflow MCP settings returned an invalid response")
+        return payload
+
+    def update_project_mcp(
+        self,
+        endpoint: str,
+        api_key: str,
+        project_id: str,
+        *,
+        settings: list[dict[str, Any]],
+        auth_type: str = "apikey",
+    ) -> dict[str, Any]:
+        payload = self._transport(
+            "PATCH",
+            endpoint,
+            self.PROJECT_MCP_PATH.format(project_id=project_id),
+            api_key,
+            json={
+                "settings": settings,
+                "auth_settings": {"auth_type": auth_type},
+            },
+        ).json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=502, detail="Langflow MCP update returned an invalid response")
         return payload
 
     def run(
@@ -572,7 +681,9 @@ class AgentPlaygroundService:
             for key, value in connection.items()
             if key not in {"api_key_encrypted"}
         }
-        base_url = str(public.get("base_url") or public.get("endpoint") or "")
+        base_url = public_langflow_endpoint(
+            str(public.get("base_url") or public.get("endpoint") or "")
+        )
         public["base_url"] = base_url
         public["endpoint"] = base_url
         public["has_api_key"] = bool(connection.get("api_key_encrypted"))
@@ -675,6 +786,16 @@ class AgentPlaygroundService:
             if flow and not flow.get("checksum"):
                 flow["checksum"] = str(registry_item.get("artifact_checksum") or "")
             smoke = setup.get("smoke") if isinstance(setup.get("smoke"), dict) else {}
+            recommended_flow = (
+                setup.get("recommended_flow")
+                if isinstance(setup.get("recommended_flow"), dict)
+                else {}
+            )
+            recommended_smoke = (
+                setup.get("recommended_smoke")
+                if isinstance(setup.get("recommended_smoke"), dict)
+                else {}
+            )
             if (
                 not smoke
                 and str(last_test.get("status") or "") == "passed"
@@ -706,6 +827,10 @@ class AgentPlaygroundService:
                 )
             if smoke:
                 setup["smoke"] = smoke
+            if recommended_flow:
+                setup["recommended_flow"] = recommended_flow
+            if recommended_smoke:
+                setup["recommended_smoke"] = recommended_smoke
             setup["endpoint_id"] = endpoint_id
             setup.setdefault("onboarding_status", "not_started")
             setup.setdefault("current_step", "connection")
@@ -742,8 +867,19 @@ class AgentPlaygroundService:
         )
         flow = setup.get("canonical_flow") if isinstance(setup.get("canonical_flow"), dict) else {}
         smoke = setup.get("smoke") if isinstance(setup.get("smoke"), dict) else {}
+        recommended_flow = (
+            setup.get("recommended_flow")
+            if isinstance(setup.get("recommended_flow"), dict)
+            else {}
+        )
+        recommended_smoke = (
+            setup.get("recommended_smoke")
+            if isinstance(setup.get("recommended_smoke"), dict)
+            else {}
+        )
         bundle = setup.get("bundle") if isinstance(setup.get("bundle"), dict) else {}
         canonical_checksum = self._canonical_checksum()
+        recommended_checksum = self._recommended_flow_checksum()
         checks = {
             "connection": (
                 bool(endpoint)
@@ -775,6 +911,17 @@ class AgentPlaygroundService:
                 str(smoke.get("status") or "") == "passed"
                 and str(smoke.get("flow_id") or "") == str(flow.get("id") or "")
             ),
+            "recommended_flow": (
+                bool(recommended_flow.get("id"))
+                and str(recommended_flow.get("version") or "")
+                == UNIVERSAL_MCP_FLOW_VERSION
+                and str(recommended_flow.get("checksum") or "") == recommended_checksum
+            ),
+            "recommended_smoke": (
+                str(recommended_smoke.get("status") or "") == "passed"
+                and str(recommended_smoke.get("flow_id") or "")
+                == str(recommended_flow.get("id") or "")
+            ),
         }
         return {"ready": all(checks.values()), "checks": checks}
 
@@ -783,6 +930,16 @@ class AgentPlaygroundService:
         project = setup.get("project") if isinstance(setup.get("project"), dict) else {}
         flow = setup.get("canonical_flow") if isinstance(setup.get("canonical_flow"), dict) else {}
         smoke = setup.get("smoke") if isinstance(setup.get("smoke"), dict) else {}
+        recommended_flow = (
+            setup.get("recommended_flow")
+            if isinstance(setup.get("recommended_flow"), dict)
+            else {}
+        )
+        recommended_smoke = (
+            setup.get("recommended_smoke")
+            if isinstance(setup.get("recommended_smoke"), dict)
+            else {}
+        )
         bundle = setup.get("bundle") if isinstance(setup.get("bundle"), dict) else {}
         credential = (
             setup.get("wiki_credential")
@@ -811,6 +968,17 @@ class AgentPlaygroundService:
                 "flow_url": str(flow.get("flow_url") or ""),
                 "project_id": str(flow.get("project_id") or ""),
             },
+            "recommended_flow": {
+                "id": str(recommended_flow.get("id") or ""),
+                "name": str(recommended_flow.get("name") or ""),
+                "endpoint_name": str(recommended_flow.get("endpoint_name") or ""),
+                "version": str(recommended_flow.get("version") or ""),
+                "checksum": str(recommended_flow.get("checksum") or ""),
+                "flow_url": str(recommended_flow.get("flow_url") or ""),
+                "project_id": str(recommended_flow.get("project_id") or ""),
+                "mcp_enabled": bool(recommended_flow.get("mcp_enabled")),
+                "mcp_tool": str(recommended_flow.get("mcp_tool") or ""),
+            },
             "bundle": {
                 "version": str(bundle.get("version") or ""),
                 "mode": str(bundle.get("mode") or ""),
@@ -824,6 +992,11 @@ class AgentPlaygroundService:
                 "status": str(smoke.get("status") or "not_run"),
                 "checked_at": str(smoke.get("checked_at") or ""),
                 "flow_id": str(smoke.get("flow_id") or ""),
+            },
+            "recommended_smoke": {
+                "status": str(recommended_smoke.get("status") or "not_run"),
+                "checked_at": str(recommended_smoke.get("checked_at") or ""),
+                "flow_id": str(recommended_smoke.get("flow_id") or ""),
             },
             "onboarding_status": str(setup.get("onboarding_status") or "not_started"),
             "current_step": str(setup.get("current_step") or "connection"),
@@ -842,7 +1015,12 @@ class AgentPlaygroundService:
         setup = setup or {}
         has_endpoint = bool(endpoint)
         knowledge_ready = checks["project"] and checks["wiki_credential"] and checks["bundle"]
-        flow_ready = checks["canonical_flow"] and checks["preview_smoke"]
+        flow_ready = (
+            checks["canonical_flow"]
+            and checks["preview_smoke"]
+            and checks["recommended_flow"]
+            and checks["recommended_smoke"]
+        )
         steps = [
             {
                 "id": "identity",
@@ -874,9 +1052,9 @@ class AgentPlaygroundService:
                 "id": "flow",
                 "state": "complete" if flow_ready else ("current" if knowledge_ready else "pending"),
                 "message": (
-                    "기준 Flow preview smoke를 통과했습니다."
+                    "추천 Flow와 기준 Flow의 preview smoke를 통과했습니다."
                     if flow_ready
-                    else "기준 Flow를 설치하고 실제 preview를 확인합니다."
+                    else "추천 Flow를 설치하고 Wiki·Ontology 기반 preview를 확인합니다."
                 ),
                 "recoverable": True,
             },
@@ -1259,7 +1437,7 @@ class AgentPlaygroundService:
         request: PlaygroundEndpointTestRequest,
     ) -> dict[str, Any]:
         require_role(principal, "boi.viewer")
-        endpoint = normalize_langflow_endpoint(request.base_url)
+        endpoint = runtime_langflow_endpoint(request.base_url)
         inspected = self._validate_endpoint_owner(
             principal,
             endpoint,
@@ -1274,7 +1452,7 @@ class AgentPlaygroundService:
         request: PlaygroundEndpointCreateRequest,
     ) -> dict[str, Any]:
         require_role(principal, "boi.viewer")
-        base_url = normalize_langflow_endpoint(request.base_url)
+        base_url = runtime_langflow_endpoint(request.base_url)
         inspected = self._validate_endpoint_owner(principal, base_url, request.api_key)
         with self._lock:
             record = self._read(principal.employee_id)
@@ -1314,7 +1492,7 @@ class AgentPlaygroundService:
         with self._lock:
             record = self._read(principal.employee_id)
             connection = self._endpoint(record, endpoint_id, require_active=False)
-            candidate_url = normalize_langflow_endpoint(
+            candidate_url = runtime_langflow_endpoint(
                 request.base_url
                 if request.base_url is not None
                 else str(connection.get("base_url") or connection.get("endpoint") or "")
@@ -1673,6 +1851,24 @@ class AgentPlaygroundService:
                         or deployment.get("executed_component_ids")
                         or []
                     ),
+                    "mcp_enabled": bool(
+                        registry.get("mcp_enabled")
+                        or item.get("mcp_enabled")
+                    ),
+                    "mcp_tool": str(
+                        registry.get("mcp_tool")
+                        or item.get("action_name")
+                        or ""
+                    ),
+                    "mcp_status": str(
+                        registry.get("mcp_status")
+                        or (
+                            "ready"
+                            if registry.get("mcp_enabled")
+                            or item.get("mcp_enabled")
+                            else "not_configured"
+                        )
+                    ),
                     "source_assets": source_assets,
                     "adoption_id": str(
                         deployment.get("adoption_id")
@@ -1703,7 +1899,7 @@ class AgentPlaygroundService:
                         registry.get("action_catalog_applied")
                         or deployment.get("action_catalog_applied")
                     ),
-                    "flow_url": f"{endpoint}/flow/{flow_id}",
+                    "flow_url": f"{public_langflow_endpoint(endpoint)}/flow/{flow_id}",
                     "flow_summary": flow_summary,
                 }
             )
@@ -2223,7 +2419,11 @@ class AgentPlaygroundService:
             match_lengths = [
                 len(value)
                 for value in normalized
-                if value and title_key and (title_key in value or value in title_key)
+                if (
+                    len(value) >= 8
+                    and title_key
+                    and (title_key in value or value in title_key)
+                )
             ]
             if match_lengths:
                 matches.append((max(match_lengths), node))
@@ -2579,7 +2779,9 @@ class AgentPlaygroundService:
             node
             for node in nodes
             if any(
-                value.startswith("BoIAgentSlot") or value == "agent_slot"
+                value.startswith("BoIAgentSlot")
+                or value.startswith("BoIUniversalSimulationMCPAgent")
+                or value == "agent_slot"
                 for value in self._node_component_identity(node)
             )
         ]
@@ -2908,6 +3110,67 @@ class AgentPlaygroundService:
             description=str(exported.get("description") or ""),
             data=flow_data,
             project_id=project_id,
+            endpoint_name=str(exported.get("endpoint_name") or CANONICAL_FLOW_ENDPOINT),
+        )
+
+    def _recommended_flow(
+        self,
+        endpoint: str,
+        api_key: str,
+        project_id: str,
+    ) -> dict[str, Any] | None:
+        candidates = [
+            item
+            for item in self._flows(endpoint, api_key)
+            if (
+                str(item.get("endpoint_name") or "") == UNIVERSAL_MCP_FLOW_ENDPOINT
+                or str(item.get("name") or "") == UNIVERSAL_MCP_FLOW_NAME
+            )
+            and str(item.get("folder_id") or item.get("project_id") or "") == project_id
+        ]
+        candidates.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        return candidates[0] if candidates else None
+
+    def _install_recommended_flow(
+        self,
+        endpoint: str,
+        api_key: str,
+        project_id: str,
+        *,
+        force_upload: bool = False,
+    ) -> dict[str, Any]:
+        existing = None if force_upload else self._recommended_flow(endpoint, api_key, project_id)
+        if existing:
+            return existing
+        flow_path = (
+            self.repo_root
+            / "langflow"
+            / "flows"
+            / "boi_universal_simulation_mcp.json"
+        )
+        if not flow_path.exists():
+            raise HTTPException(
+                status_code=503,
+                detail="Universal Simulation MCP Flow artifact is missing",
+            )
+        exported = json.loads(flow_path.read_text(encoding="utf-8"))
+        flow_data = exported.get("data") if isinstance(exported.get("data"), dict) else exported
+        return self.langflow.create_flow(
+            endpoint,
+            api_key,
+            name=str(exported.get("name") or UNIVERSAL_MCP_FLOW_NAME),
+            description=str(exported.get("description") or ""),
+            data=flow_data,
+            project_id=project_id,
+            endpoint_name=str(
+                exported.get("endpoint_name") or UNIVERSAL_MCP_FLOW_ENDPOINT
+            ),
+            mcp_enabled=True,
+            action_name=str(exported.get("action_name") or UNIVERSAL_MCP_TOOL_NAME),
+            action_description=str(
+                exported.get("action_description")
+                or UNIVERSAL_MCP_TOOL_DESCRIPTION
+            ),
         )
 
     @staticmethod
@@ -2940,6 +3203,17 @@ class AgentPlaygroundService:
             return ""
         return hashlib.sha256(flow_path.read_bytes()).hexdigest()
 
+    def _recommended_flow_checksum(self) -> str:
+        flow_path = (
+            self.repo_root
+            / "langflow"
+            / "flows"
+            / "boi_universal_simulation_mcp.json"
+        )
+        if not flow_path.exists():
+            return ""
+        return hashlib.sha256(flow_path.read_bytes()).hexdigest()
+
     def _run(
         self,
         endpoint: str,
@@ -2949,7 +3223,11 @@ class AgentPlaygroundService:
         *,
         run_token: str = "",
         audience: dict[str, str] | None = None,
+        trace_id: str = "",
+        execution_id: str = "",
     ) -> dict[str, Any]:
+        resolved_trace_id = trace_id or f"playground-{uuid.uuid4().hex}"
+        resolved_execution_id = execution_id or f"exec-{uuid.uuid4().hex}"
         input_value = json.dumps(
             {
                 "question": payload.question,
@@ -2966,7 +3244,8 @@ class AgentPlaygroundService:
                 "missing_evidence": payload.missing_evidence,
                 "save_mode": payload.save_mode,
                 "title": payload.title,
-                "trace_id": f"playground-{uuid.uuid4().hex}",
+                "trace_id": resolved_trace_id,
+                "execution_id": resolved_execution_id,
             },
             ensure_ascii=False,
         )
@@ -3142,11 +3421,98 @@ class AgentPlaygroundService:
                     "session_id": str(smoke_result.get("session_id") or ""),
                     "mode": "preview",
                 }
+
+                recommended_flow_live = self._install_recommended_flow(
+                    endpoint,
+                    api_key,
+                    project_record["id"],
+                )
+                recommended_ref = str(
+                    recommended_flow_live.get("id")
+                    or recommended_flow_live.get("endpoint_name")
+                    or UNIVERSAL_MCP_FLOW_ENDPOINT
+                )
+                recommended_smoke_request = PlaygroundFlowTestRequest(
+                    endpoint_id=endpoint_id,
+                    project_id=project_record["id"],
+                    question=(
+                        "현재 요청을 처리하기 전에 확인할 Wiki·Ontology 근거와 "
+                        "예상 처리 결과를 시뮬레이션해줘."
+                    ),
+                    save_mode="preview",
+                    title="Universal Simulation MCP 온보딩 확인",
+                )
+                try:
+                    recommended_smoke_result = self._run(
+                        endpoint,
+                        api_key,
+                        recommended_ref,
+                        recommended_smoke_request,
+                    )
+                except HTTPException as exc:
+                    if not self._flow_reinstall_required(exc):
+                        raise
+                    recommended_flow_live = self._install_recommended_flow(
+                        endpoint,
+                        api_key,
+                        project_record["id"],
+                        force_upload=True,
+                    )
+                    recommended_ref = str(
+                        recommended_flow_live.get("id")
+                        or recommended_flow_live.get("endpoint_name")
+                        or UNIVERSAL_MCP_FLOW_ENDPOINT
+                    )
+                    recommended_smoke_result = self._run(
+                        endpoint,
+                        api_key,
+                        recommended_ref,
+                        recommended_smoke_request,
+                    )
+                recommended_live_flow = self.langflow.flow(
+                    endpoint,
+                    api_key,
+                    str(recommended_flow_live.get("id") or recommended_ref),
+                )
+                recommended_live_checksum = self._runtime_flow_checksum(
+                    recommended_live_flow
+                )
+                recommended_flow = {
+                    "id": str(recommended_flow_live.get("id") or ""),
+                    "name": str(
+                        recommended_flow_live.get("name")
+                        or UNIVERSAL_MCP_FLOW_NAME
+                    ),
+                    "endpoint_name": str(
+                        recommended_flow_live.get("endpoint_name")
+                        or UNIVERSAL_MCP_FLOW_ENDPOINT
+                    ),
+                    "version": UNIVERSAL_MCP_FLOW_VERSION,
+                    "checksum": self._recommended_flow_checksum(),
+                    "validated_checksum": recommended_live_checksum,
+                    "live_checksum": recommended_live_checksum,
+                    "flow_url": f"{endpoint}/flow/{recommended_ref}",
+                    "endpoint_id": endpoint_id,
+                    "project_id": project_record["id"],
+                    "mcp_enabled": True,
+                    "mcp_tool": UNIVERSAL_MCP_TOOL_NAME,
+                }
+                recommended_smoke_record = {
+                    "status": "passed",
+                    "checked_at": now_iso(),
+                    "flow_id": recommended_flow["id"],
+                    "session_id": str(
+                        recommended_smoke_result.get("session_id") or ""
+                    ),
+                    "mode": "preview",
+                }
                 setup.update(
                     {
                         "project": project_record,
                         "canonical_flow": canonical_flow,
                         "smoke": smoke_record,
+                        "recommended_flow": recommended_flow,
+                        "recommended_smoke": recommended_smoke_record,
                         "onboarding_status": "ready",
                         "current_step": "complete",
                         "last_error": "",
@@ -3190,14 +3556,41 @@ class AgentPlaygroundService:
                         "last_seen_at": now_iso(),
                     },
                 )
+                self._upsert_flow_registry(
+                    record,
+                    {
+                        "endpoint_id": endpoint_id,
+                        "project_id": project_record["id"],
+                        "flow_id": recommended_flow["id"],
+                        "name": recommended_flow["name"],
+                        "endpoint_name": recommended_flow["endpoint_name"],
+                        "artifact_version": UNIVERSAL_MCP_FLOW_VERSION,
+                        "artifact_checksum": recommended_flow["checksum"],
+                        "validated_checksum": recommended_live_checksum,
+                        "live_checksum": recommended_live_checksum,
+                        "checksum_state": "matched",
+                        "validation_status": "runtime_validated",
+                        "mcp_enabled": True,
+                        "mcp_tool": UNIVERSAL_MCP_TOOL_NAME,
+                        "validation_history": [
+                            {
+                                "stage": "runtime_validated",
+                                "status": "passed",
+                                "checked_at": now_iso(),
+                                "mode": "preview",
+                            }
+                        ],
+                        "last_seen_at": now_iso(),
+                    },
+                )
                 record["last_test"] = {
                     "status": "passed",
                     "mode": "preview",
                     "tested_at": smoke_record["checked_at"],
                     "endpoint_id": endpoint_id,
                     "project_id": project_record["id"],
-                    "flow_id": canonical_flow["id"],
-                    "session_id": smoke_record["session_id"],
+                    "flow_id": recommended_flow["id"],
+                    "session_id": recommended_smoke_record["session_id"],
                 }
                 self._write(principal.employee_id, record)
         except Exception as exc:
@@ -3231,8 +3624,43 @@ class AgentPlaygroundService:
         project_id = str(request.project_id or canonical.get("project_id") or (record.get("project") or {}).get("id") or "")
         connection, _, api_key = self._live_flow(principal, endpoint_id, project_id, flow_id)
         endpoint = str(connection.get("base_url") or connection.get("endpoint") or "")
+        run_token: dict[str, object] | None = None
+        trace_id = f"playground-{uuid.uuid4().hex}"
+        execution_id = f"exec-{uuid.uuid4().hex}"
+        audience = {
+            "BOI_ACTION_KEY": "agent-playground-test",
+            "BOI_DEPLOYMENT_ID": "agent-playground-preview",
+            "BOI_ENDPOINT_ID": endpoint_id,
+            "BOI_PROJECT_ID": project_id,
+            "BOI_FLOW_ID": flow_id,
+            "BOI_TRACE_ID": trace_id,
+            "BOI_EXECUTION_ID": execution_id,
+        }
+        if request.save_mode == "private_draft":
+            run_token = self.pat_service.create_run_token(
+                principal,
+                action_key="agent-playground-test",
+                deployment_id="agent-playground-preview",
+                endpoint_id=endpoint_id,
+                project_id=project_id,
+                flow_id=flow_id,
+                trace_id=trace_id,
+                execution_id=execution_id,
+                allowed_capabilities=["boi.search", "boi.get", "knowledge.draft"],
+                scopes=["boi.read", "boi.draft"],
+                ttl_seconds=180,
+            )
         try:
-            result = self._run(endpoint, api_key, flow_id, request)
+            result = self._run(
+                endpoint,
+                api_key,
+                flow_id,
+                request,
+                run_token=str((run_token or {}).get("token") or ""),
+                audience=audience,
+                trace_id=trace_id,
+                execution_id=execution_id,
+            )
         except Exception as exc:
             record["last_test"] = {
                 "status": "failed",
@@ -3245,6 +3673,9 @@ class AgentPlaygroundService:
             }
             self._write(principal.employee_id, record)
             raise
+        finally:
+            if run_token:
+                self.pat_service.consume_run_token(str(run_token["token_id"]))
         record["last_test"] = {
             "status": "passed",
             "mode": request.save_mode,
@@ -3315,6 +3746,314 @@ class AgentPlaygroundService:
             "project_id": project_id,
             "flow_id": flow_id,
             "mode": request.save_mode,
+            "result": result,
+        }
+
+    @staticmethod
+    def _mcp_streamable_url(endpoint: str, project_id: str) -> str:
+        public_base = public_langflow_endpoint(
+            str(os.getenv("LANGFLOW_EXTERNAL_URL") or endpoint)
+        ).rstrip("/")
+        return (
+            f"{public_base}/api/v1/mcp/project/{project_id}/streamable"
+        )
+
+    def mcp_settings(
+        self,
+        principal: AuthIdentity,
+        endpoint_id: str,
+        project_id: str,
+        *,
+        flow_id: str = "",
+    ) -> dict[str, Any]:
+        require_role(principal, "boi.viewer")
+        record = self._read(principal.employee_id)
+        connection = self._endpoint(record, endpoint_id)
+        api_key = self._api_key(record, endpoint_id)
+        endpoint = str(connection.get("base_url") or connection.get("endpoint") or "")
+        projects = self.projects(principal, endpoint_id)["projects"]
+        if project_id not in {str(item.get("id") or "") for item in projects}:
+            raise HTTPException(
+                status_code=404,
+                detail="project does not belong to this endpoint connection",
+            )
+        payload = self.langflow.project_mcp(endpoint, api_key, project_id)
+        tools = [
+            {
+                "flow_id": str(item.get("id") or ""),
+                "name": str(item.get("name") or ""),
+                "description": str(item.get("description") or ""),
+                "mcp_enabled": bool(item.get("mcp_enabled")),
+                "tool_name": str(item.get("action_name") or ""),
+                "tool_description": str(item.get("action_description") or ""),
+            }
+            for item in payload.get("tools") or []
+            if isinstance(item, dict)
+            and (not flow_id or str(item.get("id") or "") == flow_id)
+        ]
+        auth_type = str(
+            (
+                payload.get("auth_settings")
+                if isinstance(payload.get("auth_settings"), dict)
+                else {}
+            ).get("auth_type")
+            or "none"
+        )
+        streamable_url = self._mcp_streamable_url(endpoint, project_id)
+        return {
+            "ok": True,
+            "endpoint_id": endpoint_id,
+            "project_id": project_id,
+            "flow_id": flow_id,
+            "status": (
+                "available"
+                if any(item["mcp_enabled"] for item in tools)
+                and auth_type == "apikey"
+                else "not_ready"
+            ),
+            "auth": {
+                "type": auth_type,
+                "header": "x-api-key" if auth_type == "apikey" else "",
+                "credential": "${LANGFLOW_API_KEY}" if auth_type == "apikey" else "",
+            },
+            "streamable_url": streamable_url,
+            "tools": tools,
+            "client_example": {
+                "transport": "streamable_http",
+                "url": streamable_url,
+                "headers": (
+                    {"x-api-key": "${LANGFLOW_API_KEY}"}
+                    if auth_type == "apikey"
+                    else {}
+                ),
+            },
+        }
+
+    def update_mcp_settings(
+        self,
+        principal: AuthIdentity,
+        endpoint_id: str,
+        project_id: str,
+        flow_id: str,
+        request: PlaygroundMCPUpdateRequest,
+    ) -> dict[str, Any]:
+        require_role(principal, "boi.editor")
+        connection, live_flow, api_key = self._live_flow(
+            principal,
+            endpoint_id,
+            project_id,
+            flow_id,
+        )
+        endpoint = str(connection.get("base_url") or connection.get("endpoint") or "")
+        current = self.langflow.project_mcp(endpoint, api_key, project_id)
+        settings = [
+            {
+                key: item.get(key)
+                for key in (
+                    "id",
+                    "mcp_enabled",
+                    "action_name",
+                    "action_description",
+                    "name",
+                    "description",
+                )
+                if key in item
+            }
+            for item in current.get("tools") or []
+            if isinstance(item, dict)
+        ]
+        selected = next(
+            (item for item in settings if str(item.get("id") or "") == flow_id),
+            None,
+        )
+        if selected is None:
+            selected = {
+                "id": flow_id,
+                "name": str(live_flow.get("name") or ""),
+                "description": str(live_flow.get("description") or ""),
+            }
+            settings.append(selected)
+        selected.update(
+            {
+                "mcp_enabled": request.enabled,
+                "action_name": request.action_name,
+                "action_description": request.action_description,
+            }
+        )
+        self.langflow.update_project_mcp(
+            endpoint,
+            api_key,
+            project_id,
+            settings=settings,
+            auth_type=request.auth_type,
+        )
+        with self._lock:
+            record = self._read(principal.employee_id)
+            registry_item = next(
+                (
+                    item
+                    for item in record.get("flow_registry") or []
+                    if isinstance(item, dict)
+                    and str(item.get("endpoint_id") or "") == endpoint_id
+                    and str(item.get("project_id") or "") == project_id
+                    and str(item.get("flow_id") or "") == flow_id
+                ),
+                None,
+            )
+            if registry_item is not None:
+                registry_item["mcp_enabled"] = request.enabled
+                registry_item["mcp_tool"] = request.action_name
+                registry_item["mcp_status"] = "ready" if request.enabled else "disabled"
+                registry_item["mcp_updated_at"] = now_iso()
+                self._write(principal.employee_id, record)
+        return self.mcp_settings(
+            principal,
+            endpoint_id,
+            project_id,
+            flow_id=flow_id,
+        )
+
+    @staticmethod
+    async def _call_mcp_tool(
+        url: str,
+        api_key: str,
+        *,
+        tool_name: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamablehttp_client
+
+        async with streamablehttp_client(
+            url,
+            headers={"x-api-key": api_key},
+            timeout=30,
+            sse_read_timeout=180,
+        ) as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                await session.initialize()
+                listed = await session.list_tools()
+                tools = [
+                    {
+                        "name": item.name,
+                        "description": item.description or "",
+                        "input_schema": item.inputSchema,
+                    }
+                    for item in listed.tools
+                ]
+                selected = next(
+                    (item for item in listed.tools if item.name == tool_name),
+                    None,
+                )
+                if selected is None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "mcp_tool_missing",
+                            "message": f"{tool_name} is not exposed by Langflow MCP",
+                        },
+                    )
+                result = await session.call_tool(tool_name, arguments=arguments)
+                return {
+                    "tools": tools,
+                    "call": result.model_dump(mode="json", exclude_none=True),
+                }
+
+    def test_mcp(
+        self,
+        principal: AuthIdentity,
+        endpoint_id: str,
+        project_id: str,
+        flow_id: str,
+        request: PlaygroundMCPTestRequest,
+    ) -> dict[str, Any]:
+        require_role(principal, "boi.viewer")
+        connection, _, api_key = self._live_flow(
+            principal,
+            endpoint_id,
+            project_id,
+            flow_id,
+        )
+        endpoint = str(connection.get("base_url") or connection.get("endpoint") or "")
+        settings = self.mcp_settings(
+            principal,
+            endpoint_id,
+            project_id,
+            flow_id=flow_id,
+        )
+        selected = next(
+            (item for item in settings["tools"] if item["flow_id"] == flow_id),
+            None,
+        )
+        if not selected or not selected["mcp_enabled"]:
+            raise HTTPException(status_code=409, detail="selected Flow is not enabled as an MCP tool")
+        if settings["auth"]["type"] != "apikey":
+            raise HTTPException(status_code=409, detail="Langflow MCP API Key authentication is required")
+        input_value = json.dumps(
+            {
+                "question": request.question,
+                "task_ref": request.task_ref,
+                # This value is intentionally passed through for the negative
+                # policy check. The representative Flow itself must reject a
+                # private draft when no caller-bound Action token is present.
+                "save_mode": request.save_mode,
+                "title": "Universal Simulation MCP 미리보기",
+                "trace_id": f"mcp-preview-{uuid.uuid4().hex}",
+            },
+            ensure_ascii=False,
+        )
+        internal_url = (
+            f"{endpoint}/api/v1/mcp/project/{project_id}/streamable"
+        )
+        result = asyncio.run(
+            self._call_mcp_tool(
+                internal_url,
+                api_key,
+                tool_name=str(selected["tool_name"]),
+                arguments={"input_value": input_value},
+            )
+        )
+        serialized = json.dumps(result, ensure_ascii=False, default=str)
+        if any(pattern.search(serialized) for pattern in SECRET_PATTERNS):
+            raise HTTPException(status_code=502, detail="secret-like value detected in MCP output")
+        exact_tools = [
+            item
+            for item in result["tools"]
+            if str(item.get("name") or "") == str(selected["tool_name"])
+        ]
+        if len(exact_tools) != 1:
+            raise HTTPException(
+                status_code=409,
+                detail="representative MCP tool must be exposed exactly once",
+            )
+        with self._lock:
+            record = self._read(principal.employee_id)
+            for item in record.get("flow_registry") or []:
+                if (
+                    isinstance(item, dict)
+                    and str(item.get("endpoint_id") or "") == endpoint_id
+                    and str(item.get("project_id") or "") == project_id
+                    and str(item.get("flow_id") or "") == flow_id
+                ):
+                    item["mcp_status"] = "validated"
+                    item["mcp_last_tested_at"] = now_iso()
+            self._write(principal.employee_id, record)
+        return {
+            "ok": True,
+            "endpoint_id": endpoint_id,
+            "project_id": project_id,
+            "flow_id": flow_id,
+            "tool_name": selected["tool_name"],
+            "save_mode": request.save_mode,
+            "write_allowed": False,
+            "write_blocked": (
+                request.save_mode == "private_draft"
+                and (
+                    "action_run_token_required" in serialized
+                    or "MCP 미리보기만 수행했습니다" in serialized
+                )
+            ),
+            "tested_at": now_iso(),
             "result": result,
         }
 
@@ -3512,9 +4251,17 @@ class AgentPlaygroundService:
             else {}
         )
         declared_agent_kind = str(declared_contract.get("agent_kind") or "")
+        universal_mcp = (
+            has_component("BoIUniversalSimulationMCPAgent")
+            or str(declared_contract.get("endpoint_name") or "")
+            == UNIVERSAL_MCP_FLOW_ENDPOINT
+            or str((declared_contract.get("mcp") or {}).get("tool_name") or "")
+            == UNIVERSAL_MCP_TOOL_NAME
+        )
         model_backed = (
             declared_agent_kind == "openai_compatible_model"
             or has_component("BoIModelAgent")
+            or universal_mcp
         )
         declared_hash = str(flow_data.get("boi_contract_sha256") or "")
         computed_hash = (
@@ -3563,10 +4310,23 @@ class AgentPlaygroundService:
                 }
                 inferred_manifest = True
         else:
+            declared_outputs = declared_contract.get("outputs")
             contract_fields = {
-                "version": str(declared_contract.get("version") or "") == CANONICAL_FLOW_VERSION,
+                "version": str(declared_contract.get("version") or "")
+                == (
+                    UNIVERSAL_MCP_FLOW_VERSION
+                    if universal_mcp
+                    else CANONICAL_FLOW_VERSION
+                ),
                 "inputs": declared_contract.get("inputs") == expected_inputs,
-                "outputs": declared_contract.get("outputs") == expected_outputs,
+                "outputs": (
+                    all(
+                        item in declared_outputs
+                        for item in expected_outputs
+                    )
+                    if universal_mcp and isinstance(declared_outputs, list)
+                    else declared_outputs == expected_outputs
+                ),
                 "checksum": bool(declared_hash) and declared_hash == computed_hash,
             }
             inferred_manifest = False
@@ -3673,7 +4433,7 @@ class AgentPlaygroundService:
                         and any(
                             title_key in value or value in title_key
                             for value in normalized
-                            if value
+                            if len(value) >= 8
                         )
                     )
                 ):
@@ -4982,6 +5742,17 @@ class AgentPlaygroundService:
                 "base_url_variable": "BOI_LLM_BASE_URL",
                 "credential_variable": BOI_LLM_API_KEY_VARIABLE_NAME,
             },
+            "recommended_asset": {
+                "name": UNIVERSAL_MCP_FLOW_NAME,
+                "endpoint_name": UNIVERSAL_MCP_FLOW_ENDPOINT,
+                "version": UNIVERSAL_MCP_FLOW_VERSION,
+                "checksum": self._recommended_flow_checksum(),
+                "mcp_tool": UNIVERSAL_MCP_TOOL_NAME,
+                "mcp_transport": "streamable_http",
+                "save_policy": "action_token_required",
+                "default_save_mode": "preview",
+                "model": "LM Studio Gemma",
+            },
             "security": {
                 "api_key_encrypted": True,
                 "encryption_key_configured": self.encryption_configured,
@@ -5458,6 +6229,17 @@ class AgentPlaygroundService:
             / "boi_wiki_agent_loop_model_agent.json"
         )
         model_agent_checksum = self._model_agent_checksum() if model_agent_path.exists() else ""
+        universal_mcp_path = (
+            self.repo_root
+            / "langflow"
+            / "flows"
+            / "boi_universal_simulation_mcp.json"
+        )
+        universal_mcp_checksum = (
+            self._recommended_flow_checksum()
+            if universal_mcp_path.exists()
+            else ""
+        )
         registry_item = next(
             (
                 item
@@ -5494,10 +6276,28 @@ class AgentPlaygroundService:
             artifact_endpoint_name = str(
                 model_export.get("endpoint_name") or MODEL_AGENT_FLOW_ENDPOINT
             )
+        elif (
+            universal_mcp_path.exists()
+            and str(registry_item.get("artifact_checksum") or "")
+            == universal_mcp_checksum
+        ):
+            universal_export = json.loads(
+                universal_mcp_path.read_text(encoding="utf-8")
+            )
+            serialized_flow = universal_mcp_path.read_bytes()
+            safe_flow_name = "boi_universal_simulation_mcp"
+            artifact_name = str(
+                universal_export.get("name") or UNIVERSAL_MCP_FLOW_NAME
+            )
+            artifact_endpoint_name = str(
+                universal_export.get("endpoint_name")
+                or UNIVERSAL_MCP_FLOW_ENDPOINT
+            )
         component_root = self.repo_root / "langflow" / "custom_components" / "boi"
         static_paths = [
             *sorted(component_root.glob("*.py")),
             self.repo_root / "langflow" / "flows" / "boi_wiki_agent_loop_model_agent.json",
+            self.repo_root / "langflow" / "flows" / "boi_universal_simulation_mcp.json",
             self.repo_root / "langflow" / "compatibility-manifest.json",
             self.repo_root / "langflow" / "agent_hub" / "README.md",
         ]
@@ -5507,11 +6307,18 @@ class AgentPlaygroundService:
         checksum = hashlib.sha256(serialized_flow).hexdigest()
         serialized_flow_text = serialized_flow.decode("utf-8", errors="ignore")
         model_agent_artifact = "BoIModelAgent" in serialized_flow_text
+        universal_mcp_artifact = (
+            "BoIUniversalSimulationMCPAgent" in serialized_flow_text
+        )
         manifest = {
             "schema_version": "boi-agent-hub-validation-v2",
             "name": artifact_name,
             "endpoint_name": artifact_endpoint_name,
-            "version": CANONICAL_FLOW_VERSION,
+            "version": (
+                UNIVERSAL_MCP_FLOW_VERSION
+                if universal_mcp_artifact
+                else CANONICAL_FLOW_VERSION
+            ),
             "artifact_checksum": checksum,
             "source_identity": {
                 "endpoint_id": selected_endpoint_id,
@@ -5525,7 +6332,13 @@ class AgentPlaygroundService:
             },
             "components": [
                 "BoIWikiKnowledge",
-                "BoIModelAgent" if model_agent_artifact else "BoIAgentSlot",
+                (
+                    "BoIUniversalSimulationMCPAgent"
+                    if universal_mcp_artifact
+                    else "BoIModelAgent"
+                    if model_agent_artifact
+                    else "BoIAgentSlot"
+                ),
                 "BoIWikiSave",
             ],
             "credential_variables": (
@@ -5533,16 +6346,29 @@ class AgentPlaygroundService:
                     BOI_PAT_VARIABLE_NAME,
                     BOI_LLM_API_KEY_VARIABLE_NAME,
                 ]
-                if model_agent_artifact
+                if model_agent_artifact or universal_mcp_artifact
                 else [BOI_PAT_VARIABLE_NAME]
             ),
             "configuration_variables": (
                 ["BOI_LLM_BASE_URL", "BOI_AGENT_EXAMPLE_MODEL"]
-                if model_agent_artifact
+                if model_agent_artifact or universal_mcp_artifact
                 else []
             ),
             "agent_kind": (
-                "openai_compatible_model" if model_agent_artifact else "contract_shell"
+                "openai_compatible_model"
+                if model_agent_artifact or universal_mcp_artifact
+                else "contract_shell"
+            ),
+            "mcp": (
+                {
+                    "enabled": True,
+                    "tool_name": UNIVERSAL_MCP_TOOL_NAME,
+                    "transport": "streamable_http",
+                    "auth": "apikey",
+                    "external_save_policy": "preview_only",
+                }
+                if universal_mcp_artifact
+                else {"enabled": False}
             ),
             "request_variables": ["BOI_RUN_TOKEN"],
             "inputs": [
@@ -5571,7 +6397,14 @@ class AgentPlaygroundService:
                 "wiki_url",
                 "provenance",
             ],
-            "defaults": {"save_mode": "preview"},
+            "defaults": {
+                "save_mode": "preview",
+                "write_policy": (
+                    "action_token_required"
+                    if universal_mcp_artifact
+                    else "owner_or_action"
+                ),
+            },
             "secret_policy": {
                 "raw_credentials_in_export": False,
                 "agent_hub_receives_boi_pat": False,

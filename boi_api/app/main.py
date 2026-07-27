@@ -112,6 +112,8 @@ from .agent_playground import (
     PlaygroundHubAdoptionBeginRequest,
     PlaygroundHubAdoptionComposeRequest,
     PlaygroundHubAdoptionConfirmRequest,
+    PlaygroundMCPTestRequest,
+    PlaygroundMCPUpdateRequest,
     PlaygroundRotateCredentialRequest,
     SECRET_PATTERNS as AGENT_PLAYGROUND_SECRET_PATTERNS,
 )
@@ -33769,6 +33771,61 @@ def api_agent_playground_project_flows(
             else []
         )
     return payload
+
+
+@app.get("/api/agent-playground/endpoints/{endpoint_id}/projects/{project_id}/mcp")
+def api_agent_playground_project_mcp(
+    endpoint_id: str,
+    project_id: str,
+    flow_id: str = Query(default=""),
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.mcp_settings(
+        identity,
+        endpoint_id,
+        project_id,
+        flow_id=flow_id,
+    )
+
+
+@app.put(
+    "/api/agent-playground/endpoints/{endpoint_id}/projects/{project_id}"
+    "/flows/{flow_id}/mcp"
+)
+def api_agent_playground_flow_mcp_update(
+    endpoint_id: str,
+    project_id: str,
+    flow_id: str,
+    req: PlaygroundMCPUpdateRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.update_mcp_settings(
+        identity,
+        endpoint_id,
+        project_id,
+        flow_id,
+        req,
+    )
+
+
+@app.post(
+    "/api/agent-playground/endpoints/{endpoint_id}/projects/{project_id}"
+    "/flows/{flow_id}/mcp/test"
+)
+def api_agent_playground_flow_mcp_test(
+    endpoint_id: str,
+    project_id: str,
+    flow_id: str,
+    req: PlaygroundMCPTestRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.test_mcp(
+        identity,
+        endpoint_id,
+        project_id,
+        flow_id,
+        req,
+    )
 
 
 @app.get("/api/agent-playground/flows")

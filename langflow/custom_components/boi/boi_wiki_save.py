@@ -61,6 +61,13 @@ class BoIWikiSave(Component):
             options=["preview", "private_draft"],
             value="preview",
         ),
+        DropdownInput(
+            name="write_policy",
+            display_name="초안 저장 권한",
+            options=["owner_or_action", "action_token_required"],
+            value="owner_or_action",
+            advanced=True,
+        ),
         StrInput(name="flow_id", display_name="Flow ID", value="boi-wiki-agent-loop", advanced=True),
     ]
     outputs = [
@@ -123,7 +130,19 @@ class BoIWikiSave(Component):
 
     async def _result(self) -> dict[str, Any]:
         payload = self._agent_payload()
-        cache_key = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+        request_variables = self._request_variables()
+        has_run_token = bool(str(request_variables.get("BOI_RUN_TOKEN") or "").strip())
+        write_policy = str(self.write_policy or "owner_or_action")
+        cache_key = json.dumps(
+            {
+                "payload": payload,
+                "write_policy": write_policy,
+                "has_run_token": has_run_token,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+        )
         if (
             getattr(self, "_boi_save_cache_key", "") == cache_key
             and isinstance(getattr(self, "_boi_save_cache", None), dict)
@@ -170,6 +189,19 @@ class BoIWikiSave(Component):
             "ontology_relationships": ontology_relationships,
             "task_context": payload.get("task_context") if isinstance(payload.get("task_context"), dict) else {},
             "grounding_status": payload.get("grounding_status") or "unknown",
+            "simulation": bool(payload.get("simulation")),
+            "simulation_label": str(payload.get("simulation_label") or ""),
+            "coverage_report": (
+                payload.get("coverage_report")
+                if isinstance(payload.get("coverage_report"), dict)
+                else {}
+            ),
+            "limitations": [
+                str(item)
+                for item in payload.get("limitations") or []
+                if str(item)
+            ],
+            "model_trace": model_trace,
             "draft_reference": "",
             "wiki_url": "",
             "provenance": trace,
@@ -179,6 +211,16 @@ class BoIWikiSave(Component):
             self._boi_save_cache_key = cache_key
             self._boi_save_cache = dict(candidate)
             return candidate
+        if write_policy == "action_token_required" and not has_run_token:
+            blocked = {
+                **candidate,
+                "requested_mode": "private_draft",
+                "write_blocked": True,
+                "write_blocked_reason": "action_run_token_required",
+            }
+            self._boi_save_cache_key = cache_key
+            self._boi_save_cache = dict(blocked)
+            return blocked
         endpoint = os.getenv("BOI_WIKI_MCP_URL", "http://boi-wiki-mcp:8200/mcp/v2")
         async with streamablehttp_client(
             endpoint,
@@ -260,6 +302,11 @@ class BoIWikiSave(Component):
         text = str(result.get("answer") or "")
         if result.get("mode") == "private_draft":
             text += f"\n\n개인 Wiki 초안: {result.get('draft_reference') or '저장됨'}"
+        elif result.get("write_blocked"):
+            text += (
+                "\n\nMCP 미리보기만 수행했습니다. 개인 Wiki 초안 저장은 "
+                "BoI Action 또는 Playground의 호출자 권한으로 실행하세요."
+            )
         else:
             text += "\n\n미리보기만 수행했습니다. Wiki는 변경하지 않았습니다."
         return Message(text=text.strip(), data=result)

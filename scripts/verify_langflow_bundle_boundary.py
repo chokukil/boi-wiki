@@ -23,7 +23,12 @@ from typing import Any
 import httpx
 
 
-BOI_COMPONENTS = ("BoIWikiKnowledge", "BoIWikiSave", "BoIModelAgent")
+BOI_COMPONENTS = (
+    "BoIWikiKnowledge",
+    "BoIWikiSave",
+    "BoIModelAgent",
+    "BoIUniversalSimulationMCPAgent",
+)
 DEFAULT_IMAGE = (
     "langflowai/langflow:1.11.0@"
     "sha256:f7de8256fdbba725d7765bcff9d984ad272e0f726daabf2d7e3c3b0fa8dc31bf"

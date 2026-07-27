@@ -124,6 +124,7 @@ def main() -> int:
                 "/api/v1/flows/",
                 "/api/v1/variables/",
                 "/api/v1/run/",
+                "/api/v1/mcp/project/",
             )
         )
     ]
