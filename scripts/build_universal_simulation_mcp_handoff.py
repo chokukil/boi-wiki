@@ -128,6 +128,7 @@ def main() -> int:
         "cross-team-action": "cross-team-action",
         "incompatible-component": "incompatible-component",
         "checksum-drift": "checksum-drift",
+        "action-connectors": "action-abstraction",
     }
     for target_name, source_name in evidence_dirs.items():
         copy_tree(
@@ -143,6 +144,7 @@ def main() -> int:
         "cross_team": output / "evidence/cross-team-action/result.json",
         "incompatible": output / "evidence/incompatible-component/result.json",
         "drift": output / "evidence/checksum-drift/result.json",
+        "action_connectors": output / "evidence/action-connectors/action-abstraction-result.json",
     }
     results = {name: read_json(path) for name, path in required_results.items()}
     pass_fields = {
@@ -153,6 +155,7 @@ def main() -> int:
         "cross_team": "ok",
         "incompatible": "ok",
         "drift": "ok",
+        "action_connectors": "ok",
     }
     failed = [
         name
@@ -254,6 +257,9 @@ def main() -> int:
         "drift": results["drift"].get("drift"),
         "drift_recovery": results["drift"].get("revalidation"),
         "team_private_draft": results["team_action"].get("private_draft"),
+        "connector_neutral_actions": results["action_connectors"].get(
+            "gateway_invocations"
+        ),
         "agent_hub_unmodified": True,
         "langflow_unmodified": True,
     }
