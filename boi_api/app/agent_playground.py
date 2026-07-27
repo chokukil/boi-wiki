@@ -2754,6 +2754,9 @@ class AgentPlaygroundService:
             request.flow_id,
         )
         endpoint = str(connection.get("base_url") or connection.get("endpoint") or "")
+        canvas_url = (
+            f"{public_langflow_endpoint(endpoint)}/flow/{request.flow_id}"
+        )
         flow = self.langflow.flow(endpoint, api_key, request.flow_id)
         before_checksum = self._runtime_flow_checksum(flow)
         catalog_contract = self._component_contract(asset)
@@ -2770,7 +2773,7 @@ class AgentPlaygroundService:
                 "required_contract": required_contract,
                 "actual_contract": catalog_contract,
                 "contract_source": "agent_hub_catalog",
-                "langflow_canvas_url": f"{endpoint}/flow/{request.flow_id}",
+                "langflow_canvas_url": canvas_url,
             }
         data = copy.deepcopy(flow.get("data") if isinstance(flow.get("data"), dict) else {})
         nodes = [item for item in data.get("nodes") or [] if isinstance(item, dict)]
@@ -2801,7 +2804,7 @@ class AgentPlaygroundService:
                 ),
                 "slot_count": len(slot_nodes),
                 "component_node_count": len(component_nodes),
-                "langflow_canvas_url": f"{endpoint}/flow/{request.flow_id}",
+                "langflow_canvas_url": canvas_url,
             }
         slot = slot_nodes[0]
         component = component_nodes[0]
@@ -2829,7 +2832,7 @@ class AgentPlaygroundService:
                     if deployed_contract["contract_id"]
                     else "missing"
                 ),
-                "langflow_canvas_url": f"{endpoint}/flow/{request.flow_id}",
+                "langflow_canvas_url": canvas_url,
             }
         slot_id = self._node_id(slot)
         component_id = self._node_id(component)
@@ -2842,7 +2845,7 @@ class AgentPlaygroundService:
                 "reason": "agent_slot_edge_ambiguous",
                 "inbound_edge_count": len(inbound),
                 "outbound_edge_count": len(outbound),
-                "langflow_canvas_url": f"{endpoint}/flow/{request.flow_id}",
+                "langflow_canvas_url": canvas_url,
             }
         component_data = component.get("data") if isinstance(component.get("data"), dict) else {}
         component_node = (
@@ -2870,7 +2873,7 @@ class AgentPlaygroundService:
                 "ok": False,
                 "status": "manual_required",
                 "reason": "component_ports_do_not_match_contract",
-                "langflow_canvas_url": f"{endpoint}/flow/{request.flow_id}",
+                "langflow_canvas_url": canvas_url,
             }
         component_node.setdefault("metadata", {})["component_asset_id"] = request.component_asset_id
         component_node["metadata"]["component_contract"] = "boi.agent-slot.v1"

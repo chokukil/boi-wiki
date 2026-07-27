@@ -595,6 +595,7 @@ def test_other_authors_approved_agent_hub_flow_and_components_are_adopted_by_exa
     assert manual["status"] == "manual_required"
     assert manual["reason"] == "component_contract_incompatible"
     assert manual["actual_contract"]["inputs"] == ["query", "context"]
+    assert manual["langflow_canvas_url"].startswith("http://langflow.example:7860/")
     assert patch_calls == []
 
     composed = service.compose_hub_adoption(
