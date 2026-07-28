@@ -689,6 +689,73 @@ def test_mainline_handoff_docs_do_not_point_to_stale_integration_evidence():
     assert "artifacts/agent-playground-handoff/<run_id>-mainline-final-audit/" in combined
 
 
+def _complete_corporate_sso_evidence():
+    return {
+        "schema": "boi.agent-playground.corporate-sso-acceptance.v1",
+        "ok": True,
+        "final_acceptance": True,
+        "environment": "corporate",
+        "auth_mode": "external_jwt",
+        "second_password_form": False,
+        "principal_match": True,
+        "exact_canvas_loaded": True,
+        "exact_reference": {
+            "environment": "prd",
+            "origin_label": "Agent Hub",
+        },
+        "browser_sso": {"status": "ready", "principal_match": True},
+        "spoof_status": 403,
+        "logout": {
+            "boi_session_cleared": True,
+            "langflow_session_cleared": True,
+            "canvas_requires_reauthentication": True,
+        },
+        "hcp_fail_closed": {"environment": "corporate", "ok": True},
+        "unexpected_http_errors": [],
+        "console_errors": [],
+        "page_errors": [],
+        "secret_exposure": {
+            "query_credentials": False,
+            "container_address": False,
+            "response_tokens": False,
+        },
+    }
+
+
+def test_provider_sso_audit_accepts_only_complete_corporate_evidence():
+    from scripts.build_agent_playground_provider_sso_audit import (
+        corporate_evidence_ok,
+    )
+
+    complete = _complete_corporate_sso_evidence()
+    assert corporate_evidence_ok(complete)
+
+    validation_only = dict(complete, environment="validation", final_acceptance=False)
+    assert not corporate_evidence_ok(validation_only)
+
+    missing_logout = json.loads(json.dumps(complete))
+    missing_logout["logout"]["langflow_session_cleared"] = False
+    assert not corporate_evidence_ok(missing_logout)
+
+    missing_hcp = json.loads(json.dumps(complete))
+    missing_hcp["hcp_fail_closed"]["environment"] = "validation"
+    assert not corporate_evidence_ok(missing_hcp)
+
+    secret_exposed = json.loads(json.dumps(complete))
+    secret_exposed["secret_exposure"]["response_tokens"] = True
+    assert not corporate_evidence_ok(secret_exposed)
+
+
+def test_sso_handoff_includes_corporate_acceptance_runner():
+    root = Path(__file__).resolve().parents[1]
+    builder = (
+        root / "scripts" / "build_agent_playground_sso_handoff.py"
+    ).read_text(encoding="utf-8")
+    assert "CORPORATE_SSO_HANDOFF.md" in builder
+    assert "corporate_sso_acceptance_e2e.mjs" in builder
+    assert "corporate-hcp-evidence.example.json" in builder
+
+
 def test_mainline_handoff_builder_runs_requirement_audit():
     root = Path(__file__).resolve().parents[1]
     audit = root / "scripts" / "audit_agent_playground_mainline_completion.py"

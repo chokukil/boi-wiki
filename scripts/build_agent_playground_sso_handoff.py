@@ -381,6 +381,11 @@ def main() -> int:
         ROOT / "langflow/agent_hub/universal-simulation-mcp-client.example.json",
         ROOT / "langflow/agent_hub/universal-simulation-mcp-samples.json",
         ROOT / "docs/UNIVERSAL_SIMULATION_MCP_ONE_PAGER.md",
+        ROOT / "validation/agent-hub/CORPORATE_SSO_HANDOFF.md",
+        ROOT
+        / "validation/agent-playground-mainline/corporate_sso_acceptance_e2e.mjs",
+        ROOT
+        / "validation/agent-playground-mainline/corporate-hcp-evidence.example.json",
     ]
     for source in delivery_files:
         copy_file(source, output / "delivery" / source.relative_to(ROOT))

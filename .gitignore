@@ -44,5 +44,7 @@ artifacts/agent-playground-trusted-header/
 artifacts/agent-playground-universal-drift-final/
 artifacts/agent-playground-universal-exact-chain-final/
 artifacts/agent-playground-wiki-onboarding/
+artifacts/agent-playground-corporate-sso-validation/
+artifacts/agent-playground-corporate-sso/
 validation/agent-playground-mainline/artifacts/
 outputs/

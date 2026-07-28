@@ -171,6 +171,62 @@ reverse proxy의 sign-out endpoint와 provider logout을 잇는 redirect chain�
 구성한다. 로그아웃 회귀는 BoI 재인증뿐 아니라 기존 Langflow Canvas도 다시 회사
 SSO를 요구하는지 확인해야 한다.
 
+# 사내 acceptance 실행
+
+localhost 브라우저 증거는 사내 완료 증거가 아니다. 사내 pre-production에서 다음
+네 HCP 부정·복구 상태를 먼저 확인한다.
+
+| 시나리오 | 기대 상태 |
+| --- | --- |
+| Action 권한 축소 | `403` |
+| 계정 비활성화 | `403` |
+| HCP 조회 장애 | `503` |
+| 권한·서비스 복구 | `200` |
+
+실제 문서 ID, cookie, API Key, token을 넣지 않고
+`validation/agent-playground-mainline/corporate-hcp-evidence.example.json` 형식으로
+상태 코드만 기록한다. 운영 계정을 직접 변경하지 말고 승인된 pre-production
+계정과 변경 창구를 사용한다.
+
+그 다음 공급자 독립 browser runner를 실행한다.
+
+```bash
+CORPORATE_ACCEPTANCE_ENVIRONMENT=corporate \
+CORPORATE_AUTH_MODE=<external_jwt|trusted_header_bridge|embedded_sso> \
+BOI_CORPORATE_URL=http://wiki.skhynix.com \
+LANGFLOW_EXTERNAL_URL=http://wiki.skhynix.com/builder \
+CORPORATE_EXPECTED_EMPLOYEE_ID=100002 \
+CORPORATE_EXPECTED_FLOW_ID=<Agent Hub exact Flow ID> \
+CORPORATE_EXPECTED_PROJECT_ID=<boi-100002 project ID> \
+CORPORATE_HCP_EVIDENCE_FILE=/secure/tmp/corporate-hcp-evidence.json \
+CORPORATE_SSO_INTERACTIVE=1 \
+CORPORATE_EVIDENCE_DIR=artifacts/agent-playground-corporate-sso \
+node validation/agent-playground-mainline/corporate_sso_acceptance_e2e.mjs
+```
+
+runner는 로그인 화면이나 token payload를 캡처하지 않는다. 성공 후에도 browser
+storage state는 증거가 아니라 인증 비밀값이므로 handoff와 Wiki에 넣지 않는다.
+결과 JSON에서 다음 값이 모두 확인되어야 한다.
+
+```text
+environment=corporate
+ok=true
+final_acceptance=true
+second_password_form=false
+principal_match=true
+exact_canvas_loaded=true
+exact_reference.environment=prd
+exact_reference.origin_label=Agent Hub
+spoof_status=403
+logout.boi_session_cleared=true
+logout.langflow_session_cleared=true
+hcp_fail_closed.ok=true
+```
+
+마지막으로 `build_agent_playground_provider_sso_audit.py`를
+`--corporate-evidence`와 함께 실행한다. 감사 결과의 `goal_complete=true`와
+`external_gate=pass`가 동시에 나오기 전에는 사내 완료로 판단하지 않는다.
+
 # 로컬 공급자 독립 회귀 주소
 
 | 경로 | 주소 | 확인 내용 |

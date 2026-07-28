@@ -1,0 +1,17 @@
+{
+  "schema": "boi.agent-playground.corporate-hcp-evidence.v1",
+  "environment": "corporate",
+  "role_reduction": {
+    "status": 0
+  },
+  "account_disabled": {
+    "status": 0
+  },
+  "outage": {
+    "status": 0
+  },
+  "recovered": {
+    "status": 0
+  },
+  "note": "Replace only the four status values with sanitized pre-production HCP probe results. Required values are 403, 403, 503, and 200."
+}

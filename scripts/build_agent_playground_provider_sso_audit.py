@@ -37,6 +37,44 @@ def nested(value: Any, *keys: str, default: Any = None) -> Any:
     return default if current is None else current
 
 
+def corporate_evidence_ok(corporate: dict[str, Any]) -> bool:
+    """Accept only a complete, redacted result produced in the corporate environment."""
+    return (
+        corporate.get("schema")
+        == "boi.agent-playground.corporate-sso-acceptance.v1"
+        and corporate.get("ok") is True
+        and corporate.get("final_acceptance") is True
+        and corporate.get("environment") == "corporate"
+        and corporate.get("auth_mode")
+        in {"external_jwt", "trusted_header_bridge", "embedded_sso"}
+        and corporate.get("second_password_form") is False
+        and corporate.get("principal_match") is True
+        and corporate.get("exact_canvas_loaded") is True
+        and nested(corporate, "exact_reference", "environment") == "prd"
+        and nested(corporate, "exact_reference", "origin_label") == "Agent Hub"
+        and nested(corporate, "browser_sso", "status") == "ready"
+        and nested(corporate, "browser_sso", "principal_match") is True
+        and corporate.get("spoof_status") == 403
+        and nested(corporate, "logout", "boi_session_cleared") is True
+        and nested(corporate, "logout", "langflow_session_cleared") is True
+        and nested(
+            corporate,
+            "logout",
+            "canvas_requires_reauthentication",
+        )
+        is True
+        and nested(corporate, "hcp_fail_closed", "environment") == "corporate"
+        and nested(corporate, "hcp_fail_closed", "ok") is True
+        and not corporate.get("unexpected_http_errors")
+        and not corporate.get("console_errors")
+        and not corporate.get("page_errors")
+        and not any(
+            bool(value)
+            for value in (corporate.get("secret_exposure") or {}).values()
+        )
+    )
+
+
 def git(*args: str, cwd: Path) -> str:
     return subprocess.check_output(["git", *args], cwd=cwd, text=True).strip()
 
@@ -470,12 +508,7 @@ def main() -> int:
     }
     if args.corporate_evidence:
         corporate = read_json(args.corporate_evidence)
-        corporate_ok = (
-            corporate.get("ok") is True
-            and corporate.get("environment") == "corporate"
-            and corporate.get("second_password_form") is False
-            and corporate.get("principal_match") is True
-        )
+        corporate_ok = corporate_evidence_ok(corporate)
         corporate_status = "pass" if corporate_ok else "fail"
         corporate_observed = corporate
     add(

@@ -102,6 +102,8 @@ const docs = [
       "Trusted Header와 Token Bridge",
       "공식 Langflow 1.11.0 검증 결과",
       "Agent Hub",
+      "corporate_sso_acceptance_e2e.mjs",
+      "HCP",
     ],
   },
   {
