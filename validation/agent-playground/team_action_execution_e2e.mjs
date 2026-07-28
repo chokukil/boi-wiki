@@ -50,6 +50,7 @@ const expectedChecksum = String(
 const expectedTaskRef = String(
   process.env.TEAM_ACTION_TASK_REF
   || cross.validation?.task_ref
+  || cross.composition?.task?.taskRef
   || "",
 );
 if (!identities["100001"] || !identities["100002"] || !draftId || !expectedFlowId) {
