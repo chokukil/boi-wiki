@@ -1234,17 +1234,24 @@ async function verifyBoiActionCatalog(browser) {
     if (await input.count()) await input.fill(value);
   };
   const inboxPayload = await page.evaluate(async () => {
-    const response = await fetch("/api/inbox?limit=50");
+    const response = await fetch("/api/agents/boi-wiki/inbox?status=open&limit=50");
     return {
       status: response.status,
       body: await response.json().catch(() => ({})),
     };
   });
   assert(inboxPayload.status === 200, `BoI Task inbox returned HTTP ${inboxPayload.status}`);
-  const actualTaskRef = (inboxPayload.body.items || [])
-    .map((item) => String(item.task_id || ""))
-    .find((value) => value.startsWith("task:"));
-  assert(actualTaskRef, "No ACL-checked Task anchor is available for Action validation");
+  const selectedInboxRef = String(result.playground.task_anchor?.task_ref || "");
+  const actualTask = (inboxPayload.body.items || []).find(
+    (item) => String(item.task_ref || "") === selectedInboxRef,
+  );
+  const actualTaskRef = String(actualTask?.task_id || "");
+  assert(
+    actualTaskRef.startsWith("task:")
+      && String(actualTask?.event_type || "")
+      && (actualTask?.user_links || []).some((item) => item.kind === "sop"),
+    "The Flow-validated ACL Task anchor did not resolve to an actual SOP Task",
+  );
   await fillIfPresent("question", "SOP Task 수행에 필요한 Wiki 및 Ontology 근거를 정리해줘");
   await fillIfPresent("business_context", "선택한 실제 Task를 서버 권위 Context로 해석");
   await fillIfPresent("task_ref", actualTaskRef);
