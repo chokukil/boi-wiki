@@ -55,6 +55,8 @@ def corporate_evidence_ok(corporate: dict[str, Any]) -> bool:
         and corporate.get("second_password_form") is False
         and corporate.get("principal_match") is True
         and corporate.get("exact_canvas_loaded") is True
+        and int(nested(corporate, "canvas_state", "node_count", default=0)) > 0
+        and nested(corporate, "canvas_state", "untitled_visible") is False
         and nested(corporate, "exact_reference", "environment") == "prd"
         and nested(corporate, "exact_reference", "origin_label") == "Agent Hub"
         and nested(corporate, "browser_sso", "status") == "ready"

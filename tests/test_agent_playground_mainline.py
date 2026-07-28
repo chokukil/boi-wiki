@@ -702,6 +702,7 @@ def _complete_corporate_sso_evidence():
         "second_password_form": False,
         "principal_match": True,
         "exact_canvas_loaded": True,
+        "canvas_state": {"node_count": 5, "untitled_visible": False},
         "exact_reference": {
             "environment": "prd",
             "origin_label": "Agent Hub",

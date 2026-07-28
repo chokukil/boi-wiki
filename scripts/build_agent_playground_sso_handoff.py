@@ -289,6 +289,10 @@ def assert_evidence(evidence_root: Path) -> dict[str, dict[str, Any]]:
         or corporate_self_test.get("principal_match") is not True
         or corporate_self_test.get("second_password_form") is not False
         or corporate_self_test.get("exact_canvas_loaded") is not True
+        or int(corporate_self_test.get("canvas_state", {}).get("node_count") or 0)
+        < 1
+        or corporate_self_test.get("canvas_state", {}).get("untitled_visible")
+        is not False
         or corporate_self_test.get("employee_id")
         != corporate_self_test.get("langflow_user")
         or corporate_self_test.get("spoof_status") != 403

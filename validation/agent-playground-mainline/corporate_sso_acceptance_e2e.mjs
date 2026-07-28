@@ -146,6 +146,7 @@ const result = {
   principal_match: false,
   second_password_form: null,
   exact_canvas_loaded: false,
+  canvas_state: {},
   exact_reference: {
     flow_id: config.flowId,
     project_id: config.projectId,
@@ -417,10 +418,26 @@ try {
   await langflowPage.waitForFunction(
     () => {
       const text = document.body?.innerText || "";
-      return text.trim().length > 50 && !text.includes("Loading...");
+      const nodeCount = document.querySelectorAll(".react-flow__node").length;
+      return (
+        nodeCount > 0
+        && text.trim().length > 50
+        && !text.includes("Loading...")
+        && !text.includes("Untitled Flow")
+      );
     },
     undefined,
     { timeout: config.timeoutMs },
+  );
+  result.canvas_state = await langflowPage.evaluate(() => ({
+    node_count: document.querySelectorAll(".react-flow__node").length,
+    untitled_visible: (document.body?.innerText || "").includes("Untitled Flow"),
+    pathname: window.location.pathname,
+  }));
+  assert(
+    Number(result.canvas_state.node_count || 0) > 0
+    && result.canvas_state.untitled_visible === false,
+    "exact Langflow Canvas graph did not finish loading",
   );
   const whoami = await context.request.get(
     `${config.langflowUrl.replace(/\/+$/, "")}/api/v1/users/whoami`,
