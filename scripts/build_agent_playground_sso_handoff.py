@@ -297,13 +297,22 @@ def main() -> int:
         ROOT / "langflow/agent_hub/universal-simulation-mcp-client.example.json",
         ROOT / "langflow/agent_hub/universal-simulation-mcp-samples.json",
         ROOT / "docs/UNIVERSAL_SIMULATION_MCP_ONE_PAGER.md",
-        ROOT / "validation/agent-playground-mainline/docker-compose.yml",
-        ROOT / "docker-compose.langflow-1.11-validation.yml",
     ]
     for source in delivery_files:
         copy_file(source, output / "delivery" / source.relative_to(ROOT))
     for source in sorted(
         (ROOT / "data/boi/public/boi-wiki-manual").rglob("agent-playground*.md")
+    ):
+        copy_file(
+            source,
+            output / "delivery/wiki" / source.relative_to(
+                ROOT / "data/boi/public/boi-wiki-manual"
+            ),
+        )
+    for source in sorted(
+        (ROOT / "data/boi/public/boi-wiki-manual").rglob(
+            "universal-simulation-mcp-*.md"
+        )
     ):
         copy_file(
             source,
@@ -451,6 +460,9 @@ def main() -> int:
                 "이 패키지는 OIDC와 trusted-header 브라우저 SSO, DEV/PRD exact Flow,",
                 "수정 없는 Agent Hub 배포, Universal Simulation MCP, connector-neutral",
                 "Action과 Wiki/Ontology 실행을 하나의 exact Flow 증거로 연결한다.",
+                "",
+                "기존 Agent Playground handoff와 완료 감사는 이 패키지로 대체되며,",
+                "사내 적용 근거로 사용하지 않는다.",
                 "",
                 f"- feature commit: `{feature_commit}`",
                 f"- exact Flow: `{exact.get('flow_id')}`",
