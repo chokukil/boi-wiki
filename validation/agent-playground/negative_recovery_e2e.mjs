@@ -97,6 +97,22 @@ function diagnostics(page, scope) {
         reason: "unmodified Langflow frontend duplicate-request guard",
         text: text.slice(0, 500),
       });
+    } else if (
+      scope.startsWith("langflow-key-")
+      && (
+        text.includes(
+          "https://api.github.com/repos/langflow-ai/langflow",
+        )
+        || text.startsWith(
+          "Error fetching repository data: AxiosError: Network Error",
+        )
+      )
+    ) {
+      result.ignored_console_warnings.push({
+        scope,
+        reason: "unmodified Langflow optional GitHub release metadata lookup",
+        text: text.slice(0, 500),
+      });
     } else if (!text.includes("favicon") && !text.startsWith("Failed to load resource:")) {
       result.console_errors.push({ scope, text: text.slice(0, 500) });
     }
