@@ -641,12 +641,24 @@ try {
   const generalData = contractData(generalAction.body);
   assertGroundedContract(generalData, "general Action", "knowledge_lookup");
 
-  const inbox = await fetchJson(page, "/api/inbox?limit=100");
+  const inbox = await fetchJson(
+    page,
+    "/api/agents/boi-wiki/inbox?status=open&limit=100",
+  );
   assert(inbox.status === 200, "Task inbox lookup failed");
-  const sopTaskRef = (inbox.body.items || [])
-    .map((item) => String(item.task_id || ""))
-    .find((item) => item.startsWith("task:"));
-  assert(sopTaskRef, "no actual SOP Task is available");
+  const validatedInboxRef = String(
+    priorEvidence.playground?.task_anchor?.task_ref || "",
+  );
+  const sopTask = (inbox.body.items || []).find(
+    (item) => String(item.task_ref || "") === validatedInboxRef,
+  );
+  const sopTaskRef = String(sopTask?.task_id || "");
+  assert(
+    sopTaskRef.startsWith("task:")
+      && String(sopTask?.event_type || "")
+      && (sopTask?.user_links || []).some((item) => item.kind === "sop"),
+    "the Flow-validated Task anchor did not resolve to an actual SOP Task",
+  );
   const sopAction = await invokeAction(page, {
     action_key: actionKey,
     payload: {
