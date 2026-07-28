@@ -1999,7 +1999,16 @@ class AgentPlaygroundService:
                 or "discovered"
             )
             try:
-                flow_detail = self.langflow.flow(endpoint, api_key, flow_id)
+                # Langflow 1.11 includes the complete graph in the collection
+                # response.  Reuse it so a project with many Flows does not
+                # trigger one additional HTTP request per Flow before the
+                # workbench can render.  Keep the detail fallback for adapters
+                # or future versions that omit ``data`` from list responses.
+                flow_detail = (
+                    item
+                    if isinstance(item.get("data"), dict)
+                    else self.langflow.flow(endpoint, api_key, flow_id)
+                )
                 live_checksum = self._runtime_flow_checksum(flow_detail)
                 graph_health = self._graph_health(flow_detail)
                 flow_summary = self.flow_display_snapshot(flow_detail)

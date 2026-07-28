@@ -1924,6 +1924,7 @@ def test_generic_agent_hub_flow_uses_dynamic_action_contract(tmp_path, monkeypat
             "edges": [],
         },
     }
+    flow_detail_calls = []
 
     def fake_request(method, endpoint, path, api_key, **kwargs):
         if path == "/health":
@@ -1938,11 +1939,9 @@ def test_generic_agent_hub_flow_uses_dynamic_action_contract(tmp_path, monkeypat
         if path == "/api/v1/projects/":
             return httpx.Response(200, json=[project])
         if path == "/api/v1/flows/":
-            return httpx.Response(
-                200,
-                json=[{key: value for key, value in flow.items() if key != "data"}],
-            )
+            return httpx.Response(200, json=[flow])
         if path == f"/api/v1/flows/{flow['id']}":
+            flow_detail_calls.append(path)
             return httpx.Response(200, json=flow)
         if path == f"/api/v1/run/{flow['id']}":
             return httpx.Response(
@@ -2007,7 +2006,9 @@ def test_generic_agent_hub_flow_uses_dynamic_action_contract(tmp_path, monkeypat
     assert validated["artifact_version"] == "2.4.0"
     assert validated["structural"]["manifest_contract"]["inferred"] is True
     assert validated["history"][-2]["details"]["wiki_task_contract"] == "not_required"
+    detail_calls_before_listing = len(flow_detail_calls)
     live_flow = service.flows(developer, endpoint_id, project["id"])["flows"][0]
+    assert len(flow_detail_calls) == detail_calls_before_listing
     assert live_flow["validation_status"] == "action_ready"
     assert live_flow["artifact_version"] == "2.4.0"
     assert live_flow["deployment_id"] == deployment["deployment_id"]
