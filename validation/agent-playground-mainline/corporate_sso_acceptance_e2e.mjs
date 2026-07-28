@@ -370,6 +370,33 @@ try {
     "Canvas URL exposes credentials or a container-only address",
   );
 
+  const exactPlaygroundUrl = new URL(
+    `${config.boiUrl.replace(/\/+$/, "")}/playground`,
+  );
+  exactPlaygroundUrl.searchParams.set("stage", "action");
+  exactPlaygroundUrl.searchParams.set("endpoint_id", discovery.endpoint_id);
+  exactPlaygroundUrl.searchParams.set("project_id", discovery.project_id);
+  exactPlaygroundUrl.searchParams.set("flow_id", config.flowId);
+  await page.goto(exactPlaygroundUrl.toString(), {
+    waitUntil: "domcontentloaded",
+    timeout: config.timeoutMs,
+  });
+  await page.waitForFunction(
+    (flowId) => (
+      document.querySelector("[data-selected-flow-id]")?.textContent?.trim()
+      === flowId
+    ),
+    config.flowId,
+    { timeout: config.timeoutMs },
+  );
+  const selectedEnvironment = (
+    await page.locator("[data-selected-flow-environment]").textContent()
+  ).trim();
+  assert(
+    selectedEnvironment === "PRD · Agent Hub",
+    `Playground selected Flow origin is ${selectedEnvironment}`,
+  );
+
   const langflowPage = await context.newPage();
   monitor(langflowPage);
   await langflowPage.goto(canvasUrl, {
