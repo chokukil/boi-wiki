@@ -709,6 +709,24 @@ app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="stati
 
 @app.middleware("http")
 async def keycloak_browser_login_redirect(request: Request, call_next: Callable[..., Any]) -> Response:
+    if (
+        auth_mode() != "dev"
+        and request.method == "GET"
+        and "employee_id" in request.query_params
+        and not request.url.path.startswith(("/api/", "/internal/", "/static/"))
+    ):
+        clean_query = [
+            (key, value)
+            for key, value in request.query_params.multi_items()
+            if key != "employee_id"
+        ]
+        target = request.url.path
+        if clean_query:
+            target = f"{target}?{urlencode(clean_query)}"
+        response = RedirectResponse(target, status_code=307)
+        response.headers["Referrer-Policy"] = "same-origin"
+        return response
+
     response = await call_next(request)
     accepts_html = "text/html" in str(request.headers.get("accept") or "").lower()
     excluded = (
@@ -728,10 +746,11 @@ async def keycloak_browser_login_redirect(request: Request, call_next: Callable[
         next_url = request.url.path
         if request.url.query:
             next_url = f"{next_url}?{request.url.query}"
-        return RedirectResponse(
+        response = RedirectResponse(
             f"/auth/login?{urlencode({'next': safe_next_url(next_url)})}",
             status_code=302,
         )
+    response.headers.setdefault("Referrer-Policy", "same-origin")
     return response
 
 
@@ -1711,23 +1730,23 @@ def event_dispatch_summary(
 
 
 def event_raw_url(log_ref: str, employee_id: str) -> str:
-    return "/api/events/raw/" + quote(log_ref, safe="") + "?" + urlencode({"employee_id": employee_id})
+    return app_url("/api/events/raw/" + quote(log_ref, safe=""), employee_id)
 
 
 def action_raw_api_url(log_ref: str, employee_id: str) -> str:
-    return "/api/actions/raw/" + quote(log_ref, safe="") + "?" + urlencode({"employee_id": employee_id})
+    return app_url("/api/actions/raw/" + quote(log_ref, safe=""), employee_id)
 
 
 def action_raw_page_url(log_ref: str, employee_id: str) -> str:
-    return "/actions/raw/" + quote(log_ref, safe="") + "?" + urlencode({"employee_id": employee_id})
+    return app_url("/actions/raw/" + quote(log_ref, safe=""), employee_id)
 
 
 def event_filter_url(event_id: str, employee_id: str) -> str:
-    return "/events?" + urlencode({"employee_id": employee_id, "event_id": event_id})
+    return app_url("/events", employee_id, event_id=event_id)
 
 
 def trace_events_url(trace_id: str, employee_id: str) -> str:
-    return "/events?" + urlencode({"employee_id": employee_id, "trace_id": trace_id})
+    return app_url("/events", employee_id, trace_id=trace_id)
 
 
 def parse_event_time_value(value: str, *, field_name: str) -> datetime | None:
@@ -1817,23 +1836,36 @@ def workflow_status_page_url(trace_id: str, employee_id: str) -> str:
 
 
 def workflow_status_api_url(trace_id: str, employee_id: str, **params: str) -> str:
-    query = {"trace_id": trace_id, "employee_id": employee_id, **params}
-    return "/api/workflows/demo/equipment-anomaly/status?" + urlencode(query)
+    return app_url(
+        "/api/workflows/demo/equipment-anomaly/status",
+        employee_id,
+        trace_id=trace_id,
+        **params,
+    )
 
 
 def workflow_status_raw_url(trace_id: str, employee_id: str) -> str:
-    return "/api/workflows/demo/equipment-anomaly/status/raw?" + urlencode({"employee_id": employee_id, "trace_id": trace_id})
+    return app_url(
+        "/api/workflows/demo/equipment-anomaly/status/raw",
+        employee_id,
+        trace_id=trace_id,
+    )
 
 
 def workflow_status_page_url_for_key(workflow_key: str, trace_id: str, employee_id: str) -> str:
-    return f"/workflows/{workflow_key}/status?" + urlencode({"employee_id": employee_id, "trace_id": trace_id})
+    return app_url(
+        f"/workflows/{workflow_key}/status",
+        employee_id,
+        trace_id=trace_id,
+    )
 
 
 def workflow_tat_page_url_for_key(workflow_key: str, employee_id: str, *, trace_id: str = "") -> str:
-    query = {"employee_id": employee_id}
-    if trace_id:
-        query["trace_id"] = trace_id
-    return f"/workflows/{workflow_key}/tat?" + urlencode(query)
+    return app_url(
+        f"/workflows/{workflow_key}/tat",
+        employee_id,
+        trace_id=trace_id,
+    )
 
 
 def default_workflow_tat_page_url(employee_id: str) -> str:
@@ -1841,12 +1873,20 @@ def default_workflow_tat_page_url(employee_id: str) -> str:
 
 
 def workflow_status_api_url_for_key(workflow_key: str, trace_id: str, employee_id: str, **params: str) -> str:
-    query = {"trace_id": trace_id, "employee_id": employee_id, **params}
-    return f"/api/workflows/{workflow_key}/status?" + urlencode(query)
+    return app_url(
+        f"/api/workflows/{workflow_key}/status",
+        employee_id,
+        trace_id=trace_id,
+        **params,
+    )
 
 
 def workflow_status_raw_url_for_key(workflow_key: str, trace_id: str, employee_id: str) -> str:
-    return f"/api/workflows/{workflow_key}/status/raw?" + urlencode({"employee_id": employee_id, "trace_id": trace_id})
+    return app_url(
+        f"/api/workflows/{workflow_key}/status/raw",
+        employee_id,
+        trace_id=trace_id,
+    )
 
 
 def workflow_status_page_url_for_event_type(event_type: str, trace_id: str, employee_id: str) -> str:
@@ -1892,9 +1932,9 @@ def url_for_reference_token(token: str, employee_id: str) -> str:
         action = find_action_log_row_by_request_id(token, employee_id)
         if action and action.get("_log_ref"):
             return action_raw_page_url(str(action["_log_ref"]), employee_id)
-        return "/actions?" + urlencode({"employee_id": employee_id})
+        return app_url("/actions", employee_id)
     if get_event_type(token):
-        return f"/event-types/{token}?" + urlencode({"employee_id": employee_id})
+        return event_type_url(token, employee_id)
     return ""
 
 
@@ -4012,7 +4052,7 @@ def browse_url(
     include_generated: bool = False,
     include_archived: bool = False,
 ) -> str:
-    params = {"employee_id": employee_id}
+    params: dict[str, str] = {}
     normalized_folder = normalize_folder(folder)
     if normalized_folder:
         params["folder"] = normalized_folder
@@ -4028,7 +4068,7 @@ def browse_url(
         params["include_generated"] = "true"
     if include_archived:
         params["include_archived"] = "true"
-    return "/?" + urlencode(params)
+    return app_url("/", employee_id, **params)
 
 
 def events_url(
@@ -4044,7 +4084,7 @@ def events_url(
     page: int = 1,
     limit: int = 50,
 ) -> str:
-    params: dict[str, Any] = {"employee_id": employee_id, "page": page, "limit": limit}
+    params: dict[str, Any] = {"page": page, "limit": limit}
     if q:
         params["q"] = q
     if event_type:
@@ -4060,7 +4100,7 @@ def events_url(
             params["to_time"] = to_time
     elif time_preset:
         params["time_preset"] = time_preset
-    return "/events?" + urlencode(params)
+    return app_url("/events", employee_id, **params)
 
 
 def with_folder_urls(
@@ -4131,7 +4171,7 @@ def with_breadcrumb_urls(
 
 
 def event_type_url(event_type: str, employee_id: str) -> str:
-    return f"/event-types/{event_type}?" + urlencode({"employee_id": employee_id})
+    return app_url(f"/event-types/{event_type}", employee_id)
 
 
 def event_type_okf_uri(event_type: str) -> str:
@@ -4159,8 +4199,8 @@ def event_context_for_template(event_type: str, employee_id: str) -> dict[str, A
     return {
         **event_def,
         "detail_url": event_type_url(event_type, employee_id),
-        "stream_url": "/events?" + urlencode({"employee_id": employee_id, "event_type": event_type}),
-        "actions_url": "/actions?" + urlencode({"employee_id": employee_id, "event_type": event_type}),
+        "stream_url": app_url("/events", employee_id, event_type=event_type),
+        "actions_url": app_url("/actions", employee_id, event_type=event_type),
         "clear_url": browse_url(employee_id),
         "run_example": event_run_example(event_type, employee_id),
     }
@@ -5576,7 +5616,7 @@ def find_doc_by_id(
 
 
 def doc_url_for_ref(ref: str, employee_id: str) -> str:
-    return f"/docs/{ref}?" + urlencode({"employee_id": employee_id})
+    return app_url(f"/docs/{ref}", employee_id)
 
 
 FINAL_OPERATOR_GUIDE_REF = "boi:public:boi-wiki-manual:guide:final-operator-guide"
@@ -5703,10 +5743,10 @@ def credential_identity_for_employee(employee_id: str) -> AuthIdentity:
     )
 
 
-def app_url(path: str, employee_id: str, **params: str) -> str:
-    query = {"employee_id": employee_id}
+def app_url(url_path: str, employee_id: str, **params: Any) -> str:
+    query = {"employee_id": employee_id} if auth_mode() == "dev" else {}
     query.update({key: value for key, value in params.items() if value})
-    return f"{path}?" + urlencode(query)
+    return f"{url_path}?{urlencode(query)}" if query else url_path
 
 
 def shell_hidden_query(request: Request) -> list[dict[str, str]]:
@@ -5990,7 +6030,7 @@ def source_url_for_ref(ref: str, employee_id: str) -> str:
         resolve_source_path(ref)
     except HTTPException:
         return ""
-    return "/source?" + urlencode({"employee_id": employee_id, "path": ref})
+    return app_url("/source", employee_id, path=ref)
 
 
 def source_url_for_doc(doc: dict[str, Any], employee_id: str) -> str:
@@ -6526,7 +6566,10 @@ def source_payload(path: Path, employee_id: str, content: str | None = None) -> 
         "sha256": hashlib.sha256(actual_content.encode("utf-8")).hexdigest(),
         "content": actual_content,
         "validation": validation,
-        "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
+        "guide_url": app_url(
+            "/docs/boi:public:harness:web-draft-editing-guide",
+            employee_id,
+        ),
     }
 
 
@@ -6543,10 +6586,19 @@ def body_editor_payload_for_doc(doc: dict[str, Any], employee_id: str) -> dict[s
         return None
     doc_ref = str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/"))
     return {
-        "editor_url": "/api/docs/" + doc_ref + "/body-editor?" + urlencode({"employee_id": employee_id}),
-        "impact_url": "/api/docs/" + doc_ref + "/related-update/impact-preview?" + urlencode({"employee_id": employee_id}),
-        "related_update_jobs_url": "/api/docs/" + doc_ref + "/related-update/jobs?" + urlencode({"employee_id": employee_id}),
-        "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
+        "editor_url": app_url("/api/docs/" + doc_ref + "/body-editor", employee_id),
+        "impact_url": app_url(
+            "/api/docs/" + doc_ref + "/related-update/impact-preview",
+            employee_id,
+        ),
+        "related_update_jobs_url": app_url(
+            "/api/docs/" + doc_ref + "/related-update/jobs",
+            employee_id,
+        ),
+        "guide_url": app_url(
+            "/docs/boi:public:harness:web-draft-editing-guide",
+            employee_id,
+        ),
     }
 
 
@@ -6566,11 +6618,20 @@ def full_body_editor_payload_for_doc(doc: dict[str, Any], employee_id: str) -> d
     return {
         "body": doc.get("body") or "",
         "base_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
-        "preview_url": "/api/docs/" + doc_ref + "/body-preview?" + urlencode({"employee_id": employee_id}),
-        "apply_url": "/api/docs/" + doc_ref + "/body-apply?" + urlencode({"employee_id": employee_id}),
-        "impact_url": "/api/docs/" + doc_ref + "/related-update/impact-preview?" + urlencode({"employee_id": employee_id}),
-        "related_update_jobs_url": "/api/docs/" + doc_ref + "/related-update/jobs?" + urlencode({"employee_id": employee_id}),
-        "guide_url": "/docs/boi:public:harness:web-draft-editing-guide?" + urlencode({"employee_id": employee_id}),
+        "preview_url": app_url("/api/docs/" + doc_ref + "/body-preview", employee_id),
+        "apply_url": app_url("/api/docs/" + doc_ref + "/body-apply", employee_id),
+        "impact_url": app_url(
+            "/api/docs/" + doc_ref + "/related-update/impact-preview",
+            employee_id,
+        ),
+        "related_update_jobs_url": app_url(
+            "/api/docs/" + doc_ref + "/related-update/jobs",
+            employee_id,
+        ),
+        "guide_url": app_url(
+            "/docs/boi:public:harness:web-draft-editing-guide",
+            employee_id,
+        ),
     }
 
 
@@ -7014,7 +7075,10 @@ def create_related_update_job(doc: dict[str, Any], employee_id: str, req: Relate
         "root": impact.get("root") or {},
         "impact": impact,
         "patches": patches,
-        "apply_url": "/api/docs/related-update/jobs/" + job_id + "/apply?" + urlencode({"employee_id": employee_id}),
+        "apply_url": app_url(
+            "/api/docs/related-update/jobs/" + job_id + "/apply",
+            employee_id,
+        ),
         "applied": [],
         "mutating": True,
     }
@@ -13009,7 +13073,11 @@ def workflow_tat_template_context(request: Request, payload: dict[str, Any], emp
                 {"label": "관련 SOP", "href": str(payload.get("sop_url") or "#"), "kind": "secondary"},
                 {
                     "label": "JSON API",
-                    "href": f"/api/workflows/{payload.get('workflow_key')}/tat-summary?" + urlencode({"employee_id": employee_id, **({"trace_id": payload.get("trace_id")} if payload.get("trace_id") else {})}),
+                    "href": app_url(
+                        f"/api/workflows/{payload.get('workflow_key')}/tat-summary",
+                        employee_id,
+                        trace_id=payload.get("trace_id"),
+                    ),
                     "kind": "secondary",
                 },
             ],
@@ -14384,7 +14452,10 @@ def event_type_candidates_for_text(text: str, employee_id: str, *, limit: int = 
                     "workflow_definition_key": (workflow or {}).get("workflow_key") or "",
                     "stage": (stage or {}).get("stage") or item.get("workflow_stage") or "",
                     "topic": item.get("topic") or BOI_EVENTS_TOPIC,
-                    "url": f"/event-types/{quote(str(item.get('event_type') or ''))}?" + urlencode({"employee_id": employee_id}),
+                    "url": event_type_url(
+                        quote(str(item.get("event_type") or "")),
+                        employee_id,
+                    ),
                     "match_reason": "자연어 요청과 기존 Event 정의가 유사합니다.",
                 },
             )
@@ -14568,7 +14639,12 @@ def action_candidates_for_text(text: str, employee_id: str, *, limit: int = 5) -
                     "label": action.get("name") or action.get("title") or action.get("action_key"),
                     "description": action.get("description") or "",
                     "connector_kind": action.get("connector_kind") or "",
-                    "url": action.get("doc_url") or "/actions?" + urlencode({"employee_id": employee_id, "action_key": str(action.get("action_key") or "")}),
+                    "url": action.get("doc_url")
+                    or app_url(
+                        "/actions",
+                        employee_id,
+                        action_key=str(action.get("action_key") or ""),
+                    ),
                     "match_reason": "자연어 요청과 기존 Action 정의가 유사합니다.",
                 },
             )
@@ -17106,7 +17182,7 @@ def registration_link_candidates_payload(
                 "value": boi_id,
                 "label": metadata.get("title") or boi_id,
                 "description": metadata.get("description") or doc_folder(doc),
-                "url": f"/docs/{quote(boi_id)}?employee_id={quote(employee_id)}" if boi_id else "",
+                "url": app_url(f"/docs/{quote(boi_id)}", employee_id) if boi_id else "",
                 "why_recommended": candidate_reason("접근 가능한 SOP 카탈로그에서 먼저 추천합니다."),
                 "badges": ["SOP"],
                 "assetization_hint": "선택하면 SOP 초안에 기존 절차 연결 관계로 자동 정리됩니다.",
@@ -17143,7 +17219,10 @@ def registration_link_candidates_payload(
             "value": item.get("event_type") or "",
             "label": item.get("name_ko") or item.get("event_type") or "Event",
             "description": item.get("description") or "",
-            "url": f"/event-types/{quote(str(item.get('event_type') or ''))}?employee_id={quote(employee_id)}",
+            "url": event_type_url(
+                quote(str(item.get("event_type") or "")),
+                employee_id,
+            ),
             "why_recommended": candidate_reason("Event Broker 카탈로그에서 연결 후보를 찾았습니다."),
             "badges": ["Event"],
             "assetization_hint": "선택하면 SOP 초안에 Event 연결 관계로 자동 정리됩니다.",
@@ -18061,7 +18140,6 @@ def inbox_report_action_context_for_template(doc: dict[str, Any], employee_id: s
         "target_title": target_title,
     }
     encoded_ref = quote(task_ref, safe="")
-    employee_query = urlencode({"employee_id": employee_id})
     if status == "approval_required":
         return {
             **base_context,
@@ -18070,7 +18148,10 @@ def inbox_report_action_context_for_template(doc: dict[str, Any], employee_id: s
             "field_label": "판단",
             "submit_label": "사유 남기고 판단 저장",
             "choices": INBOX_REPORT_DECISION_CHOICES,
-            "action_url": f"/inbox/task-refs/{encoded_ref}/decision?{employee_query}",
+            "action_url": app_url(
+                f"/inbox/task-refs/{encoded_ref}/decision",
+                employee_id,
+            ),
         }
     if status in {"manual_required", "manual_blocked", "needs_followup"}:
         return {
@@ -18080,7 +18161,10 @@ def inbox_report_action_context_for_template(doc: dict[str, Any], employee_id: s
             "field_label": "조치 결과",
             "submit_label": "조치 내용 저장",
             "choices": INBOX_REPORT_MANUAL_OUTCOME_CHOICES,
-            "action_url": f"/inbox/task-refs/{encoded_ref}/complete?{employee_query}",
+            "action_url": app_url(
+                f"/inbox/task-refs/{encoded_ref}/complete",
+                employee_id,
+            ),
         }
     return {
         **context,
@@ -18141,7 +18225,6 @@ async def doc_page(
     workflow_key = str(workflow.get("workflow_key") or "")
     workflow_poc = workflow_context(workflow_key, employee_id, doc_lookup=doc_lookup) if workflow_key else None
     graph_ref = str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/"))
-    doc_query = urlencode({"employee_id": employee_id})
     return templates.TemplateResponse(
         "doc.html",
         {
@@ -18167,9 +18250,12 @@ async def doc_page(
             ),
             "doc_list_url": browse_url(employee_id, folder=return_folder),
             "source_url": source_url_for_doc(doc, employee_id),
-            "doc_graph_url": "/api/okf/graph/doc/" + graph_ref + "?" + urlencode({"employee_id": employee_id}),
-            "access_policy_url": "/api/docs/" + graph_ref + "/access?" + doc_query,
-            "metadata_fragment_url": "/api/docs/" + graph_ref + "/metadata-fragment?" + doc_query,
+            "doc_graph_url": app_url("/api/okf/graph/doc/" + graph_ref, employee_id),
+            "access_policy_url": app_url("/api/docs/" + graph_ref + "/access", employee_id),
+            "metadata_fragment_url": app_url(
+                "/api/docs/" + graph_ref + "/metadata-fragment",
+                employee_id,
+            ),
             "event_type_url": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")),
             "body_html": doc_body_html_for_request(doc, employee_id, doc_lookup, request),
             "body_editor": body_editor_payload_for_doc(doc, employee_id),
@@ -25276,7 +25362,11 @@ def work_context_narrative_for_compact(
 def workflow_definition_url_for_key(workflow_definition_key: str, employee_id: str) -> str:
     if not workflow_definition_key:
         return ""
-    return "/workflows/definitions?" + urlencode({"employee_id": employee_id, "q": workflow_definition_key})
+    return app_url(
+        "/workflows/definitions",
+        employee_id,
+        q=workflow_definition_key,
+    )
 
 
 def user_link(label: str, url: str, target_section: str, target_subnav: str, kind: str) -> dict[str, str]:
@@ -30818,7 +30908,12 @@ def workflow_trace_graph(
         event_types = [str(item) for item in (stage.get("event_types") or [stage.get("event_type")]) if item]
         for event_type in event_types:
             event_node = f"event_type:{event_type}"
-            add_node(event_node, "event_type", event_label(event_type), f"/event-types/{event_type}?" + urlencode({"employee_id": employee_id}))
+            add_node(
+                event_node,
+                "event_type",
+                event_label(event_type),
+                event_type_url(event_type, employee_id),
+            )
             add_edge(sop_id, event_node, stage_id)
             for action_key in stage.get("automated_actions") or []:
                 action_node = f"action:{action_key}"
@@ -30837,7 +30932,12 @@ def workflow_trace_graph(
         event_type = str(event.get("event_type") or "")
         if event_type:
             event_type_node = f"event_type:{event_type}"
-            add_node(event_type_node, "event_type", event_label(event_type), f"/event-types/{event_type}?" + urlencode({"employee_id": employee_id}))
+            add_node(
+                event_type_node,
+                "event_type",
+                event_label(event_type),
+                event_type_url(event_type, employee_id),
+            )
         if event_id:
             event_node = f"event:{event_id}"
             event_node_by_id[event_id] = event_node
@@ -31245,12 +31345,14 @@ def workflow_status_template_context(request: Request, payload: dict[str, Any], 
                 "event_type": event_types[0] if event_types else "",
                 "event_types": event_types,
                 "event_label": event_label(event_types[0]) if event_types else "",
-                "event_type_url": f"/event-types/{event_types[0]}?" + urlencode({"employee_id": employee_id}) if event_types else "",
+                "event_type_url": event_type_url(event_types[0], employee_id)
+                if event_types
+                else "",
                 "event_type_links": [
                     {
                         "event_type": event_type,
                         "label": event_label(event_type),
-                        "url": f"/event-types/{event_type}?" + urlencode({"employee_id": employee_id}),
+                        "url": event_type_url(event_type, employee_id),
                     }
                     for event_type in event_types
                 ],
@@ -32067,8 +32169,24 @@ async def event_type_detail_page(request: Request, event_type: str, employee_id:
                 description=f"{event_type} · {event_def.get('description') or ''}",
                 page_actions=[
                     {"label": "이 Event Type의 BoI 보기", "href": browse_url(employee_id, event_type=event_type), "kind": "secondary"},
-                    {"label": "Stream 보기", "href": "/events?" + urlencode({"employee_id": employee_id, "event_type": event_type}), "kind": "secondary"},
-                    {"label": "연결 Action 보기", "href": "/actions?" + urlencode({"employee_id": employee_id, "event_type": event_type}), "kind": "secondary"},
+                    {
+                        "label": "Stream 보기",
+                        "href": app_url(
+                            "/events",
+                            employee_id,
+                            event_type=event_type,
+                        ),
+                        "kind": "secondary",
+                    },
+                    {
+                        "label": "연결 Action 보기",
+                        "href": app_url(
+                            "/actions",
+                            employee_id,
+                            event_type=event_type,
+                        ),
+                        "kind": "secondary",
+                    },
                 ],
             ),
             "event_type": event_type,
@@ -32079,8 +32197,16 @@ async def event_type_detail_page(request: Request, event_type: str, employee_id:
                 action for action in action_items if action.get("connector_kind") in {"api", "mcp", "webhook", "langflow", "boi_writer", "event_broker"}
             ],
             "events": event_rows_for_template(recent_events, doc_lookup=doc_lookup, employee_id=employee_id),
-            "stream_url": "/events?" + urlencode({"employee_id": employee_id, "event_type": event_type}),
-            "actions_url": "/actions?" + urlencode({"employee_id": employee_id, "event_type": event_type}),
+            "stream_url": app_url(
+                "/events",
+                employee_id,
+                event_type=event_type,
+            ),
+            "actions_url": app_url(
+                "/actions",
+                employee_id,
+                event_type=event_type,
+            ),
             "boi_filter_url": browse_url(employee_id, event_type=event_type),
             "run_example": event_run_example(event_type, employee_id),
         },
@@ -32598,7 +32724,7 @@ async def actions_page(
             "active_history_filters": active_history_filters,
             "clear_history_url": app_url("/actions", employee_id, view="history"),
             "next_history_url": app_url("/actions", employee_id, **{**query_base, "offset": str(action_history.get("next_offset") or "")}) if action_history.get("next_offset") is not None else "",
-            "action_invoke_url": f"{boi_public_base_url(request)}/api/actions/invoke?employee_id={quote(employee_id)}",
+            "action_invoke_url": f"{boi_public_base_url(request)}{app_url('/api/actions/invoke', employee_id)}",
         },
     )
 
@@ -32774,7 +32900,10 @@ async def workflow_definitions_page(
             "workflow_definitions": items,
             "event_skills": load_event_skill_catalog(),
             "action_skills": load_action_skill_catalog(),
-            "dedupe_endpoint": f"/api/workflow-definitions/deduplicate?employee_id={quote(employee_id)}",
+            "dedupe_endpoint": app_url(
+                "/api/workflow-definitions/deduplicate",
+                employee_id,
+            ),
         },
     )
 

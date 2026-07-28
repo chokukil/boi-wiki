@@ -126,9 +126,11 @@ docker compose -f validation/agent-playground-mainline/docker-compose.yml up -d 
 `:7867`, Keycloak `:18082`, Agent Hub `:18080`이다. Browser URL과 API URL을
 분리하며 HTML과 redirect에 `host.docker.internal`을 노출하지 않는다.
 
-Keycloak에는 BoI용 `boi-wiki`와 Langflow proxy용 `langflow-browser` client를
-분리한다. 둘 다 PKCE S256과 `empno` claim을 사용한다. 원본 Canvas 완료 기준은
-HTML 200이 아니라 Langflow `whoami`가 BoI 사번과 일치하는 것이다.
+사내 적용에서는 `boi-wiki` confidential client 하나에 BoI callback과 Langflow
+browser proxy callback을 함께 등록한다. 두 경로 모두 PKCE S256과 `empno` claim을
+사용한다. 별도 `langflow-browser` client와 audience mapper는 만들지 않는다. 원본
+Canvas 완료 기준은 HTML 200이 아니라 Langflow `whoami`가 BoI 사번과 일치하는
+것이다.
 
 OIDC client 등록이 불가능한 경우에는
 [Agent Playground 사내 SSO 방식 선택 가이드](/docs/boi:public:boi-wiki-manual:operations:agent-playground-sso-deployment)의

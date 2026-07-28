@@ -2,9 +2,17 @@
   const root = document.querySelector("[data-action-catalog]");
   if (!root) return;
   const employeeId = root.dataset.employeeId || "";
+  const authMode = root.dataset.authMode || "dev";
   const detail = root.querySelector("[data-action-detail-content]");
   const empty = root.querySelector("[data-action-detail-empty]");
   let activeButton = null;
+  const withIdentity = (path) => {
+    const url = new URL(path, window.location.origin);
+    if (authMode === "dev" && employeeId) {
+      url.searchParams.set("employee_id", employeeId);
+    }
+    return `${url.pathname}${url.search}`;
+  };
 
   const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -77,9 +85,9 @@
       flowRoot.hidden = false;
       flowRoot.innerHTML = '<p class="muted">현재 Flow 구조와 검증 상태를 확인하고 있습니다.</p>';
       try {
-        const response = await fetch(
-          `/api/actions/catalog/${encodeURIComponent(action.action_key)}/flow?employee_id=${encodeURIComponent(employeeId)}`,
-        );
+        const response = await fetch(withIdentity(
+          `/api/actions/catalog/${encodeURIComponent(action.action_key)}/flow`,
+        ));
         const payload = await response.json();
         if (!response.ok) {
           const detailMessage = typeof payload.detail === "string"
@@ -160,7 +168,7 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       output.textContent = "입력과 연결 상태를 확인하고 있습니다.";
-      const response = await fetch(`/api/actions/catalog/${encodeURIComponent(action.action_key)}/preview?employee_id=${encodeURIComponent(employeeId)}`, {
+      const response = await fetch(withIdentity(`/api/actions/catalog/${encodeURIComponent(action.action_key)}/preview`), {
         method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({payload: payloadFromForm()}),
       });
       const value = await response.json();
@@ -169,7 +177,7 @@
     detail.querySelector("[data-action-dry-run]")?.addEventListener("click", async () => {
       if (!form.reportValidity()) return;
       output.textContent = "외부 변경 없이 시험하고 있습니다.";
-      const response = await fetch(`/api/actions/invoke?employee_id=${encodeURIComponent(employeeId)}`, {
+      const response = await fetch(withIdentity("/api/actions/invoke"), {
         method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action_key: action.action_key, payload: payloadFromForm(), dry_run: true}),
       });
       const value = await response.json();
@@ -179,7 +187,7 @@
       if (!form.reportValidity()) return;
       if (!window.confirm("이 Action을 현재 로그인한 사용자의 권한으로 실행할까요?")) return;
       output.textContent = "현재 사용자 권한으로 Action을 실행하고 있습니다.";
-      const response = await fetch(`/api/actions/invoke?employee_id=${encodeURIComponent(employeeId)}`, {
+      const response = await fetch(withIdentity("/api/actions/invoke"), {
         method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action_key: action.action_key, payload: payloadFromForm(), dry_run: false}),
       });
       const value = await response.json();
@@ -201,7 +209,9 @@
     empty.hidden = true;
     detail.hidden = false;
     detail.innerHTML = '<p class="muted">Action 연결을 확인하고 있습니다.</p>';
-    const response = await fetch(`/api/actions/catalog/${encodeURIComponent(button.dataset.actionOpen)}?employee_id=${encodeURIComponent(employeeId)}`);
+    const response = await fetch(withIdentity(
+      `/api/actions/catalog/${encodeURIComponent(button.dataset.actionOpen)}`,
+    ));
     const payload = await response.json();
     if (!response.ok) {
       detail.innerHTML = '<p>Action 정보를 불러오지 못했습니다.</p>';

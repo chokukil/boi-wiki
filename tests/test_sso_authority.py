@@ -222,7 +222,9 @@ def test_keycloak_and_mock_hcp_identity_contracts_do_not_drift():
     assert "empno" in mappers
     assert "employee_id" in mappers
     assert "http://localhost:28002/auth/callback" in client["redirectUris"]
+    assert "http://localhost:17867/oauth2/callback" in client["redirectUris"]
     assert "http://wiki.skhynix.com/auth/callback" in client["redirectUris"]
+    assert "http://wiki.skhynix.com/builder/oauth2/callback" in client["redirectUris"]
     assert all(item["realmRoles"] == ["boi.viewer"] for item in users.values())
     assert all(item["attributes"]["empno"] == [username] for username, item in users.items())
 
@@ -235,10 +237,18 @@ def test_keycloak_and_mock_hcp_identity_contracts_do_not_drift():
     validation_client = next(item for item in validation_realm["clients"] if item["clientId"] == "boi-wiki")
     assert validation_client["publicClient"] is False
     assert validation_client["directAccessGrantsEnabled"] is False
-    assert validation_client["redirectUris"] == [
+    assert set(validation_client["redirectUris"]) == {
         "http://localhost:28002/auth/callback",
         "http://localhost:28005/auth/callback",
-    ]
+        "http://localhost:17867/oauth2/callback",
+        "http://wiki.skhynix.com/auth/callback",
+        "http://wiki.skhynix.com/builder/oauth2/callback",
+    }
+    assert "http://wiki.skhynix.com" in validation_client["webOrigins"]
+    assert not any(
+        item["clientId"] == "langflow-browser"
+        for item in validation_realm["clients"]
+    )
 
 
 def test_oidc_rejects_invalid_signature_issuer_audience_and_expiry(monkeypatch):

@@ -32,6 +32,10 @@ const repoRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "
 const config = {
   agentHubUrl: process.env.AGENT_HUB_URL || "http://localhost:18080/AgentHub.html",
   agentHubUsername: process.env.AGENT_HUB_USERNAME || "100002",
+  agentHubEmployeeId:
+    process.env.AGENT_HUB_EMPLOYEE_ID
+    || process.env.AGENT_HUB_USERNAME
+    || "100002",
   agentHubPassword: process.env.AGENT_HUB_PASSWORD || "",
   boiViewerPassword:
     process.env.BOI_VIEWER_PASSWORD || process.env.AGENT_HUB_PASSWORD || "",
@@ -88,7 +92,7 @@ const [agentHubIdentities, langflowIdentities] = await Promise.all([
     .then((value) => JSON.parse(value))
     .catch(() => ({})),
 ]);
-const langflowAccount = langflowIdentities.users?.[config.agentHubUsername] || {};
+const langflowAccount = langflowIdentities.users?.[config.agentHubEmployeeId] || {};
 config.agentHubPassword ||= String(
   agentHubIdentities[config.agentHubUsername] || "",
 );
@@ -279,7 +283,7 @@ async function loginAgentHub(page) {
     role: apiPrincipal.role || "",
   };
   assert(
-    String(principal.employee_id || principal.preferred_username) === config.agentHubUsername,
+    String(principal.employee_id || principal.preferred_username) === config.agentHubEmployeeId,
     "Agent Hub SSO principal did not resolve to the expected employee",
   );
   result.agent_hub.sso_principal = principal;
@@ -356,7 +360,15 @@ async function loginBoi(page, targetUrl, username = config.agentHubUsername) {
     return { status: response.status, body: await response.json() };
   });
   assert(identity.status === 200, `BoI session identity returned HTTP ${identity.status}`);
-  assert(identity.body?.identity?.employee_id === username, "BoI SSO principal did not resolve empno");
+  const expectedEmployeeId = (
+    username === config.agentHubUsername
+      ? config.agentHubEmployeeId
+      : username
+  );
+  assert(
+    identity.body?.identity?.employee_id === expectedEmployeeId,
+    "BoI SSO principal did not resolve empno",
+  );
   assert(
     identity.body?.identity?.auth_source === config.boiExpectedAuthSource,
     `BoI browser auth source was ${identity.body?.identity?.auth_source || "missing"}; `
@@ -670,7 +682,7 @@ async function verifyLangflowCanvas(browser, flowId, flowUrl) {
       "SSO-protected Langflow displayed a second password form",
     );
     const userInput = page.locator('input[name="username"], input[type="text"]').first();
-    await userInput.fill(config.agentHubUsername);
+    await userInput.fill(config.agentHubEmployeeId);
     await passwordInput.fill(config.langflowPassword);
     const loginResponsePromise = page.waitForResponse(
       (response) =>
@@ -739,6 +751,22 @@ async function verifyLangflowCanvas(browser, flowId, flowUrl) {
     visible_name: body.includes(assetTitle) ? assetTitle : flowArtifactName,
   };
   await context.close();
+}
+
+async function resolveLangflowFlowProject(flowId) {
+  const response = await fetch(
+    `${config.langflowEndpointForPlayground.replace(/\/+$/, "")}`
+      + `/api/v1/flows/${encodeURIComponent(flowId)}`,
+    { headers: { "x-api-key": config.langflowApiKey } },
+  );
+  assert(
+    response.ok,
+    `Langflow exact Flow lookup returned HTTP ${response.status}`,
+  );
+  const flow = await response.json();
+  const projectId = String(flow.folder_id || flow.project_id || "");
+  assert(projectId, "Langflow exact Flow did not identify its project");
+  return projectId;
 }
 
 async function ensurePlaygroundEndpoint(root) {
@@ -820,7 +848,7 @@ async function ensurePlaygroundEndpoint(root) {
   });
 }
 
-async function verifyPlayground(browser, flowId) {
+async function verifyPlayground(browser, flowId, exactProjectId) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   await attachDiagnostics(page, "playground");
@@ -904,7 +932,11 @@ async function verifyPlayground(browser, flowId) {
   await root.locator('[data-workbench-step="create"]').click();
   const projectSelect = root.locator("[data-project-select]");
   await projectSelect.waitFor({ state: "visible", timeout: 30_000 });
-  await projectSelect.selectOption({ label: "boi-100002" });
+  await projectSelect.selectOption(exactProjectId);
+  assert(
+    (await projectSelect.inputValue()) === exactProjectId,
+    "Playground did not select the exact Agent Hub deployment project",
+  );
   await root.locator("[data-refresh-flows]").click();
 
   const flowButton = root.locator(
@@ -921,6 +953,7 @@ async function verifyPlayground(browser, flowId) {
   result.playground.rediscovered_flow_id = flowId;
   result.playground.endpoint_alias = endpointAlias;
   result.playground.project = "boi-100002";
+  result.playground.project_id = exactProjectId;
   await screenshot(page, "06-playground-rediscovered-desktop");
   await screenshot(page, "06b-playground-rediscovered-viewport", { fullPage: false });
 
@@ -1072,7 +1105,7 @@ async function verifyPlayground(browser, flowId) {
       "/workspace/scripts/apply_agent_playground_action_fixture.py",
       "--runtime-root", "/runtime",
       "--catalog-root", "/action_catalog",
-      "--employee-id", config.agentHubUsername,
+      "--employee-id", config.agentHubEmployeeId,
       "--draft-id", actionPayload.draft.draft_id,
     ],
     { cwd: repoRoot, maxBuffer: 1024 * 1024 },
@@ -1326,7 +1359,7 @@ async function verifyBoiActionCatalog(browser) {
     general_status: generalPayload.status,
     sop_status: sopPayload.status,
     private_draft_status: privateDraftPayload.status,
-    private_draft_owner: config.agentHubUsername,
+    private_draft_owner: config.agentHubEmployeeId,
     general_execution: generalSummary,
     sop_execution: sopSummary,
     private_draft_execution: privateDraftSummary,
@@ -1546,7 +1579,9 @@ try {
   await context.close();
 
   await verifyLangflowCanvas(browser, deployment.flowId, deployment.flowUrl);
-  await verifyPlayground(browser, deployment.flowId);
+  const exactProjectId = await resolveLangflowFlowProject(deployment.flowId);
+  result.agent_hub.deployment.project_id = exactProjectId;
+  await verifyPlayground(browser, deployment.flowId, exactProjectId);
   await verifyBoiActionCatalog(browser);
   await verifyViewerActionDenial(browser);
   await verifyBoiLogout(browser);

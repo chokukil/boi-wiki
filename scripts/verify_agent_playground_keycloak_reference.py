@@ -2,10 +2,10 @@
 """Verify the live local Keycloak reference contract without exposing secrets.
 
 Keycloak is only the validation implementation for the provider-neutral OIDC
-contract.  This script queries its admin API to prove that both browser clients
-are confidential, require PKCE S256, emit the employee claim, and that the
-Langflow client emits its own audience.  End-user login remains Authorization
-Code + PKCE and is exercised separately by Playwright.
+contract.  This script queries its admin API to prove that the single boi-wiki
+client is confidential, requires PKCE S256, emits the employee claim, and owns
+both the BoI and Langflow browser callbacks. End-user login remains
+Authorization Code + PKCE and is exercised separately by Playwright.
 """
 
 from __future__ import annotations
@@ -111,37 +111,33 @@ def main() -> int:
     if not admin_token:
         raise RuntimeError("Keycloak admin token response had no access token")
 
-    clients: dict[str, dict[str, Any]] = {}
-    for client_id in ("boi-wiki", "langflow-browser"):
-        query = urllib.parse.urlencode({"clientId": client_id})
-        rows = request_json(
-            f"{base}/admin/realms/{urllib.parse.quote(args.realm)}/clients?{query}",
-            token=admin_token,
-        )
-        if not isinstance(rows, list) or len(rows) != 1:
-            raise RuntimeError(f"expected exactly one live Keycloak client: {client_id}")
-        clients[client_id] = client_summary(rows[0])
-
-    boi = clients["boi-wiki"]
-    langflow = clients["langflow-browser"]
+    query = urllib.parse.urlencode({"clientId": "boi-wiki"})
+    rows = request_json(
+        f"{base}/admin/realms/{urllib.parse.quote(args.realm)}/clients?{query}",
+        token=admin_token,
+    )
+    if not isinstance(rows, list) or len(rows) != 1:
+        raise RuntimeError("expected exactly one live Keycloak client: boi-wiki")
+    boi = client_summary(rows[0])
     checks = {
         "boi_confidential_pkce": (
             boi["confidential"]
             and boi["standard_flow_enabled"]
+            and not boi["direct_access_grants_enabled"]
             and boi["pkce_method"] == "S256"
         ),
         "boi_callback": "http://localhost:28005/auth/callback" in boi["redirect_uris"],
-        "boi_empno": boi["employee_claim"],
-        "langflow_confidential_pkce": (
-            langflow["confidential"]
-            and langflow["standard_flow_enabled"]
-            and langflow["pkce_method"] == "S256"
-        ),
         "langflow_callback": (
-            "http://localhost:17867/oauth2/callback" in langflow["redirect_uris"]
+            "http://localhost:17867/oauth2/callback" in boi["redirect_uris"]
         ),
-        "langflow_empno": langflow["employee_claim"],
-        "langflow_audience": "langflow-browser" in langflow["audiences"],
+        "corporate_boi_callback": (
+            "http://wiki.skhynix.com/auth/callback" in boi["redirect_uris"]
+        ),
+        "corporate_langflow_callback": (
+            "http://wiki.skhynix.com/builder/oauth2/callback"
+            in boi["redirect_uris"]
+        ),
+        "boi_empno": boi["employee_claim"],
     }
     result = {
         "ok": all(checks.values()),
@@ -149,7 +145,7 @@ def main() -> int:
         "base_url": base,
         "realm": args.realm,
         "checks": checks,
-        "clients": clients,
+        "clients": {"boi-wiki": boi},
         "admin_token_exposed": False,
     }
     if not result["ok"]:

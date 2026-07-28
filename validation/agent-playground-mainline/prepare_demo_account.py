@@ -26,6 +26,7 @@ from demo_account import (
     default_state_file,
     ensure_agent_hub_baseline,
     ensure_demo_keycloak_user,
+    ensure_empno_user_profile,
     ensure_local_url,
     read_agent_hub_user,
     read_state,
@@ -78,6 +79,12 @@ def main() -> None:
             admin_password=os.getenv(
                 "BOI_VALIDATION_KEYCLOAK_ADMIN_PASSWORD", "validation-admin"
             ),
+        )
+        ensure_empno_user_profile(
+            client,
+            keycloak_url=keycloak_url,
+            realm=args.realm,
+            headers=headers,
         )
         demo_user = ensure_demo_keycloak_user(
             client,

@@ -141,6 +141,66 @@ def lookup_keycloak_user(
     return exact[0] if exact else None
 
 
+def ensure_empno_user_profile(
+    client: httpx.Client,
+    *,
+    keycloak_url: str,
+    realm: str,
+    headers: dict[str, str],
+) -> None:
+    """Allow the validation realm to persist the employee-number attribute.
+
+    Keycloak 26 ignores unmanaged attributes when the declarative user profile
+    does not define them.  That can make a successfully created demo account
+    emit no ``empno`` claim and fail HCP authorization later.  Keep the profile
+    definition local to the validation realm and verify the persisted result.
+    """
+
+    profile_url = (
+        f"{keycloak_url}/admin/realms/{quote(realm, safe='')}/users/profile"
+    )
+    response = client.get(profile_url, headers=headers)
+    response.raise_for_status()
+    profile = response.json()
+    if not isinstance(profile, dict):
+        raise RuntimeError("Keycloak user profile lookup returned an invalid response")
+    attributes = profile.get("attributes")
+    if not isinstance(attributes, list):
+        attributes = []
+    if not any(str(item.get("name") or "") == "empno" for item in attributes):
+        attributes.append(
+            {
+                "name": "empno",
+                "displayName": "Employee number",
+                "validations": {"length": {"min": 1, "max": 32}},
+                "permissions": {
+                    "view": ["admin", "user"],
+                    "edit": ["admin"],
+                },
+                "multivalued": False,
+            }
+        )
+        update = client.put(
+            profile_url,
+            headers={**headers, "Content-Type": "application/json"},
+            json={**profile, "attributes": attributes},
+        )
+        if update.status_code not in {200, 204}:
+            raise RuntimeError(
+                "failed to register the validation empno user profile "
+                f"(HTTP {update.status_code})"
+            )
+    verified = client.get(profile_url, headers=headers)
+    verified.raise_for_status()
+    verified_attributes = verified.json().get("attributes") or []
+    if not any(
+        str(item.get("name") or "") == "empno"
+        for item in verified_attributes
+        if isinstance(item, dict)
+    ):
+        raise RuntimeError("validation empno user profile was not persisted")
+
+
 def ensure_demo_keycloak_user(
     client: httpx.Client,
     *,
@@ -216,6 +276,14 @@ def ensure_demo_keycloak_user(
         )
     if user is None:
         raise RuntimeError("local demo user was not found after creation")
+    persisted_empno = [
+        str(value)
+        for value in (user.get("attributes") or {}).get("empno", [])
+    ]
+    if persisted_empno != [DEMO_EMPLOYEE_ID]:
+        raise RuntimeError(
+            "local demo user empno was not persisted by Keycloak"
+        )
     subject = str(user.get("id") or "")
     if not UUID_PATTERN.fullmatch(subject):
         raise RuntimeError("local demo user has an invalid Keycloak subject")

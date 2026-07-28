@@ -10,7 +10,7 @@ import subprocess
 import threading
 import time
 from typing import Any
-from urllib.parse import quote, unquote
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from fastapi.testclient import TestClient
 from jsonschema import validate
@@ -7626,7 +7626,11 @@ def test_action_catalog_flow_api_uses_safe_role_aware_playground_view(
         boi_app_module.APP_DIR / "static" / "action_catalog.js"
     ).read_text(encoding="utf-8")
     assert "이 Action이 실행하는 Flow" in script
-    assert "/flow?employee_id=" in script
+    assert (
+        "`/api/actions/catalog/${encodeURIComponent(action.action_key)}/flow`"
+        in script
+    )
+    assert "fetch(withIdentity(" in script
     assert "Playground에서 열기" in script
     assert "Langflow Canvas 열기" in script
 
@@ -9749,12 +9753,14 @@ def test_trusted_header_identity_blocks_employee_query_spoof(boi_app_module, mon
         "x-hynix-roles": "boi.viewer,boi.editor",
     }
 
-    me = client.get("/api/auth/me?employee_id=200001", headers=headers)
+    me = client.get("/api/auth/me", headers=headers)
+    redundant = client.get("/api/auth/me?employee_id=200001", headers=headers)
     spoof = client.get("/api/auth/me?employee_id=100001", headers=headers)
 
     assert me.status_code == 200
     assert me.json()["employee_id"] == "200001"
     assert me.json()["teams"] == ["platform"]
+    assert redundant.status_code == 400
     assert spoof.status_code == 403
 
 
@@ -9770,8 +9776,8 @@ def test_trusted_header_teams_drive_acl_without_dev_user_map(boi_app_module, mon
         "x-hynix-roles": "boi.viewer",
     }
 
-    response = client.get("/api/boi?employee_id=200001&folder=team/platform", headers=headers)
-    private_response = client.get("/api/boi?employee_id=200001&folder=private/100001", headers=headers)
+    response = client.get("/api/boi?folder=team/platform", headers=headers)
+    private_response = client.get("/api/boi?folder=private/100001", headers=headers)
 
     assert response.status_code == 200
     assert response.json()["count"] >= 1
@@ -9793,10 +9799,10 @@ def test_trusted_header_editor_role_required_for_source_apply(boi_app_module, mo
     }
     editor_headers = {**viewer_headers, "x-hynix-roles": "boi.viewer,boi.editor"}
     source_ref = "data/boi/public/sop/equipment-abnormal-response.md"
-    source = client.get(f"/api/source?employee_id=200001&path={source_ref}", headers=viewer_headers).json()
+    source = client.get(f"/api/source?path={source_ref}", headers=viewer_headers).json()
 
     denied = client.post(
-        "/api/source/apply?employee_id=200001",
+        "/api/source/apply",
         headers=viewer_headers,
         json={
             "path": source_ref,
@@ -9807,7 +9813,7 @@ def test_trusted_header_editor_role_required_for_source_apply(boi_app_module, mo
     )
     monkeypatch.setattr(boi_app_module, "git_commit_for_path", lambda path, message: {"status": "committed", "commit_hash": "abc123"})
     allowed = client.post(
-        "/api/source/apply?employee_id=200001",
+        "/api/source/apply",
         headers=editor_headers,
         json={
             "path": source_ref,
@@ -10020,7 +10026,11 @@ def test_equipment_anomaly_demo_route_publishes_first_event(boi_app_module):
     assert body["workflow"]["name"] == "equipment-anomaly"
     assert body["workflow"]["sop_ref"] == "boi:public:sop:equipment-abnormal-response"
     assert body["workflow"]["sop_uri"] == "/public/sop/equipment-abnormal-response.md"
-    assert body["workflow"]["status_url"].startswith("/api/workflows/demo/equipment-anomaly/status?trace_id=")
+    status_url = urlparse(body["workflow"]["status_url"])
+    status_query = parse_qs(status_url.query)
+    assert status_url.path == "/api/workflows/demo/equipment-anomaly/status"
+    assert status_query["trace_id"][0].startswith("trace-")
+    assert status_query["employee_id"] == ["100001"]
     assert "manual.equipment.confirm_alarm_context" in body["workflow"]["expected_manual_actions"]
     assert body["event"]["event_type"] == "equipment.alarm.raised.v1"
     assert boi_app_module.AIOKafkaProducer.sent_events[-1]["topic"] == "boi.events"

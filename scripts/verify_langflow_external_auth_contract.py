@@ -35,7 +35,7 @@ JWKS_CONTAINER = f"{CONTAINER}-jwks"
 HOST_PORT = 17872
 JWKS_PORT = 18388
 ISSUER = "boi-external-auth-contract-audit"
-AUDIENCE = "langflow-browser"
+AUDIENCE = "boi-wiki"
 
 
 def b64url_uint(value: int) -> str:

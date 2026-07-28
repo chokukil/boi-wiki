@@ -63,7 +63,7 @@
 
   const withIdentity = (path) => {
     const url = new URL(path, window.location.origin);
-    if (employeeId && (!app.state || app.state.identity.auth_source === "dev")) {
+    if (employeeId && root.dataset.authMode === "dev") {
       url.searchParams.set("employee_id", employeeId);
     }
     return `${url.pathname}${url.search}`;

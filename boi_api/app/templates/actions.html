@@ -13,11 +13,11 @@
 {% if view == "history" %}
   {% set action_intro_title = "Action 실행 이력" %}
   {% set action_intro_description = "실행 요청, 승인 필요, 수동 조치, 결과 로그를 확인합니다." %}
-  {% set action_intro_primary = {"label": "Action 카탈로그", "href": "/actions?employee_id=" ~ employee_id, "kind": "secondary"} %}
+  {% set action_intro_primary = {"label": "Action 카탈로그", "href": "/actions?employee_id=" ~ employee_id if shell.auth_mode == "dev" else "/actions", "kind": "secondary"} %}
 {% else %}
   {% set action_intro_title = "Action 카탈로그" %}
   {% set action_intro_description = "API, MCP, Webhook, Manual 등 실행 단위를 찾아 업무 흐름에 연결합니다." %}
-  {% set action_intro_primary = {"label": "Action 추가", "href": "/sops/new?employee_id=" ~ employee_id ~ "&focus=action", "kind": "primary"} %}
+  {% set action_intro_primary = {"label": "Action 추가", "href": "/sops/new?employee_id=" ~ employee_id ~ "&focus=action" if shell.auth_mode == "dev" else "/sops/new?focus=action", "kind": "primary"} %}
 {% endif %}
 {% with title=action_intro_title, description=action_intro_description, eyebrow=None, primary_action=action_intro_primary %}
   {% include "_section_intro.html" %}
@@ -26,7 +26,9 @@
 {% if view == "history" %}
 <section class="toolbar page-filterbar event-filterbar action-history-filterbar">
   <form method="get" action="/actions" class="event-filter-form action-history-filter-form">
+    {% if shell.auth_mode == "dev" %}
     <input type="hidden" name="employee_id" value="{{ employee_id }}" />
+    {% endif %}
     <input type="hidden" name="view" value="history" />
     {% if time_preset %}<input type="hidden" name="time_preset" value="{{ time_preset }}" />{% endif %}
     <div class="filter-group">
@@ -180,7 +182,9 @@
 <section class="panel page-filterbar">
   <h2>Action 찾기</h2>
   <form method="get" action="/actions">
+    {% if shell.auth_mode == "dev" %}
     <input type="hidden" name="employee_id" value="{{ employee_id }}" />
+    {% endif %}
     <select name="event_type">
       <option value="">전체 Event Type</option>
       {% for e in event_types %}
@@ -198,7 +202,12 @@
   </form>
 </section>
 
-<main class="action-catalog-layout" data-action-catalog data-employee-id="{{ employee_id }}">
+<main
+  class="action-catalog-layout"
+  data-action-catalog
+  data-auth-mode="{{ shell.auth_mode }}"
+  data-employee-id="{{ employee_id }}"
+>
   <section class="panel action-catalog-list" aria-label="Action 목록">
     <div class="pagination-bar">
       <div>

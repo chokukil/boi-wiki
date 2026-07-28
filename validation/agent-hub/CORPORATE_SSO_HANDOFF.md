@@ -13,7 +13,7 @@
 | Flow | authorization code |
 | PKCE | S256 required |
 | Direct access grants | disabled |
-| Redirect URI | `http://wiki.skhynix.com/auth/callback` |
+| Redirect URI | `http://wiki.skhynix.com/auth/callback`, `http://wiki.skhynix.com/builder/oauth2/callback` |
 | Web origin | `http://wiki.skhynix.com` |
 | Employee claim | `empno` |
 
@@ -21,6 +21,10 @@
 있고 BoI의 표준 claim은 Agent Hub와 같은 `empno`다. OIDC client 등록이 불가능하면
 검증된 회사 gateway header와 Token Bridge 또는 사내 embedded SSO Langflow를
 선택한다.
+
+BoI API와 Langflow browser 인증 프록시는 같은 `client_id=boi-wiki`와 client
+secret을 사용한다. 별도 browser client나 audience mapper는 등록하지 않는다.
+client secret은 사내 Secret Manager로 두 서비스에 주입한다.
 
 ## BoI 환경변수
 

@@ -10,13 +10,14 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
 
 const boiUrl = process.env.BOI_URL || "http://localhost:28005";
 const employeeId = process.env.BOI_EMPLOYEE_ID || "100002";
+const loginUsername = process.env.BOI_LOGIN_USERNAME || employeeId;
 const identityFile =
   process.env.AGENT_HUB_IDENTITY_FILE
   || "/tmp/boi-ap-agent-hub-sso-users.json";
 const identities = JSON.parse(await fs.readFile(identityFile, "utf8"));
 const password =
   process.env.BOI_SSO_PASSWORD
-  || String(identities[employeeId] || "");
+  || String(identities[loginUsername] || identities[employeeId] || "");
 const evidenceDir =
   process.env.PLAYWRIGHT_EVIDENCE_DIR
   || "artifacts/agent-playground-wiki-onboarding";
@@ -113,9 +114,46 @@ const docs = [
     heading: "Agent Hub 연동 경계와 운영 책임",
     expected: ["Agent Hub는 BoI 개발 영역이 아니다", "금지하는 연동", "읽기 전용"],
   },
+  {
+    key: "flow-mcp-usage",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage",
+    heading: "Agent Playground Flow·MCP 활용 가이드",
+    expected: [
+      "DEV · Playground",
+      "boi_universal_simulate",
+      "PRD · Agent Hub",
+      "connector-neutral",
+    ],
+    expectedImages: 7,
+  },
+  {
+    key: "keycloak-request",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:operations:agent-playground-keycloak-request",
+    heading: "Agent Hub 담당자 Keycloak 등록 요청",
+    expected: [
+      "Client ID",
+      "boi-wiki",
+      "http://wiki.skhynix.com/auth/callback",
+      "http://wiki.skhynix.com/builder/oauth2/callback",
+    ],
+  },
+  {
+    key: "caddy-sso-routing",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:operations:agent-playground-caddy-sso-routing",
+    heading: "Agent Playground·Langflow SSO Caddy 적용 프롬프트",
+    expected: [
+      "X-Forwarded-Proto=http",
+      "LANGFLOW_EXTERNAL_URL=http://wiki.skhynix.com/builder",
+      "LANGFLOW_DEPLOY_URL",
+      "HTTPS·인증서 도입이 포함되지 않는다",
+    ],
+  },
 ];
 
-if (!password) throw new Error(`${employeeId} validation password is unavailable`);
+if (!password) throw new Error(`${loginUsername} validation password is unavailable`);
 await fs.mkdir(evidenceDir, { recursive: true });
 
 const result = {
@@ -171,7 +209,7 @@ try {
   if (!Object.values(result.oidc).every(Boolean)) {
     throw new Error("OIDC+PKCE evidence is incomplete");
   }
-  await page.locator("#username").fill(employeeId);
+  await page.locator("#username").fill(loginUsername);
   await page.locator("#password").fill(password);
   await page.locator("#kc-login").click();
   await page.waitForURL((url) => url.origin === new URL(boiUrl).origin);
@@ -185,6 +223,22 @@ try {
       throw new Error(`${doc.key} Wiki document returned HTTP ${response?.status()}`);
     }
     await page.getByRole("heading", { name: doc.heading, exact: true }).waitFor();
+    const currentUrl = new URL(page.url());
+    if (
+      currentUrl.searchParams.has("employee_id")
+      || currentUrl.searchParams.has("empno")
+    ) {
+      throw new Error(`${doc.key} URL exposes an employee identifier`);
+    }
+    const identifyingLinkValues = await page.locator(
+      'a[href*="employee_id="], a[href*="empno="]',
+    ).evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+    if (identifyingLinkValues.length !== 0) {
+      throw new Error(
+        `${doc.key} renders employee-identifying links: `
+        + JSON.stringify(identifyingLinkValues),
+      );
+    }
     const bodyText = await page.locator("body").innerText();
     for (const expected of doc.expected) {
       if (!bodyText.toLowerCase().includes(expected.toLowerCase())) {
@@ -196,6 +250,24 @@ try {
     ).count();
     if (petDomCount !== 0) {
       throw new Error(`${doc.key} Wiki document contains pet DOM/assets`);
+    }
+    const imageHealth = await page.locator("main img").evaluateAll((images) =>
+      images.map((image) => ({
+        src: image.currentSrc || image.src,
+        complete: image.complete,
+        naturalWidth: image.naturalWidth,
+      })),
+    );
+    if (
+      doc.expectedImages !== undefined
+      && (
+        imageHealth.length !== doc.expectedImages
+        || imageHealth.some((image) => !image.complete || image.naturalWidth <= 0)
+      )
+    ) {
+      throw new Error(
+        `${doc.key} image evidence is incomplete: ${JSON.stringify(imageHealth)}`,
+      );
     }
     await capture(`01-${doc.key}-desktop`);
     await page.setViewportSize({ width: 390, height: 844 });
@@ -216,6 +288,8 @@ try {
       heading: doc.heading,
       required_sections: doc.expected,
       pet_dom_count: petDomCount,
+      identifying_link_count: identifyingLinkValues.length,
+      image_health: imageHealth,
       mobile: dimensions,
     });
     await page.setViewportSize({ width: 1440, height: 1050 });

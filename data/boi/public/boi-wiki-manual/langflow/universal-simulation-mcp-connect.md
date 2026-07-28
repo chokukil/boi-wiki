@@ -25,6 +25,10 @@ review:
 
 # 연결 절차
 
+실제 Playground·Langflow·Agent Hub 화면을 함께 보려면
+[Flow·MCP 활용 가이드](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage)를
+참고한다.
+
 1. Playground에서 대표 Flow를 선택한다.
 2. `MCP 도구 준비`를 누른다.
 3. API Key 인증과 tool 이름 `boi_universal_simulate`를 확인한다.

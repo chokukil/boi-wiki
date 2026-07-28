@@ -119,8 +119,11 @@ def main() -> int:
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-action-wiki.md",
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-troubleshooting.md",
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-browser-sso.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-flow-mcp-usage.md",
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "operations" / "agent-playground-operator-runbook.md",
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "operations" / "agent-playground-sso-deployment.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "operations" / "agent-playground-keycloak-request.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "operations" / "agent-playground-caddy-sso-routing.md",
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "operations" / "agent-hub-integration-boundary.md",
     )
     docs = "\n".join(

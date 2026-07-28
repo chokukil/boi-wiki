@@ -28,17 +28,20 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "attributes": {
-        "post.logout.redirect.uris": "http://localhost:8000/*##http://localhost:28002/*##http://wiki.skhynix.com/*",
+        "post.logout.redirect.uris": "http://localhost:8000/*##http://localhost:28002/*##http://localhost:17867/*##http://wiki.skhynix.com/*",
         "pkce.code.challenge.method": "S256"
       },
       "redirectUris": [
         "http://localhost:8000/auth/callback",
         "http://localhost:28002/auth/callback",
-        "http://wiki.skhynix.com/auth/callback"
+        "http://localhost:17867/oauth2/callback",
+        "http://wiki.skhynix.com/auth/callback",
+        "http://wiki.skhynix.com/builder/oauth2/callback"
       ],
       "webOrigins": [
         "http://localhost:8000",
         "http://localhost:28002",
+        "http://localhost:17867",
         "http://wiki.skhynix.com"
       ],
       "protocolMappers": [

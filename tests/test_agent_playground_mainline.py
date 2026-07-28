@@ -590,8 +590,20 @@ def test_playground_and_manual_pages_hide_pet_assets(boi_app_module):
             "/docs/boi:public:boi-wiki-manual:operations:agent-hub-integration-boundary"
             "?employee_id=100002"
         ),
+        client.get(
+            "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage"
+            "?employee_id=100002"
+        ),
+        client.get(
+            "/docs/boi:public:boi-wiki-manual:operations:agent-playground-keycloak-request"
+            "?employee_id=100002"
+        ),
+        client.get(
+            "/docs/boi:public:boi-wiki-manual:operations:agent-playground-caddy-sso-routing"
+            "?employee_id=100002"
+        ),
     ]
-    assert [page.status_code for page in pages] == [200, 200, 200, 200, 200, 200]
+    assert [page.status_code for page in pages] == [200] * 9
     for page in pages:
         assert "pet_agent.js" not in page.text
         assert "boi-pet-agent" not in page.text
@@ -606,6 +618,123 @@ def test_playground_and_manual_pages_hide_pet_assets(boi_app_module):
     assert "boi_search" not in playground
     assert "Ontology" in playground
     assert "boi_search" not in pages[1].text
+
+
+def test_sso_playground_urls_do_not_expose_employee_id(
+    boi_app_module,
+    monkeypatch,
+):
+    monkeypatch.setenv("BOI_AUTH_MODE", "oidc")
+    monkeypatch.setenv("BOI_SESSION_SECRET", "sso-url-privacy-test-secret")
+    identity = AuthIdentity(
+        employee_id="100002",
+        display_name="BoI Demo",
+        teams=["aix-tf"],
+        roles=["boi.viewer", "boi.editor", "boi.action_invoker"],
+        auth_source="oidc",
+    )
+    session = boi_app_module.create_session_token(identity)
+    client = TestClient(boi_app_module.app)
+    client.cookies.set(boi_app_module.SESSION_COOKIE_NAME, session)
+
+    legacy = client.get(
+        "/playground?employee_id=100002&stage=test",
+        follow_redirects=False,
+    )
+    assert legacy.status_code == 307
+    assert legacy.headers["location"] == "/playground?stage=test"
+    assert legacy.headers["referrer-policy"] == "same-origin"
+
+    page = client.get("/playground")
+    assert page.status_code == 200
+    assert page.headers["referrer-policy"] == "same-origin"
+    assert 'data-auth-mode="oidc"' in page.text
+    assert 'href="/playground?employee_id=' not in page.text
+    assert 'href="/actions?employee_id=' not in page.text
+    assert 'href="/docs/' in page.text
+    assert "?employee_id=" not in "\n".join(
+        fragment.split('"', 1)[0]
+        for fragment in page.text.split('href="')[1:]
+    )
+
+    actions = client.get("/actions")
+    assert actions.status_code == 200
+    assert 'data-auth-mode="oidc"' in actions.text
+    assert 'name="employee_id"' not in actions.text
+    assert "?employee_id=" not in "\n".join(
+        fragment.split('"', 1)[0]
+        for fragment in actions.text.split('href="')[1:]
+    )
+
+    same_identity_api = client.get("/api/agent-playground?employee_id=100002")
+    assert same_identity_api.status_code == 400
+    assert "not allowed" in str(same_identity_api.json()["detail"])
+
+    spoofed_api = client.get("/api/agent-playground?employee_id=100001")
+    assert spoofed_api.status_code == 403
+    assert (
+        boi_app_module.action_raw_page_url("action:sample.jsonl:1", "100002")
+        == "/actions/raw/action%3Asample.jsonl%3A1"
+    )
+    assert (
+        boi_app_module.workflow_status_page_url_for_key(
+            "sample-workflow",
+            "trace-sample",
+            "100002",
+        )
+        == "/workflows/sample-workflow/status?trace_id=trace-sample"
+    )
+
+
+def test_flow_mcp_usage_guide_references_real_sanitized_browser_captures():
+    root = Path(__file__).resolve().parents[1]
+    guide = (
+        root
+        / "data"
+        / "boi"
+        / "public"
+        / "boi-wiki-manual"
+        / "langflow"
+        / "agent-playground-flow-mcp-usage.md"
+    )
+    media = (
+        root
+        / "data"
+        / "boi"
+        / "public"
+        / "boi-wiki-manual"
+        / "_media"
+        / "browser"
+        / "agent-playground-flow-mcp"
+    )
+    text = guide.read_text(encoding="utf-8")
+    expected = [
+        "01-playground-flow-list.png",
+        "02-langflow-api-key-settings.png",
+        "03-langflow-universal-simulation-canvas.png",
+        "04-mcp-tool-result.png",
+        "05-agent-hub-deployment.png",
+        "06-prd-flow-validation.png",
+        "07-action-wiki-result.png",
+    ]
+    for filename in expected:
+        path = media / filename
+        assert path.is_file()
+        assert path.stat().st_size > 10_000
+        assert f"/agent-playground-flow-mcp/{filename}" in text
+    assert "langflow-browser" not in text
+    assert "https://wiki.skhynix.com" not in text
+
+
+def test_dev_playground_urls_keep_employee_switch_compatibility(
+    boi_app_module,
+    monkeypatch,
+):
+    monkeypatch.setenv("BOI_AUTH_MODE", "dev")
+    assert (
+        boi_app_module.app_url("/playground", "100002", stage="test")
+        == "/playground?employee_id=100002&stage=test"
+    )
 
 
 def test_connector_neutral_action_catalog_has_interactive_preview(boi_app_module):

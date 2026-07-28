@@ -29,6 +29,11 @@ review:
 
 Agent Playground는 내 사번의 Langflow 프로젝트에서 Flow를 만들고 시험하는 개인 개발 공간이다. 검증을 마친 Flow는 기존 Agent Hub UI에서 배포하고, Playground가 배포 결과를 다시 찾아 BoI Action으로 연결한다.
 
+실제 화면을 따라 Flow·MCP·Agent Hub·Action을 한 번에 확인하려면
+[Flow·MCP 활용 가이드](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage)를
+먼저 본다. SSO 환경의 정식 주소는 `/playground`이며 사번을 query string으로
+전달하지 않는다.
+
 로컬 시연에서는 운영 사내 계정과 별개로 `boi-dev` 공용 로그인을 준비할 수
 있다. 이 계정은 새 사번이나 별도 프로젝트가 아니라 검증용 `100002` 개발자
 공간의 OIDC 별칭이다. 준비와 복구는

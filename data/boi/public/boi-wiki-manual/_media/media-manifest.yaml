@@ -263,3 +263,59 @@ media:
     viewport: 1440x1100
     related_doc: boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step
     created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/agent-playground-flow-mcp/01-playground-flow-list.png
+    sha256: a50bf35915ab7db7db009b6722809ddcfc750818a77478b99ad2e4f399b0eec5
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28005/playground
+    captured_at: 2026-07-28T23:58:00+09:00
+    viewport: 1440x1616
+    related_doc: boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/agent-playground-flow-mcp/02-langflow-api-key-settings.png
+    sha256: d32dbb6760f3c9924b693ce3743c8df7824c5e0c9676a9c8b560460e84d74174
+    source_kind: browser-screenshot
+    captured_url: http://localhost:17867/settings/api-keys
+    captured_at: 2026-07-28T23:58:00+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/agent-playground-flow-mcp/03-langflow-universal-simulation-canvas.png
+    sha256: 2971e16b1be866b9d0a415cf5845afb7d5d64b674b0a990ef1c7e7c78aacbbb5
+    source_kind: browser-screenshot
+    captured_url: http://localhost:17867/flow/cf2b9db0-2234-47db-a30c-d1f4836f4b22
+    captured_at: 2026-07-28T23:58:00+09:00
+    viewport: 1440x1000
+    related_doc: boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/agent-playground-flow-mcp/04-mcp-tool-result.png
+    sha256: 2176c3b6d9da47269916789d88b317a55366c70845315801d380ba040d245ab2
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28005/playground
+    captured_at: 2026-07-28T23:58:00+09:00
+    viewport: 1440x1279
+    related_doc: boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/agent-playground-flow-mcp/05-agent-hub-deployment.png
+    sha256: c1e0c9e3d3a12240737e840ba6e70a5fd3a0be5c9b9e4f12b3ed83c4e4fd879c
+    source_kind: browser-screenshot
+    captured_url: http://localhost:18080/AgentHub.html
+    captured_at: 2026-07-29T01:31:00+09:00
+    viewport: 1440x2357
+    related_doc: boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/agent-playground-flow-mcp/06-prd-flow-validation.png
+    sha256: 8a03cf0944f1c7f478939e8c0af1ba2bd335f67b57406e8f1b40bc8af8e93589
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28005/playground
+    captured_at: 2026-07-29T00:49:00+09:00
+    viewport: 1440x2574
+    related_doc: boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage
+    created_by: codex
+  - path: public/boi-wiki-manual/_media/browser/agent-playground-flow-mcp/07-action-wiki-result.png
+    sha256: 6c270975e855f611db7e643b614f33652dcfa0ffea480cd0610682cbff9ceff8
+    source_kind: browser-screenshot
+    captured_url: http://localhost:28005/actions
+    captured_at: 2026-07-29T01:31:00+09:00
+    viewport: 1440x1914
+    related_doc: boi:public:boi-wiki-manual:langflow:agent-playground-flow-mcp-usage
+    created_by: codex

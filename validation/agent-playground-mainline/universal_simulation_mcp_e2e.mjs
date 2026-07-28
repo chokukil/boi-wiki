@@ -17,8 +17,11 @@ const outputDir =
   );
 const employeeId = "100002";
 const identities = JSON.parse(fs.readFileSync(identityFile, "utf8"));
-const password = String(identities[employeeId] || "");
-if (!password) throw new Error("100002 validation password is unavailable");
+const loginUsername = String(process.env.BOI_DEMO_USERNAME || employeeId);
+const password = String(
+  process.env.BOI_DEMO_PASSWORD || identities[employeeId] || "",
+);
+if (!password) throw new Error("100002 validation or demo password is unavailable");
 fs.mkdirSync(outputDir, { recursive: true });
 const storageStatePath = path.join(
   os.tmpdir(),
@@ -118,7 +121,7 @@ async function login(page) {
     }).catch(() => null),
   ]);
   if (await username.isVisible().catch(() => false)) {
-    await username.fill(employeeId);
+    await username.fill(loginUsername);
     await page.locator("#password").fill(password);
     await page.locator("#kc-login").click();
   }

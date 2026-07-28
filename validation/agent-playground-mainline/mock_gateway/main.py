@@ -146,7 +146,7 @@ async def bridge_proof(request: Request) -> dict[str, object] | Response:
         token,
         public_key,
         algorithms=["RS256"],
-        audience="langflow-browser",
+        audience="boi-wiki",
         issuer="boi-validation-sso-bridge",
     )
     return {

@@ -811,6 +811,8 @@ def resolve_identity(
         for candidate in asserted_employee_ids
     ):
         raise AuthError(403, "employee_id input does not match authenticated identity")
+    if query_employee_id:
+        raise AuthError(400, "employee_id query is not allowed in SSO mode")
     return identity
 
 
