@@ -754,6 +754,7 @@ def test_sso_handoff_includes_corporate_acceptance_runner():
     assert "CORPORATE_SSO_HANDOFF.md" in builder
     assert "corporate_sso_acceptance_e2e.mjs" in builder
     assert "corporate-hcp-evidence.example.json" in builder
+    assert '"corporate-runner-self-test": "agent-playground-corporate-sso-validation"' in builder
 
 
 def test_mainline_handoff_builder_runs_requirement_audit():

@@ -368,6 +368,7 @@ def main() -> int:
         "checksum-drift": "agent-playground-universal-drift-final",
         "wiki-docs": "agent-playground-wiki-onboarding",
         "security-context": "agent-playground-security-context-hardening",
+        "corporate-runner-self-test": "agent-playground-corporate-sso-validation",
     }
     for target_name, source_name in evidence_dirs.items():
         copy_tree(evidence_root / source_name, output / "evidence" / target_name)
