@@ -32,17 +32,30 @@ Agent Playground는 내 사번의 Langflow 프로젝트에서 Flow를 만들고 
 1. `/playground`를 열어 현재 SSO 사용자를 확인한다.
 2. `Langflow 설정에서 키 발급`으로 개인 API Key를 만든다.
 3. Playground에서 연결을 시험하고 `내 개발 공간 자동 준비`를 실행한다.
-4. `Langflow에서 만들기`에서 Agent를 편집한다.
+4. `Langflow 프로젝트 열기`에서 Agent를 편집한다.
 5. `Playground 테스트`에서 업무 맥락, Ontology 관계, Wiki 근거와 저장 결과를 확인한다.
 6. `Agent Hub`에서 내 Flow를 배포하거나 승인된 공유 자산을 가져온다.
 7. 배포 Flow를 다시 찾아 검증한 뒤 `Action 연결`을 진행한다.
 
 Langflow와 Agent Hub는 BoI가 수정하지 않는다. Playground는 공개 API와 기존 UI만 사용한다.
 
-Action 연결을 마치면 Action 카탈로그 상세에서 연결된 Flow 구조를 바로 확인할 수 있다.
-Flow 소유자는 같은 화면에서 선택한 endpoint·project·Flow가 열린 Playground로 이동하거나
-외부 Langflow Canvas를 열 수 있다. 공유 Action 사용자는 실행 구조만 읽을 수 있고 다른
-사용자의 개인 개발 공간으로 이동하지 않는다.
+Playground는 복잡한 Flow를 자체 순서도로 다시 그리지 않는다. Flow 목록의 `원본 열기`나
+선택 화면의 `Langflow에서 원본 Flow 열기`로 분기·병합·루프를 포함한 실제 Canvas를
+확인한다.
+
+# DEV와 PRD를 구분한다
+
+| 배지 | 의미 |
+|---|---|
+| `DEV · Playground` | 개인 Langflow 프로젝트에서 개발·시험하는 Flow |
+| `PRD · Agent Hub` | Agent Hub 배포 결과를 live exact Flow로 다시 찾아 연결한 Flow |
+
+PRD는 배포 경로를 뜻한다. `Runtime 확인`, `Action 연결`, `변경되어 재검증 필요` 같은
+검증 상태는 별도다. PRD 배지가 있어도 검증이 끝나지 않았을 수 있다.
+
+Action 연결을 마치면 Action 카탈로그에서 연결된 exact Flow를 확인할 수 있다. Flow
+소유자는 Playground 또는 원본 Langflow Canvas로 이동할 수 있다. 공유 Action 사용자는
+다른 사용자의 개인 개발 공간으로 이동하지 않는다.
 
 # 어떤 경로로 시작할까
 

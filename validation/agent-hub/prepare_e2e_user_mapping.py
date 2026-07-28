@@ -25,6 +25,11 @@ EMPLOYEE_ROLES = {
     "100002": "user",
     "2074795": "admin",
 }
+USER_PROFILES = {
+    "100001": ("BoI", "Administrator"),
+    "100002": ("BoI", "Developer"),
+    "2074795": ("BoI", "Reviewer"),
+}
 UUID_PATTERN = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
@@ -72,18 +77,54 @@ def main() -> None:
         }
         subjects: dict[str, str] = {}
         for employee_id in EMPLOYEE_ROLES:
-            response = client.get(
-                f"{keycloak_url}/admin/realms/boi-validation/users",
-                params={"username": employee_id, "exact": "true"},
-                headers=headers,
-            )
-            response.raise_for_status()
-            rows = response.json()
+            def lookup_user() -> list[dict]:
+                response = client.get(
+                    f"{keycloak_url}/admin/realms/boi-validation/users",
+                    params={"username": employee_id, "exact": "true"},
+                    headers=headers,
+                )
+                response.raise_for_status()
+                return response.json()
+
+            rows = lookup_user()
+            if not rows:
+                first_name, last_name = USER_PROFILES[employee_id]
+                created = client.post(
+                    f"{keycloak_url}/admin/realms/boi-validation/users",
+                    headers={**headers, "Content-Type": "application/json"},
+                    json={
+                        "username": employee_id,
+                        "enabled": True,
+                        "emailVerified": True,
+                        "firstName": first_name,
+                        "lastName": last_name,
+                        "email": f"{employee_id}@boi.validation",
+                        "attributes": {"empno": [employee_id]},
+                    },
+                )
+                if created.status_code != 201:
+                    raise RuntimeError(
+                        f"failed to create validation Keycloak user {employee_id}"
+                    )
+                rows = lookup_user()
             if len(rows) != 1:
                 raise RuntimeError(f"expected one Keycloak user for {employee_id}")
             subject = str(rows[0].get("id") or "")
             if not UUID_PATTERN.fullmatch(subject):
                 raise RuntimeError(f"invalid Keycloak subject for {employee_id}")
+            password_reset = client.put(
+                f"{keycloak_url}/admin/realms/boi-validation/users/{subject}/reset-password",
+                headers={**headers, "Content-Type": "application/json"},
+                json={
+                    "type": "password",
+                    "value": str(identities[employee_id]),
+                    "temporary": False,
+                },
+            )
+            if password_reset.status_code != 204:
+                raise RuntimeError(
+                    f"failed to set validation Keycloak password for {employee_id}"
+                )
             subjects[employee_id] = subject
 
     statements = ["BEGIN;"]

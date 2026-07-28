@@ -35,6 +35,10 @@ review:
 6. Playground로 돌아와 `배포 결과 확인`을 누른다.
 7. 배포된 정확한 Flow를 선택하고 전체 검증을 수행한다.
 
+배포 결과로 연결된 Flow에는 `PRD · Agent Hub` 배지가 붙는다. `Langflow에서 원본 Flow
+열기`는 내 endpoint에 배포된 실행 Canvas를 열고, `Agent Hub에서 배포 자산 보기`는
+공유 자산의 작성자·버전·설명을 연다. 두 링크는 같은 대상을 뜻하지 않는다.
+
 # Component 상태를 구분한다
 
 | 상태 | 의미 |
@@ -50,7 +54,8 @@ Component가 Flow에 보인다는 이유만으로 완료 처리하지 않는다.
 
 입력 `agent_context`, 출력 `agent_result`의 단일 포트가 명확한 `boi.agent-slot.v1` Component만 `Agent 자리에 연결`할 수 있다.
 
-포트가 여러 개거나 타입이 불명확하면 자동 연결하지 않는다. 안내된 Langflow Canvas에서 직접 연결한 뒤 Playground 검증을 다시 실행한다.
+포트가 여러 개거나 타입이 불명확하면 자동 연결하지 않는다. 선택한 Flow의 `원본 열기`로
+Langflow Canvas를 열어 직접 연결한 뒤 Playground 검증을 다시 실행한다.
 
 연결 후에도 다음 항목이 보존되어야 한다.
 

@@ -3,8 +3,8 @@ okf_version: "0.1"
 boi_profile_version: "0.1"
 type: boi/manual
 title: SSO and Permission Model
-description: SK hynix Keycloak/HCP SSO, local development auth, BoI Wiki ACL, Inbox 사번 권한, MCP, Langflow 권한 운영 기준
-tags: [Manual, SSO, Keycloak, HCP, Authorization, Inbox, Langflow, MCP]
+description: 공급자 독립 SSO, HCP, BoI Wiki ACL, Inbox 사번 권한, MCP와 Langflow 권한 운영 기준
+tags: [Manual, SSO, OIDC, TrustedHeader, HCP, Authorization, Inbox, Langflow, MCP]
 timestamp: 2026-07-05T22:00:00+09:00
 boi_id: boi:public:boi-wiki-manual:security:sso-and-permissions
 visibility: public
@@ -29,32 +29,34 @@ review:
 
 # Summary
 
-BoI Wiki의 운영 권한은 OKF 문서 ACL과 사용자 identity를 함께 본다. 개발 모드는 사번 selector를 유지하지만, SSO 모드에서는 Keycloak claim과 HCP 권한 응답이 source of truth다.
+BoI Wiki의 운영 권한은 OKF 문서 ACL과 사용자 identity를 함께 본다. 개발 모드는
+사번 selector를 유지하지만 SSO 모드에서는 OIDC claim 또는 검증된 proxy header로
+만든 `AuthIdentity`가 신원의 기준이다. 업무 권한은 HCP 응답이 최종 권위다.
 
 SSO/MyAccess 성격의 시스템은 “누가 이 시스템에 접근할 수 있는가”와 사번 claim을 제공한다. BoI 문서 visibility, Team BoI 접근, Action 실행, promotion, Agent context 사용 같은 세부 권한은 BoI Wiki 내부 팀 RBAC와 BoI Profile ACL이 결정한다.
 
-# SK hynix SSO Baseline
+# 공급자 독립 SSO Baseline
 
-이 PoC의 SSO 기준은 [langflow-hynix](https://github.com/YeonghyeonKO/langflow-hynix)의 Keycloak/HCP 모델과 맞춘다.
+Keycloak은 로컬 검증 구현체다. 사내에서는 범용 OIDC, 검증된 trusted header,
+또는 별도 SSO Langflow gateway 중 가능한 방식을 선택한다. 공급자가 달라도 다음
+계약으로 수렴한다.
 
-| 항목 | BoI Wiki | Langflow-Hynix |
-| --- | --- | --- |
-| Browser SSO | `/auth/login` -> Keycloak Authorization Code + PKCE | `/api/v1/keycloak/login` -> Keycloak Authorization Code + PKCE |
-| Issuer/JWKS split | `KEYCLOAK_ISSUER_URL`, `KEYCLOAK_INTERNAL_URL` | `KEYCLOAK_SERVER_URL`, `KEYCLOAK_EXTERNAL_SERVER_URL` |
-| Employee claim | `BOI_EMPLOYEE_CLAIM` 또는 `KEYCLOAK_EMPLOYEE_CLAIM` | `KEYCLOAK_EMPLOYEE_CLAIM` |
-| Project authorization | `HCP_AUTHZ_URL` 또는 `KEYCLOAK_HCP_API_URL` | `KEYCLOAK_HCP_API_URL` |
-| Per-instance restriction | `BOI_ALLOWED_EMPLOYEE_IDS` 또는 `KEYCLOAK_ALLOWED_EMPLOYEE` | `KEYCLOAK_ALLOWED_EMPLOYEE` |
-| Admin bypass | `boi.admin` 또는 `KEYCLOAK_ADMIN_EMPLOYEES` | `KEYCLOAK_ADMIN_EMPLOYEES` |
+```text
+AuthIdentity(employee_id, display_name, email, teams, roles, auth_source)
+```
 
-Langflow-Hynix는 SSO 성공 사용자를 shared Langflow account에 매핑하고, 접근 가능 여부는 Keycloak employee claim과 HCP project roles로 판단한다. BoI Wiki는 같은 employee/team/role 의미를 사용하되, BoI 문서 ACL과 action/workflow role까지 같이 검증한다.
+자산 소유자는 `employee_id`로 결정한다. query, form, 일반 client header의 사번은
+소유권에 사용하지 않는다. 여러 직원을 하나의 무제한 shared Langflow 사용자에
+매핑하지 않는다.
 
 # Auth Modes
 
 | Mode | 용도 | Identity source | 주의 |
 | --- | --- | --- | --- |
 | `dev` | 로컬 PoC와 테스트 | `employee_id` query, dev user map | 사내 공유 환경에서 사용하지 않는다. |
-| `keycloak` | SK hynix SSO | Keycloak OIDC + HCP permission API | `employee_id` query가 로그인 사용자와 다르면 403이다. |
-| `trusted_header` | 사내 인증 proxy 뒤 배포 | `X-Hynix-*` trusted headers | proxy가 헤더를 덮어쓰는 구조에서만 사용한다. |
+| `oidc` | 범용 사내 SSO | Authorization Code + PKCE | `BOI_OIDC_*` 공급자 중립 설정을 사용한다. |
+| `keycloak` | 기존 설정 호환 | `oidc`와 동일 | `BOI_OIDC_*`가 없을 때만 `KEYCLOAK_*`를 fallback으로 읽는다. |
+| `trusted_header` | 사내 인증 gateway 뒤 배포 | 검증된 configurable headers | shared secret과 source CIDR를 모두 확인한다. |
 
 # Permission Rules
 
@@ -85,7 +87,9 @@ BoI Inbox는 인증된 사번을 authoritative identity로 사용한다. `/api/i
 
 Web Inbox는 opaque `task_ref`를 사용한다. MCP/API는 전환기 compatibility 때문에 raw `task_id` resolve를 유지할 수 있지만, 새 client 문서와 예제는 `task_ref` 또는 canonical `boi_inbox*` tool만 안내한다. `agent_inbox*`는 deprecated alias다.
 
-개발 모드의 query `employee_id`는 PoC 편의 기능이다. `keycloak`과 `trusted_header` 모드에서는 로그인/헤더 사번과 query 사번이 다르면 403으로 실패해야 한다.
+개발 모드의 query `employee_id`는 PoC 편의 기능이다. `oidc`, `keycloak`,
+`trusted_header` 모드에서는 로그인/헤더 사번과 query 사번이 다르면 403으로
+실패해야 한다.
 
 # HCP Role Mapping
 
@@ -114,22 +118,21 @@ Project role은 BoI role로 다음처럼 변환된다. BoI Wiki 안에서는 공
 # Local SSO Development
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.sso-dev.yml up -d --build
+docker compose -f validation/agent-hub/docker-compose.yml up -d
+docker compose -f validation/agent-playground-mainline/docker-compose.yml up -d --build
 ```
 
-개발 realm에는 `100001`, `100002`, `100003` 사용자가 있고 비밀번호는 모두 `password`다. `100001`은 `aix-tf`, `platform`, admin 역할을 가진다. `100002`는 `aix-tf`, `100003`은 `platform`만 가진다.
+로컬 기준 주소는 BoI `:28005`, Langflow SSO browser `:17867`, Langflow raw API
+`:7867`, Keycloak `:18082`, Agent Hub `:18080`이다. Browser URL과 API URL을
+분리하며 HTML과 redirect에 `host.docker.internal`을 노출하지 않는다.
 
-BoI Wiki는 `http://localhost:28000/auth/login`에서 Keycloak으로 이동한다. Langflow는 `langflow-hynix` SSO 이미지로 뜨며 `http://localhost:7860`에서 같은 realm을 사용한다.
+Keycloak에는 BoI용 `boi-wiki`와 Langflow proxy용 `langflow-browser` client를
+분리한다. 둘 다 PKCE S256과 `empno` claim을 사용한다. 원본 Canvas 완료 기준은
+HTML 200이 아니라 Langflow `whoami`가 BoI 사번과 일치하는 것이다.
 
-SSO overlay는 Langflow-Hynix가 실제로 읽는 환경변수를 사용한다.
-
-- `KEYCLOAK_SERVER_URL`: Langflow container에서 Keycloak으로 가는 내부 URL.
-- `KEYCLOAK_EXTERNAL_SERVER_URL`: 브라우저가 접근하는 Keycloak URL.
-- `KEYCLOAK_HCP_API_URL`: Mock HCP project roles endpoint.
-- `KEYCLOAK_ALLOWED_EMPLOYEE`: per-employee Langflow instance 제한.
-- `KEYCLOAK_SHARED_USERNAME`: SSO 사용자를 매핑할 shared Langflow user.
-
-개발 Mock HCP는 `GET /api/permissions?employee_id=...`와 `GET /v1/projects/{project}/roles`를 모두 제공한다. BoI Wiki는 전자를 기본으로 쓰고, Langflow-Hynix는 후자를 쓴다.
+OIDC client 등록이 불가능한 경우에는
+[Agent Playground 사내 SSO 방식 선택 가이드](/docs/boi:public:boi-wiki-manual:operations:agent-playground-sso-deployment)의
+trusted header와 Token Bridge 계약을 사용한다.
 
 # MCP and Agent Use
 
@@ -137,11 +140,12 @@ BoI Wiki MCP는 agent가 OKF 문서, action catalog, workflow 상태, source/bod
 
 # Production Defaults
 
-- `BOI_AUTH_MODE=keycloak`
+- `BOI_AUTH_MODE=oidc` 또는 검증된 `trusted_header`
 - `LANGFLOW_AUTO_LOGIN=false`
 - `LANGFLOW_SKIP_AUTH_AUTO_LOGIN=false`
 - `BOI_COOKIE_SECURE=true`
-- `BOI_SESSION_SECRET`, `LANGFLOW_SECRET_KEY`, `SERVICE_TOKEN`, `KEYCLOAK_CLIENT_SECRET`은 Secret Manager에서 공급한다.
+- `BOI_SESSION_SECRET`, `LANGFLOW_SECRET_KEY`, `SERVICE_TOKEN`, OIDC client secret,
+  Token Bridge private key는 Secret Manager에서 공급한다.
 - HCP 권한 API 장애 시 fail-closed로 처리한다.
 
 # Citations

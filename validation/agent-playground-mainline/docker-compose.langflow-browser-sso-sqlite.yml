@@ -1,0 +1,20 @@
+name: boi-agent-playground-mainline-langflow
+
+# Official Langflow 1.11.0 external-auth JIT currently fails on PostgreSQL before
+# the local User row is flushed. This validation-only override keeps the
+# PostgreSQL volume untouched and exercises the same official image, public API,
+# external JWT validation and read-only BoI bundle with an isolated SQLite DB.
+# Remove this override after an official 1.11.x image passes the PostgreSQL SSO
+# regression; never patch Langflow source or its database.
+services:
+  langflow-111:
+    environment:
+      LANGFLOW_DATABASE_URL: sqlite:////app/langflow/langflow.db
+      LANGFLOW_CONFIG_DIR: /app/langflow
+    volumes:
+      - ./langflow/custom_components:/app/custom_components:ro
+      - langflow-111-sso-sqlite-data:/app/langflow
+
+volumes:
+  langflow-111-sso-sqlite-data:
+    name: boi-agent-playground-mainline-langflow-sso-sqlite-data-v2

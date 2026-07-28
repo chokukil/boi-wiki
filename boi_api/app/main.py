@@ -102,6 +102,7 @@ from .auth import (
 from .agent_playground import (
     AgentPlaygroundService,
     PlaygroundBootstrapRequest,
+    PlaygroundBrowserSSOVerifyRequest,
     PlaygroundConnectRequest,
     PlaygroundDeploymentRequest,
     PlaygroundEndpointCreateRequest,
@@ -718,7 +719,7 @@ async def keycloak_browser_login_redirect(request: Request, call_next: Callable[
     )
     if (
         response.status_code == 401
-        and auth_mode() == "keycloak"
+        and auth_mode() in {"keycloak", "oidc"}
         and request.method == "GET"
         and accepts_html
         and not excluded
@@ -7744,6 +7745,7 @@ async def require_service_token(x_service_token: str | None = Header(None)) -> N
 
 
 def current_identity(
+    request: Request,
     employee_id: str | None = Query(default=None),
     x_employee_id: str | None = Header(default=None),
     x_service_token: str | None = Header(default=None),
@@ -7758,17 +7760,60 @@ def current_identity(
     try:
         if x_service_token == SERVICE_TOKEN:
             return remember_identity(service_identity(employee_id or x_employee_id or x_hynix_employee_id or DEMO_EMPLOYEE_ID))
+        def configured_header(env_name: str, *fallbacks: str) -> str | None:
+            configured = str(os.getenv(env_name) or "").strip()
+            if configured:
+                return request.headers.get(configured)
+            for name in fallbacks:
+                value = request.headers.get(name)
+                if value is not None:
+                    return value
+            return None
+
+        trusted_employee = configured_header(
+            "BOI_TRUSTED_EMPLOYEE_HEADER",
+            "x-boi-employee-id",
+            "x-hynix-employee-id",
+            "x-employee-id",
+        )
+        trusted_email = configured_header(
+            "BOI_TRUSTED_EMAIL_HEADER",
+            "x-boi-email",
+            "x-hynix-email",
+        )
+        trusted_name = configured_header(
+            "BOI_TRUSTED_NAME_HEADER",
+            "x-boi-name",
+            "x-hynix-name",
+        )
+        trusted_teams = configured_header(
+            "BOI_TRUSTED_TEAMS_HEADER",
+            "x-boi-teams",
+            "x-hynix-teams",
+        )
+        trusted_roles = configured_header(
+            "BOI_TRUSTED_ROLES_HEADER",
+            "x-boi-roles",
+            "x-hynix-roles",
+        )
+        proxy_secret_header = str(
+            os.getenv("BOI_TRUSTED_PROXY_SECRET_HEADER")
+            or "x-boi-proxy-secret"
+        ).strip()
+
         return remember_identity(
             resolve_identity(
                 query_employee_id=employee_id,
                 x_employee_id=x_employee_id,
                 authorization=authorization,
                 session_token=boi_session,
-                x_hynix_employee_id=x_hynix_employee_id,
-                x_hynix_email=x_hynix_email,
-                x_hynix_name=x_hynix_name,
-                x_hynix_teams=x_hynix_teams,
-                x_hynix_roles=x_hynix_roles,
+                x_hynix_employee_id=trusted_employee or x_hynix_employee_id,
+                x_hynix_email=trusted_email or x_hynix_email,
+                x_hynix_name=trusted_name or x_hynix_name,
+                x_hynix_teams=trusted_teams or x_hynix_teams,
+                x_hynix_roles=trusted_roles or x_hynix_roles,
+                trusted_proxy_secret=request.headers.get(proxy_secret_header),
+                source_host=request.client.host if request.client else None,
             )
         )
     except AuthError as exc:
@@ -10354,7 +10399,7 @@ def inbox_form_return_url(form: dict[str, list[str]], employee_id: str, **fallba
 
 @app.get("/auth/login")
 async def auth_login(next: str = "/") -> RedirectResponse:
-    if auth_mode() != "keycloak":
+    if auth_mode() not in {"keycloak", "oidc"}:
         return RedirectResponse(safe_next_url(next), status_code=302)
     try:
         state_token, state, challenge, nonce = create_oidc_state(safe_next_url(next))
@@ -10381,10 +10426,10 @@ async def auth_callback(
     state: str = "",
     oidc_state: str | None = Cookie(default=None, alias=OIDC_STATE_COOKIE_NAME),
 ) -> RedirectResponse:
-    if auth_mode() != "keycloak":
+    if auth_mode() not in {"keycloak", "oidc"}:
         return RedirectResponse("/", status_code=302)
     if not code or not state or not oidc_state:
-        raise HTTPException(status_code=400, detail="missing Keycloak callback parameters")
+        raise HTTPException(status_code=400, detail="missing OIDC callback parameters")
     try:
         state_payload = decode_oidc_state(oidc_state)
         if state_payload.get("state") != state:
@@ -10392,11 +10437,17 @@ async def auth_callback(
         token_body = exchange_keycloak_code(code, state_payload)
         bearer = str(token_body.get("id_token") or token_body.get("access_token") or "")
         if not bearer:
-            raise AuthError(401, "Keycloak token response has no usable token")
+            raise AuthError(401, "OIDC token response has no usable token")
         claims = decode_keycloak_bearer(bearer)
         if token_body.get("id_token") and claims.get("nonce") != state_payload.get("nonce"):
             raise AuthError(401, "OIDC nonce mismatch")
-        identity = remember_identity(identity_from_claims(claims, auth_source="keycloak", bearer_token=str(token_body.get("access_token") or "")))
+        identity = remember_identity(
+            identity_from_claims(
+                claims,
+                auth_source="keycloak" if auth_mode() == "keycloak" else "oidc",
+                bearer_token=str(token_body.get("access_token") or ""),
+            )
+        )
         redirect = RedirectResponse(safe_next_url(str(state_payload.get("next") or "/")), status_code=302)
         redirect.set_cookie(
             SESSION_COOKIE_NAME,
@@ -10414,7 +10465,11 @@ async def auth_callback(
 
 @app.get("/auth/logout")
 async def auth_logout(next: str = "/") -> RedirectResponse:
-    target = keycloak_logout_url(safe_next_url(next)) if auth_mode() == "keycloak" else safe_next_url(next)
+    target = (
+        keycloak_logout_url(safe_next_url(next))
+        if auth_mode() in {"keycloak", "oidc"}
+        else safe_next_url(next)
+    )
     redirect = RedirectResponse(target, status_code=302)
     redirect.delete_cookie(SESSION_COOKIE_NAME)
     redirect.delete_cookie(OIDC_STATE_COOKIE_NAME)
@@ -33669,6 +33724,14 @@ def internal_agent_playground_wiki_confirm(
 @app.get("/api/agent-playground")
 def api_agent_playground(identity: AuthIdentity = Depends(current_identity)) -> dict[str, Any]:
     return AGENT_PLAYGROUND_SERVICE.state(identity)
+
+
+@app.post("/api/agent-playground/browser-sso/verify")
+def api_agent_playground_browser_sso_verify(
+    req: PlaygroundBrowserSSOVerifyRequest,
+    identity: AuthIdentity = Depends(current_identity),
+) -> dict[str, Any]:
+    return AGENT_PLAYGROUND_SERVICE.verify_browser_sso(identity, req)
 
 
 @app.post("/api/agent-playground/connect")

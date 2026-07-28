@@ -39,6 +39,10 @@ review:
 - `Wiki 지식 자산화`: 근거와 provenance를 보존한다. 외부 MCP에서는 preview만 허용한다.
 - `결과 확인`: 사람이 읽는 Markdown과 Action이 쓰는 구조화 data를 함께 유지한다.
 
+이 다섯 단계는 대표 Flow의 이해를 돕는 설명이다. Playground가 모든 Flow를 이 선형
+구조로 다시 그린다는 뜻은 아니다. 분기·병합·루프를 포함한 실제 구조는 Flow 목록의
+`원본 열기`에서 Langflow Canvas로 확인한다.
+
 # 무엇을 교체할 수 있나
 
 세 번째 Agent만 `boi.agent-slot.v1` 호환 Component로 교체할 수 있다. 입력 `agent_context`, 출력 `agent_result`를 지키고 source references, Ontology provenance, Task Context와 grounding을 삭제하면 안 된다.

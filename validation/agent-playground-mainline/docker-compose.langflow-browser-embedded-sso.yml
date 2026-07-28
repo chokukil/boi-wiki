@@ -1,0 +1,29 @@
+name: boi-agent-playground-mainline-langflow
+
+# Validation fallback for official Langflow 1.11.0.
+#
+# The 1.11.0 browser frontend still starts the built-in refresh-cookie flow
+# after an external JWT session is accepted. Until an official 1.11.x image
+# fixes that browser lifecycle, validate passwordless Canvas access with an
+# employee-isolated instance behind the same OIDC proxy. The proxy allowlist
+# admits only employee 100002 and the official Langflow auto-login account is
+# also named 100002. This is not a shared multi-employee identity.
+#
+# The embedded path uses a fresh official PostgreSQL volume. It doesn't exercise
+# external-auth JIT provisioning, so it avoids both the 1.11.0 PostgreSQL JIT
+# ordering bug and the SQLite MCP write-lock limitation without touching
+# Langflow source, frontend assets or database schema.
+services:
+  langflow-111-postgres:
+    volumes:
+      - langflow-111-embedded-sso-postgres-data:/var/lib/postgresql/data
+
+  langflow-111:
+    environment:
+      LANGFLOW_AUTO_LOGIN: "true"
+      LANGFLOW_SUPERUSER: "100002"
+      LANGFLOW_EXTERNAL_AUTH_ENABLED: "false"
+
+volumes:
+  langflow-111-embedded-sso-postgres-data:
+    name: boi-agent-playground-mainline-langflow-embedded-sso-postgres-data-v1

@@ -51,9 +51,12 @@ const config = {
     process.env.LANGFLOW_BROWSER_URL
     || process.env.LANGFLOW_ENDPOINT_FOR_PLAYGROUND
     || "http://localhost:7867",
+  langflowBrowserAuthMode:
+    process.env.LANGFLOW_BROWSER_AUTH_MODE || "embedded_sso",
   playgroundUrl:
     process.env.AGENT_PLAYGROUND_URL || "http://localhost:28005/playground",
   boiBaseUrl: process.env.BOI_BASE_URL || "http://localhost:28005",
+  boiExpectedAuthSource: process.env.BOI_EXPECTED_AUTH_SOURCE || "oidc",
   boiActionUrl:
     process.env.BOI_ACTION_URL ||
     "http://localhost:28005/actions",
@@ -96,9 +99,11 @@ config.langflowPassword ||= String(langflowAccount.password || "");
 for (const [name, value] of Object.entries({
   AGENT_HUB_PASSWORD: config.agentHubPassword,
   LANGFLOW_API_KEY: config.langflowApiKey,
-  LANGFLOW_PASSWORD: config.langflowPassword,
 })) {
   if (!value) throw new Error(`${name} is required`);
+}
+if (config.langflowBrowserAuthMode === "native" && !config.langflowPassword) {
+  throw new Error("LANGFLOW_PASSWORD is required when LANGFLOW_BROWSER_AUTH_MODE=native");
 }
 
 const flowArtifact = JSON.parse(await fs.readFile(config.flowJson, "utf8"));
@@ -200,6 +205,22 @@ async function attachDiagnostics(page, scope) {
   });
 }
 
+async function completeKeycloakLogin(page, expectedOrigin) {
+  if (!page.url().includes("/protocol/openid-connect/")) return false;
+  const authorization = new URL(page.url());
+  assert(
+    authorization.searchParams.get("code_challenge_method") === "S256",
+    "OIDC PKCE S256 is missing",
+  );
+  await page.locator("#username").fill(config.agentHubUsername);
+  await page.locator("#password").fill(config.agentHubPassword);
+  await Promise.all([
+    page.waitForURL((url) => url.origin === expectedOrigin, { timeout: 30_000 }),
+    page.locator("#kc-login").click(),
+  ]);
+  return true;
+}
+
 async function loginAgentHub(page) {
   await page.goto(config.agentHubUrl, { waitUntil: "domcontentloaded" });
   const agentHubOrigin = new URL(config.agentHubUrl).origin;
@@ -230,14 +251,22 @@ async function loginAgentHub(page) {
       preferred_username: payload.preferred_username,
     };
   });
-  const apiPrincipal = await page.evaluate(async () => {
+  result.agent_hub.token_principal = tokenPrincipal;
+  const apiPrincipalResponse = await page.evaluate(async () => {
     const token = localStorage.getItem("agenthub_token");
     const response = await fetch("/api/v1/users/me", {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    if (!response.ok) throw new Error(`users/me returned ${response.status}`);
-    return response.json();
+    return {
+      status: response.status,
+      body: await response.json().catch(() => ({})),
+    };
   });
+  assert(
+    apiPrincipalResponse.status === 200,
+    `users/me returned ${apiPrincipalResponse.status}: ${JSON.stringify(apiPrincipalResponse.body)}`,
+  );
+  const apiPrincipal = apiPrincipalResponse.body;
   const principal = {
     employee_id:
       apiPrincipal.employee_id ||
@@ -328,7 +357,11 @@ async function loginBoi(page, targetUrl, username = config.agentHubUsername) {
   });
   assert(identity.status === 200, `BoI session identity returned HTTP ${identity.status}`);
   assert(identity.body?.identity?.employee_id === username, "BoI SSO principal did not resolve empno");
-  assert(identity.body?.identity?.auth_source === "keycloak", "BoI browser did not use the Keycloak session");
+  assert(
+    identity.body?.identity?.auth_source === config.boiExpectedAuthSource,
+    `BoI browser auth source was ${identity.body?.identity?.auth_source || "missing"}; `
+      + `expected ${config.boiExpectedAuthSource}`,
+  );
   const spoofEmployee = username === "100003" ? "100002" : "100003";
   const spoof = await page.evaluate(async (employeeId) => {
     const response = await fetch(`/api/agent-playground?employee_id=${encodeURIComponent(employeeId)}`);
@@ -593,12 +626,27 @@ async function verifyLangflowCanvas(browser, flowId, flowUrl) {
   publicUrl.host = new URL(config.langflowBrowserUrl).host;
   await page.goto(publicUrl.toString(), { waitUntil: "domcontentloaded" });
 
+  if (page.url().includes("/protocol/openid-connect/")) {
+    assert(
+      config.langflowBrowserAuthMode !== "native",
+      "Native Langflow mode unexpectedly redirected through OIDC",
+    );
+    await completeKeycloakLogin(page, new URL(config.langflowBrowserUrl).origin);
+    if (!page.url().includes("/flow/")) {
+      await page.goto(publicUrl.toString(), { waitUntil: "domcontentloaded" });
+    }
+  }
+
   const passwordInput = page.locator('input[type="password"]');
   const loginVisible = await passwordInput
     .waitFor({ state: "visible", timeout: 20_000 })
     .then(() => true)
     .catch(() => false);
   if (loginVisible) {
+    assert(
+      config.langflowBrowserAuthMode === "native",
+      "SSO-protected Langflow displayed a second password form",
+    );
     const userInput = page.locator('input[name="username"], input[type="text"]').first();
     await userInput.fill(config.agentHubUsername);
     await passwordInput.fill(config.langflowPassword);
@@ -754,10 +802,18 @@ async function verifyPlayground(browser, flowId) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   await attachDiagnostics(page, "playground");
-  await loginBoi(page, config.playgroundUrl);
+  const playgroundUrl = new URL(config.playgroundUrl);
+  playgroundUrl.searchParams.set(
+    "agent_hub_asset_id",
+    String(result.agent_hub.asset_id || ""),
+  );
+  await loginBoi(page, playgroundUrl.toString());
   const root = page.locator("[data-agent-playground]");
   await root.waitFor();
-  await root.locator("[data-auth-source]").getByText(/keycloak/i).waitFor({ timeout: 20_000 });
+  await root
+    .locator("[data-auth-source]")
+    .getByText(new RegExp(config.boiExpectedAuthSource, "i"))
+    .waitFor({ timeout: 20_000 });
   await root.locator(".agent-playground-identity strong").getByText("100002", { exact: true }).waitFor({
     timeout: 20_000,
   });

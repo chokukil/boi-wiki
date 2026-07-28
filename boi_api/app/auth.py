@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
+import ipaddress
 import json
 import os
 import secrets
@@ -223,7 +225,92 @@ def claim_values(claims: dict[str, Any], env_name: str, default_path: str) -> li
     return []
 
 
+def legacy_keycloak_base_url(*, public: bool = False) -> str:
+    names = (
+        ("KEYCLOAK_EXTERNAL_SERVER_URL", "KEYCLOAK_SERVER_URL", "KEYCLOAK_INTERNAL_URL")
+        if public
+        else ("KEYCLOAK_INTERNAL_URL", "KEYCLOAK_SERVER_URL")
+    )
+    server = env_first(*names)
+    realm = env_first("KEYCLOAK_REALM")
+    if not server or not realm:
+        raise AuthError(500, "OIDC issuer and endpoints must be configured")
+    return f"{server.rstrip('/')}/realms/{realm}"
+
+
+def oidc_internal_base_url() -> str:
+    configured = env_first("BOI_OIDC_INTERNAL_URL")
+    if configured:
+        return configured.rstrip("/")
+    return legacy_keycloak_base_url(public=False)
+
+
+def oidc_browser_base_url() -> str:
+    configured = env_first("BOI_OIDC_ISSUER_URL")
+    if configured:
+        return configured.rstrip("/")
+    return legacy_keycloak_base_url(public=True)
+
+
+def oidc_issuer_url() -> str:
+    configured = env_first("BOI_OIDC_ISSUER_URL")
+    if configured:
+        return configured.rstrip("/")
+    public = env_first("KEYCLOAK_ISSUER_URL")
+    realm = env_first("KEYCLOAK_REALM")
+    if public and realm:
+        return f"{public.rstrip('/')}/realms/{realm}"
+    return legacy_keycloak_base_url(public=True)
+
+
+def oidc_authorization_endpoint() -> str:
+    return env_first(
+        "BOI_OIDC_AUTHORIZATION_URL",
+        default=f"{oidc_browser_base_url()}/protocol/openid-connect/auth",
+    )
+
+
+def oidc_token_endpoint() -> str:
+    return env_first(
+        "BOI_OIDC_TOKEN_URL",
+        default=f"{oidc_internal_base_url()}/protocol/openid-connect/token",
+    )
+
+
+def oidc_jwks_endpoint() -> str:
+    return env_first(
+        "BOI_OIDC_JWKS_URL",
+        default=f"{oidc_internal_base_url()}/protocol/openid-connect/certs",
+    )
+
+
 def keycloak_base_url() -> str:
+    """Compatibility alias for older callers and deployment settings."""
+
+    return oidc_internal_base_url()
+
+
+def keycloak_issuer() -> str:
+    """Compatibility alias for older callers and deployment settings."""
+
+    return oidc_issuer_url()
+
+
+def keycloak_browser_base_url() -> str:
+    """Compatibility alias for older callers and deployment settings."""
+
+    return oidc_browser_base_url()
+
+
+def keycloak_internal_base_url() -> str:
+    """Compatibility alias for older callers and deployment settings."""
+
+    return oidc_internal_base_url()
+
+
+def _legacy_keycloak_base_url() -> str:
+    """Deprecated name retained for serialized references in old extensions."""
+
     internal = env_first("KEYCLOAK_INTERNAL_URL", "KEYCLOAK_SERVER_URL")
     realm = env_first("KEYCLOAK_REALM")
     if not internal or not realm:
@@ -231,43 +318,27 @@ def keycloak_base_url() -> str:
     return f"{internal.rstrip('/')}/realms/{realm}"
 
 
-def keycloak_issuer() -> str:
-    public = env_first("KEYCLOAK_ISSUER_URL", "KEYCLOAK_EXTERNAL_SERVER_URL", "KEYCLOAK_SERVER_URL", "KEYCLOAK_INTERNAL_URL")
-    realm = env_first("KEYCLOAK_REALM")
-    if not public or not realm:
-        raise AuthError(500, "Keycloak URL and realm must be configured")
-    return f"{public.rstrip('/')}/realms/{realm}"
-
-
-def keycloak_browser_base_url() -> str:
-    public = env_first("KEYCLOAK_EXTERNAL_SERVER_URL", "KEYCLOAK_SERVER_URL", "KEYCLOAK_INTERNAL_URL")
-    realm = env_first("KEYCLOAK_REALM")
-    if not public or not realm:
-        raise AuthError(500, "Keycloak URL and realm must be configured")
-    return f"{public.rstrip('/')}/realms/{realm}"
-
-
-def keycloak_internal_base_url() -> str:
-    return keycloak_base_url()
-
-
 def boi_external_url() -> str:
     return os.getenv("BOI_EXTERNAL_URL", "http://localhost:8000").rstrip("/")
 
 
 def keycloak_redirect_uri() -> str:
-    return os.getenv("KEYCLOAK_REDIRECT_URI") or f"{boi_external_url()}/auth/callback"
+    return env_first(
+        "BOI_OIDC_REDIRECT_URI",
+        "KEYCLOAK_REDIRECT_URI",
+        default=f"{boi_external_url()}/auth/callback",
+    )
 
 
 def oidc_client_id() -> str:
-    client_id = os.getenv("KEYCLOAK_CLIENT_ID", "")
+    client_id = env_first("BOI_OIDC_CLIENT_ID", "KEYCLOAK_CLIENT_ID")
     if not client_id:
-        raise AuthError(500, "KEYCLOAK_CLIENT_ID must be configured")
+        raise AuthError(500, "BOI_OIDC_CLIENT_ID must be configured")
     return client_id
 
 
 def oidc_client_secret() -> str:
-    return os.getenv("KEYCLOAK_CLIENT_SECRET", "")
+    return env_first("BOI_OIDC_CLIENT_SECRET", "KEYCLOAK_CLIENT_SECRET")
 
 
 def session_secret() -> str:
@@ -358,15 +429,25 @@ def keycloak_authorization_url(*, state: str, code_challenge: str, nonce: str) -
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
     }
-    return f"{keycloak_browser_base_url()}/protocol/openid-connect/auth?{urlencode(params)}"
+    return f"{oidc_authorization_endpoint()}?{urlencode(params)}"
 
 
 def keycloak_logout_url(redirect_to: str = "/") -> str:
+    redirect_uri = f"{boi_external_url()}{redirect_to if redirect_to.startswith('/') else '/'}"
+    configured = env_first("BOI_SSO_LOGOUT_URL")
+    if configured:
+        try:
+            return configured.format(
+                client_id=oidc_client_id(),
+                redirect_uri=redirect_uri,
+            )
+        except (KeyError, ValueError) as exc:
+            raise AuthError(500, f"invalid BOI_SSO_LOGOUT_URL template: {exc}") from exc
     params = {
         "client_id": oidc_client_id(),
-        "post_logout_redirect_uri": f"{boi_external_url()}{redirect_to if redirect_to.startswith('/') else '/'}",
+        "post_logout_redirect_uri": redirect_uri,
     }
-    return f"{keycloak_browser_base_url()}/protocol/openid-connect/logout?{urlencode(params)}"
+    return f"{oidc_browser_base_url()}/protocol/openid-connect/logout?{urlencode(params)}"
 
 
 def exchange_keycloak_code(code: str, state_payload: dict[str, Any]) -> dict[str, Any]:
@@ -381,18 +462,18 @@ def exchange_keycloak_code(code: str, state_payload: dict[str, Any]) -> dict[str
     if secret:
         data["client_secret"] = secret
     response = httpx.post(
-        f"{keycloak_internal_base_url()}/protocol/openid-connect/token",
+        oidc_token_endpoint(),
         data=data,
-        timeout=float(os.getenv("KEYCLOAK_TOKEN_TIMEOUT_SECONDS", "5")),
+        timeout=float(env_first("BOI_OIDC_TOKEN_TIMEOUT_SECONDS", "KEYCLOAK_TOKEN_TIMEOUT_SECONDS", default="5")),
     )
     try:
         body = response.json()
     except Exception:
         body = {"text": response.text}
     if response.status_code >= 400:
-        raise AuthError(response.status_code, f"Keycloak token exchange failed: {body}")
+        raise AuthError(response.status_code, f"OIDC token exchange failed: {body}")
     if not isinstance(body, dict):
-        raise AuthError(502, "Keycloak token exchange returned invalid JSON")
+        raise AuthError(502, "OIDC token exchange returned invalid JSON")
     return body
 
 
@@ -405,10 +486,10 @@ def jwks_client(jwks_url: str) -> PyJWKClient:
 
 
 def decode_keycloak_bearer(token: str) -> dict[str, Any]:
-    issuer = keycloak_issuer()
-    jwks_url = f"{keycloak_base_url()}/protocol/openid-connect/certs"
-    audience = os.getenv("KEYCLOAK_CLIENT_ID")
-    leeway = int(os.getenv("KEYCLOAK_JWT_LEEWAY_SECONDS", "30"))
+    issuer = oidc_issuer_url()
+    jwks_url = oidc_jwks_endpoint()
+    audience = env_first("BOI_OIDC_CLIENT_ID", "KEYCLOAK_CLIENT_ID")
+    leeway = int(env_first("BOI_OIDC_JWT_LEEWAY_SECONDS", "KEYCLOAK_JWT_LEEWAY_SECONDS", default="30"))
     try:
         signing_key = jwks_client(jwks_url).get_signing_key_from_jwt(token)
         try:
@@ -422,7 +503,11 @@ def decode_keycloak_bearer(token: str) -> dict[str, Any]:
                 options={"verify_aud": bool(audience)},
             )
         except (jwt.MissingRequiredClaimError, jwt.InvalidAudienceError):
-            if not audience or os.getenv("KEYCLOAK_ALLOW_AZP_AUDIENCE", "true").lower() != "true":
+            if not audience or env_first(
+                "BOI_OIDC_ALLOW_AZP_AUDIENCE",
+                "KEYCLOAK_ALLOW_AZP_AUDIENCE",
+                default="true",
+            ).lower() != "true":
                 raise
             claims = jwt.decode(
                 token,
@@ -436,7 +521,7 @@ def decode_keycloak_bearer(token: str) -> dict[str, Any]:
                 raise
             return claims
     except Exception as exc:
-        raise AuthError(401, f"invalid Keycloak token: {exc}") from exc
+        raise AuthError(401, f"invalid OIDC token: {exc}") from exc
 
 
 def parse_mock_bearer(token: str) -> dict[str, Any]:
@@ -551,7 +636,12 @@ def hcp_authoritative_roles(permissions: dict[str, Any]) -> list[str]:
 
 
 def identity_from_claims(claims: dict[str, Any], auth_source: str, bearer_token: str | None = None) -> AuthIdentity:
-    employee_claim = env_first("BOI_EMPLOYEE_CLAIM", "KEYCLOAK_EMPLOYEE_CLAIM", default="employee_id")
+    employee_claim = env_first(
+        "BOI_OIDC_EMPLOYEE_CLAIM",
+        "BOI_EMPLOYEE_CLAIM",
+        "KEYCLOAK_EMPLOYEE_CLAIM",
+        default="employee_id",
+    )
     employee_id = str(
         extract_nested_claim(claims, employee_claim)
         or claims.get("preferred_username")
@@ -560,8 +650,10 @@ def identity_from_claims(claims: dict[str, Any], auth_source: str, bearer_token:
     )
     if not employee_id:
         raise AuthError(401, "employee id claim is missing")
-    teams = claim_values(claims, "BOI_TEAMS_CLAIM", "groups")
-    token_roles = claim_values(claims, "BOI_ROLES_CLAIM", "realm_access.roles")
+    teams_claim = env_first("BOI_OIDC_TEAMS_CLAIM", "BOI_TEAMS_CLAIM", default="groups")
+    roles_claim = env_first("BOI_OIDC_ROLES_CLAIM", "BOI_ROLES_CLAIM", default="realm_access.roles")
+    teams = claim_values(claims, "BOI_OIDC_TEAMS_CLAIM", teams_claim)
+    token_roles = claim_values(claims, "BOI_OIDC_ROLES_CLAIM", roles_claim)
     permissions = hcp_permissions(employee_id, bearer_token=bearer_token)
     teams = unique([*teams, *[str(item) for item in permissions.get("teams", [])]])
     roles = (
@@ -593,16 +685,51 @@ def identity_from_trusted_headers(
 ) -> AuthIdentity:
     if not employee_id:
         raise AuthError(401, "trusted header employee id is missing")
+    permissions = hcp_permissions(employee_id) if hcp_authorization_configured() else {}
+    trusted_teams = split_csv(teams)
+    trusted_roles = split_csv(roles)
     identity = AuthIdentity(
         employee_id=employee_id,
         display_name=name or employee_id,
         email=email or "",
-        teams=split_csv(teams),
-        roles=split_csv(roles) or ["boi.viewer"],
+        teams=unique([*trusted_teams, *[str(item) for item in permissions.get("teams", [])]]),
+        roles=(
+            hcp_authoritative_roles(permissions)
+            if hcp_authorization_configured()
+            else trusted_roles or ["boi.viewer"]
+        ),
         auth_source="trusted_header",
     )
     allowed_employee_check(identity)
     return identity
+
+
+def trusted_proxy_source_allowed(source_host: str | None) -> bool:
+    configured = split_csv(os.getenv("BOI_TRUSTED_PROXY_CIDRS"))
+    if not configured:
+        raise AuthError(500, "BOI_TRUSTED_PROXY_CIDRS must be configured in trusted_header mode")
+    resolved = str(source_host or "").strip()
+    if not resolved:
+        return False
+    for item in configured:
+        if hmac.compare_digest(item, resolved):
+            return True
+        try:
+            if ipaddress.ip_address(resolved) in ipaddress.ip_network(item, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def verify_trusted_proxy(*, provided_secret: str | None, source_host: str | None) -> None:
+    expected_secret = os.getenv("BOI_TRUSTED_PROXY_SHARED_SECRET", "")
+    if not expected_secret:
+        raise AuthError(500, "BOI_TRUSTED_PROXY_SHARED_SECRET must be configured in trusted_header mode")
+    if not provided_secret or not hmac.compare_digest(provided_secret, expected_secret):
+        raise AuthError(401, "trusted proxy authentication failed")
+    if not trusted_proxy_source_allowed(source_host):
+        raise AuthError(403, "trusted proxy source is not allowed")
 
 
 def bearer_token(authorization: str | None) -> str | None:
@@ -625,6 +752,8 @@ def resolve_identity(
     x_hynix_name: str | None = None,
     x_hynix_teams: str | None = None,
     x_hynix_roles: str | None = None,
+    trusted_proxy_secret: str | None = None,
+    source_host: str | None = None,
 ) -> AuthIdentity:
     mode = auth_mode()
     if mode == "dev":
@@ -635,6 +764,10 @@ def resolve_identity(
         allowed_employee_check(identity)
         return identity
     if mode == "trusted_header":
+        verify_trusted_proxy(
+            provided_secret=trusted_proxy_secret,
+            source_host=source_host,
+        )
         identity = identity_from_trusted_headers(
             employee_id=x_hynix_employee_id or x_employee_id,
             email=x_hynix_email,
@@ -642,10 +775,14 @@ def resolve_identity(
             teams=x_hynix_teams,
             roles=x_hynix_roles,
         )
-    elif mode == "keycloak":
+    elif mode in {"keycloak", "oidc"}:
         token = bearer_token(authorization)
         if token:
-            identity = identity_from_claims(decode_keycloak_bearer(token), auth_source="keycloak", bearer_token=token)
+            identity = identity_from_claims(
+                decode_keycloak_bearer(token),
+                auth_source="keycloak" if mode == "keycloak" else "oidc",
+                bearer_token=token,
+            )
         elif session_token:
             identity = identity_from_session_token(session_token)
         else:

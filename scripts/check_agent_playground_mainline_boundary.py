@@ -16,6 +16,7 @@ ALLOWED_PREFIXES = (
     ".gitignore",
     "README.md",
     "action_gateway/",
+    "artifacts/agent-playground-",
     "boi_api/",
     "boi_wiki_mcp/",
     "data/boi/",
@@ -27,6 +28,7 @@ ALLOWED_PREFIXES = (
     "package-lock.json",
     "package.json",
     "scripts/",
+    "sso_token_bridge/",
     "tests/",
     "validation/",
 )
@@ -116,7 +118,9 @@ def main() -> int:
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-shared-assets.md",
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-action-wiki.md",
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-troubleshooting.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "langflow" / "agent-playground-browser-sso.md",
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "operations" / "agent-playground-operator-runbook.md",
+        ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "operations" / "agent-playground-sso-deployment.md",
         ROOT / "data" / "boi" / "public" / "boi-wiki-manual" / "operations" / "agent-hub-integration-boundary.md",
     )
     docs = "\n".join(

@@ -7532,18 +7532,26 @@ def test_agent_builder_page_exposes_agent_playground(boi_app_module):
     legacy = client.get("/agents/builder?employee_id=100001", follow_redirects=False)
     response = client.get("/playground?employee_id=100001", follow_redirects=False)
     script = (boi_app_module.APP_DIR / "static" / "agent_playground.js").read_text(encoding="utf-8")
+    style = (boi_app_module.APP_DIR / "static" / "style.css").read_text(encoding="utf-8")
 
     assert legacy.status_code == 307
     assert legacy.headers["location"] == "/playground?employee_id=100001"
     assert response.status_code == 200
     assert "/static/agent_playground.js?v=" in response.text
     assert "Agent Playground" in response.text
-    assert "Langflow에서 만들기" in response.text
+    assert "Langflow 프로젝트 열기" in response.text
     assert "일반 질문·SOP Task Context 확인" in response.text
     assert "Agent Hub에서 배포" in response.text
     assert "Action 연결" in response.text
-    assert "실제 Langflow graph에서 확인한 Component 실행 경로" in script
-    assert "data-selected-flow-pipeline" in response.text
+    assert "Langflow에서 원본 Flow 열기" in response.text
+    assert "DEV · Playground" in response.text
+    assert "data-selected-flow-pipeline" not in response.text
+    assert "data-open-selected-flow" in response.text
+    assert "data-open-selected-source" in response.text
+    assert "실제 Langflow graph에서 확인한 Component 실행 경로" not in script
+    assert "대표 Flow에서 사용" not in script
+    assert ".agent-playground-flow-source-actions [hidden]" in style
+    assert ".agent-playground-flow-pipeline" not in style
     assert "data-selected-flow-actions" in response.text
     assert "고급 연결 관리" in response.text
     assert "Action 실행 시 Wiki 권한" in response.text
@@ -9730,8 +9738,11 @@ def test_boi_agent_suggestions_placeholder_env_inherits_router_llm(boi_app_modul
 
 def test_trusted_header_identity_blocks_employee_query_spoof(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
+    monkeypatch.setenv("BOI_TRUSTED_PROXY_SHARED_SECRET", "test-proxy-secret")
+    monkeypatch.setenv("BOI_TRUSTED_PROXY_CIDRS", "testclient")
     client = TestClient(boi_app_module.app)
     headers = {
+        "x-boi-proxy-secret": "test-proxy-secret",
         "x-hynix-employee-id": "200001",
         "x-hynix-name": "SKH SSO User",
         "x-hynix-teams": "platform",
@@ -9749,8 +9760,11 @@ def test_trusted_header_identity_blocks_employee_query_spoof(boi_app_module, mon
 
 def test_trusted_header_teams_drive_acl_without_dev_user_map(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
+    monkeypatch.setenv("BOI_TRUSTED_PROXY_SHARED_SECRET", "test-proxy-secret")
+    monkeypatch.setenv("BOI_TRUSTED_PROXY_CIDRS", "testclient")
     client = TestClient(boi_app_module.app)
     headers = {
+        "x-boi-proxy-secret": "test-proxy-secret",
         "x-hynix-employee-id": "200001",
         "x-hynix-teams": "platform",
         "x-hynix-roles": "boi.viewer",
@@ -9768,8 +9782,11 @@ def test_trusted_header_teams_drive_acl_without_dev_user_map(boi_app_module, mon
 
 def test_trusted_header_editor_role_required_for_source_apply(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
+    monkeypatch.setenv("BOI_TRUSTED_PROXY_SHARED_SECRET", "test-proxy-secret")
+    monkeypatch.setenv("BOI_TRUSTED_PROXY_CIDRS", "testclient")
     client = TestClient(boi_app_module.app)
     viewer_headers = {
+        "x-boi-proxy-secret": "test-proxy-secret",
         "x-hynix-employee-id": "200001",
         "x-hynix-teams": "platform",
         "x-hynix-roles": "boi.viewer",
@@ -9880,6 +9897,55 @@ def test_keycloak_external_server_url_is_used_for_browser_redirect(boi_app_modul
     assert url.startswith("http://localhost:8088/realms/boi-dev/protocol/openid-connect/auth?")
     assert "client_id=boi-wiki" in url
     assert "nonce=nonce-1" in url
+
+
+def test_provider_neutral_oidc_settings_override_keycloak_aliases(boi_app_module, monkeypatch):
+    import boi_api.app.auth as auth
+
+    monkeypatch.setenv("BOI_OIDC_ISSUER_URL", "https://identity.example/issuer")
+    monkeypatch.setenv("BOI_OIDC_INTERNAL_URL", "https://identity-internal.example/issuer")
+    monkeypatch.setenv("BOI_OIDC_AUTHORIZATION_URL", "https://identity.example/authorize")
+    monkeypatch.setenv("BOI_OIDC_TOKEN_URL", "https://identity-internal.example/token")
+    monkeypatch.setenv("BOI_OIDC_JWKS_URL", "https://identity-internal.example/jwks")
+    monkeypatch.setenv("BOI_OIDC_CLIENT_ID", "boi-provider-neutral")
+    monkeypatch.setenv("BOI_OIDC_REDIRECT_URI", "https://wiki.example/auth/callback")
+    monkeypatch.setenv("KEYCLOAK_CLIENT_ID", "legacy-client")
+
+    url = auth.keycloak_authorization_url(
+        state="state-1",
+        code_challenge="challenge-1",
+        nonce="nonce-1",
+    )
+
+    assert url.startswith("https://identity.example/authorize?")
+    assert "client_id=boi-provider-neutral" in url
+    assert "redirect_uri=https%3A%2F%2Fwiki.example%2Fauth%2Fcallback" in url
+    assert auth.oidc_token_endpoint() == "https://identity-internal.example/token"
+    assert auth.oidc_jwks_endpoint() == "https://identity-internal.example/jwks"
+    assert auth.oidc_issuer_url() == "https://identity.example/issuer"
+
+
+def test_trusted_header_requires_proxy_secret_and_allowed_source(boi_app_module, monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
+    monkeypatch.setenv("BOI_TRUSTED_PROXY_SHARED_SECRET", "test-proxy-secret")
+    monkeypatch.setenv("BOI_TRUSTED_PROXY_CIDRS", "testclient")
+    client = TestClient(boi_app_module.app)
+    identity_headers = {"x-boi-employee-id": "200001"}
+
+    no_secret = client.get("/api/auth/me", headers=identity_headers)
+    wrong_secret = client.get(
+        "/api/auth/me",
+        headers={**identity_headers, "x-boi-proxy-secret": "wrong"},
+    )
+    valid = client.get(
+        "/api/auth/me",
+        headers={**identity_headers, "x-boi-proxy-secret": "test-proxy-secret"},
+    )
+
+    assert no_secret.status_code == 401
+    assert wrong_secret.status_code == 401
+    assert valid.status_code == 200
+    assert valid.json()["employee_id"] == "200001"
 
 
 def test_service_token_delegates_employee_identity_in_sso_mode(boi_app_module, monkeypatch):
@@ -10416,8 +10482,11 @@ def test_app_shell_uses_configured_external_tool_urls(boi_app_module, monkeypatc
 
 def test_app_shell_shows_sso_state_and_hides_dev_employee_switch_in_non_dev_mode(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
+    monkeypatch.setenv("BOI_TRUSTED_PROXY_SHARED_SECRET", "test-proxy-secret")
+    monkeypatch.setenv("BOI_TRUSTED_PROXY_CIDRS", "testclient")
     client = TestClient(boi_app_module.app)
     headers = {
+        "x-boi-proxy-secret": "test-proxy-secret",
         "x-hynix-employee-id": "200001",
         "x-hynix-name": "SKH SSO User",
         "x-hynix-teams": "platform",

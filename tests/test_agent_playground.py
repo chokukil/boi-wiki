@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from boi_api.app.agent_playground import (
     AgentPlaygroundService,
     PlaygroundBootstrapRequest,
+    PlaygroundBrowserSSOVerifyRequest,
     PlaygroundConnectRequest,
     PlaygroundDeploymentRequest,
     PlaygroundEndpointCreateRequest,
@@ -28,6 +29,8 @@ from boi_api.app.agent_playground import (
     PlaygroundMCPTestRequest,
     PlaygroundMCPUpdateRequest,
     SecretCipher,
+    langflow_canvas_url,
+    langflow_project_url,
     normalize_langflow_endpoint,
     public_langflow_endpoint,
     require_langflow_111,
@@ -85,6 +88,21 @@ def test_public_and_runtime_langflow_urls_are_separated(monkeypatch):
     assert (
         runtime_langflow_endpoint("http://localhost:7867")
         == "http://host.docker.internal:7867"
+    )
+    assert (
+        langflow_canvas_url(
+            "http://host.docker.internal:7867",
+            "project / 100002",
+            "flow / exact",
+        )
+        == "http://localhost:7867/flow/flow%20%2F%20exact/folder/project%20%2F%20100002"
+    )
+    assert (
+        langflow_project_url(
+            "http://host.docker.internal:7867",
+            "project / 100002",
+        )
+        == "http://localhost:7867/all/folder/project%20%2F%20100002"
     )
 
 
@@ -580,6 +598,37 @@ def test_other_authors_approved_agent_hub_flow_and_components_are_adopted_by_exa
     assert deployment["validation_profile"] == "boi_knowledge_draft"
     assert {item["asset_id"] for item in deployment["source_assets"]} == set(assets)
     assert {item["author"]["employee_id"] for item in deployment["source_assets"]} == {"100001"}
+    listed = service.flows(
+        developer,
+        endpoint_id,
+        project["id"],
+    )["flows"]
+    prd_flow = next(
+        item for item in listed if item["flow_id"] == "flow-imported-exact"
+    )
+    assert prd_flow["environment"] == "prd"
+    assert prd_flow["origin_label"] == "Agent Hub"
+    assert prd_flow["canvas_url"] == (
+        "http://langflow.example:7860"
+        "/flow/flow-imported-exact/folder/project-100002"
+    )
+    assert prd_flow["flow_url"] == prd_flow["canvas_url"]
+    assert prd_flow["project_url"] == (
+        "http://langflow.example:7860/all/folder/project-100002"
+    )
+    assert prd_flow["source"] == {
+        "kind": "agent_hub",
+        "asset_url": (
+            "http://agent-hub.example/AgentHub.html"
+            "#/flow/11111111-1111-1111-1111-111111111111"
+        ),
+        "title": "Other Author Grounded Flow",
+        "author": {
+            "employee_id": "100001",
+            "name": "Other Author",
+        },
+        "version": "1.4.0",
+    }
     before_compose = service._graph_health(imported)
     assert "OtherAuthorRichTool-flow-imported-exact" in before_compose["disconnected_nodes"]
 
@@ -907,6 +956,16 @@ def test_viewer_bootstrap_gets_read_only_pat_and_secret_free_bundle(tmp_path, mo
     )
     assert canonical_item["validation_status"] == "runtime_validated"
     assert canonical_item["checksum_state"] == "matched"
+    assert canonical_item["environment"] == "dev"
+    assert canonical_item["origin_label"] == "Playground"
+    assert canonical_item["source"]["kind"] == "personal"
+    assert canonical_item["source"]["asset_url"] == ""
+    assert canonical_item["canvas_url"] == (
+        "http://langflow.example:7860/flow/flow-100003/folder/project-100003"
+    )
+    assert canonical_item["project_url"] == (
+        "http://langflow.example:7860/all/folder/project-100003"
+    )
     assert recommended_item["mcp_tool"] == "boi_universal_simulate"
     rerun_record = service._read("100003")
     assert canonical_item["live_checksum"] == (
@@ -1358,6 +1417,144 @@ def test_bootstrap_failure_records_recoverable_onboarding_step(tmp_path, monkeyp
     assert "project API unavailable" in state["onboarding"]["last_error"]
 
 
+def test_browser_sso_state_exposes_provider_neutral_blocker(tmp_path, monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "oidc")
+    monkeypatch.setenv("BOI_AGENT_PLAYGROUND_ENCRYPTION_KEY", "test-playground-encryption")
+    monkeypatch.setenv("LANGFLOW_BROWSER_AUTH_MODE", "external_jwt")
+    monkeypatch.setenv("LANGFLOW_EXTERNAL_URL", "http://localhost:17867")
+    monkeypatch.setenv(
+        "LANGFLOW_BROWSER_SSO_BLOCKER",
+        "Langflow 1.11.0 external-auth JIT provisioning failed",
+    )
+    developer = principal(
+        "100002",
+        roles=["boi.viewer", "boi.editor", "boi.action_invoker"],
+    )
+    pats = PlaygroundCredentialService(
+        tmp_path / "runtime",
+        hash_secret="test-pat-secret",
+        identity_provider=lambda _employee_id: developer,
+    )
+    service = AgentPlaygroundService(tmp_path / "runtime", ROOT, pats)
+
+    state = service.state(developer, live=False)
+
+    assert state["identity"]["auth_mode"] == "oidc"
+    assert state["identity"]["auth_source"] == developer.auth_source
+    assert state["browser_sso"] == {
+        "mode": "external_jwt",
+        "status": "token_validation_failed",
+        "external_url": "http://localhost:17867",
+        "principal_match": None,
+        "last_verified_at": None,
+        "blocker": "Langflow 1.11.0 external-auth JIT provisioning failed",
+    }
+    assert state["browser_sso"]["blocker"] in state["journey"]["blockers"]
+
+
+def test_prd_flow_source_uses_agent_hub_asset_deep_link_without_claiming_approval(
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "AGENT_HUB_EXTERNAL_URL",
+        "http://localhost:18080/AgentHub.html",
+    )
+    source = AgentPlaygroundService._flow_source(
+        {
+            "deployment_id": "hub-one",
+            "agent_hub_asset_id": "353b4fac-8d06-479f-89f5-bf857bbd670b",
+            "flow_name": "BoI Universal Simulation MCP",
+            "asset_version": "1.0.0",
+        },
+        [],
+    )
+
+    assert source["kind"] == "agent_hub"
+    assert source["asset_url"] == (
+        "http://localhost:18080/AgentHub.html"
+        "#/flow/353b4fac-8d06-479f-89f5-bf857bbd670b"
+    )
+    assert source["title"] == "BoI Universal Simulation MCP"
+    assert source["version"] == "1.0.0"
+
+
+def test_browser_sso_verification_requires_same_employee_and_api_owner(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("BOI_AUTH_MODE", "oidc")
+    monkeypatch.setenv("BOI_AGENT_PLAYGROUND_ENCRYPTION_KEY", "test-playground-encryption")
+    monkeypatch.setenv("LANGFLOW_BROWSER_AUTH_MODE", "external_jwt")
+    monkeypatch.setenv("LANGFLOW_EXTERNAL_URL", "http://localhost:17867")
+    developer = principal(
+        "100002",
+        roles=["boi.viewer", "boi.editor", "boi.action_invoker"],
+    )
+    pats = PlaygroundCredentialService(
+        tmp_path / "runtime",
+        hash_secret="test-pat-secret",
+        identity_provider=lambda _employee_id: developer,
+    )
+    service = AgentPlaygroundService(tmp_path / "runtime", ROOT, pats)
+    service._write(
+        developer.employee_id,
+        {
+            "employee_id": developer.employee_id,
+            "default_endpoint_id": "ep-one",
+            "endpoints": [
+                {
+                    "endpoint_id": "ep-one",
+                    "name": "Personal",
+                    "base_url": "http://langflow.example:7860",
+                    "endpoint": "http://langflow.example:7860",
+                    "langflow_username": "100002",
+                    "active": True,
+                }
+            ],
+        },
+    )
+
+    mismatch = service.verify_browser_sso(
+        developer,
+        PlaygroundBrowserSSOVerifyRequest(
+            endpoint_id="ep-one",
+            langflow_username="100001",
+        ),
+    )
+    assert mismatch["ok"] is False
+    assert mismatch["browser_sso"]["status"] == "principal_mismatch"
+
+    verified = service.verify_browser_sso(
+        developer,
+        PlaygroundBrowserSSOVerifyRequest(
+            endpoint_id="ep-one",
+            langflow_username="100002",
+            langflow_user_id="lf-user-100002",
+        ),
+    )
+    assert verified["ok"] is True
+    state = service.state(developer, live=False)
+    assert state["browser_sso"]["status"] == "ready"
+    assert state["browser_sso"]["principal_match"] is True
+    assert state["browser_sso"]["last_verified_at"]
+
+    monkeypatch.setenv("LANGFLOW_BROWSER_AUTH_MODE", "embedded_sso")
+    monkeypatch.setenv("LANGFLOW_BROWSER_ISOLATED_EMPLOYEE", "100001")
+    isolated_mismatch = service.verify_browser_sso(
+        developer,
+        PlaygroundBrowserSSOVerifyRequest(
+            endpoint_id="ep-one",
+            langflow_username="100002",
+            langflow_user_id="lf-user-100002",
+        ),
+    )
+    assert isolated_mismatch["ok"] is False
+    assert (
+        isolated_mismatch["browser_sso"]["status"]
+        == "shared_identity_not_allowed"
+    )
+
+
 def test_each_discovered_flow_is_validated_independently_and_incompatible_flow_is_blocked(tmp_path, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "dev")
     monkeypatch.setenv("BOI_AGENT_PLAYGROUND_ENCRYPTION_KEY", "test-playground-encryption")
@@ -1658,6 +1855,8 @@ def test_live_flow_drift_merge_does_not_erase_concurrent_action_draft(tmp_path, 
     response = service.flows(developer, endpoint_id, project_id)
 
     assert response["flows"][0]["checksum_state"] == "drifted"
+    assert response["flows"][0]["environment"] == "prd"
+    assert response["flows"][0]["origin_label"] == "Agent Hub"
     persisted = service._read(developer.employee_id)
     deployment = next(
         item
@@ -2055,6 +2254,7 @@ def test_project_mcp_settings_and_streamable_call_are_secret_free(
     monkeypatch.setenv("BOI_AGENT_PLAYGROUND_ENCRYPTION_KEY", "test-key")
     monkeypatch.setenv("LANGFLOW_EXTERNAL_URL", "http://localhost:7867")
     monkeypatch.setenv("LANGFLOW_DEPLOY_URL", "http://host.docker.internal:7867")
+    monkeypatch.setenv("LANGFLOW_MCP_EXTERNAL_URL", "http://localhost:7867")
     identity = principal(
         "100002",
         roles=["boi.viewer", "boi.editor", "boi.action_invoker"],

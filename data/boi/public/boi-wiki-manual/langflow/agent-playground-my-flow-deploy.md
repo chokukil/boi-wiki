@@ -46,6 +46,8 @@ BoI와 Agent Hub는 저장된 Key를 서로 읽지 않는다. Agent Hub 소스·
 # 내 Flow를 배포한다
 
 1. Playground에서 배포할 Flow를 선택한다.
+   - 이 단계의 Flow는 `DEV · Playground`로 표시된다.
+   - `원본 열기`로 실제 Langflow Canvas를 확인할 수 있다.
 2. `배포 자산 내려받기`로 secret-free 자산을 준비한다.
 3. Agent Hub의 기존 업로드·배포 화면에서 자산을 배포한다.
 4. Playground로 돌아와 `배포 결과 확인`을 누른다.
@@ -54,6 +56,11 @@ BoI와 Agent Hub는 저장된 Key를 서로 읽지 않는다. Agent Hub 소스·
 7. 업무 Task를 선택하고 `Flow 전체 검증`을 실행한다.
 
 Flow 이름이 같아도 Flow ID와 checksum이 다르면 별도 배포 버전이다. 화면에서는 이 값을 숨기지만 Action 연결 전 서버가 정확히 대조한다.
+
+배포 결과 연결이 끝나면 Flow는 `PRD · Agent Hub`로 표시된다. 이 배지는 Agent Hub를
+거쳐 배포됐다는 뜻이며 검증 완료를 뜻하지 않는다. 실제 실행 graph는 `Langflow에서
+원본 Flow 열기`에서 확인하고, 승인 자산의 설명·작성자·버전은 `Agent Hub에서 배포
+자산 보기`에서 확인한다.
 
 # 배포 후 Flow를 수정했다면
 

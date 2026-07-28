@@ -108,6 +108,16 @@
     mcp_unavailable: "MCP 준비 안 됨",
   };
 
+  const browserSsoLabel = {
+    ready: "회사 SSO 준비됨",
+    native_login_required: "별도 Langflow 로그인 필요",
+    principal_mismatch: "사번 불일치",
+    shared_identity_not_allowed: "공유 사용자 사용 불가",
+    gateway_unreachable: "SSO gateway 연결 실패",
+    token_validation_failed: "SSO token 처리 실패",
+    unchecked: "아직 확인하지 않음",
+  };
+
   const stageLabel = {
     create: "1 · 만들기",
     test: "2 · 테스트",
@@ -125,6 +135,21 @@
 
   const selectedEndpoint = () => (
     (app.state && app.state.endpoints || []).find((item) => item.endpoint_id === app.endpointId) || null
+  );
+
+  const selectedProject = () => (
+    app.projects.find((item) => item.id === app.projectId)
+    || ((selectedSetup() || {}).project || null)
+  );
+
+  const flowEnvironment = (flow) => (
+    String((flow && flow.environment) || (flow && flow.deployment_id ? "prd" : "dev")).toLowerCase() === "prd"
+      ? "prd"
+      : "dev"
+  );
+
+  const flowOriginLabel = (flow) => (
+    flowEnvironment(flow) === "prd" ? "Agent Hub" : "Playground"
   );
 
   const escapeText = (value) => String(value == null ? "" : value)
@@ -667,6 +692,14 @@
     });
     root.querySelector("[data-onboarding-auth]").textContent = `${app.state.identity.auth_source} · ${app.state.identity.display_name}`;
     root.querySelector("[data-onboarding-roles]").textContent = (app.state.identity.roles || []).join(", ") || "조회";
+    const browserSso = app.state.browser_sso || {};
+    root.querySelector("[data-browser-sso-status]").textContent = (
+      browserSsoLabel[browserSso.status] || browserSso.status || "아직 확인하지 않음"
+    );
+    root.querySelector("[data-browser-sso-message]").textContent = browserSso.status === "ready"
+      ? `원본 Canvas도 ${app.state.identity.employee_id} 사용자로 확인됐습니다.`
+      : browserSso.blocker
+        || "원본 Flow를 연 뒤 Langflow 사용자와 현재 사번이 같은지 확인해야 합니다.";
 
     const guide = root.querySelector("[data-onboarding-user-guide]");
     guide.href = (app.state.onboarding || {}).user_guide_url || guide.href;
@@ -933,11 +966,13 @@
     );
     const current = filtered.filter((flow) => !isHistory(flow));
     const history = filtered.filter(isHistory);
+    const currentDev = current.filter((flow) => flowEnvironment(flow) === "dev");
+    const currentPrd = current.filter((flow) => flowEnvironment(flow) === "prd");
     const groups = [
-      ["처음 시작하기 · 추천 Flow", current.filter((flow) => flow.name === recommendedName)],
-      ["고급 템플릿", current.filter((flow) => flow.name === canonicalName)],
-      ["Agent Hub에서 가져온 Flow", current.filter((flow) => ![canonicalName, recommendedName].includes(flow.name) && flow.deployment_id)],
-      ["최근 작업", current.filter((flow) => ![canonicalName, recommendedName].includes(flow.name) && !flow.deployment_id)],
+      ["처음 시작하기 · 추천 Flow", currentDev.filter((flow) => flow.name === recommendedName)],
+      ["고급 템플릿", currentDev.filter((flow) => flow.name === canonicalName)],
+      ["Agent Hub에서 가져온 Flow", currentPrd],
+      ["최근 작업", currentDev.filter((flow) => ![canonicalName, recommendedName].includes(flow.name))],
     ];
     const appendFlowGroup = (parent, title, flows) => {
       if (!flows.length) return;
@@ -947,16 +982,27 @@
       heading.textContent = title;
       section.append(heading);
       flows.forEach((flow) => {
+        const row = document.createElement("article");
+        row.className = "agent-playground-flow-row";
+        row.dataset.environment = flowEnvironment(flow);
         const button = document.createElement("button");
         button.type = "button";
         button.className = "agent-playground-flow-item";
         button.dataset.flowId = flow.flow_id;
         button.dataset.active = app.flow && app.flow.flow_id === flow.flow_id ? "true" : "false";
         const label = document.createElement("span");
+        const environment = document.createElement("span");
+        environment.className = "agent-playground-environment-badge";
+        environment.dataset.environment = flowEnvironment(flow);
+        environment.textContent = `${flowEnvironment(flow).toUpperCase()} · ${flow.origin_label || flowOriginLabel(flow)}`;
+        const name = document.createElement("strong");
+        name.textContent = flow.name || "이름 없는 Flow";
         const linkedAction = (flow.linked_actions || [])[0];
-        const flowKind = flow.deployment_id ? "Agent Hub 배포 Flow" : "내 프로젝트 Flow";
+        const flowKind = flowEnvironment(flow) === "prd" ? "Agent Hub 배포 Flow" : "내 프로젝트 Flow";
         const actionLabel = linkedAction ? ` · Action 연결됨: ${linkedAction.title}` : "";
-        label.innerHTML = `<strong>${escapeText(flow.name || "이름 없는 Flow")}</strong><small>${escapeText(flowKind + actionLabel)}</small>`;
+        const detail = document.createElement("small");
+        detail.textContent = flowKind + actionLabel;
+        label.append(environment, name, detail);
         const status = document.createElement("em");
         const displayStatus = flow.checksum_state === "drifted"
           ? "drifted"
@@ -970,7 +1016,17 @@
           renderFlows();
           renderSelectedFlow();
         });
-        section.append(button);
+        const original = document.createElement("a");
+        original.className = "agent-playground-flow-original-link";
+        original.textContent = "원본 열기";
+        original.target = "_blank";
+        original.rel = "noopener";
+        original.setAttribute("aria-label", `${flow.name || "선택한 Flow"} Langflow 원본 열기`);
+        const canvasUrl = flow.canvas_url || flow.flow_url || "";
+        if (canvasUrl) original.href = canvasUrl;
+        else original.setAttribute("aria-disabled", "true");
+        row.append(button, original);
+        section.append(row);
       });
       parent.append(section);
     };
@@ -1023,48 +1079,48 @@
     }
   };
 
-  const isRepresentativeFlow = (flow = app.flow) => {
+  const supportsMcpSetup = (flow = app.flow) => {
     const asset = (app.state && app.state.recommended_asset) || {};
     return Boolean(
       flow
       && (
-        flow.endpoint_name === (asset.endpoint_name || "boi-universal-simulation-mcp")
+        flow.mcp_enabled
+        || flow.mcp_tool
+        || flow.endpoint_name === (asset.endpoint_name || "boi-universal-simulation-mcp")
         || flow.name === (asset.name || "BoI Universal Simulation MCP")
       )
     );
   };
 
   const renderMcpStatus = () => {
-    const representative = isRepresentativeFlow();
+    const supported = supportsMcpSetup();
+    const card = root.querySelector("[data-selected-flow-mcp]");
+    card.hidden = !supported;
+    if (!supported) return;
     const tools = (app.mcp && app.mcp.tools) || [];
     const selected = app.flow
       ? tools.find((item) => item.flow_id === app.flow.flow_id)
       : null;
     const ready = Boolean(
-      representative
-      && selected
+      selected
       && selected.mcp_enabled
       && (app.mcp.auth || {}).type === "apikey"
     );
     root.querySelector("[data-mcp-status]").textContent = ready
       ? "MCP 도구 사용 가능"
-      : representative
-        ? "MCP 준비 안 됨"
-        : "대표 Flow에서 사용";
+      : "MCP 준비 안 됨";
     root.querySelector("[data-mcp-detail]").textContent = ready
       ? `${selected.tool_name} · 외부 호출은 미리보기만 수행합니다.`
-      : representative
-        ? "API Key 인증을 켠 뒤 실제 list_tools와 tool call을 확인합니다."
-        : "BoI Universal Simulation MCP Flow를 선택하면 활성화됩니다.";
-    root.querySelector("[data-enable-mcp]").disabled = !representative || !(app.state.capabilities || {}).can_edit;
+      : "API Key 인증을 켠 뒤 실제 list_tools와 tool call을 확인합니다.";
+    root.querySelector("[data-enable-mcp]").disabled = !(app.state.capabilities || {}).can_edit;
     root.querySelector("[data-test-mcp]").disabled = !ready;
     root.querySelector("[data-mcp-client-example]").textContent = app.mcp
       ? JSON.stringify(app.mcp.client_example || {}, null, 2)
-      : "대표 Flow를 선택하세요.";
+      : "이 Flow의 MCP 연결 상태를 확인하세요.";
   };
 
   const loadMcpStatus = async () => {
-    if (!app.flow || !app.endpointId || !app.projectId || !isRepresentativeFlow()) {
+    if (!app.flow || !app.endpointId || !app.projectId || !supportsMcpSetup()) {
       app.mcp = null;
       app.mcpLoadingFor = "";
       renderMcpStatus();
@@ -1093,27 +1149,49 @@
     const flowSummary = flow && flow.flow_summary ? flow.flow_summary : {};
     root.querySelector("[data-selected-flow-name]").textContent = flow ? flow.name || flow.flow_id : "Flow를 선택하세요";
     root.querySelector("[data-selected-flow-description]").textContent = flow
-      ? flowSummary.description || "실제 Langflow graph에서 확인한 Component 실행 경로입니다."
-      : "Flow를 선택하면 실제 Component 실행 경로와 연결된 Action을 보여줍니다.";
-    const pipeline = root.querySelector("[data-selected-flow-pipeline]");
-    pipeline.replaceChildren();
-    const nodes = (flowSummary.nodes || []).filter((node) => node.on_execution_path);
-    if (nodes.length) {
-      const list = document.createElement("ol");
-      nodes.forEach((node) => {
-        const item = document.createElement("li");
-        item.dataset.role = node.role || "component";
-        const title = document.createElement("strong");
-        title.textContent = node.label || node.component_kind || "Component";
-        const kind = document.createElement("small");
-        kind.textContent = node.component_kind || "";
-        item.append(title, kind);
-        list.append(item);
-      });
-      pipeline.append(list);
+      ? flowSummary.description || "실제 Flow 구조와 편집 내용은 원본 Langflow Canvas에서 확인합니다."
+      : "Flow를 선택하면 원본 Langflow Canvas와 연결된 Action을 보여줍니다.";
+    const environment = flowEnvironment(flow);
+    const environmentBadge = root.querySelector("[data-selected-flow-environment]");
+    environmentBadge.hidden = !flow;
+    environmentBadge.dataset.environment = environment;
+    environmentBadge.textContent = `${environment.toUpperCase()} · ${flow ? flow.origin_label || flowOriginLabel(flow) : "Playground"}`;
+    root.querySelector("[data-selected-flow-origin]").textContent = flow
+      ? `${environment.toUpperCase()} · ${flow.origin_label || flowOriginLabel(flow)}`
+      : "—";
+    root.querySelector("[data-selected-flow-origin-help]").textContent = environment === "prd"
+      ? "Agent Hub 배포 결과로 연결된 exact Flow입니다. 검증 상태는 별도로 확인하세요."
+      : "개인 Langflow 프로젝트에서 개발·시험하는 Flow입니다.";
+    const originalLink = root.querySelector("[data-open-selected-flow]");
+    const canvasUrl = flow ? flow.canvas_url || flow.flow_url || "" : "";
+    const browserSso = (app.state && app.state.browser_sso) || {};
+    originalLink.textContent = browserSso.status === "native_login_required"
+      ? "Langflow 로그인 후 원본 Flow 열기"
+      : "Langflow에서 원본 Flow 열기";
+    root.querySelector("[data-selected-flow-sso-help]").textContent = browserSso.status === "ready"
+      ? `현재 BoI 사용자(${app.state.identity.employee_id})와 Langflow 사용자가 일치합니다.`
+      : browserSso.blocker
+        || `${browserSsoLabel[browserSso.status] || "원본 Flow SSO 확인 필요"} · Canvas에서 사용자 일치를 확인하세요.`;
+    if (canvasUrl) {
+      originalLink.href = canvasUrl;
+      originalLink.target = "_blank";
+      originalLink.rel = "noopener";
+      originalLink.removeAttribute("aria-disabled");
     } else {
-      pipeline.innerHTML = '<p class="agent-playground-empty">표시할 Flow 실행 경로가 없습니다.</p>';
+      originalLink.removeAttribute("href");
+      originalLink.setAttribute("aria-disabled", "true");
     }
+    const source = flow && flow.source && typeof flow.source === "object" ? flow.source : {};
+    const sourceLink = root.querySelector("[data-open-selected-source]");
+    const sourceVisible = environment === "prd" && Boolean(source.asset_url);
+    sourceLink.hidden = !sourceVisible;
+    if (sourceVisible) sourceLink.href = source.asset_url;
+    else sourceLink.removeAttribute("href");
+    const sourceAuthor = source.author && (source.author.name || source.author.employee_id);
+    const sourceParts = [source.title, source.version ? `v${source.version}` : "", sourceAuthor].filter(Boolean);
+    const sourceDetail = root.querySelector("[data-selected-flow-source-detail]");
+    sourceDetail.hidden = !sourceParts.length;
+    root.querySelector("[data-selected-flow-source-meta]").textContent = sourceParts.join(" · ") || "—";
     const actionSection = root.querySelector("[data-selected-flow-actions]");
     const actionList = root.querySelector("[data-selected-flow-action-list]");
     const linkedActions = flow ? flow.linked_actions || [] : [];
@@ -1134,7 +1212,7 @@
     selectedStatusChip.dataset.state = selectedStatus;
     selectedStatusChip.textContent = statusLabel[selectedStatus] || selectedStatus;
     root.querySelector("[data-agent-replace-status]").textContent = (
-      flow && isRepresentativeFlow(flow)
+      flow && supportsMcpSetup(flow)
         ? "Agent 교체 가능"
         : "Agent 계약 확인 필요"
     );
@@ -1175,18 +1253,11 @@
       flow && flow.validation_status === "action_linked" ? "action_linked" : "",
       flow && flow.validation_status === "action_ready" ? "Action 연결 가능" : "전체 검증 통과 후 활성화됩니다.",
     );
-    const endpoint = selectedEndpoint();
+    const project = selectedProject();
     const open = root.querySelector("[data-open-langflow]");
-    if (endpoint && app.projectId) {
-      const browserBase = (
-        (app.state.onboarding || {}).langflow_external_url
-        || endpoint.base_url
-        || endpoint.endpoint
-        || ""
-      ).replace(/\/$/, "");
-      open.href = flow
-        ? `${browserBase}/flow/${encodeURIComponent(flow.flow_id)}/folder/${encodeURIComponent(app.projectId)}`
-        : `${browserBase}/all/folder/${encodeURIComponent(app.projectId)}`;
+    const projectUrl = (project && project.project_url) || (flow && flow.project_url) || "";
+    if (projectUrl) {
+      open.href = projectUrl;
       open.target = "_blank";
       open.rel = "noopener";
       open.removeAttribute("aria-disabled");
@@ -1255,8 +1326,8 @@
     return app.flow;
   };
 
-  const enableRepresentativeMcp = async () => {
-    if (!app.flow || !isRepresentativeFlow()) {
+  const enableSelectedMcp = async () => {
+    if (!app.flow || !supportsMcpSetup()) {
       await selectRecommendedFlow();
     }
     app.mcp = await request(
@@ -1277,12 +1348,12 @@
     return app.mcp;
   };
 
-  const testRepresentativeMcp = async () => {
-    if (!app.flow || !isRepresentativeFlow()) {
+  const testSelectedMcp = async () => {
+    if (!app.flow || !supportsMcpSetup()) {
       await selectRecommendedFlow();
     }
     if (!app.mcp || app.mcp.status !== "available") {
-      await enableRepresentativeMcp();
+      await enableSelectedMcp();
     }
     return request(
       `/api/agent-playground/endpoints/${encodeURIComponent(app.endpointId)}`
@@ -1357,7 +1428,7 @@
     button.disabled = true;
     output.textContent = "Langflow MCP 설정과 실제 도구 목록을 확인하는 중입니다.";
     try {
-      const payload = await testRepresentativeMcp();
+      const payload = await testSelectedMcp();
       output.textContent = `${payload.tool_name} MCP 도구 호출 성공 · 외부 호출은 preview-only`;
       showToast("MCP 도구를 실제 streamable HTTP로 확인했습니다.", "success");
     } catch (error) {
@@ -1715,6 +1786,8 @@
           endpoint_name: app.flow.endpoint_name || "",
           asset_version: selectedFlowArtifactVersion(),
           artifact_checksum: app.flow.artifact_checksum || "",
+          agent_hub_asset_id: new URLSearchParams(window.location.search)
+            .get("agent_hub_asset_id") || "",
         }),
       });
       showToast(`배포 Flow ${payload.deployment.flow_id}를 exact ID로 연결했습니다.`, "success");
@@ -1801,11 +1874,11 @@
     const button = event.currentTarget;
     const output = root.querySelector("[data-mcp-output]");
     button.disabled = true;
-    output.textContent = "MCP API Key 인증과 대표 도구를 준비하는 중입니다.";
+    output.textContent = "MCP API Key 인증과 선택한 Flow 도구를 준비하는 중입니다.";
     try {
-      const payload = await enableRepresentativeMcp();
+      const payload = await enableSelectedMcp();
       output.textContent = `${(payload.tools || [])[0]?.tool_name || "boi_universal_simulate"} · MCP 도구 사용 가능`;
-      showToast("대표 Flow를 MCP 도구로 준비했습니다.", "success");
+      showToast("선택한 Flow를 MCP 도구로 준비했습니다.", "success");
     } catch (error) {
       output.textContent = error.message;
       showToast(`MCP 준비 실패: ${error.message}`, "error");
@@ -1821,7 +1894,7 @@
     button.disabled = true;
     output.textContent = "list_tools와 실제 boi_universal_simulate 호출을 확인하는 중입니다.";
     try {
-      const payload = await testRepresentativeMcp();
+      const payload = await testSelectedMcp();
       output.textContent = `${payload.tool_name} 호출 성공 · preview-only · Wiki 변경 없음`;
       root.querySelector("[data-test-output]").textContent = JSON.stringify(payload.result, null, 2);
       showToast("실제 Langflow MCP 호출을 통과했습니다.", "success");

@@ -33,6 +33,7 @@ BoI Wiki는 OKF 기반 LLM Wiki와 실행 가능한 workflow runtime을 함께 �
 - [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md)
 - [Multi-action connector guide](/public/boi-wiki-manual/actions/multi-action-connector-guide.md)
 - [Langflow connected flow guide](/public/boi-wiki-manual/langflow/connected-flow-guide.md)
+- [Agent Playground와 Langflow Browser SSO](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-browser-sso)
 - [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md)
 - [SOP workflow 작성과 runtime 연결](/public/boi-wiki-manual/sop-workflows/create-and-connect-sop.md)
 - [Data Lake Artifact Lifecycle](/public/boi-wiki-manual/data-lake/data-lake-artifact-lifecycle.md)

@@ -40,8 +40,20 @@ services:
       LANGFLOW_WORKERS: "1"
       LANGFLOW_AUTO_LOGIN: "False"
       LANGFLOW_SKIP_AUTH_AUTO_LOGIN: "false"
-      LANGFLOW_ENABLE_SIGNUP: "true"
+      LANGFLOW_ENABLE_SIGNUP: "false"
       LANGFLOW_NEW_USER_IS_ACTIVE: "true"
+      LANGFLOW_EXTERNAL_AUTH_ENABLED: ${LANGFLOW_EXTERNAL_AUTH_ENABLED:-true}
+      LANGFLOW_EXTERNAL_AUTH_PROVIDER: ${LANGFLOW_EXTERNAL_AUTH_PROVIDER:-boi-keycloak}
+      LANGFLOW_EXTERNAL_AUTH_TOKEN_HEADER: ${LANGFLOW_EXTERNAL_AUTH_TOKEN_HEADER:-X-Forwarded-Access-Token}
+      LANGFLOW_EXTERNAL_AUTH_JWKS_URL: ${LANGFLOW_EXTERNAL_AUTH_JWKS_URL:-http://127.0.0.1:18082/realms/boi-validation/protocol/openid-connect/certs}
+      LANGFLOW_EXTERNAL_AUTH_ISSUER: ${LANGFLOW_EXTERNAL_AUTH_ISSUER:-http://localhost:18082/realms/boi-validation}
+      LANGFLOW_EXTERNAL_AUTH_AUDIENCE: ${LANGFLOW_EXTERNAL_AUTH_AUDIENCE:-langflow-browser}
+      LANGFLOW_EXTERNAL_AUTH_ALGORITHMS: RS256
+      LANGFLOW_EXTERNAL_AUTH_SUBJECT_CLAIM: ${LANGFLOW_EXTERNAL_AUTH_SUBJECT_CLAIM:-empno}
+      LANGFLOW_EXTERNAL_AUTH_USERNAME_CLAIM: ${LANGFLOW_EXTERNAL_AUTH_USERNAME_CLAIM:-empno}
+      LANGFLOW_EXTERNAL_AUTH_EMAIL_CLAIM: email
+      LANGFLOW_EXTERNAL_AUTH_NAME_CLAIM: name
+      LANGFLOW_EXTERNAL_AUTH_TRUSTED_JWT_DECODE: "false"
       LANGFLOW_SUPERUSER: ${LANGFLOW_111_SUPERUSER:-boi-platform-admin}
       LANGFLOW_SUPERUSER_PASSWORD: ${LANGFLOW_111_SUPERUSER_PASSWORD:-BoiValidation-111!ChangeMe}
       LANGFLOW_SECRET_KEY: ${LANGFLOW_111_SECRET_KEY:-dCSh9p786MVwOiVFqXENGNK0xbVE0dnBdUByDty7BZA=}
@@ -61,6 +73,16 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - validation
+
+  langflow-keycloak-loopback:
+    image: alpine/socat:1.8.0.0
+    network_mode: "service:langflow-111"
+    command:
+      - TCP-LISTEN:18082,bind=127.0.0.1,fork,reuseaddr
+      - TCP:${BOI_VALIDATION_HOST_GATEWAY:-192.168.65.254}:18082
+    depends_on:
+      langflow-111:
+        condition: service_started
 
 volumes:
   langflow-111-validation-postgres-data:

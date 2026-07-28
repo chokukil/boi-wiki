@@ -15,7 +15,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -66,6 +66,21 @@ FLOW_VALIDATION_STAGES = (
 FLOW_VALIDATION_RANK = {
     stage: index
     for index, stage in enumerate(stage for stage in FLOW_VALIDATION_STAGES if stage != "blocked")
+}
+BROWSER_AUTH_MODES = {
+    "external_jwt",
+    "trusted_header_bridge",
+    "embedded_sso",
+    "native",
+}
+BROWSER_SSO_STATUSES = {
+    "ready",
+    "native_login_required",
+    "principal_mismatch",
+    "shared_identity_not_allowed",
+    "gateway_unreachable",
+    "token_validation_failed",
+    "unchecked",
 }
 SECRET_PATTERNS = (
     re.compile(r"boi_pat_[0-9a-f]{16}_[A-Za-z0-9_-]{16,}"),
@@ -162,6 +177,23 @@ def public_langflow_endpoint(value: str) -> str:
     if configured.startswith(("http://", "https://")):
         return configured
     return candidate
+
+
+def langflow_project_url(endpoint: str, project_id: str) -> str:
+    """Return the browser-facing Langflow project URL without credentials."""
+
+    base_url = public_langflow_endpoint(endpoint).rstrip("/")
+    return f"{base_url}/all/folder/{quote(str(project_id or ''), safe='')}"
+
+
+def langflow_canvas_url(endpoint: str, project_id: str, flow_id: str) -> str:
+    """Return the browser-facing exact Flow Canvas URL."""
+
+    base_url = public_langflow_endpoint(endpoint).rstrip("/")
+    return (
+        f"{base_url}/flow/{quote(str(flow_id or ''), safe='')}"
+        f"/folder/{quote(str(project_id or ''), safe='')}"
+    )
 
 
 def runtime_langflow_endpoint(value: str) -> str:
@@ -322,6 +354,12 @@ class PlaygroundFlowValidationRequest(BaseModel):
 class PlaygroundRotateCredentialRequest(BaseModel):
     endpoint_id: str = Field(default="", max_length=100)
     reason: str = Field(default="manual rotation", max_length=500)
+
+
+class PlaygroundBrowserSSOVerifyRequest(BaseModel):
+    langflow_username: str = Field(min_length=1, max_length=200)
+    langflow_user_id: str = Field(default="", max_length=200)
+    endpoint_id: str = Field(default="", max_length=100)
 
 
 class SecretCipher:
@@ -673,6 +711,154 @@ class AgentPlaygroundService:
             os.chmod(temporary, 0o600)
             os.replace(temporary, path)
         return payload
+
+    @staticmethod
+    def _browser_auth_mode() -> str:
+        mode = str(os.getenv("LANGFLOW_BROWSER_AUTH_MODE") or "native").strip().lower()
+        return mode if mode in BROWSER_AUTH_MODES else "native"
+
+    def _browser_sso_state(
+        self,
+        principal: AuthIdentity,
+        record: dict[str, Any],
+        connection: dict[str, Any],
+    ) -> dict[str, Any]:
+        mode = self._browser_auth_mode()
+        external_url = str(os.getenv("LANGFLOW_EXTERNAL_URL") or "").rstrip("/")
+        persisted = (
+            record.get("browser_sso")
+            if isinstance(record.get("browser_sso"), dict)
+            else {}
+        )
+        blocker = str(os.getenv("LANGFLOW_BROWSER_SSO_BLOCKER") or "").strip()
+        status = "unchecked"
+        principal_match: bool | None = None
+        last_verified_at = None
+
+        if mode == "native":
+            status = "native_login_required"
+            blocker = blocker or "Langflow 원본 화면에서 별도 로그인이 필요합니다."
+        elif blocker:
+            status = "token_validation_failed"
+        elif (
+            str(persisted.get("mode") or "") == mode
+            and str(persisted.get("external_url") or "").rstrip("/") == external_url
+        ):
+            persisted_status = str(persisted.get("status") or "unchecked")
+            status = (
+                persisted_status
+                if persisted_status in BROWSER_SSO_STATUSES
+                else "unchecked"
+            )
+            principal_match = persisted.get("principal_match")
+            last_verified_at = persisted.get("last_verified_at")
+            blocker = str(persisted.get("blocker") or "")
+
+        if not external_url and mode != "native":
+            status = "gateway_unreachable"
+            principal_match = None
+            blocker = "LANGFLOW_EXTERNAL_URL이 설정되지 않았습니다."
+
+        endpoint_username = str(connection.get("langflow_username") or "")
+        if (
+            status == "ready"
+            and endpoint_username
+            and endpoint_username != principal.employee_id
+        ):
+            isolated_employee = str(
+                os.getenv("LANGFLOW_BROWSER_ISOLATED_EMPLOYEE") or ""
+            ).strip()
+            if mode != "embedded_sso" or isolated_employee != principal.employee_id:
+                status = "shared_identity_not_allowed"
+                principal_match = False
+                blocker = "여러 직원을 하나의 공유 Langflow 사용자로 연결할 수 없습니다."
+
+        return {
+            "mode": mode,
+            "status": status,
+            "external_url": external_url,
+            "principal_match": principal_match,
+            "last_verified_at": last_verified_at,
+            "blocker": blocker,
+        }
+
+    def verify_browser_sso(
+        self,
+        principal: AuthIdentity,
+        request: PlaygroundBrowserSSOVerifyRequest,
+    ) -> dict[str, Any]:
+        require_role(principal, "boi.viewer")
+        with self._lock:
+            record = self._read(principal.employee_id)
+            endpoints = self._endpoint_records(record)
+            endpoint_id = str(
+                request.endpoint_id
+                or record.get("default_endpoint_id")
+                or ""
+            )
+            connection = next(
+                (
+                    item
+                    for item in endpoints
+                    if str(item.get("endpoint_id") or "") == endpoint_id
+                ),
+                {},
+            )
+            if not connection:
+                raise HTTPException(status_code=404, detail="Langflow endpoint not found")
+
+            mode = self._browser_auth_mode()
+            external_url = str(os.getenv("LANGFLOW_EXTERNAL_URL") or "").rstrip("/")
+            browser_username = str(request.langflow_username or "").strip()
+            api_username = str(connection.get("langflow_username") or "").strip()
+            isolated_employee = str(
+                os.getenv("LANGFLOW_BROWSER_ISOLATED_EMPLOYEE") or ""
+            ).strip()
+            if mode == "native":
+                status = "native_login_required"
+                principal_match = False
+                blocker = "Langflow 원본 화면에서 별도 로그인이 필요합니다."
+            elif browser_username != principal.employee_id:
+                status = (
+                    "shared_identity_not_allowed"
+                    if api_username and browser_username == api_username
+                    else "principal_mismatch"
+                )
+                principal_match = False
+                blocker = (
+                    f"BoI 사번 {principal.employee_id}과 Langflow 사용자 "
+                    f"{browser_username}가 일치하지 않습니다."
+                )
+            elif api_username and api_username != principal.employee_id:
+                status = "shared_identity_not_allowed"
+                principal_match = False
+                blocker = "API Key 소유자와 Browser SSO 사용자가 일치하지 않습니다."
+            elif mode == "embedded_sso" and isolated_employee != principal.employee_id:
+                status = "shared_identity_not_allowed"
+                principal_match = False
+                blocker = (
+                    "직원별 격리 Langflow instance의 허용 사번이 현재 사용자와 "
+                    "일치하지 않습니다."
+                )
+            else:
+                status = "ready"
+                principal_match = True
+                blocker = ""
+
+            verified = {
+                "mode": mode,
+                "status": status,
+                "external_url": external_url,
+                "principal_match": principal_match,
+                "last_verified_at": now_iso(),
+                "blocker": blocker,
+                "endpoint_id": endpoint_id,
+                "langflow_user_id": str(request.langflow_user_id or ""),
+                "langflow_username": browser_username,
+            }
+            record["browser_sso"] = verified
+            self._write(principal.employee_id, record)
+        return {"ok": status == "ready", "browser_sso": verified}
 
     @staticmethod
     def _public_connection(connection: dict[str, Any]) -> dict[str, Any]:
@@ -1638,8 +1824,9 @@ class AgentPlaygroundService:
         record = self._read(principal.employee_id)
         connection = self._endpoint(record, endpoint_id)
         api_key = self._api_key(record, endpoint_id)
+        endpoint = str(connection.get("base_url") or connection.get("endpoint") or "")
         payload = self.langflow.projects(
-            str(connection.get("base_url") or connection.get("endpoint") or ""),
+            endpoint,
             api_key,
         )
         projects = [
@@ -1647,10 +1834,80 @@ class AgentPlaygroundService:
                 "id": str(item.get("id") or ""),
                 "name": str(item.get("name") or ""),
                 "description": str(item.get("description") or ""),
+                "project_url": langflow_project_url(
+                    endpoint,
+                    str(item.get("id") or ""),
+                ),
             }
             for item in payload if isinstance(item, dict) and item.get("id")
         ] if isinstance(payload, list) else []
         return {"ok": True, "endpoint_id": endpoint_id, "projects": projects}
+
+    @staticmethod
+    def _flow_source(
+        deployment: dict[str, Any],
+        source_assets: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        safe_assets = [
+            item for item in source_assets if isinstance(item, dict)
+        ]
+        primary = next(
+            (
+                item
+                for item in safe_assets
+                if str(item.get("type") or "") == "json"
+            ),
+            safe_assets[0] if safe_assets else {},
+        )
+        author = (
+            primary.get("author")
+            if isinstance(primary.get("author"), dict)
+            else {}
+        )
+        asset_url = str(primary.get("asset_url") or "")
+        parsed = urlsplit(asset_url) if asset_url else None
+        if (
+            parsed is None
+            or parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+        ):
+            asset_url = ""
+        deployment_asset_id = str(
+            deployment.get("agent_hub_asset_id") or ""
+        ).strip()
+        if (
+            not asset_url
+            and re.fullmatch(r"[0-9A-Fa-f-]{32,36}", deployment_asset_id)
+        ):
+            agent_hub_external = str(
+                os.getenv("AGENT_HUB_EXTERNAL_URL") or ""
+            ).rstrip("/")
+            if agent_hub_external:
+                asset_url = (
+                    f"{agent_hub_external}#/flow/{deployment_asset_id}"
+                )
+        is_deployed = bool(str(deployment.get("deployment_id") or ""))
+        return {
+            "kind": "agent_hub" if is_deployed else "personal",
+            "asset_url": asset_url,
+            "title": str(
+                primary.get("title")
+                or deployment.get("flow_name")
+                or ""
+            ),
+            "author": {
+                "employee_id": str(author.get("employee_id") or ""),
+                "name": str(author.get("name") or ""),
+            },
+            "version": str(
+                primary.get("version")
+                or deployment.get("asset_version")
+                or deployment.get("artifact_version")
+                or ""
+            ),
+        }
 
     def flows(self, principal: AuthIdentity, endpoint_id: str, project_id: str) -> dict[str, Any]:
         require_role(principal, "boi.viewer")
@@ -1820,6 +2077,14 @@ class AgentPlaygroundService:
                         "live_checksum": live_checksum,
                     }
                 )
+            environment = (
+                "prd"
+                if str(deployment.get("deployment_id") or "")
+                else "dev"
+            )
+            source = self._flow_source(deployment, source_assets)
+            canvas_url = langflow_canvas_url(endpoint, project_id, flow_id)
+            project_url = langflow_project_url(endpoint, project_id)
             items.append(
                 {
                     "flow_id": flow_id,
@@ -1899,7 +2164,14 @@ class AgentPlaygroundService:
                         registry.get("action_catalog_applied")
                         or deployment.get("action_catalog_applied")
                     ),
-                    "flow_url": f"{public_langflow_endpoint(endpoint)}/flow/{flow_id}",
+                    "environment": environment,
+                    "origin_label": (
+                        "Agent Hub" if environment == "prd" else "Playground"
+                    ),
+                    "canvas_url": canvas_url,
+                    "project_url": project_url,
+                    "source": source,
+                    "flow_url": canvas_url,
                     "flow_summary": flow_summary,
                 }
             )
@@ -3838,9 +4110,27 @@ class AgentPlaygroundService:
 
     @staticmethod
     def _mcp_streamable_url(endpoint: str, project_id: str) -> str:
-        public_base = public_langflow_endpoint(
-            str(os.getenv("LANGFLOW_EXTERNAL_URL") or endpoint)
-        ).rstrip("/")
+        configured = str(os.getenv("LANGFLOW_MCP_EXTERNAL_URL") or "").strip()
+        public_base = str(configured or endpoint).rstrip("/")
+        parsed = urlsplit(public_base)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise HTTPException(
+                status_code=503,
+                detail="LANGFLOW_MCP_EXTERNAL_URL is not a valid public URL",
+            )
+        if parsed.username or parsed.password:
+            raise HTTPException(
+                status_code=503,
+                detail="LANGFLOW_MCP_EXTERNAL_URL must not contain credentials",
+            )
+        if (
+            str(parsed.hostname or "").lower() == "host.docker.internal"
+            and not configured
+        ):
+            raise HTTPException(
+                status_code=503,
+                detail="LANGFLOW_MCP_EXTERNAL_URL is required for a container-only endpoint",
+            )
         return (
             f"{public_base}/api/v1/mcp/project/{project_id}/streamable"
         )
@@ -5717,6 +6007,14 @@ class AgentPlaygroundService:
             blockers.append(str(onboarding.get("last_error") or onboarding.get("message") or "온보딩 필요"))
         if connection and str(connection.get("status") or "") != "connected":
             blockers.append(str(connection.get("last_error") or "Langflow 연결 확인 필요"))
+        browser_sso = self._browser_sso_state(principal, record, connection)
+        if browser_sso["status"] not in {"ready", "native_login_required"}:
+            blockers.append(
+                str(
+                    browser_sso.get("blocker")
+                    or "Langflow 원본 화면 SSO를 확인해야 합니다."
+                )
+            )
         if action_status not in {"", "not_connected"}:
             current_stage = "action"
             next_action = {
@@ -5772,8 +6070,12 @@ class AgentPlaygroundService:
                 "display_name": principal.display_name,
                 "roles": principal.roles,
                 "teams": principal.teams,
+                "auth_mode": str(
+                    os.getenv("BOI_AUTH_MODE") or "dev"
+                ).strip().lower(),
                 "auth_source": principal.auth_source,
             },
+            "browser_sso": browser_sso,
             "connection": {
                 "status": str(
                     connection.get("status")

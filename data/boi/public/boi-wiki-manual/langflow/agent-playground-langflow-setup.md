@@ -36,22 +36,30 @@ review:
 # 연결 순서
 
 1. `/playground`에서 현재 SSO 사용자와 권한을 확인한다.
-2. `Langflow 설정에서 키 발급`을 누른다.
-3. Langflow `Settings → API Keys`에서 `BoI Agent Playground` Key를 만든다.
-4. 화면에 한 번 표시되는 Key를 복사한다.
-5. Playground의 `방금 발급한 API Key`에 붙여 넣는다.
-6. `연결 시험`으로 Langflow 1.11과 내 사용자 소유권을 확인한다.
-7. `확인하고 저장`을 누른다.
-8. `내 개발 공간 자동 준비`를 실행한다.
-9. 기준 Flow preview가 성공하면 `Playground 시작`을 누른다.
+2. `원본 Flow 로그인`이 `회사 SSO 준비됨`인지 확인한다. 준비되지 않았으면
+   [회사 SSO로 Langflow 원본 Flow 열기](/docs/boi:public:boi-wiki-manual:langflow:agent-playground-browser-sso)를 따른다.
+3. `Langflow 설정에서 키 발급`을 누른다.
+4. Langflow `Settings → API Keys`에서 `BoI Agent Playground` Key를 만든다.
+5. 화면에 한 번 표시되는 Key를 복사한다.
+6. Playground의 `방금 발급한 API Key`에 붙여 넣는다.
+7. `연결 시험`으로 Langflow 1.11과 내 사용자 소유권을 확인한다.
+8. `확인하고 저장`을 누른다.
+9. `내 개발 공간 자동 준비`를 실행한다.
+10. 기준 Flow preview가 성공하면 `Playground 시작`을 누른다.
 
 API Key는 저장 후 다시 표시되지 않는다. Key 입력을 비워 둔 채 endpoint를 수정하면 기존 Key를 유지한다.
 
 # 두 키의 차이
 
+`Browser SSO`는 사람이 BoI와 Langflow 화면을 열 때 사용한다. 로그인 세션이며
+Agent Hub 배포용 Key가 아니다.
+
 `Langflow 연결 키`는 Langflow 사용자·프로젝트·Flow를 관리한다. Playground와 Agent Hub가 서로 Key를 동기화하지 않으므로 각 화면에 한 번씩 직접 입력한다.
 
 `BoI 지식 연결`은 Playground가 자동 발급하고 Langflow 표준 Credential Variable `BOI_WIKI_PAT`에 등록한다. 사용자는 PAT나 MCP 전용 Key를 따로 만들 필요가 없으며, 이 값은 화면이나 Flow export에 표시되지 않는다.
+
+`Action run token`은 실제 Action 호출자의 Wiki 권한을 한 번의 실행에만 전달한다.
+endpoint 소유자의 Langflow Key와 호출자의 Wiki 권한을 섞지 않는다.
 
 # 자동 준비가 중단된 경우
 

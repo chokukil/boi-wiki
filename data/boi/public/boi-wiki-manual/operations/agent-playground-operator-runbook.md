@@ -64,6 +64,9 @@ BoI 서비스가 Langflow DB에 직접 접속하는 구성은 허용하지 않�
 
 # SSO와 권한
 
+- Keycloak은 로컬 검증 구현체이며 사내 필수 의존성이 아니다.
+- `BOI_AUTH_MODE`는 `dev`, `oidc`, `keycloak` 호환 alias, `trusted_header`를 지원한다.
+- 세부 선택과 설정은 [Agent Playground 사내 SSO 방식 선택 가이드](/docs/boi:public:boi-wiki-manual:operations:agent-playground-sso-deployment)를 따른다.
 - 표준 사번 claim은 `empno`다.
 - SSO Principal과 HCP 권한이 소유권과 실행 권한의 기준이다.
 - query, form, header의 employee ID는 SSO 소유권 판단에 사용하지 않는다.
@@ -87,7 +90,8 @@ SSO도 브라우저 공개 URL과 컨테이너 내부 URL을 분리한다.
 |---|---|
 | Playground | `http://localhost:28005/playground` |
 | Agent Hub | `http://localhost:18080` |
-| Agent Hub에 등록할 검증 Langflow | `http://localhost:7867` |
+| Langflow SSO Canvas | `http://localhost:17867` |
+| Agent Hub에 등록할 검증 Langflow API | `http://localhost:7867` |
 | Keycloak browser·issuer | `http://localhost:18082` |
 | 컨테이너 내부 Keycloak | 서버 전용 주소 |
 
@@ -179,6 +183,7 @@ workflow·responsibility·lineage·impact 관계를 기본으로 조회한다. M
 - image digest와 read-only mount
 - boundary 검사 결과
 - SSO 로그인과 spoof 차단
+- 원본 Canvas 무추가로그인과 Langflow `whoami` 사번 일치
 - 신규 사용자 온보딩
 - Agent Hub 연결·배포
 - exact Flow ID·checksum

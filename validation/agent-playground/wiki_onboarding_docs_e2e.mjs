@@ -41,6 +41,18 @@ const docs = [
     expected: ["Settings → API Keys", "BOI_WIKI_PAT", "자동 준비"],
   },
   {
+    key: "browser-sso",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-browser-sso",
+    heading: "회사 SSO로 Langflow 원본 Flow 열기",
+    expected: [
+      "DEV · Playground",
+      "PRD · Agent Hub",
+      "Browser SSO",
+      "embedded_sso",
+    ],
+  },
+  {
     key: "my-flow-deploy",
     pathname:
       "/docs/boi:public:boi-wiki-manual:langflow:agent-playground-my-flow-deploy",
@@ -78,6 +90,18 @@ const docs = [
       "custom component",
       "migration",
       "rollback",
+    ],
+  },
+  {
+    key: "sso-deployment",
+    pathname:
+      "/docs/boi:public:boi-wiki-manual:operations:agent-playground-sso-deployment",
+    heading: "Agent Playground 사내 SSO 방식 선택 가이드",
+    expected: [
+      "OIDC와 JWKS",
+      "Trusted Header와 Token Bridge",
+      "공식 Langflow 1.11.0 검증 결과",
+      "Agent Hub",
     ],
   },
   {
