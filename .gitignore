@@ -35,5 +35,14 @@ captures/tmp/
 artifacts/tmp/
 artifacts/agent-playground-current/
 artifacts/agent-playground-handoff/
+artifacts/agent-playground-agent-hub-sso/
+artifacts/agent-playground-browser-sso/
+artifacts/agent-playground-flow-origin/
+artifacts/agent-playground-security-context-hardening/
+artifacts/agent-playground-sso-onboarding/
+artifacts/agent-playground-trusted-header/
+artifacts/agent-playground-universal-drift-final/
+artifacts/agent-playground-universal-exact-chain-final/
+artifacts/agent-playground-wiki-onboarding/
 validation/agent-playground-mainline/artifacts/
 outputs/

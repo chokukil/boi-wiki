@@ -65,6 +65,13 @@ Langflow는 공식 external auth 설정으로 JWT 서명, issuer, audience, expi
 성공한 것만으로 Canvas 준비 완료로 판단하지 않으며, 실제 브라우저의 초기 세션
 생성·`whoami`·Flow 편집 화면까지 함께 시험한다.
 
+공식 1.11.0 고정 digest에서 검증한 전달 방식은 reverse proxy가 access token을
+표준 `Authorization: Bearer ...` header로 넘기고
+`LANGFLOW_EXTERNAL_AUTH_TOKEN_HEADER=Authorization`을 사용하는 구성이다. 전용
+forwarded-token header는 사용할 Langflow patch에서 같은 부정 테스트를 통과한
+경우에만 선택한다. proxy는 이 header를 외부 입력에서 그대로 신뢰하지 말고,
+자신이 검증한 SSO 세션으로 다시 생성해야 한다.
+
 # Trusted Header와 Token Bridge
 
 `BOI_AUTH_MODE=trusted_header`는 다음 조건을 모두 만족할 때만 허용한다.
@@ -87,6 +94,9 @@ BOI_TRUSTED_PROXY_CIDRS
 JWT를 제공하지 않는 gateway에서는 독립 Token Bridge가 60초 RS256 JWT를 만든다.
 JWT에는 사번·이름·이메일·issuer·audience·만료만 넣고 역할은 넣지 않는다.
 private key는 Secret Manager에서 주입하며 Bridge에는 외부 공개 포트를 만들지 않는다.
+Bridge의 `X-Forwarded-Access-Token` 응답은 reverse proxy 내부에서만 받고, 검증된
+값을 Langflow 요청의 `Authorization: Bearer ...`로 바꿔 전달한다. 브라우저가
+직접 보낸 `Authorization`이나 identity header는 먼저 제거한다.
 
 로컬 회귀에서는 gateway가 사용자가 제출한 신원 header를 제거한 뒤 세션 사번을
 다시 주입하고, Bridge JWT를 서버 사이에서만 전달한다. 다른 사번 header와 query
@@ -103,9 +113,10 @@ Langflow source, 사내 이미지, DB를 BoI 저장소에서 수정하지 않는
 
 # 공식 Langflow 1.11.0 검증 결과
 
-고정 digest의 공식 1.11.0에서 external JWT의 서명·issuer·audience·expiry 검증과
-SQLite 기반 JIT API 인증은 확인했다. 그러나 다음 브라우저·DB 제약도 함께
-확인되었다.
+고정 digest의 공식 1.11.0과 별도 read-only JWKS sidecar에서 external JWT의
+서명·issuer·audience·expiry 검증과 SQLite 기반 JIT API 인증을 확인했다. 유효한
+`empno=100002`만 `whoami`에 진입했고 잘못된 서명·issuer·audience·만료 토큰과
+무토큰 요청은 거부됐다. 그러나 다음 브라우저·DB 제약도 함께 확인되었다.
 
 - 1.11.0 frontend가 external JWT 수락 뒤에도 내장 refresh-cookie lifecycle을
   시작해 Canvas가 로딩 상태에 머물 수 있다.
@@ -147,6 +158,18 @@ Canvas HTML 200만으로 `ready` 처리하지 않는다. 실제 `whoami`와 BoI 
 한다. 공식 Langflow의 external-auth JIT 오류가 발생하면 Langflow를 패치하거나 DB를
 직접 수정하지 말고 `token_validation_failed`로 차단한 뒤, 수정된 공식 이미지 또는
 검증된 `embedded_sso` 경로를 사용한다.
+
+# 통합 로그아웃
+
+BoI와 Langflow browser proxy가 같은 host를 사용하면
+`BOI_LANGFLOW_BROWSER_SESSION_COOKIES`에 proxy 세션 쿠키 이름을 설정한다. BoI의
+`/auth/logout`은 BoI 세션·OIDC state와 해당 Langflow proxy 쿠키를 함께 만료시킨 뒤
+`BOI_SSO_LOGOUT_URL` 또는 OIDC provider logout으로 이동한다.
+
+서로 다른 host를 사용하면 BoI 응답이 다른 host의 쿠키를 삭제할 수 없으므로,
+reverse proxy의 sign-out endpoint와 provider logout을 잇는 redirect chain을
+구성한다. 로그아웃 회귀는 BoI 재인증뿐 아니라 기존 Langflow Canvas도 다시 회사
+SSO를 요구하는지 확인해야 한다.
 
 # 로컬 공급자 독립 회귀 주소
 

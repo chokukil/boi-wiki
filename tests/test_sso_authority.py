@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from boi_api.app import auth
 from mock_hcp.app.main import DEFAULT_PERMISSIONS
@@ -235,3 +239,88 @@ def test_keycloak_and_mock_hcp_identity_contracts_do_not_drift():
         "http://localhost:28002/auth/callback",
         "http://localhost:28005/auth/callback",
     ]
+
+
+def test_oidc_rejects_invalid_signature_issuer_audience_and_expiry(monkeypatch):
+    signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setenv("BOI_OIDC_ISSUER_URL", "https://identity.example/issuer")
+    monkeypatch.setenv("BOI_OIDC_JWKS_URL", "https://identity.example/jwks")
+    monkeypatch.setenv("BOI_OIDC_CLIENT_ID", "boi-wiki")
+    monkeypatch.setenv("BOI_OIDC_JWT_LEEWAY_SECONDS", "0")
+    monkeypatch.setenv("BOI_OIDC_ALLOW_AZP_AUDIENCE", "false")
+    monkeypatch.setattr(
+        auth,
+        "jwks_client",
+        lambda _url: SimpleNamespace(
+            get_signing_key_from_jwt=lambda _token: SimpleNamespace(
+                key=signing_key.public_key()
+            )
+        ),
+    )
+    now = int(time.time())
+    base_claims = {
+        "sub": "100002",
+        "empno": "100002",
+        "iss": "https://identity.example/issuer",
+        "aud": "boi-wiki",
+        "iat": now,
+        "nbf": now - 1,
+        "exp": now + 60,
+    }
+
+    valid = jwt.encode(base_claims, signing_key, algorithm="RS256")
+    assert auth.decode_keycloak_bearer(valid)["empno"] == "100002"
+
+    invalid_tokens = {
+        "signature": jwt.encode(base_claims, other_key, algorithm="RS256"),
+        "issuer": jwt.encode(
+            {**base_claims, "iss": "https://wrong.example/issuer"},
+            signing_key,
+            algorithm="RS256",
+        ),
+        "audience": jwt.encode(
+            {**base_claims, "aud": "another-client"},
+            signing_key,
+            algorithm="RS256",
+        ),
+        "expiry": jwt.encode(
+            {**base_claims, "iat": now - 120, "nbf": now - 120, "exp": now - 1},
+            signing_key,
+            algorithm="RS256",
+        ),
+    }
+    for token in invalid_tokens.values():
+        with pytest.raises(auth.AuthError, match="invalid OIDC token"):
+            auth.decode_keycloak_bearer(token)
+
+
+def test_oidc_rejects_legacy_employee_header_spoof(monkeypatch):
+    monkeypatch.setenv("BOI_AUTH_MODE", "oidc")
+    monkeypatch.setenv("BOI_SESSION_SECRET", "test-session-secret")
+    monkeypatch.delenv("HCP_AUTHZ_URL", raising=False)
+    monkeypatch.delenv("KEYCLOAK_HCP_API_URL", raising=False)
+    session = jwt.encode(
+        {
+            "sub": "100002",
+            "employee_id": "100002",
+            "name": "BoI Developer",
+            "email": "100002@boi.validation",
+            "teams": ["aix-tf"],
+            "roles": ["boi.viewer"],
+            "auth_source": "oidc",
+            "exp": int(time.time()) + 60,
+        },
+        "test-session-secret",
+        algorithm="HS256",
+    )
+
+    for spoofed in (
+        {"x_employee_id": "100001"},
+        {"x_hynix_employee_id": "100001"},
+    ):
+        with pytest.raises(
+            auth.AuthError,
+            match="employee_id input does not match authenticated identity",
+        ):
+            auth.resolve_identity(session_token=session, **spoofed)

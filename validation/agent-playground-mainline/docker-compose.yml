@@ -80,9 +80,13 @@ services:
       LANGFLOW_EXTERNAL_URL: http://localhost:17867
       LANGFLOW_DEPLOY_URL: http://host.docker.internal:7867
       LANGFLOW_MCP_EXTERNAL_URL: http://localhost:7867
-      LANGFLOW_BROWSER_AUTH_MODE: ${LANGFLOW_BROWSER_AUTH_MODE:-external_jwt}
-      LANGFLOW_BROWSER_ISOLATED_EMPLOYEE: ${LANGFLOW_BROWSER_ISOLATED_EMPLOYEE:-}
+      # Official 1.11.0 external-JWT browser lifecycle is audited separately.
+      # The full local browser gate uses the documented employee-isolated
+      # embedded fallback and must report that mode truthfully.
+      LANGFLOW_BROWSER_AUTH_MODE: ${LANGFLOW_BROWSER_AUTH_MODE:-embedded_sso}
+      LANGFLOW_BROWSER_ISOLATED_EMPLOYEE: ${LANGFLOW_BROWSER_ISOLATED_EMPLOYEE:-100002}
       LANGFLOW_BROWSER_SSO_BLOCKER: ${LANGFLOW_BROWSER_SSO_BLOCKER:-}
+      BOI_LANGFLOW_BROWSER_SESSION_COOKIES: _boi_langflow_sso
       AGENT_HUB_EXTERNAL_URL: http://localhost:18080/AgentHub.html
       AGENT_HUB_API_URL: http://host.docker.internal:18001
       BOI_WIKI_MCP_EXTERNAL_URL: http://localhost:18205
@@ -273,6 +277,7 @@ services:
       OAUTH2_PROXY_COOKIE_SAMESITE: lax
       OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
       OAUTH2_PROXY_PASS_ACCESS_TOKEN: "true"
+      OAUTH2_PROXY_SET_AUTHORIZATION_HEADER: "true"
       OAUTH2_PROXY_PASS_BASIC_AUTH: "false"
       OAUTH2_PROXY_SKIP_AUTH_STRIP_HEADERS: "false"
       OAUTH2_PROXY_PASS_USER_HEADERS: "true"

@@ -6,6 +6,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -84,6 +85,7 @@ _JWKS_CLIENTS: dict[str, PyJWKClient] = {}
 _HCP_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 SESSION_COOKIE_NAME = "boi_session"
 OIDC_STATE_COOKIE_NAME = "boi_oidc_state"
+COOKIE_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 def auth_mode() -> str:
@@ -94,6 +96,15 @@ def split_csv(value: str | None) -> list[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def browser_sso_session_cookie_names() -> list[str]:
+    """Return reverse-proxy cookies that a BoI logout must also expire."""
+
+    names = split_csv(os.getenv("BOI_LANGFLOW_BROWSER_SESSION_COOKIES"))
+    if any(not COOKIE_NAME_RE.fullmatch(name) for name in names):
+        raise AuthError(500, "invalid Langflow browser session cookie name")
+    return unique(names)
 
 
 def env_first(*names: str, default: str = "") -> str:
@@ -264,24 +275,24 @@ def oidc_issuer_url() -> str:
 
 
 def oidc_authorization_endpoint() -> str:
-    return env_first(
-        "BOI_OIDC_AUTHORIZATION_URL",
-        default=f"{oidc_browser_base_url()}/protocol/openid-connect/auth",
-    )
+    configured = env_first("BOI_OIDC_AUTHORIZATION_URL")
+    if configured:
+        return configured
+    return f"{oidc_browser_base_url()}/protocol/openid-connect/auth"
 
 
 def oidc_token_endpoint() -> str:
-    return env_first(
-        "BOI_OIDC_TOKEN_URL",
-        default=f"{oidc_internal_base_url()}/protocol/openid-connect/token",
-    )
+    configured = env_first("BOI_OIDC_TOKEN_URL")
+    if configured:
+        return configured
+    return f"{oidc_internal_base_url()}/protocol/openid-connect/token"
 
 
 def oidc_jwks_endpoint() -> str:
-    return env_first(
-        "BOI_OIDC_JWKS_URL",
-        default=f"{oidc_internal_base_url()}/protocol/openid-connect/certs",
-    )
+    configured = env_first("BOI_OIDC_JWKS_URL")
+    if configured:
+        return configured
+    return f"{oidc_internal_base_url()}/protocol/openid-connect/certs"
 
 
 def keycloak_base_url() -> str:
@@ -789,8 +800,17 @@ def resolve_identity(
             raise AuthError(401, "Bearer token or browser session is required")
     else:
         raise AuthError(500, f"unsupported BOI_AUTH_MODE: {mode}")
-    if query_employee_id and query_employee_id != identity.employee_id:
-        raise AuthError(403, "employee_id query does not match authenticated identity")
+    asserted_employee_ids = [query_employee_id]
+    if mode in {"keycloak", "oidc"}:
+        # These legacy headers are ordinary client input outside the
+        # trusted-header mode.  They never establish ownership, but an explicit
+        # mismatch is rejected so a spoof attempt cannot be silently ignored.
+        asserted_employee_ids.extend([x_employee_id, x_hynix_employee_id])
+    if any(
+        candidate and candidate != identity.employee_id
+        for candidate in asserted_employee_ids
+    ):
+        raise AuthError(403, "employee_id input does not match authenticated identity")
     return identity
 
 

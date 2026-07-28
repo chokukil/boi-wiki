@@ -9925,6 +9925,33 @@ def test_provider_neutral_oidc_settings_override_keycloak_aliases(boi_app_module
     assert auth.oidc_issuer_url() == "https://identity.example/issuer"
 
 
+def test_logout_expires_boi_and_same_host_langflow_browser_sessions(
+    boi_app_module,
+    monkeypatch,
+):
+    monkeypatch.setenv("BOI_AUTH_MODE", "dev")
+    monkeypatch.setenv(
+        "BOI_LANGFLOW_BROWSER_SESSION_COOKIES",
+        "_boi_langflow_sso,_another_proxy_session",
+    )
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/auth/logout?next=/playground", follow_redirects=False)
+    set_cookies = response.headers.get_list("set-cookie")
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/playground"
+    assert any(item.startswith("boi_session=") and "Max-Age=0" in item for item in set_cookies)
+    assert any(
+        item.startswith("_boi_langflow_sso=") and "Max-Age=0" in item
+        for item in set_cookies
+    )
+    assert any(
+        item.startswith("_another_proxy_session=") and "Max-Age=0" in item
+        for item in set_cookies
+    )
+
+
 def test_trusted_header_requires_proxy_secret_and_allowed_source(boi_app_module, monkeypatch):
     monkeypatch.setenv("BOI_AUTH_MODE", "trusted_header")
     monkeypatch.setenv("BOI_TRUSTED_PROXY_SHARED_SECRET", "test-proxy-secret")

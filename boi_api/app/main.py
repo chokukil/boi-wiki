@@ -80,6 +80,7 @@ from .auth import (
     OIDC_STATE_COOKIE_NAME,
     SESSION_COOKIE_NAME,
     auth_mode,
+    browser_sso_session_cookie_names,
     create_oidc_state,
     create_session_token,
     decode_keycloak_bearer,
@@ -5840,7 +5841,11 @@ def app_shell_context(
         "dev_mode": mode == "dev",
         "sso_active": mode != "dev",
         "auth_label": "DEV 인증" if mode == "dev" else "SSO active",
-        "auth_detail": "SSO 비활성 · employee_id query 허용" if mode == "dev" else "Keycloak/HCP",
+        "auth_detail": (
+            "SSO 비활성 · employee_id query 허용"
+            if mode == "dev"
+            else f"회사 SSO · HCP 권한 ({identity.auth_source})"
+        ),
         "identity": identity,
         "employee_id": identity.employee_id,
         "display_name": identity.display_name or identity.employee_id,
@@ -10473,6 +10478,12 @@ async def auth_logout(next: str = "/") -> RedirectResponse:
     redirect = RedirectResponse(target, status_code=302)
     redirect.delete_cookie(SESSION_COOKIE_NAME)
     redirect.delete_cookie(OIDC_STATE_COOKIE_NAME)
+    try:
+        browser_session_cookies = browser_sso_session_cookie_names()
+    except AuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    for cookie_name in browser_session_cookies:
+        redirect.delete_cookie(cookie_name, path="/")
     return redirect
 
 

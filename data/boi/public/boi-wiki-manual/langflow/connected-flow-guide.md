@@ -40,7 +40,7 @@ Langflow flow는 canvas에 노드가 존재하는 것만으로 완료가 아니�
 
 # BoI Agent vs Pipeline Flow
 
-`BoI Agent Flow`는 Web Pet Agent와 MCP `boi_agent_chat`의 visual workflow/debug 예제다. Production path는 BoI API 내부 [Native BoI Agent](/public/boi-wiki-manual/agent/native-boi-agent-architecture.md)이며, 사용자와 외부 agent는 Langflow URL을 직접 호출하지 않고 BoI API 또는 `boi-wiki-mcp`를 호출한다. Langflow canvas 안의 Agent 예제는 Gemma model을 reasoning engine으로 쓰고, `BoI Agent Tools` custom component의 `ontology_search`, `boi_get`, `action_spec_lookup`, `workflow_status`, `boi_inbox`, `manual_handoff_complete`, `memory_recall` tool을 반복 호출해야 한다. `boi_answer`는 fallback compact-answer tool이며 정상 reasoning의 첫 tool로 고정하지 않는다. recursion 방지를 위해 `boi_agent_chat` tool은 Agent toolset에 넣지 않는다.
+`BoI Agent Flow`는 Web Pet Agent와 MCP `boi_agent_chat`의 visual workflow/debug 예제다. 이 레거시 예제의 production path는 BoI API 내부 [Native BoI Agent](/public/boi-wiki-manual/agent/native-boi-agent-architecture.md)다. 별도로 Agent Playground에서 만든 Flow는 Langflow Canvas에서 개발하고, Agent Hub 배포 뒤 exact Flow를 connector-neutral Action의 Langflow binding으로 실행한다. 두 경로를 혼동하지 않는다. Langflow canvas 안의 Agent 예제는 Gemma model을 reasoning engine으로 쓰고, `BoI Agent Tools` custom component의 `ontology_search`, `boi_get`, `action_spec_lookup`, `workflow_status`, `boi_inbox`, `manual_handoff_complete`, `memory_recall` tool을 반복 호출해야 한다. `boi_answer`는 fallback compact-answer tool이며 정상 reasoning의 첫 tool로 고정하지 않는다. recursion 방지를 위해 `boi_agent_chat` tool은 Agent toolset에 넣지 않는다.
 
 # Pipeline vs Agentic Simulator
 
@@ -80,17 +80,16 @@ Langflow custom component도 같은 원칙을 따른다. runtime container에는
 
 # SSO / Permission Setup
 
-개발용 SSO overlay는 `langflow-hynix`의 Keycloak/HCP 변수명을 그대로 쓴다. Langflow 컨테이너가 실제로 읽는 값은 다음이다.
+현재 Agent Playground는 Keycloak 제품에 종속되지 않는다. BoI는 `oidc`,
+`trusted_header`, `embedded_sso` 중 사내에서 제공 가능한 방식을 설정으로 선택하고,
+Langflow는 공식 external auth 또는 별도 인증 gateway 뒤에 둔다. 브라우저 SSO와
+서버용 Langflow API Key는 서로 다른 경로이며 HCP가 Wiki·Workflow·Action 권한의
+최종 권위다.
 
-| Variable | Purpose |
-| --- | --- |
-| `KEYCLOAK_SERVER_URL` | container에서 Keycloak token/JWKS로 접근하는 내부 URL |
-| `KEYCLOAK_EXTERNAL_SERVER_URL` | browser redirect에 쓰는 Keycloak URL |
-| `KEYCLOAK_HCP_API_URL` | HCP project roles endpoint |
-| `KEYCLOAK_ALLOWED_EMPLOYEE` | 개인별 Langflow instance 제한 |
-| `KEYCLOAK_SHARED_USERNAME` | SSO 성공 사용자를 매핑할 Langflow shared user |
-
-BoI Wiki는 같은 SSO realm을 쓰고, HCP role을 `boi.viewer`, `boi.editor`, `boi.workflow_runner`, `boi.action_invoker`, `boi.promoter`, `boi.admin`으로 변환해 문서 ACL과 workflow/action 권한을 검증한다.
+`langflow-hynix`의 `KEYCLOAK_*`·shared-user 설정은 기존 1.10 wrapper 호환 smoke에만
+사용한다. 여러 직원을 하나의 shared Langflow 사용자에 매핑하는 구성은 Agent
+Playground readiness를 통과하지 못한다. 실제 적용 변수와 선택 기준은
+[Agent Playground 사내 SSO 방식 선택 가이드](/docs/boi:public:boi-wiki-manual:operations:agent-playground-sso-deployment)를 따른다.
 
 # Completion Criteria
 

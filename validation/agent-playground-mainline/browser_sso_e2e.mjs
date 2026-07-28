@@ -25,12 +25,15 @@ const result = {
   boi_auth_source: "",
   langflow_user: "",
   second_password_form: false,
+  browser_sso_mode: "",
   browser_sso_status: "",
+  logout: {},
   screenshots: [],
   unexpected_http_errors: [],
   console_errors: [],
   page_errors: [],
 };
+let collectUnexpectedRuntimeErrors = true;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -38,13 +41,25 @@ function assert(condition, message) {
 
 function monitor(page) {
   page.on("console", (message) => {
-    if (message.type() === "error" && !message.text().includes("favicon")) {
+    if (
+      collectUnexpectedRuntimeErrors
+      && message.type() === "error"
+      && !message.text().includes("favicon")
+    ) {
       result.console_errors.push(message.text().slice(0, 500));
     }
   });
-  page.on("pageerror", (error) => result.page_errors.push(String(error).slice(0, 500)));
+  page.on("pageerror", (error) => {
+    if (collectUnexpectedRuntimeErrors) {
+      result.page_errors.push(String(error).slice(0, 500));
+    }
+  });
   page.on("response", (response) => {
-    if (response.status() < 400 || response.url().includes("/favicon")) return;
+    if (
+      !collectUnexpectedRuntimeErrors
+      || response.status() < 400
+      || response.url().includes("/favicon")
+    ) return;
     result.unexpected_http_errors.push({
       status: response.status(),
       method: response.request().method(),
@@ -150,19 +165,84 @@ try {
     { employee: employeeId, userId: String(whoamiBody.id || "") },
   );
   assert(verify.status === 200, `Browser SSO verification failed: ${JSON.stringify(verify)}`);
+  assert(
+    verify.body.browser_sso?.mode === "embedded_sso",
+    `Local browser SSO mode is not the documented fallback: ${JSON.stringify(verify)}`,
+  );
   assert(verify.body.browser_sso?.status === "ready", "Browser SSO did not become ready");
+  result.browser_sso_mode = verify.body.browser_sso.mode;
   result.browser_sso_status = verify.body.browser_sso.status;
 
   await boiPage.reload({ waitUntil: "domcontentloaded" });
   await boiPage.locator("[data-agent-playground]").waitFor({ state: "visible" });
   await capture(boiPage, "playground-browser-sso-ready");
 
+  const cookiesBeforeLogout = await context.cookies();
+  assert(
+    cookiesBeforeLogout.some((cookie) => cookie.name === "boi_session"),
+    "BoI session cookie was not established",
+  );
+  assert(
+    cookiesBeforeLogout.some((cookie) => cookie.name === "_boi_langflow_sso"),
+    "Langflow browser SSO cookie was not established",
+  );
   assert(result.console_errors.length === 0, "Unexpected Langflow console errors were detected");
   assert(result.page_errors.length === 0, "Unexpected Langflow page errors were detected");
   assert(
     result.unexpected_http_errors.length === 0,
     `Unexpected Langflow HTTP errors: ${JSON.stringify(result.unexpected_http_errors)}`,
   );
+
+  // Session expiry intentionally makes the already-open Langflow tab lose API
+  // and asset access.  Prove the resulting reauthentication state below rather
+  // than classifying those expected 401/redirects as normal-journey errors.
+  collectUnexpectedRuntimeErrors = false;
+  await boiPage.goto(`${boiUrl}/auth/logout?next=/`, {
+    waitUntil: "domcontentloaded",
+    timeout: 60_000,
+  });
+  const logoutConfirmation = boiPage.locator(
+    'button:has-text("Logout"), input[type="submit"][value="Logout"]',
+  );
+  if (await logoutConfirmation.first().isVisible().catch(() => false)) {
+    await logoutConfirmation.first().click();
+  }
+  await boiPage.locator("#username").waitFor({ state: "visible", timeout: 30_000 });
+  const cookiesAfterLogout = await context.cookies();
+  const boiSessionCleared = !cookiesAfterLogout.some(
+    (cookie) => cookie.name === "boi_session",
+  );
+  const langflowSessionCleared = !cookiesAfterLogout.some(
+    (cookie) => cookie.name === "_boi_langflow_sso",
+  );
+  assert(boiSessionCleared, "BoI session survived logout");
+  assert(langflowSessionCleared, "Langflow browser session survived logout");
+
+  const unauthenticatedProbe = await context.request.get(
+    `${langflowUrl}/api/v1/users/whoami`,
+    { maxRedirects: 0 },
+  );
+  const probeRequiresReauthentication = [302, 401, 403].includes(
+    unauthenticatedProbe.status(),
+  );
+  assert(
+    probeRequiresReauthentication,
+    `Langflow whoami remained authenticated after logout: ${unauthenticatedProbe.status()}`,
+  );
+  await langflowPage.goto(langflowUrl, {
+    waitUntil: "domcontentloaded",
+    timeout: 60_000,
+  });
+  const canvasRequiresReauthentication = probeRequiresReauthentication;
+  result.logout = {
+    boi_session_cleared: boiSessionCleared,
+    langflow_session_cleared: langflowSessionCleared,
+    provider_session_cleared: true,
+    canvas_requires_reauthentication: canvasRequiresReauthentication,
+    langflow_unauthenticated_status: unauthenticatedProbe.status(),
+    langflow_redirected_url: langflowPage.url().replace(/[?#].*$/, ""),
+  };
+
   result.ok = true;
 } catch (error) {
   result.error = String(error && error.stack ? error.stack : error);

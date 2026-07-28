@@ -44,7 +44,10 @@ services:
       LANGFLOW_NEW_USER_IS_ACTIVE: "true"
       LANGFLOW_EXTERNAL_AUTH_ENABLED: ${LANGFLOW_EXTERNAL_AUTH_ENABLED:-true}
       LANGFLOW_EXTERNAL_AUTH_PROVIDER: ${LANGFLOW_EXTERNAL_AUTH_PROVIDER:-boi-keycloak}
-      LANGFLOW_EXTERNAL_AUTH_TOKEN_HEADER: ${LANGFLOW_EXTERNAL_AUTH_TOKEN_HEADER:-X-Forwarded-Access-Token}
+      # Official 1.11.0 reliably exercises external-JWT fallback through the
+      # standard Authorization bearer path. A future patch may also qualify a
+      # dedicated forwarded-token header without changing the BoI adapter.
+      LANGFLOW_EXTERNAL_AUTH_TOKEN_HEADER: ${LANGFLOW_EXTERNAL_AUTH_TOKEN_HEADER:-Authorization}
       LANGFLOW_EXTERNAL_AUTH_JWKS_URL: ${LANGFLOW_EXTERNAL_AUTH_JWKS_URL:-http://127.0.0.1:18082/realms/boi-validation/protocol/openid-connect/certs}
       LANGFLOW_EXTERNAL_AUTH_ISSUER: ${LANGFLOW_EXTERNAL_AUTH_ISSUER:-http://localhost:18082/realms/boi-validation}
       LANGFLOW_EXTERNAL_AUTH_AUDIENCE: ${LANGFLOW_EXTERNAL_AUTH_AUDIENCE:-langflow-browser}

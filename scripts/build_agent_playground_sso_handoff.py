@@ -145,6 +145,21 @@ def assert_evidence(evidence_root: Path) -> dict[str, dict[str, Any]]:
             / "agent-playground-wiki-onboarding/wiki-onboarding-docs-result.json",
             "ok",
         ),
+        "security_context": (
+            evidence_root
+            / "agent-playground-security-context-hardening/result.json",
+            "ok",
+        ),
+        "external_auth": (
+            evidence_root
+            / "agent-playground-current/regression/langflow-external-auth-contract-final.json",
+            "ok",
+        ),
+        "keycloak_reference": (
+            evidence_root
+            / "agent-playground-current/regression/keycloak-reference-contract-final.json",
+            "ok",
+        ),
     }
     payloads: dict[str, dict[str, Any]] = {}
     for name, (path, pass_field) in specs.items():
@@ -160,9 +175,21 @@ def assert_evidence(evidence_root: Path) -> dict[str, dict[str, Any]]:
         or oidc.get("boi_auth_source") != "oidc"
         or oidc.get("langflow_user") != "100002"
         or oidc.get("second_password_form") is not False
+        or oidc.get("browser_sso_mode") != "embedded_sso"
         or oidc.get("browser_sso_status") != "ready"
+        or not all(
+            (oidc.get("logout") or {}).get(key) is True
+            for key in (
+                "boi_session_cleared",
+                "langflow_session_cleared",
+                "provider_session_cleared",
+                "canvas_requires_reauthentication",
+            )
+        )
     ):
-        raise RuntimeError("OIDC browser SSO evidence does not prove same-user no-login")
+        raise RuntimeError(
+            "OIDC browser SSO evidence does not prove same-user no-login and coordinated logout"
+        )
 
     trusted = payloads["trusted_header"]
     bridge = trusted.get("bridge") or {}
@@ -212,6 +239,62 @@ def assert_evidence(evidence_root: Path) -> dict[str, dict[str, Any]]:
         raise RuntimeError("MCP write policy, caller ACL, or drift blocking is unproven")
     if any(item.get("status") != 200 for item in payloads["wiki_docs"]["documents"]):
         raise RuntimeError("one or more Wiki handoff documents were not HTTP 200")
+
+    external = payloads["external_auth"]
+    external_checks = external.get("checks") or {}
+    if (
+        external.get("image") != LANGFLOW_IMAGE
+        or external.get("token_exposed") is not False
+        or int(external.get("jwks_requests") or 0) < 1
+        or external_checks.get("valid", {}).get("status") != 200
+        or external_checks.get("valid", {}).get("username") != "100002"
+        or not all(
+            external_checks.get(name, {}).get("rejected") is True
+            for name in (
+                "invalid_signature",
+                "invalid_issuer",
+                "invalid_audience",
+                "expired",
+                "missing_token",
+            )
+        )
+    ):
+        raise RuntimeError("official Langflow external-JWT contract evidence is incomplete")
+
+    keycloak_reference = payloads["keycloak_reference"]
+    keycloak_checks = keycloak_reference.get("checks") or {}
+    if (
+        keycloak_reference.get("provider_role")
+        != "local reference implementation only"
+        or not all(keycloak_checks.values())
+        or keycloak_reference.get("admin_token_exposed") is not False
+        or any(
+            client.get("secret_exposed") is not False
+            for client in (keycloak_reference.get("clients") or {}).values()
+        )
+    ):
+        raise RuntimeError("local Keycloak OIDC reference contract evidence is incomplete")
+
+    security = payloads["security_context"]
+    hcp = security.get("hcp") or {}
+    audience = security.get("run_token_audience") or {}
+    task_context = security.get("task_context") or {}
+    ontology = security.get("typed_ontology") or {}
+    if (
+        hcp.get("role_reduction", {}).get("response", {}).get("status") != 403
+        or hcp.get("account_disabled", {}).get("response", {}).get("status") != 403
+        or hcp.get("outage", {}).get("response", {}).get("status") != 503
+        or hcp.get("cache_bypassed") is not True
+        or audience.get("ok") is not True
+        or task_context.get("semantic_assertions", {}).get("server_resolved") is not True
+        or task_context.get("ordinary_question", {}).get("context_profile")
+        != "knowledge_lookup"
+        or ontology.get("all_edges_have_provenance") is not True
+        or ontology.get("fallback", {}).get("ontology_status")
+        != "grounded_document_fallback"
+        or ontology.get("acl_exclusion", {}).get("leaked_ids") != []
+    ):
+        raise RuntimeError("HCP, run-token audience, Task, or Ontology evidence is incomplete")
     return payloads
 
 
@@ -284,6 +367,7 @@ def main() -> int:
         "universal-exact-chain": "agent-playground-universal-exact-chain-final",
         "checksum-drift": "agent-playground-universal-drift-final",
         "wiki-docs": "agent-playground-wiki-onboarding",
+        "security-context": "agent-playground-security-context-hardening",
     }
     for target_name, source_name in evidence_dirs.items():
         copy_tree(evidence_root / source_name, output / "evidence" / target_name)
@@ -325,6 +409,19 @@ def main() -> int:
         / "data/boi/public/boi-wiki-manual/operations/agent-hub-integration-boundary.md",
         output / "delivery/wiki/operations/agent-hub-integration-boundary.md",
     )
+    requirement_audit = read_json(
+        evidence_root / "agent-playground-current/audit/REQUIREMENT_AUDIT.json"
+    )
+    if requirement_audit.get("implementation_and_local_validation_ok") is not True:
+        raise RuntimeError("provider-neutral SSO requirement audit did not pass local validation")
+    copy_file(
+        evidence_root / "agent-playground-current/audit/REQUIREMENT_AUDIT.json",
+        output / "REQUIREMENT_AUDIT.json",
+    )
+    copy_file(
+        evidence_root / "agent-playground-current/audit/REQUIREMENT_AUDIT.md",
+        output / "REQUIREMENT_AUDIT.md",
+    )
     build_bundle(output / "delivery/boi-agent-playground-langflow-1.11-bundle.zip")
 
     regression_sources = {
@@ -342,6 +439,14 @@ def main() -> int:
         ),
         "mainline-boundary.json": (
             evidence_root / "agent-playground-current/regression/mainline-boundary-final.json"
+        ),
+        "langflow-external-auth-contract.json": (
+            evidence_root
+            / "agent-playground-current/regression/langflow-external-auth-contract-final.json"
+        ),
+        "keycloak-reference-contract.json": (
+            evidence_root
+            / "agent-playground-current/regression/keycloak-reference-contract-final.json"
         ),
     }
     for name, source in regression_sources.items():
@@ -393,7 +498,10 @@ def main() -> int:
 
     exact = payloads["exact_chain"]["exact_reference"]
     summary = {
-        "ok": True,
+        "package_ready": True,
+        "implementation_and_local_validation_ok": True,
+        "goal_complete": requirement_audit.get("goal_complete") is True,
+        "external_gate": requirement_audit.get("external_gate"),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "feature_commit": feature_commit,
         "base_commit": "53912644",
@@ -413,9 +521,13 @@ def main() -> int:
             "trusted_header_bridge_rs256_ttl_seconds": 60,
             "embedded_employee_isolation": "100002",
             "external_jwt_note": (
-                "Official 1.11.0 raw validation was audited; the local full-browser "
-                "gate uses the documented employee-isolated embedded fallback."
+                "Official 1.11.0 fixed-digest JWT/JWKS positive and negative API "
+                "contract passed; the local full-browser gate uses the documented "
+                "employee-isolated embedded fallback."
             ),
+            "external_jwt_contract": payloads["external_auth"],
+            "keycloak_reference_contract": payloads["keycloak_reference"],
+            "coordinated_logout": payloads["oidc_browser"]["logout"],
         },
         "exact_reference": exact,
         "flow_origin": payloads["flow_origin"]["desktop"],
@@ -455,14 +567,15 @@ def main() -> int:
     (output / "README.md").write_text(
         "\n".join(
             [
-                "# Agent Playground 공급자 독립 SSO 최종 handoff",
+                "# Agent Playground 공급자 독립 SSO 사내 검증 후보 handoff",
                 "",
                 "이 패키지는 OIDC와 trusted-header 브라우저 SSO, DEV/PRD exact Flow,",
                 "수정 없는 Agent Hub 배포, Universal Simulation MCP, connector-neutral",
                 "Action과 Wiki/Ontology 실행을 하나의 exact Flow 증거로 연결한다.",
                 "",
-                "기존 Agent Playground handoff와 완료 감사는 이 패키지로 대체되며,",
-                "사내 적용 근거로 사용하지 않는다.",
+                "기존 Agent Playground 완료 주장은 이 패키지의 요구사항 감사로 대체한다.",
+                "로컬 구현·회귀는 통과했지만 `REQUIREMENT_AUDIT.md`의 사내 SSO gate가",
+                "통과하기 전에는 전체 목표 완료나 사내 운영 완료 근거로 사용하지 않는다.",
                 "",
                 f"- feature commit: `{feature_commit}`",
                 f"- exact Flow: `{exact.get('flow_id')}`",
