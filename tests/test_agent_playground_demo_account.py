@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import stat
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -72,3 +75,29 @@ def test_langflow_browser_allowlist_contains_demo_email() -> None:
         / "agent-playground-mainline"
         / "langflow-browser-allowed-emails.txt"
     )
+
+
+def test_connected_key_launcher_separates_login_alias_from_employee_owner() -> None:
+    script_root = ROOT / "validation" / "agent-playground-mainline"
+    environment = dict(os.environ)
+    environment.update(
+        {
+            "AGENT_HUB_USERNAME": "boi-dev",
+            "AGENT_HUB_EMPLOYEE_ID": "100002",
+        }
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import run_agent_hub_with_connected_key as launcher; "
+            "print(launcher.EMPLOYEE_ID)",
+        ],
+        cwd=script_root,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.strip() == "100002"

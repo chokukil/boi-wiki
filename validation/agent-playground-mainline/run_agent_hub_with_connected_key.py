@@ -24,7 +24,11 @@ CONTAINER = os.getenv(
     "BOI_VALIDATION_CONTAINER",
     "boi-agent-playground-mainline-boi-api-1",
 )
-EMPLOYEE_ID = os.getenv("AGENT_HUB_USERNAME", "100002")
+EMPLOYEE_ID = (
+    os.getenv("AGENT_HUB_EMPLOYEE_ID")
+    or os.getenv("AGENT_HUB_USERNAME")
+    or "100002"
+)
 
 
 def _container_json(path: str) -> dict:
