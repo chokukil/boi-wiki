@@ -29,6 +29,7 @@ const storageStatePath = path.join(
 );
 
 const unexpected = [];
+const ignored = [];
 const evidence = {
   ok: false,
   employee_id: employeeId,
@@ -37,6 +38,7 @@ const evidence = {
   mcp: {},
   docs: [],
   screenshots: [],
+  ignored,
   unexpected,
 };
 const assert = (condition, message) => {
@@ -86,6 +88,18 @@ function monitor(page, label) {
   });
   page.on("console", (message) => {
     if (message.type() === "error") {
+      if (
+        label === "langflow-canvas"
+        && message.text().startsWith("Duplicate request:")
+      ) {
+        ignored.push({
+          label,
+          kind: "console",
+          reason: "unmodified Langflow duplicate-request guard",
+          message: message.text(),
+        });
+        return;
+      }
       if (
         label === "langflow-canvas"
         && message.text().includes("403 (Forbidden)")

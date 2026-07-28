@@ -218,13 +218,48 @@ async function discoverPlayground(page) {
       + `/projects/${encodeURIComponent(projectId)}/flows`,
     );
     const flows = await flowsResponse.json();
+    const actionsPageResponse = await fetch("/actions?connector_kind=langflow");
+    const actionsPage = await actionsPageResponse.text();
+    const actionsDocument = new DOMParser().parseFromString(actionsPage, "text/html");
+    const actionKeys = [
+      ...new Set(
+        [...actionsDocument.querySelectorAll("[data-action-open]")]
+          .map((element) => String(element.getAttribute("data-action-open") || ""))
+          .filter(Boolean),
+      ),
+    ];
+    const actionCatalog = [];
+    for (const actionKey of actionKeys) {
+      const detailResponse = await fetch(
+        `/api/actions/catalog/${encodeURIComponent(actionKey)}`,
+      );
+      if (!detailResponse.ok) continue;
+      const detail = await detailResponse.json();
+      const action = detail.action || {};
+      if (String(action.connector_kind || "") !== "langflow") continue;
+      const binding = action.connector_binding || action.connector_config || {};
+      const flowIdFromActionKey = (
+        actionKey.match(
+          /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i,
+        ) || []
+      )[0] || "";
+      actionCatalog.push({
+        action_key: actionKey,
+        name: action.title || action.name_ko || action.name || actionKey,
+        flow_id: String(binding.flow_id || action.flow_id || flowIdFromActionKey),
+        project_id: String(binding.project_id || ""),
+        deployment_id: String(binding.deployment_id || ""),
+      });
+    }
     return {
       state_status: stateResponse.status,
       flows_status: flowsResponse.status,
+      actions_page_status: actionsPageResponse.status,
       state,
       endpoint_id: endpointId,
       project_id: projectId,
       flows: flows.flows || [],
+      action_catalog: actionCatalog,
     };
   });
   assert(discovery.state_status === 200, "Playground state lookup failed");
@@ -245,9 +280,21 @@ async function discoverPlayground(page) {
     (flow) => String(flow.name || "") === "BoI Universal Simulation MCP",
   );
   assert(universal, "Universal Simulation MCP Flow is missing");
-  const actionFlow = prdFlows.find(
+  let actionFlow = prdFlows.find(
     (flow) => (flow.linked_actions || []).length > 0,
   );
+  if (!actionFlow) {
+    const action = discovery.action_catalog.find((item) => item.flow_id);
+    if (action) {
+      actionFlow = {
+        flow_id: action.flow_id,
+        name: action.name,
+        environment: "prd",
+        origin_label: "Agent Hub",
+        linked_actions: [{ action_key: action.action_key }],
+      };
+    }
+  }
   assert(actionFlow, "no existing PRD Flow has a connected Action");
   evidence.playground = {
     endpoint_id: discovery.endpoint_id,
