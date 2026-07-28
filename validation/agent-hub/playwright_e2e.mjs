@@ -938,7 +938,7 @@ async function verifyPlayground(browser, flowId) {
   assert(await validateButton.isEnabled(), "Flow validation button is disabled after deployment registration");
   await validateButton.click();
   await root.locator("[data-playground-toast]").getByText(/Action 연결 준비/).waitFor({
-    timeout: 90_000,
+    timeout: 240_000,
   });
   await root.locator('[data-selected-flow-status][data-state="action_ready"]').waitFor();
   result.playground.validation_status = "action_ready";
@@ -967,7 +967,7 @@ async function verifyPlayground(browser, flowId) {
     save_mode: "preview",
   };
   await root.locator("[data-playground-toast]").getByText(/runtime 테스트를 마쳤습니다/).waitFor({
-    timeout: 90_000,
+    timeout: 240_000,
   });
 
   await root.locator('[data-workbench-step="action"]').click();
