@@ -47,6 +47,11 @@ def corporate_evidence_ok(corporate: dict[str, Any]) -> bool:
         and corporate.get("environment") == "corporate"
         and corporate.get("auth_mode")
         in {"external_jwt", "trusted_header_bridge", "embedded_sso"}
+        and nested(corporate, "browser_sso", "mode")
+        == corporate.get("auth_mode")
+        and corporate.get("boi_auth_source") not in {None, "", "dev"}
+        and bool(corporate.get("employee_id"))
+        and corporate.get("employee_id") == corporate.get("langflow_user")
         and corporate.get("second_password_form") is False
         and corporate.get("principal_match") is True
         and corporate.get("exact_canvas_loaded") is True
@@ -64,7 +69,12 @@ def corporate_evidence_ok(corporate: dict[str, Any]) -> bool:
         )
         is True
         and nested(corporate, "hcp_fail_closed", "environment") == "corporate"
+        and nested(corporate, "hcp_fail_closed", "role_reduction_status") == 403
+        and nested(corporate, "hcp_fail_closed", "account_disabled_status") == 403
+        and nested(corporate, "hcp_fail_closed", "outage_status") == 503
+        and nested(corporate, "hcp_fail_closed", "recovered_status") == 200
         and nested(corporate, "hcp_fail_closed", "ok") is True
+        and not corporate.get("error")
         and not corporate.get("unexpected_http_errors")
         and not corporate.get("console_errors")
         and not corporate.get("page_errors")

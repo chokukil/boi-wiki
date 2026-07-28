@@ -160,6 +160,11 @@ def assert_evidence(evidence_root: Path) -> dict[str, dict[str, Any]]:
             / "agent-playground-current/regression/keycloak-reference-contract-final.json",
             "ok",
         ),
+        "corporate_runner_self_test": (
+            evidence_root
+            / "agent-playground-corporate-sso-validation/corporate-sso-acceptance.json",
+            "ok",
+        ),
     }
     payloads: dict[str, dict[str, Any]] = {}
     for name, (path, pass_field) in specs.items():
@@ -274,6 +279,27 @@ def assert_evidence(evidence_root: Path) -> dict[str, dict[str, Any]]:
         )
     ):
         raise RuntimeError("local Keycloak OIDC reference contract evidence is incomplete")
+
+    corporate_self_test = payloads["corporate_runner_self_test"]
+    if (
+        corporate_self_test.get("schema")
+        != "boi.agent-playground.corporate-sso-acceptance.v1"
+        or corporate_self_test.get("environment") != "validation"
+        or corporate_self_test.get("final_acceptance") is not False
+        or corporate_self_test.get("principal_match") is not True
+        or corporate_self_test.get("second_password_form") is not False
+        or corporate_self_test.get("exact_canvas_loaded") is not True
+        or corporate_self_test.get("employee_id")
+        != corporate_self_test.get("langflow_user")
+        or corporate_self_test.get("spoof_status") != 403
+        or corporate_self_test.get("hcp_fail_closed", {}).get("ok") is not True
+        or corporate_self_test.get("browser_sso", {}).get("status") != "ready"
+        or corporate_self_test.get("logout", {}).get("boi_session_cleared") is not True
+        or corporate_self_test.get("logout", {}).get("langflow_session_cleared")
+        is not True
+        or any((corporate_self_test.get("secret_exposure") or {}).values())
+    ):
+        raise RuntimeError("corporate acceptance runner self-test is incomplete")
 
     security = payloads["security_context"]
     hcp = security.get("hcp") or {}
