@@ -29,6 +29,12 @@ review:
 
 Agent Playground는 내 사번의 Langflow 프로젝트에서 Flow를 만들고 시험하는 개인 개발 공간이다. 검증을 마친 Flow는 기존 Agent Hub UI에서 배포하고, Playground가 배포 결과를 다시 찾아 BoI Action으로 연결한다.
 
+로컬 시연에서는 운영 사내 계정과 별개로 `boi-dev` 공용 로그인을 준비할 수
+있다. 이 계정은 새 사번이나 별도 프로젝트가 아니라 검증용 `100002` 개발자
+공간의 OIDC 별칭이다. 준비와 복구는
+`validation/agent-playground-mainline/prepare_demo_account.py`와
+`restore_demo_account.py`로만 수행하며 사내·운영 환경에는 배포하지 않는다.
+
 1. `/playground`를 열어 현재 SSO 사용자를 확인한다.
 2. `Langflow 설정에서 키 발급`으로 개인 API Key를 만든다.
 3. Playground에서 연결을 시험하고 `내 개발 공간 자동 준비`를 실행한다.

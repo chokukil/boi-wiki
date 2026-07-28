@@ -1,0 +1,120 @@
+{
+  "schema": "boi.agent-playground.demo-account-e2e.v1",
+  "generated_at": "2026-07-28T13:00:00.109Z",
+  "username": "boi-dev",
+  "employee_id": "100002",
+  "display_name": "BoI Demo",
+  "boi": {
+    "employee_id": "100002",
+    "display_name": "BoI Demo",
+    "auth_source": "oidc",
+    "teams": [
+      "aix-tf"
+    ],
+    "roles": [
+      "boi.viewer",
+      "boi.editor",
+      "boi.workflow_runner",
+      "boi.action_invoker"
+    ],
+    "pkce_s256": true,
+    "demo_guide": {
+      "status": 200,
+      "local_only_notice": true
+    }
+  },
+  "playground": {
+    "endpoint_id": "ep-abd82cc18e0e483b",
+    "project_id": "16707caf-0219-448c-ab87-9a4a42ad6f90",
+    "project_name": "boi-100002",
+    "flow_count": 30,
+    "prd_flow_count": 25,
+    "universal_flow": {
+      "flow_id": "b0341d3a-c05d-4c6d-9c19-ec27c188674d",
+      "name": "BoI Universal Simulation MCP Browser 20260728044638",
+      "environment": "prd",
+      "checksum_state": "matched"
+    },
+    "action_flow": {
+      "flow_id": "85900c38-edb8-4a5d-a2c2-3b00d2e2041e",
+      "name": "BoI Universal Simulation MCP Browser 20260728081112",
+      "action_key": "agent-playground.100002.85900c38-edb8-4a5d-a2c2-3b00d2e2041e.85900c38-edb8-4a5d-a2c2-3b00d2e2041e"
+    },
+    "universal_preview": {
+      "status": 200,
+      "simulated": true,
+      "source_references_present": true,
+      "ontology_contract_present": true,
+      "save_mode": "preview"
+    }
+  },
+  "langflow": {
+    "canvas_url": "http://localhost:17867/flow/b0341d3a-c05d-4c6d-9c19-ec27c188674d/folder/16707caf-0219-448c-ab87-9a4a42ad6f90",
+    "flow_id": "b0341d3a-c05d-4c6d-9c19-ec27c188674d",
+    "node_count": 10,
+    "username": "100002",
+    "second_password_form": false
+  },
+  "agent_hub": {
+    "employee_id": "100002",
+    "display_name": "BoI Demo",
+    "role": "user",
+    "endpoint_count": 2,
+    "second_password_form": false
+  },
+  "action": {
+    "action_key": "agent-playground.100002.85900c38-edb8-4a5d-a2c2-3b00d2e2041e.85900c38-edb8-4a5d-a2c2-3b00d2e2041e",
+    "connector_kind": "langflow",
+    "execution_mode": "gateway",
+    "preview_state": "ready",
+    "dry_run": true
+  },
+  "logout": {
+    "boi_status": 401,
+    "langflow_status": 302,
+    "boi_session_invalidated": true,
+    "langflow_session_invalidated": true,
+    "browser_sso_logout_status": 302,
+    "browser_sso_cookie_cleared": true
+  },
+  "screenshots": [
+    "01-playground-demo-ready.png",
+    "02-langflow-exact-canvas.png",
+    "03-agent-hub-existing-assets.png",
+    "04-connected-action-preview.png"
+  ],
+  "unexpected_http_errors": [],
+  "ignored_browser_warnings": [
+    {
+      "scope": "agent-hub",
+      "reason": "immutable Agent Hub authorization bootstrap before SSO token storage",
+      "status": 403,
+      "url": "http://localhost:18080/api/v1/admin/settings"
+    },
+    {
+      "scope": "agent-hub",
+      "reason": "immutable Agent Hub authorization bootstrap before SSO token storage",
+      "status": 403,
+      "url": "http://localhost:18080/api/v1/users/me"
+    },
+    {
+      "scope": "agent-hub",
+      "reason": "immutable Agent Hub optional component lookup during auth bootstrap"
+    },
+    {
+      "scope": "agent-hub",
+      "reason": "immutable Agent Hub authorization bootstrap before SSO token storage",
+      "status": 403,
+      "url": "http://localhost:18080/api/v1/admin/settings"
+    }
+  ],
+  "console_errors": [],
+  "page_errors": [],
+  "secret_scan": {
+    "api_key": false,
+    "boi_pat": false,
+    "run_token": false,
+    "password_field": false
+  },
+  "ok": true
+}
