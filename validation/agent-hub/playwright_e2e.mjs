@@ -917,10 +917,15 @@ async function verifyPlayground(browser, flowId) {
     null,
     { timeout: 30_000 },
   );
-  const selectedTaskRef = await taskSelect.locator("option").nth(1).getAttribute("value");
+  const sopTaskOption = taskSelect
+    .locator("option")
+    .filter({ hasText: "원인 분석 요청" })
+    .first();
+  await sopTaskOption.waitFor({ state: "attached", timeout: 30_000 });
+  const selectedTaskRef = await sopTaskOption.getAttribute("value");
   assert(
     Boolean(String(selectedTaskRef || "").trim()),
-    "ACL-checked Task selector did not provide an actual Task anchor",
+    "ACL-checked Task selector did not provide an actual SOP Task anchor",
   );
   await taskSelect.selectOption(String(selectedTaskRef));
   result.playground.task_anchor = {
