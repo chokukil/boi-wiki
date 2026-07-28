@@ -465,7 +465,10 @@ async function loginBoi(browser) {
   });
   assert(state.status === 200, "BoI Playground state failed");
   assert(state.body.identity?.employee_id === "100002", "BoI SSO principal mismatch");
-  assert(state.body.identity?.auth_source === "keycloak", "BoI is not using OIDC Principal");
+  assert(
+    ["oidc", "keycloak"].includes(state.body.identity?.auth_source),
+    "BoI is not using an OIDC Principal",
+  );
   return { context, page, state: state.body };
 }
 

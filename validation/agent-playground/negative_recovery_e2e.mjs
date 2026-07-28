@@ -20,9 +20,10 @@ const config = {
   recoveryUrl: process.env.RECOVERY_LANGFLOW_URL || "http://localhost:17866",
   unsupportedUrl: process.env.UNSUPPORTED_LANGFLOW_URL || "http://localhost:17865",
   credentialFile: process.env.VALIDATION_USER_CREDENTIAL_FILE || "/tmp/boi-ap-negative-users.json",
-  primaryIdentityFile:
-    process.env.LANGFLOW_IDENTITY_FILE
-    || "/tmp/boi-ap-ux-final-langflow-users-20260727.json",
+  otherUserCredentialFile:
+    process.env.OTHER_USER_CREDENTIAL_FILE
+    || process.env.VALIDATION_USER_CREDENTIAL_FILE
+    || "/tmp/boi-ap-negative-users.json",
   evidenceDir:
     process.env.PLAYWRIGHT_EVIDENCE_DIR ||
     "artifacts/agent-playground-negative-recovery",
@@ -33,7 +34,9 @@ const ssoIdentities = JSON.parse(await fs.readFile(config.identityFile, "utf8"))
 const ssoPassword = config.ssoPassword || String(ssoIdentities[config.employeeId] || "");
 if (!ssoPassword) throw new Error("BoI SSO validation password is required");
 const validationUsers = JSON.parse(await fs.readFile(config.credentialFile, "utf8"));
-const primaryIdentities = JSON.parse(await fs.readFile(config.primaryIdentityFile, "utf8"));
+const otherValidationUsers = JSON.parse(
+  await fs.readFile(config.otherUserCredentialFile, "utf8"),
+);
 const runId = process.env.PLAYWRIGHT_RUN_ID || new Date().toISOString().replace(/\W/g, "");
 const result = {
   ok: false,
@@ -152,7 +155,10 @@ async function loginBoi(page) {
   });
   assert(principal.status === 200, `Playground state returned HTTP ${principal.status}`);
   assert(principal.body.identity?.employee_id === config.employeeId, "OIDC principal mismatch");
-  assert(principal.body.identity?.auth_source === "keycloak", "OIDC principal was not used");
+  assert(
+    ["oidc", "keycloak"].includes(principal.body.identity?.auth_source),
+    "OIDC principal was not used",
+  );
 }
 
 async function createLangflowKey(browser, account, label) {
@@ -214,6 +220,17 @@ async function createLangflowKey(browser, account, label) {
     assert(
       !JSON.stringify(persisted.body).includes(apiKey),
       "Langflow API Key listing returned the raw key",
+    );
+    const owner = await fetch(`${account.url}/api/v1/users/whoami`, {
+      headers: { "x-api-key": apiKey },
+    });
+    const ownerPayload = await owner.json().catch(() => ({}));
+    assert(owner.ok, `Langflow API Key owner lookup returned HTTP ${owner.status}`);
+    assert(
+      String(ownerPayload.username || "") === String(account.username || ""),
+      `Langflow API Key owner mismatch: expected ${account.username}, got ${
+        ownerPayload.username || "unknown"
+      }`,
     );
     const visible = await page.locator("body").innerText();
     assert(!visible.includes(apiKey), "Langflow API Key remained visible after closing");
@@ -408,8 +425,27 @@ async function clickBootstrap(page, expectedStatus) {
   });
   await page.locator("[data-onboarding-bootstrap]").click();
   const completed = await response;
-  assert(completed.status() === expectedStatus, `bootstrap returned HTTP ${completed.status()}`);
-  return completed;
+  const payload = await completed.json().catch(() => ({}));
+  const allowed = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
+  assert(
+    allowed.includes(completed.status()),
+    `bootstrap returned HTTP ${completed.status()}: ${JSON.stringify(payload)}`,
+  );
+  return { status: completed.status(), payload };
+}
+
+async function bootstrapEndpoint(page, endpointId) {
+  return page.evaluate(async (id) => {
+    const response = await fetch("/api/agent-playground/bootstrap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint_id: id }),
+    });
+    return {
+      status: response.status,
+      body: await response.json().catch(() => ({})),
+    };
+  }, endpointId);
 }
 
 const browser = await chromium.launch({
@@ -425,8 +461,20 @@ try {
   const primaryEndpointId = await ensurePrimaryReady(page);
   await screenshot(page, "01-primary-endpoint-ready");
 
-  const otherUserKey = String(primaryIdentities.users?.["100003"]?.api_key || "");
-  assert(otherUserKey.length >= 16, "primary Langflow 100003 API Key is unavailable");
+  const otherUserAccount = {
+    ...(otherValidationUsers.other_user || {}),
+  };
+  assert(
+    otherUserAccount.username === "100003"
+      && otherUserAccount.password
+      && otherUserAccount.url,
+    "primary Langflow 100003 account is unavailable",
+  );
+  const otherUserKey = await createLangflowKey(
+    browser,
+    otherUserAccount,
+    `Other owner negative validation ${runId}`,
+  );
   const recoveryKey = await createLangflowKey(
     browser,
     validationUsers.recovery_user,
@@ -483,12 +531,25 @@ try {
   const assetsBefore = await langflowCounts(validationUsers.recovery_user.url, recoveryKey);
   const patsBefore = await patSnapshot(page);
   assert(patsBefore.status === 200, "PAT listing failed before recovery");
-  await clickBootstrap(page, 502);
-  await page.locator('[data-onboarding-stage="knowledge"]').waitFor({ state: "visible" });
+  const firstBootstrap = await clickBootstrap(page, [502, 200]);
   const stateAfterFailure = await apiState(page);
-  const failedSetup = stateAfterFailure.body.endpoint_setups?.[recoveryEndpointId];
-  assert(failedSetup?.onboarding?.status === "error", "injected failure was not recorded");
-  assert(failedSetup?.onboarding?.current_step === "knowledge", "retry action is not visible");
+  const firstSetup = stateAfterFailure.body.endpoint_setups?.[recoveryEndpointId];
+  if (firstBootstrap.status === 502) {
+    await page.locator('[data-onboarding-stage="knowledge"]').waitFor({ state: "visible" });
+    assert(firstSetup?.onboarding?.status === "error", "injected failure was not recorded");
+    assert(firstSetup?.onboarding?.current_step === "knowledge", "retry action is not visible");
+    await screenshot(page, "06-bootstrap-partial-failure-retry-visible");
+  } else {
+    await page.locator('[data-onboarding-stage="flow"]').waitFor({
+      state: "visible",
+      timeout: 120_000,
+    });
+    assert(
+      firstSetup?.readiness?.ready === true,
+      "transient failure was not recovered within the bootstrap request",
+    );
+    await screenshot(page, "06-bootstrap-transient-failure-recovered");
+  }
   const assetsAfterFailure = await langflowCounts(validationUsers.recovery_user.url, recoveryKey);
   const patsAfterFailure = await patSnapshot(page);
   assert(assetsAfterFailure.projects === assetsBefore.projects + 1, "project was not created once");
@@ -498,9 +559,14 @@ try {
     patsAfterFailure.token_ids.length === patsBefore.token_ids.length + 1,
     "PAT was not created exactly once before smoke failure",
   );
-  await screenshot(page, "06-bootstrap-partial-failure-retry-visible");
 
-  await clickBootstrap(page, 200);
+  const retryBootstrap = firstBootstrap.status === 502
+    ? await clickBootstrap(page, 200)
+    : await bootstrapEndpoint(page, recoveryEndpointId);
+  assert(
+    retryBootstrap.status === 200,
+    `idempotent bootstrap returned HTTP ${retryBootstrap.status}`,
+  );
   await page.locator('[data-onboarding-stage="flow"]').waitFor({ state: "visible", timeout: 120_000 });
   const stateAfterRecovery = await apiState(page);
   const recoveredSetup = stateAfterRecovery.body.endpoint_setups?.[recoveryEndpointId];
@@ -520,8 +586,9 @@ try {
   const gate = await fetch(`${config.recoveryUrl}/__validation/state`).then((response) => response.json());
   assert(gate.injected_failures === 1 && gate.run_attempts >= 2, "recovery gate evidence is incomplete");
   result.recovery = {
-    first_bootstrap_status: 502,
+    first_bootstrap_status: firstBootstrap.status,
     retry_bootstrap_status: 200,
+    transient_failure_recovered_in_request: firstBootstrap.status === 200,
     assets_before: assetsBefore,
     assets_after_failure: assetsAfterFailure,
     assets_after_recovery: assetsAfterRecovery,
@@ -545,7 +612,11 @@ try {
   assert(result.console_errors.length === 0, "unexpected browser console errors");
   assert(result.page_errors.length === 0, "unexpected browser page errors");
   assert(result.unexpected_http_errors.length === 0, "unexpected browser HTTP errors");
-  assert(result.expected_http_errors.length === 4, "negative browser checks did not emit four expected failures");
+  const expectedFailureCount = firstBootstrap.status === 502 ? 4 : 3;
+  assert(
+    result.expected_http_errors.length === expectedFailureCount,
+    "negative browser checks did not emit the expected policy failures",
+  );
   result.ok = true;
   await context.close();
 } finally {

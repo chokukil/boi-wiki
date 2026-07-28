@@ -139,7 +139,10 @@ async function loginBoi(page) {
   });
   assert(state.status === 200, `Playground state returned HTTP ${state.status}`);
   assert(state.body.identity?.employee_id === config.employeeId, "SSO employee does not match");
-  assert(state.body.identity?.auth_source === "keycloak", "Playground is not using Keycloak");
+  assert(
+    ["oidc", "keycloak"].includes(state.body.identity?.auth_source),
+    "Playground is not using an OIDC Principal",
+  );
   result.identity = {
     employee_id: state.body.identity.employee_id,
     auth_source: state.body.identity.auth_source,

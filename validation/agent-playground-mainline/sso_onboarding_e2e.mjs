@@ -113,12 +113,17 @@ let apiKey = "";
 let apiKeyId = "";
 const apiKeyName = `BoI Agent Playground SSO ${new Date().toISOString()}`;
 try {
-  await boiPage.goto(`${boiUrl}/playground`, { waitUntil: "domcontentloaded" });
+  // Establish the BoI SSO session before loading the Playground workbench.
+  // Opening /playground first would start background Flow/MCP requests with
+  // the previous endpoint credential while this scenario rotates that key.
+  // The real onboarding order is identity -> key -> endpoint -> bootstrap ->
+  // workbench, so keep the browser verification aligned with that order.
+  await boiPage.goto(`${boiUrl}/auth/login?next=/`, { waitUntil: "domcontentloaded" });
   await completeKeycloakLogin(boiPage, new URL(boiUrl).origin);
-  await boiPage.locator("[data-agent-playground]").waitFor({
-    state: "visible",
-    timeout: 30_000,
-  });
+  assert(
+    new URL(boiPage.url()).origin === new URL(boiUrl).origin,
+    "BoI SSO did not return to the application origin",
+  );
 
   await langflowPage.goto(`${langflowBrowserUrl}/settings/api-keys`, {
     waitUntil: "domcontentloaded",
@@ -298,7 +303,7 @@ try {
     "Playground state lost browser SSO readiness",
   );
 
-  await boiPage.reload({ waitUntil: "domcontentloaded" });
+  await boiPage.goto(`${boiUrl}/playground`, { waitUntil: "domcontentloaded" });
   await boiPage.locator("[data-agent-playground]").waitFor({ state: "visible" });
   await boiPage.waitForFunction(
     () => (

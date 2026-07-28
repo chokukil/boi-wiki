@@ -98,6 +98,27 @@ async function createIncompatibleFlow(apiKey, runId) {
   };
 }
 
+async function ensureModelFlow(apiKey) {
+  const flows = await langflowJson("GET", "/api/v1/flows/", apiKey);
+  const existing = flows.find(
+    (flow) =>
+      flow.name === "BoI Wiki Agent Loop - Model Agent Example"
+      && String(flow.folder_id || flow.project_id || "") === config.projectId,
+  );
+  if (existing) return existing;
+  const artifact = JSON.parse(
+    await fs.readFile(
+      path.resolve("langflow/flows/boi_wiki_agent_loop_model_agent.json"),
+      "utf8",
+    ),
+  );
+  return langflowJson("POST", "/api/v1/flows/", apiKey, {
+    ...artifact,
+    folder_id: config.projectId,
+    project_id: config.projectId,
+  });
+}
+
 async function api(page, method, pathname, body) {
   return page.evaluate(
     async ({ method: requestMethod, pathname: requestPath, body: requestBody }) => {
@@ -144,17 +165,21 @@ async function createActualTask(page, runId) {
   };
 }
 
-const credentialsDocument = JSON.parse(
-  await fs.readFile(
-    config.langflowIdentityFile || config.langflowCredentialFile,
-    "utf8",
-  ),
-);
-const credentials = (
-  credentialsDocument.users?.[config.employeeId]
-  || credentialsDocument.recovery_user
-  || credentialsDocument
-);
+const credentialsDocument = process.env.LANGFLOW_API_KEY
+  ? {}
+  : JSON.parse(
+    await fs.readFile(
+      config.langflowIdentityFile || config.langflowCredentialFile,
+      "utf8",
+    ),
+  );
+const credentials = process.env.LANGFLOW_API_KEY
+  ? { api_key: process.env.LANGFLOW_API_KEY }
+  : (
+    credentialsDocument.users?.[config.employeeId]
+    || credentialsDocument.recovery_user
+    || credentialsDocument
+  );
 const ssoIdentities = JSON.parse(await fs.readFile(config.identityFile, "utf8"));
 const ssoPassword = config.ssoPassword || String(ssoIdentities[config.employeeId] || "");
 const apiKey = String(credentials.api_key || "");
@@ -166,6 +191,7 @@ const runId =
   process.env.PLAYWRIGHT_RUN_ID
   || new Date().toISOString().replace(/\W/g, "").slice(0, 15);
 await fs.mkdir(config.evidenceDir, { recursive: true });
+const ensuredModelFlow = await ensureModelFlow(apiKey);
 const incompatible = await createIncompatibleFlow(apiKey, runId);
 
 const result = {
@@ -239,10 +265,24 @@ try {
   const stateResponse = await api(page, "GET", "/api/agent-playground");
   assert(stateResponse.status === 200, "Playground state failed");
   assert(stateResponse.body.identity?.employee_id === config.employeeId, "OIDC Principal mismatch");
-  assert(stateResponse.body.identity?.auth_source === "keycloak", "OIDC Principal was not used");
+  assert(
+    ["oidc", "keycloak"].includes(stateResponse.body.identity?.auth_source),
+    "OIDC Principal was not used",
+  );
   const endpoint = (stateResponse.body.endpoints || []).find(
-    (item) => String(item.base_url || "").replace(/\/+$/, "")
-      === config.langflowUrl.replace("localhost", "host.docker.internal").replace(/\/+$/, ""),
+    (item) => item.endpoint_id === stateResponse.body.default_endpoint_id,
+  ) || (stateResponse.body.endpoints || []).find(
+    (item) => {
+      const candidates = [
+        item.base_url,
+        item.deploy_url,
+        item.external_url,
+        item.browser_url,
+      ]
+        .filter(Boolean)
+        .map((value) => String(value).replace("host.docker.internal", "localhost").replace(/\/+$/, ""));
+      return candidates.includes(config.langflowUrl.replace(/\/+$/, ""));
+    },
   );
   assert(endpoint, "primary Langflow endpoint is missing from Playground");
   const flowsResponse = await api(
@@ -252,7 +292,7 @@ try {
   );
   assert(flowsResponse.status === 200, "Playground live Flow discovery failed");
   const modelFlow = (flowsResponse.body.flows || []).find(
-    (flow) => flow.name === "BoI Wiki Agent Loop - Model Agent Example",
+    (flow) => flow.id === ensuredModelFlow.id,
   );
   const incompatibleFlow = (flowsResponse.body.flows || []).find(
     (flow) => flow.id === incompatible.flow.id,

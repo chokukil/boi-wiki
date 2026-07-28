@@ -97,6 +97,7 @@ const result = {
   revalidation: {},
   page_errors: [],
   console_errors: [],
+  ignored_console_errors: [],
   unexpected_http_errors: [],
 };
 
@@ -110,6 +111,17 @@ function diagnostics(page, scope) {
   });
   page.on("console", (message) => {
     const text = message.text();
+    if (
+      message.type() === "error"
+      && /^Duplicate request: \/api\/v1\/projects\/?$/.test(text)
+    ) {
+      result.ignored_console_errors.push({
+        scope,
+        text,
+        reason: "unmodified Langflow frontend duplicate-request guard",
+      });
+      return;
+    }
     if (
       message.type() === "error"
       && !text.startsWith("Failed to load resource:")

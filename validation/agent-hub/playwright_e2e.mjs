@@ -581,9 +581,31 @@ async function pageWaitForEndpointState(card) {
 
 async function deployFlow(page) {
   await page.locator(".detail-actions").getByRole("button", { name: "배포" }).click();
-  const modal = page.locator(".modal").filter({ hasText: "Agent Builder에 배포" });
+  let modal = page.locator(".modal").filter({ hasText: "Agent Builder에 배포" });
   await modal.waitFor();
   await configureAgentHubEndpoint(modal);
+
+  // PR #25 loads projects only when the selected endpoint id changes.  If an
+  // already-saved endpoint had a revoked key, its first automatic project
+  // request fails before the user replaces the key, and saving the replacement
+  // does not retrigger that effect.  Exercise the existing UI exactly as a
+  // user can: close and reopen the immutable deploy modal after the successful
+  // key test so projects are fetched with the newly stored credential.
+  await modal.locator(".modal-header button").last().click();
+  await modal.waitFor({ state: "detached", timeout: 15_000 });
+  await page.locator(".detail-actions").getByRole("button", { name: "배포" }).click();
+  modal = page.locator(".modal").filter({ hasText: "Agent Builder에 배포" });
+  await modal.waitFor();
+  const loading = modal.getByText("불러오는 중…", { exact: true });
+  if (await loading.count()) {
+    await loading.waitFor({ state: "detached", timeout: 30_000 });
+  }
+  const refreshedEndpoint = modal
+    .getByText(endpointAlias, { exact: true })
+    .last()
+    .locator('xpath=ancestor::div[.//input[@type="radio"]][1]');
+  await refreshedEndpoint.waitFor({ state: "visible", timeout: 15_000 });
+  await refreshedEndpoint.click();
 
   const projectSelect = modal.locator("select.select").last();
   await projectSelect.waitFor({ state: "visible", timeout: 30_000 });

@@ -37,7 +37,11 @@ const identities = JSON.parse(await fs.readFile(config.identityFile, "utf8"));
 const langflowIdentities = JSON.parse(
   await fs.readFile(config.langflowIdentityFile, "utf8"),
 );
-const langflowAccount = langflowIdentities.users?.["100002"];
+const storedLangflowAccount = langflowIdentities.users?.["100002"] || {};
+const langflowAccount = {
+  ...storedLangflowAccount,
+  api_key: process.env.LANGFLOW_API_KEY || storedLangflowAccount.api_key || "",
+};
 const team = JSON.parse(await fs.readFile(config.teamResult, "utf8"));
 const endpointId = String(team.operator?.deployment_reference?.endpoint_connection_id || "");
 const projectId = String(team.operator?.deployment_reference?.project_id || "");
