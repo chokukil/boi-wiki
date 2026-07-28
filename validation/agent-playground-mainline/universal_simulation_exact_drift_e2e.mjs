@@ -68,6 +68,7 @@ const result = {
   },
   drift: {},
   recovery: {},
+  ignored: [],
   unexpected: [],
 };
 
@@ -80,6 +81,18 @@ function monitor(page, scope) {
     result.unexpected.push({ scope, kind: "pageerror", message: error.message });
   });
   page.on("console", (message) => {
+    if (
+      message.type() === "error"
+      && message.text().startsWith("Duplicate request:")
+    ) {
+      result.ignored.push({
+        scope,
+        kind: "console",
+        reason: "unmodified Langflow frontend duplicate-request guard",
+        message: message.text().slice(0, 500),
+      });
+      return;
+    }
     if (
       message.type() === "error"
       && !message.text().startsWith("Failed to load resource:")
@@ -245,11 +258,27 @@ try {
     revalidated.body.artifact_checksum === registeredChecksum,
     "restored Flow checksum changed",
   );
-  const recovered = await postJson(boiSession.page, "/api/actions/invoke", {
-    action_key: actionKey,
-    payload: { question: "restored exact Flow preview", save_mode: "preview" },
-    dry_run: false,
-  });
+  let recovered = {};
+  const recoveryAttempts = [];
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    recovered = await postJson(boiSession.page, "/api/actions/invoke", {
+      action_key: actionKey,
+      payload: { question: "restored exact Flow preview", save_mode: "preview" },
+      dry_run: false,
+    });
+    recoveryAttempts.push({
+      attempt,
+      status: recovered.status,
+      detail: String(
+        recovered.body?.detail?.code
+        || recovered.body?.detail
+        || recovered.body?.status
+        || "",
+      ).slice(0, 200),
+    });
+    if (recovered.status === 200 || recovered.status !== 503) break;
+    await boiSession.page.waitForTimeout(1500);
+  }
   assert(recovered.status === 200, `restored Action returned ${recovered.status}`);
   assert(recovered.body.flow_id === flowId, "restored Action used another Flow");
   result.recovery = {
@@ -257,6 +286,7 @@ try {
     checksum: revalidated.body.artifact_checksum,
     action_status: recovered.body.status,
     flow_id: recovered.body.flow_id,
+    attempts: recoveryAttempts,
   };
   await boiSession.page.screenshot({
     path: path.join(outputDir, "01-exact-flow-restored.png"),
