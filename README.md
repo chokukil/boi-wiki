@@ -193,6 +193,22 @@ Web Private과 Local Private은 다릅니다.
 - Local Private은 사용자 PC의 `boi-wiki-local`에 저장되며, 이 Web BoI Wiki가 scan하지 않습니다.
 - Local Private 공유는 사용자 preview 승인 후 원격 동기 검증을 통과하면 Team/Public에 즉시 게시됩니다. 품질/정책 관리는 HOTL로 사후 개입합니다.
 
+## 저장소 source 자동 선택
+
+Windows 설치·업데이트·배포 preflight에서는 `repository-sources.json`과 `scripts/select-repository-source.ps1`을 사용합니다. `boi-wiki`는 먼저 `http://bitbucket.skhynix.com/scm/boi/boi-wiki.git`을 비대화형으로 읽습니다. 성공하면 Bitbucket을 선택하고 GitHub는 검사하지 않습니다. DNS·라우팅·연결 거부·timeout일 때만 `https://github.com/chokukil/boi-wiki.git`을 읽기 source로 선택합니다. 사내 호스트가 `401`, `403`, credential failure 또는 repository access failure를 반환하면 GitHub로 우회하지 않고 Bitbucket 로그인과 `BOI` 프로젝트 Read 권한을 해결해야 합니다.
+
+selector는 `Detect`, `Preview`, hash-bound `Apply`, `Verify`, `Resume`, `Rollback`을 제공하고 receipt를 Git에 포함되지 않는 `.git/boi/repository-source.json`에 둡니다. origin 전환 전에 stable revision을 확인하며 origin drift, plan hash 변경 또는 mirror 불일치에서는 중단합니다. feature branch와 작업 파일은 수정하지 않습니다. GitHub source 선택은 push, PR, promotion 또는 Local Private 전송 승인이 아닙니다.
+
+배포 preflight에서는 최소한 source `Preview`와 `Verify`를 통과한 뒤 선택된 stable branch를 사용합니다. 실제 Bitbucket 인증과 mirror acceptance가 끝나기 전에는 사내 배포 완료나 production-ready를 주장하지 않습니다.
+
+두 저장소를 함께 checkout한 CI에서는 `scripts/check-repository-source-contract.ps1 -PeerRoot <boi-wiki-local 경로>`로 manifest, selector, MCP connector와 descriptor의 SHA256 일치를 검사합니다.
+
+## MCP client 연결 descriptor
+
+MCP client 설정의 기준은 `config/boi-wiki-mcp-connection.json`입니다. Git source는 이 descriptor의 provenance를 정할 뿐 endpoint를 정하지 않습니다. endpoint는 `BOI_WIKI_MCP_EXTERNAL_URL`, 승인된 배포 descriptor 또는 사용자가 명시한 주소에서만 얻습니다. 로컬 `http://localhost:8200/mcp`는 같은 장비의 health endpoint가 실제로 응답할 때만 개발 기본값으로 사용할 수 있습니다.
+
+Codex 또는 Claude Code 연결은 `scripts/connect-boi-wiki-mcp.ps1`의 `Preview`로 client, 가려진 endpoint, 인증 방식, 설정 대상, restart 요구와 exact plan hash를 확인한 뒤 승인된 hash로만 `Apply`합니다. 토큰 값은 command argument, Git diff, receipt와 log에 기록하지 않습니다. 재시작 후 `Verify`가 MCP `initialize`와 `tools/list`를 수행하고 필수 tool을 확인해야 연결 완료입니다. 이 검증은 Local Private 자료를 보내거나 write tool을 호출하지 않습니다.
+
 ## BoI Wiki MCP
 
 BoI Wiki MCP는 Codex, Claude Desktop, Cursor, Langflow, custom agent가 REST 경로를 외우지 않고 BoI Wiki를 사용할 수 있게 하는 agent-facing 인터페이스입니다.
