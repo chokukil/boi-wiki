@@ -1,0 +1,51 @@
+{
+  "schema": "boi-wiki-mcp-connection/v1",
+  "profile_id": "boi-wiki-mcp",
+  "revision": "2026-08-06.1",
+  "server_name": "boi-wiki-mcp",
+  "transport": "streamable-http",
+  "endpoint": {
+    "external_url_env": "BOI_WIKI_MCP_EXTERNAL_URL",
+    "path": "/mcp",
+    "local_default": "http://localhost:8200/mcp",
+    "local_default_requires_live_health": true,
+    "repository_source_does_not_select_endpoint": true
+  },
+  "authentication": {
+    "supported_modes": ["none", "service-token", "oauth"],
+    "service_token_env": "BOI_WIKI_MCP_SERVICE_TOKEN",
+    "legacy_server_token_env": "SERVICE_TOKEN",
+    "authorization_scheme": "Bearer",
+    "secret_must_not_be_written_to_git_or_preview": true
+  },
+  "verification": {
+    "protocol_version": "2025-06-18",
+    "method": "initialize-then-tools-list",
+    "required_tools": [
+      "boi_search",
+      "boi_get",
+      "ontology_search",
+      "boi_agent_chat",
+      "promotion_preview"
+    ],
+    "forbidden_during_connection_check": [
+      "local-private-content-transfer",
+      "search-query",
+      "write-tool-call",
+      "promotion-submit",
+      "action-invoke"
+    ]
+  },
+  "clients": {
+    "codex": {
+      "scope": "user",
+      "config": "~/.codex/config.toml",
+      "restart_required": true
+    },
+    "claude-code": {
+      "scope": "user",
+      "command": "claude mcp add --transport http --scope user",
+      "restart_required": true
+    }
+  }
+}

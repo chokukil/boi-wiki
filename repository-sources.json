@@ -1,0 +1,41 @@
+{
+  "schema": "boi-repository-sources/v1",
+  "probe": {
+    "command": "git ls-remote --symref <url> HEAD",
+    "timeout_seconds": 8,
+    "network_retry_count": 1,
+    "internal_first": true,
+    "fallback_on": [
+      "dns-failure",
+      "network-unreachable",
+      "connection-refused",
+      "timeout"
+    ],
+    "block_on": [
+      "authentication-failed",
+      "authorization-failed",
+      "repository-access-denied",
+      "repository-not-found-on-reachable-host"
+    ]
+  },
+  "repositories": {
+    "boi-wiki": {
+      "markers": ["boi_wiki_mcp", "boi_api"],
+      "stable_branch": "main",
+      "internal_url": "http://bitbucket.skhynix.com/scm/boi/boi-wiki.git",
+      "external_url": "https://github.com/chokukil/boi-wiki.git"
+    },
+    "boi-wiki-local": {
+      "markers": [".boi-harness", "templates/second-brain-guide"],
+      "stable_branch": "main",
+      "internal_url": "http://bitbucket.skhynix.com/scm/boi/boi-wiki-local.git",
+      "external_url": "https://github.com/chokukil/boi-wiki-local.git"
+    }
+  },
+  "safety": {
+    "origin_change_requires_preview_hash": true,
+    "external_fallback_never_implies_push_approval": true,
+    "repository_selection_never_selects_mcp_endpoint": true,
+    "credentials_must_not_appear_in_output_or_receipts": true
+  }
+}
