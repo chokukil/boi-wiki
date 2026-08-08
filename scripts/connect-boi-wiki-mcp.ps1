@@ -89,9 +89,9 @@ function Managed-CodexBlock([string]$Url, [string]$EffectiveAuth) {
 
 function Build-Preview {
     $resolvedEndpoint = Resolve-Endpoint
-    $state = "preview-ready"; $blocker = ""; $action = "configure"
+    $state = "preview-ready"; $pendingReason = ""; $blocker = ""; $action = "configure"
     if (!$resolvedEndpoint) {
-        $state = "endpoint-required"; $blocker = "승인된 MCP endpoint 또는 BOI_WIKI_MCP_EXTERNAL_URL이 필요합니다."; $action = "blocked"
+        $state = "pending-external-system"; $pendingReason = "endpoint-required"; $blocker = "승인된 MCP endpoint 또는 BOI_WIKI_MCP_EXTERNAL_URL이 필요합니다."; $action = "blocked"
     }
     $effectiveAuth = $AuthMode
     if ($effectiveAuth -eq "Auto") {
@@ -138,11 +138,11 @@ function Build-Preview {
         client = $resolvedClient; endpoint = $resolvedEndpoint; auth_mode = $effectiveAuth
         token_env_var = if ($effectiveAuth -eq "ServiceToken") { $TokenEnvVar } else { "" }
         config_target = $target; before_hash = $beforeHash; desired_hash = $desiredHash
-        state = $state; action = $action; blocker = $blocker
+        state = $state; pending_reason = $pendingReason; action = $action; blocker = $blocker
     }
     $planHash = Hash-Text ($plan | ConvertTo-Json -Depth 8 -Compress)
     return [pscustomobject]@{
-        schema = "boi-mcp-connection-preview/v1"; state = $state; action = $action
+        schema = "boi-mcp-connection-preview/v1"; state = $state; pending_reason = $pendingReason; action = $action
         client = $resolvedClient; endpoint = Safe-Endpoint $resolvedEndpoint; auth_mode = $effectiveAuth
         token_env_var = if ($effectiveAuth -eq "ServiceToken") { $TokenEnvVar } else { "" }
         credential_present = if ($effectiveAuth -eq "ServiceToken") { [bool][Environment]::GetEnvironmentVariable($TokenEnvVar) } else { $null }
@@ -169,17 +169,17 @@ function Parse-McpPayload([string]$Body) {
 
 function Verify-Protocol([string]$Url, [string]$EffectiveAuth) {
     if (!$Url) {
-        return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "endpoint-required"; local_private_bytes_sent = 0 }
+        return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "pending-external-system"; pending_reason = "endpoint-required"; local_private_bytes_sent = 0 }
     }
     $token = ""
     if ($EffectiveAuth -eq "ServiceToken") {
         $token = [Environment]::GetEnvironmentVariable($TokenEnvVar)
         if (!$token) {
-            return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "auth-required"; token_env_var = $TokenEnvVar; local_private_bytes_sent = 0 }
+            return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "pending-external-system"; pending_reason = "auth-required"; token_env_var = $TokenEnvVar; local_private_bytes_sent = 0 }
         }
     }
     if ($EffectiveAuth -eq "OAuth") {
-        return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "oauth-login-required"; local_private_bytes_sent = 0 }
+        return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "pending-external-system"; pending_reason = "oauth-login-required"; local_private_bytes_sent = 0 }
     }
     $handler = [Net.Http.HttpClientHandler]::new()
     $http = [Net.Http.HttpClient]::new($handler)
@@ -199,10 +199,10 @@ function Verify-Protocol([string]$Url, [string]$EffectiveAuth) {
         $content = [Net.Http.StringContent]::new($initialize, [Text.Encoding]::UTF8, "application/json")
         $response = $http.PostAsync($Url, $content).GetAwaiter().GetResult()
         if ([int]$response.StatusCode -in @(401, 403)) {
-            return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "auth-required"; token_env_var = $TokenEnvVar; local_private_bytes_sent = 0 }
+            return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "pending-external-system"; pending_reason = "auth-required"; token_env_var = $TokenEnvVar; local_private_bytes_sent = 0 }
         }
         if (!$response.IsSuccessStatusCode) {
-            return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "connection-failed"; http_status = [int]$response.StatusCode; local_private_bytes_sent = 0 }
+            return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "pending-external-system"; pending_reason = "connection-failed"; http_status = [int]$response.StatusCode; local_private_bytes_sent = 0 }
         }
         $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
         [void](Parse-McpPayload $body)
@@ -214,7 +214,7 @@ function Verify-Protocol([string]$Url, [string]$EffectiveAuth) {
         $listRequest = '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
         $listResponse = $http.PostAsync($Url, [Net.Http.StringContent]::new($listRequest, [Text.Encoding]::UTF8, "application/json")).GetAwaiter().GetResult()
         if (!$listResponse.IsSuccessStatusCode) {
-            return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "tools-list-failed"; http_status = [int]$listResponse.StatusCode; local_private_bytes_sent = 0 }
+            return [pscustomobject]@{ schema = "boi-mcp-connection-verification/v1"; ok = $false; state = "pending-external-system"; pending_reason = "tools-list-failed"; http_status = [int]$listResponse.StatusCode; local_private_bytes_sent = 0 }
         }
         $listPayload = Parse-McpPayload ($listResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult())
         $tools = @($listPayload.result.tools | ForEach-Object { [string]$_.name })
@@ -222,7 +222,8 @@ function Verify-Protocol([string]$Url, [string]$EffectiveAuth) {
         $missing = @($required | Where-Object { $_ -notin $tools })
         return [pscustomobject]@{
             schema = "boi-mcp-connection-verification/v1"; ok = ($missing.Count -eq 0)
-            state = if ($missing.Count -eq 0) { "verified" } else { "required-tools-missing" }
+            state = if ($missing.Count -eq 0) { "verified" } else { "pending-external-system" }
+            pending_reason = if ($missing.Count -eq 0) { "" } else { "required-tools-missing" }
             endpoint = Safe-Endpoint $Url; tools_count = $tools.Count; required_tools = $required
             missing_tools = $missing; local_private_bytes_sent = 0; write_tools_invoked = 0
         }
