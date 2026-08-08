@@ -2,6 +2,24 @@
 
 BoI Wiki는 OKF 기반의 업무 BoI 지식/런타임 시스템입니다. 공식 SOP가 있는 정형 업무뿐 아니라 반복 업무와 비정형 개인 업무도 업무 목적, 근거, 다음 행동, 완결 조건 중심으로 정리합니다.
 
+## AI에게 MCP 연결 맡기기
+
+Codex 또는 Claude에서 다음 문장을 그대로 사용합니다.
+
+```text
+BoI Wiki MCP를 현재 AI 클라이언트에 연결해줘.
+```
+
+AI는 사내 Bitbucket 저장소를 먼저 읽어 보고, DNS·라우팅·연결 실패일 때만 GitHub source를 사용합니다. 사내 호스트에 도달했지만 인증 또는 `BOI` 프로젝트 Read 권한이 없으면 외부로 우회하지 않습니다. 선택된 저장소에서 고정 connection descriptor를 확인하고, 가려진 endpoint·인증 방식·변경할 client 설정·재시작 여부를 먼저 보여준 뒤 승인받습니다.
+
+설정 파일이 생겼다는 것만으로 완료가 아닙니다. 필요한 client 재시작 후 MCP `initialize`와 `tools/list`가 성공하고 필수 도구가 보일 때 연결 완료입니다. endpoint·인증·필수 도구를 확인할 수 없으면 `pending-external-system`과 정확한 원인을 남기며 성공으로 표시하지 않습니다. Git origin은 endpoint를 결정하지 않으며, MCP 연결은 Local Private 원문 전송이나 promotion 승인이 아닙니다.
+
+개인 Second Brain과 Obsidian은 별도 Local workspace가 담당합니다.
+
+- [BoI Wiki Local 설치와 Second Brain](https://github.com/chokukil/boi-wiki-local#%EA%B0%80%EC%9E%A5-%EC%89%AC%EC%9A%B4-%EC%8B%9C%EC%9E%91)
+- [Obsidian Golden Journey](https://github.com/chokukil/boi-wiki-local/blob/main/templates/second-brain-guide/32-obsidian-golden-journey.md)
+- [공통 Raw Source Intake](https://github.com/chokukil/boi-wiki-local/blob/main/templates/second-brain-guide/14-folder-auto-curation.md)
+
 이 저장소는 공유 런타임입니다.
 
 - BoI Wiki Web UI와 BoI API
@@ -16,7 +34,7 @@ BoI Wiki는 OKF 기반의 업무 BoI 지식/런타임 시스템입니다. 공식
 개인 Local Private 작업은 별도 lightweight workspace 저장소를 사용합니다.
 
 ```text
-/home/chokukil/boi-wiki-local
+C:\Users\<계정>\Projects\boi-wiki-local
 ```
 
 `boi-wiki-local`은 Web 런타임이 아닙니다. 개인 PC에 두는 OKF Markdown workspace와 Codex/Claude/Cursor 하네스 파일 묶음입니다.
@@ -184,8 +202,8 @@ NAS PoC 운영 문서는 히스토리 보존용입니다. Pilot 완료 기준이
 
 | 저장소 | 역할 | 대상 |
 |---|---|---|
-| `/home/chokukil/boi-wiki` | 공유 런타임, source of truth, Web/MCP/API 서비스, 테스트 | 개발자, 운영자, shared Wiki agent |
-| `/home/chokukil/boi-wiki-local` | Local Private OKF workspace와 agent 하네스 | Codex, Claude, Cursor를 쓰는 일반 사용자 |
+| `<공유 런타임 checkout>/boi-wiki` | 공유 런타임, source of truth, Web/MCP/API 서비스, 테스트 | 개발자, 운영자, shared Wiki agent |
+| `<개인 workspace>/boi-wiki-local` | Local Private OKF workspace와 agent 하네스 | Codex, Claude, Cursor를 쓰는 일반 사용자 |
 
 Web Private과 Local Private은 다릅니다.
 
@@ -358,7 +376,7 @@ Web/MCP source/body edit는 사용자 승인 후 즉시 preview, lint, validatio
 이 환경에 생성된 local repository 경로:
 
 ```text
-/home/chokukil/boi-wiki-local
+<개인 workspace>/boi-wiki-local
 ```
 
 사용자 환경에서는 `boi-wiki-local` repo URL을 agent에게 주고 이렇게 말하면 됩니다.
