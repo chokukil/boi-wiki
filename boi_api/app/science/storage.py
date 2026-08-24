@@ -26,7 +26,7 @@ from boi_api.app.science.authorization import (
     ScienceAuthorizationError,
     ScienceRolesResolver,
 )
-from boi_api.app.science.digests import canonical_json_bytes
+from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
 from boi_api.app.science.models import (
     InterpretationRecord,
     ScienceModel,
@@ -78,6 +78,7 @@ _TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.[0-9a-f]{32}\.tmp$")
 _UUID_PATTERN = (
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 )
+_PROPOSAL_ID_NAMESPACE = uuid.UUID("0f512de9-e249-4f50-9b1c-fbb82bb9c770")
 _RECORD_AUDIT_ACTIONS = {
     "interpretation_saved",
     "report_saved",
@@ -121,10 +122,21 @@ class ScienceProposalRecord(ScienceModel):
     proposal_id: str = Field(pattern=rf"^sci-proposal:{_UUID_PATTERN}$")
     created_at: datetime
     created_by: str = Field(min_length=1, pattern=_RUNTIME_ID_PATTERN)
+    idempotency_key_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    request_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     domain: str = Field(pattern=_DOMAIN_PATTERN)
     kind: ProposalKind
     payload: dict[str, Any]
     status: Literal["proposed"] = "proposed"
+
+    @model_validator(mode="after")
+    def request_binding_is_exact(self) -> "ScienceProposalRecord":
+        expected = sha256_digest(
+            {"domain": self.domain, "kind": self.kind, "payload": self.payload}
+        )
+        if self.request_digest != expected:
+            raise ValueError("Science proposal request digest is not exact")
+        return self
 
 
 class ScienceApprovalAuthoritySnapshot(ScienceModel):
@@ -1623,28 +1635,62 @@ class ScienceRuntimeStore:
         domain: str,
         kind: ProposalKind,
         payload: Mapping[str, Any],
+        idempotency_key: str,
+        request_digest: str,
     ) -> ScienceProposalRecord:
-        proposal = validate_with_closed_error(
-            lambda: ScienceProposalRecord(
-                proposal_id=f"sci-proposal:{uuid.uuid4()}",
-                created_at=_utc_now(),
-                created_by=identity.employee_id,
-                domain=domain,
-                kind=kind,
-                payload=dict(payload),
-            ),
-            caught=(ValidationError, ScienceSensitivePersistenceError, ValueError),
-            closed_error=ScienceSensitivePersistenceError(
-                "unsafe Science proposal rejected"
-            ),
+        if not isinstance(idempotency_key, str) or not 8 <= len(idempotency_key) <= 256:
+            raise ScienceSensitivePersistenceError(
+                "unsafe Science proposal idempotency key rejected"
+            )
+        idempotency_key_digest = sha256_digest(idempotency_key)
+        proposal_id = (
+            f"sci-proposal:{uuid.uuid5(_PROPOSAL_ID_NAMESPACE, idempotency_key_digest)}"
         )
-        audit = self._new_audit_event(
-            identity=identity,
-            action="proposal_saved",
-            target_id=proposal.proposal_id,
-            details={"domain": proposal.domain, "kind": proposal.kind},
-        )
+        proposal_payload = dict(payload)
         with self._exclusive():
+            self._recover_pending_transactions_locked(record_id=proposal_id)
+            if self._existing_bytes_locked("proposals", proposal_id) is not None:
+                existing = self._load_locked(
+                    "proposals", proposal_id, ScienceProposalRecord
+                )
+                if (
+                    existing.created_by == identity.employee_id
+                    and existing.idempotency_key_digest == idempotency_key_digest
+                    and existing.request_digest == request_digest
+                    and existing.domain == domain
+                    and existing.kind == kind
+                    and existing.payload == proposal_payload
+                ):
+                    return existing
+                raise ImmutableScienceRecordError(
+                    "Science proposal idempotency collision"
+                )
+            proposal = validate_with_closed_error(
+                lambda: ScienceProposalRecord(
+                    proposal_id=proposal_id,
+                    created_at=_utc_now(),
+                    created_by=identity.employee_id,
+                    idempotency_key_digest=idempotency_key_digest,
+                    request_digest=request_digest,
+                    domain=domain,
+                    kind=kind,
+                    payload=proposal_payload,
+                ),
+                caught=(
+                    ValidationError,
+                    ScienceSensitivePersistenceError,
+                    ValueError,
+                ),
+                closed_error=ScienceSensitivePersistenceError(
+                    "unsafe Science proposal rejected"
+                ),
+            )
+            audit = self._new_audit_event(
+                identity=identity,
+                action="proposal_saved",
+                target_id=proposal.proposal_id,
+                details={"domain": proposal.domain, "kind": proposal.kind},
+            )
             self._commit_record_locked(
                 collection="proposals",
                 record_id=proposal.proposal_id,
