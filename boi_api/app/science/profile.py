@@ -95,18 +95,24 @@ def is_science_document(metadata: dict[str, Any]) -> bool:
     return metadata.get("type") in SCIENCE_TYPE_REQUIREMENTS
 
 
-def _reference_values(value: Any) -> set[str]:
+def _validate_reference_collection(value: Any, field_name: str) -> tuple[set[str], list[str]]:
     if not isinstance(value, list):
-        return set()
+        return set(), [f"{field_name} must be a list"]
+
     refs: set[str] = set()
+    errors: list[str] = []
     for item in value:
-        if isinstance(item, str) and item:
+        if isinstance(item, str) and item.strip():
             refs.add(item)
         elif isinstance(item, Mapping):
             ref = item.get("ref")
-            if isinstance(ref, str) and ref:
+            if isinstance(ref, str) and ref.strip():
                 refs.add(ref)
-    return refs
+            else:
+                errors.append(f"{field_name} items must be nonempty strings or mappings with ref")
+        else:
+            errors.append(f"{field_name} items must be nonempty strings or mappings with ref")
+    return refs, errors
 
 
 def validate_sci_profile_metadata(metadata: dict[str, Any]) -> list[str]:
@@ -134,21 +140,30 @@ def validate_sci_profile_metadata(metadata: dict[str, Any]) -> list[str]:
 
     if metadata["type"] == "boi/science-source" and metadata.get("visibility") == "public":
         original_url = science.get("original_url")
-        if isinstance(original_url, str) and urlparse(original_url).scheme != "https":
+        parsed_url = urlparse(original_url) if isinstance(original_url, str) else None
+        if parsed_url is None or parsed_url.scheme != "https" or not parsed_url.netloc:
             errors.append("science.original_url must use HTTPS for public sources")
 
     if metadata["type"] == "boi/science-evidence":
         original_text = science.get("original_text")
         original_text_hash = science.get("original_text_hash")
+        if not isinstance(original_text, str):
+            errors.append("science.original_text must be a string")
+        if not isinstance(original_text_hash, str):
+            errors.append("science.original_text_hash must be a string")
         if isinstance(original_text, str) and isinstance(original_text_hash, str):
             expected_hash = "sha256:" + hashlib.sha256(original_text.encode("utf-8")).hexdigest()
             if original_text_hash != expected_hash:
                 errors.append("science.original_text_hash must match original_text UTF-8 SHA-256")
 
     if "evidence_refs" in science:
-        science_refs = _reference_values(science["evidence_refs"])
-        source_refs = _reference_values(metadata.get("source_refs"))
-        if source_refs != science_refs:
+        science_refs, science_ref_errors = _validate_reference_collection(
+            science["evidence_refs"], "science.evidence_refs"
+        )
+        source_refs, source_ref_errors = _validate_reference_collection(metadata.get("source_refs"), "source_refs")
+        errors.extend(science_ref_errors)
+        errors.extend(source_ref_errors)
+        if not science_ref_errors and not source_ref_errors and source_refs != science_refs:
             errors.append("science.evidence_refs must match OKF source_refs")
 
     return errors

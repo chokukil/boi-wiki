@@ -157,12 +157,13 @@ def test_science_knowledge_rejects_values_outside_the_spec(field_name: str, inva
     assert error in validate_sci_profile_metadata(metadata)
 
 
-def test_public_source_requires_https_url():
-    """A public Science source must not publish an insecure original URL."""
+@pytest.mark.parametrize("original_url", ["http://example.test/source", {}, "https://"])
+def test_public_source_requires_string_https_url_with_host(original_url: object):
+    """A public Source must not accept an insecure, non-string, or hostless URL."""
     from boi_api.app.science.profile import validate_sci_profile_metadata
 
     metadata = valid_science_metadata("boi/science-source")
-    metadata["science"]["original_url"] = "http://example.test/source"
+    metadata["science"]["original_url"] = original_url
 
     assert "science.original_url must use HTTPS for public sources" in validate_sci_profile_metadata(metadata)
 
@@ -177,6 +178,23 @@ def test_evidence_hash_must_match_its_utf8_original_text():
     assert "science.original_text_hash must match original_text UTF-8 SHA-256" in validate_sci_profile_metadata(metadata)
 
 
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value", "error"),
+    [
+        ("original_text", {}, "science.original_text must be a string"),
+        ("original_text_hash", {}, "science.original_text_hash must be a string"),
+    ],
+)
+def test_evidence_requires_string_text_and_hash(field_name: str, invalid_value: object, error: str):
+    """Replacing either Evidence hash input with an object must not bypass integrity validation."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-evidence")
+    metadata["science"][field_name] = invalid_value
+
+    assert error in validate_sci_profile_metadata(metadata)
+
+
 def test_science_evidence_refs_must_match_okf_source_refs():
     """Changing a science evidence edge must not leave the compatible OKF edge stale."""
     from boi_api.app.science.profile import validate_sci_profile_metadata
@@ -185,6 +203,30 @@ def test_science_evidence_refs_must_match_okf_source_refs():
     metadata["science"]["evidence_refs"] = ["sci:evidence:other"]
 
     assert "science.evidence_refs must match OKF source_refs" in validate_sci_profile_metadata(metadata)
+
+
+@pytest.mark.parametrize(
+    ("location", "invalid_value", "error"),
+    [
+        ("source_refs", {"ref": "sci:evidence:fixture"}, "source_refs must be a list"),
+        ("science.evidence_refs", "sci:evidence:fixture", "science.evidence_refs must be a list"),
+        ("source_refs", [{}], "source_refs items must be nonempty strings or mappings with ref"),
+        ("science.evidence_refs", [{}], "science.evidence_refs items must be nonempty strings or mappings with ref"),
+    ],
+)
+def test_science_evidence_reference_collections_reject_malformed_values(
+    location: str, invalid_value: object, error: str
+):
+    """Malformed reference collections must not collapse to matching empty sets."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-rule")
+    if location == "source_refs":
+        metadata[location] = invalid_value
+    else:
+        metadata["science"]["evidence_refs"] = invalid_value
+
+    assert error in validate_sci_profile_metadata(metadata)
 
 
 def test_lint_markdown_file_includes_science_profile_errors(tmp_path: Path):
