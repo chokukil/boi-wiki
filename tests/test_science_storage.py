@@ -45,6 +45,35 @@ def digest(label: str) -> str:
     return "sha256:" + sha256(label.encode("utf-8")).hexdigest()
 
 
+def proposal_request_digest(
+    *, domain: str, kind: str, payload: dict[str, object]
+) -> str:
+    return sha256_digest({"domain": domain, "kind": kind, "payload": payload})
+
+
+def save_proposal_fixture(
+    store: ScienceRuntimeStore,
+    *,
+    identity: AuthIdentity,
+    domain: str,
+    kind: str,
+    payload: dict[str, object],
+    key_label: str,
+):
+    return store.save_proposal(
+        identity=identity,
+        domain=domain,
+        kind=kind,
+        payload=payload,
+        idempotency_key=f"proposal-fixture:{key_label}",
+        request_digest=proposal_request_digest(
+            domain=domain,
+            kind=kind,
+            payload=payload,
+        ),
+    )
+
+
 def interpretation_payload(
     interpretation_id: str = "sci-interpretation:fixture",
     *,
@@ -290,6 +319,7 @@ def runtime_store(tmp_path: Path) -> ScienceRuntimeStore:
         tmp_path / "science-runtime",
         authorization=ScienceAuthorization(access_mode="pilot"),
         roles_for=science_roles,
+        report_authority_validator=lambda _report: None,
     )
 
 
@@ -413,11 +443,13 @@ def test_power_user_cannot_approve_own_proposal(
     lithography_power_user: AuthIdentity,
 ):
     """Dropping the actor comparison would allow Power Users to self-promote changes."""
-    proposal = runtime_store.save_proposal(
+    proposal = save_proposal_fixture(
+        runtime_store,
         identity=lithography_power_user,
         domain="lithography",
         kind="term_alias",
         payload={"alias": "PR"},
+        key_label="power-user-self-approval",
     )
 
     with pytest.raises(ScienceAuthorizationError, match="self-approval"):
@@ -427,15 +459,248 @@ def test_power_user_cannot_approve_own_proposal(
         )
 
 
+@pytest.mark.parametrize(
+    ("actor_id", "domain", "kind", "payload"),
+    [
+        ("100002", "lithography", "term_alias", {"alias": "PR"}),
+        ("100001", "materials", "term_alias", {"alias": "PR"}),
+        ("100001", "lithography", "term_meaning", {"alias": "PR"}),
+        ("100001", "lithography", "term_alias", {"alias": "photoresist"}),
+    ],
+)
+def test_proposal_idempotency_key_reuse_rejects_changed_operation_binding(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    actor_id: str,
+    domain: str,
+    kind: str,
+    payload: dict[str, object],
+):
+    """Dropping any actor/request field from collision checks would alias proposals."""
+    raw_key = "proposal-store-conflict-001"
+    original_payload = {"alias": "PR"}
+    runtime_store.save_proposal(
+        identity=science_admin,
+        domain="lithography",
+        kind="term_alias",
+        payload=original_payload,
+        idempotency_key=raw_key,
+        request_digest=proposal_request_digest(
+            domain="lithography",
+            kind="term_alias",
+            payload=original_payload,
+        ),
+    )
+    changed_identity = AuthIdentity(
+        employee_id=actor_id,
+        display_name="changed proposal actor",
+    )
+
+    with pytest.raises(ImmutableScienceRecordError, match="idempotency|collision"):
+        runtime_store.save_proposal(
+            identity=changed_identity,
+            domain=domain,
+            kind=kind,
+            payload=payload,
+            idempotency_key=raw_key,
+            request_digest=proposal_request_digest(
+                domain=domain,
+                kind=kind,
+                payload=payload,
+            ),
+        )
+    rows = [
+        json.loads(line)
+        for line in runtime_store.audit_path.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["action"] == "proposal_saved"
+    ]
+    assert len(rows) == 1
+
+
+def test_proposal_key_reuse_rejects_a_different_request_digest(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+):
+    payload = {"alias": "PR"}
+    raw_key = "proposal-store-digest-conflict-001"
+    exact_digest = proposal_request_digest(
+        domain="lithography",
+        kind="term_alias",
+        payload=payload,
+    )
+    runtime_store.save_proposal(
+        identity=science_admin,
+        domain="lithography",
+        kind="term_alias",
+        payload=payload,
+        idempotency_key=raw_key,
+        request_digest=exact_digest,
+    )
+
+    with pytest.raises(ImmutableScienceRecordError, match="idempotency|collision"):
+        runtime_store.save_proposal(
+            identity=science_admin,
+            domain="lithography",
+            kind="term_alias",
+            payload=payload,
+            idempotency_key=raw_key,
+            request_digest=digest("different-request"),
+        )
+
+
+def test_proposal_exact_retry_survives_store_restart_with_one_audit(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+):
+    payload = {"alias": "PR"}
+    raw_key = "proposal-store-restart-001"
+    request_digest = proposal_request_digest(
+        domain="lithography",
+        kind="term_alias",
+        payload=payload,
+    )
+    first = runtime_store.save_proposal(
+        identity=science_admin,
+        domain="lithography",
+        kind="term_alias",
+        payload=payload,
+        idempotency_key=raw_key,
+        request_digest=request_digest,
+    )
+    root = runtime_store.root
+    runtime_store.close()
+    restarted = ScienceRuntimeStore(
+        root,
+        authorization=ScienceAuthorization("pilot"),
+        roles_for=science_roles,
+    )
+
+    retried = restarted.save_proposal(
+        identity=science_admin,
+        domain="lithography",
+        kind="term_alias",
+        payload=payload,
+        idempotency_key=raw_key,
+        request_digest=request_digest,
+    )
+
+    assert retried == first
+    rows = [
+        json.loads(line)
+        for line in restarted.audit_path.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["action"] == "proposal_saved"
+    ]
+    assert len(rows) == 1
+
+
+def test_concurrent_exact_proposal_retries_publish_once(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+):
+    payload = {"alias": "PR"}
+    raw_key = "proposal-store-concurrent-001"
+    request_digest = proposal_request_digest(
+        domain="lithography",
+        kind="term_alias",
+        payload=payload,
+    )
+    barrier = Barrier(4)
+
+    def create_proposal():
+        barrier.wait()
+        return runtime_store.save_proposal(
+            identity=science_admin,
+            domain="lithography",
+            kind="term_alias",
+            payload=payload,
+            idempotency_key=raw_key,
+            request_digest=request_digest,
+        )
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        proposals = list(pool.map(lambda _index: create_proposal(), range(4)))
+
+    assert all(proposal == proposals[0] for proposal in proposals)
+    rows = [
+        json.loads(line)
+        for line in runtime_store.audit_path.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["action"] == "proposal_saved"
+    ]
+    assert len(rows) == 1
+
+
+def test_proposal_restart_recovers_pending_wal_before_idempotent_return(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    payload = {"alias": "PR"}
+    raw_key = "proposal-store-wal-001"
+    request_digest = proposal_request_digest(
+        domain="lithography",
+        kind="term_alias",
+        payload=payload,
+    )
+    real_append = runtime_store._append_audit_event_locked
+
+    def fail_proposal_audit(event: ScienceAuditRecord):
+        if event.action == "proposal_saved":
+            raise OSError("injected proposal audit failure")
+        return real_append(event)
+
+    monkeypatch.setattr(
+        runtime_store,
+        "_append_audit_event_locked",
+        fail_proposal_audit,
+    )
+    with pytest.raises(ScienceTransactionPendingError):
+        runtime_store.save_proposal(
+            identity=science_admin,
+            domain="lithography",
+            kind="term_alias",
+            payload=payload,
+            idempotency_key=raw_key,
+            request_digest=request_digest,
+        )
+    monkeypatch.setattr(runtime_store, "_append_audit_event_locked", real_append)
+    root = runtime_store.root
+    runtime_store.close()
+    restarted = ScienceRuntimeStore(
+        root,
+        authorization=ScienceAuthorization("pilot"),
+        roles_for=science_roles,
+    )
+
+    retried = restarted.save_proposal(
+        identity=science_admin,
+        domain="lithography",
+        kind="term_alias",
+        payload=payload,
+        idempotency_key=raw_key,
+        request_digest=request_digest,
+    )
+
+    rows = [
+        json.loads(line)
+        for line in restarted.audit_path.read_text(encoding="utf-8").splitlines()
+        if json.loads(line)["action"] == "proposal_saved"
+    ]
+    assert retried.proposal_id.startswith("sci-proposal:")
+    assert len(rows) == 1
+    assert restarted.pending_transaction_ids() == []
+
+
 def test_power_user_approval_is_domain_scoped_and_keeps_proposal_immutable(
     runtime_store: ScienceRuntimeStore,
 ):
     """Ignoring the proposal domain would let one pilot curate every domain."""
-    proposal = runtime_store.save_proposal(
+    proposal = save_proposal_fixture(
+        runtime_store,
         identity=AuthIdentity(employee_id="100003", display_name="proposer"),
         domain="lithography",
         kind="concept_link",
         payload={"from": "RPM", "to": "rotational_speed"},
+        key_label="domain-scoped-approval",
     )
     original_path = runtime_store.record_path("proposals", proposal.proposal_id)
     original_bytes = original_path.read_bytes()
@@ -459,11 +724,13 @@ def test_science_admin_can_approve_without_inheriting_boi_admin(
     runtime_store: ScienceRuntimeStore,
 ):
     """A boi.admin role must not replace the Science authority model."""
-    proposal = runtime_store.save_proposal(
+    proposal = save_proposal_fixture(
+        runtime_store,
         identity=AuthIdentity(employee_id="100003", display_name="proposer"),
         domain="materials",
         kind="term_meaning",
         payload={"term": "film"},
+        key_label="science-admin-approval",
     )
 
     with pytest.raises(ScienceAuthorizationError, match="approval"):
@@ -579,11 +846,13 @@ def test_public_audit_cannot_duplicate_saved_or_approved_events(
         interpretation_payload("sci-interpretation:no-duplicate"),
         identity=science_admin,
     )
-    proposal = runtime_store.save_proposal(
+    proposal = save_proposal_fixture(
+        runtime_store,
         identity=AuthIdentity(employee_id="100003", display_name="proposer"),
         domain="lithography",
         kind="term_alias",
         payload={"alias": "PR"},
+        key_label="audit-cannot-duplicate",
     )
     approval = runtime_store.approve_proposal(
         proposal.proposal_id, identity=science_admin
@@ -710,11 +979,13 @@ def test_proposal_authorship_and_approval_use_one_trusted_identity_resolver(
         display_name="attacker",
         roles=["science.admin"],  # deliberately disagrees with the trusted resolver
     )
-    proposal = runtime_store.save_proposal(
+    proposal = save_proposal_fixture(
+        runtime_store,
         identity=attacker,
         domain="lithography",
         kind="term_alias",
         payload={"alias": "PR"},
+        key_label="trusted-identity-resolver",
     )
     assert proposal.created_by == "100002"
 
@@ -728,6 +999,12 @@ def test_proposal_authorship_and_approval_use_one_trusted_identity_resolver(
             domain="lithography",
             kind="term_alias",
             payload={"alias": "forged"},
+            idempotency_key="proposal-fixture:forged-actor",
+            request_digest=proposal_request_digest(
+                domain="lithography",
+                kind="term_alias",
+                payload={"alias": "forged"},
+            ),
         )
     with pytest.raises(TypeError):
         runtime_store.approve_proposal(
@@ -1124,11 +1401,13 @@ def test_approval_retry_recovers_its_audit_before_returning_existing_record(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """The approval fast path must not bypass its pending WAL and audit event."""
-    proposal = runtime_store.save_proposal(
+    proposal = save_proposal_fixture(
+        runtime_store,
         identity=AuthIdentity(employee_id="100003", display_name="proposer"),
         domain="lithography",
         kind="term_alias",
         payload={"alias": "PR"},
+        key_label="approval-audit-retry",
     )
     real_append = runtime_store._append_audit_event_locked
 
@@ -1164,11 +1443,13 @@ def test_approval_restart_recovers_pending_audit_and_exact_linkage(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Restart recovery must complete an approval before its idempotent return path."""
-    proposal = runtime_store.save_proposal(
+    proposal = save_proposal_fixture(
+        runtime_store,
         identity=AuthIdentity(employee_id="100003", display_name="proposer"),
         domain="materials",
         kind="concept_link",
         payload={"from": "film", "to": "material_layer"},
+        key_label="approval-restart",
     )
     real_append = runtime_store._append_audit_event_locked
 
@@ -1203,11 +1484,13 @@ def test_tampered_existing_approval_never_uses_the_idempotent_fast_path(
     science_admin: AuthIdentity,
 ):
     """Matching approver alone cannot authorize a mislinked approval."""
-    proposal = runtime_store.save_proposal(
+    proposal = save_proposal_fixture(
+        runtime_store,
         identity=AuthIdentity(employee_id="100003", display_name="proposer"),
         domain="lithography",
         kind="term_meaning",
         payload={"term": "film"},
+        key_label="tampered-approval-fast-path",
     )
     approval = runtime_store.approve_proposal(
         proposal.proposal_id, identity=science_admin
@@ -1765,11 +2048,13 @@ def leave_pending_approval(
     approver: AuthIdentity,
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[object, Path, Path, dict[str, object]]:
-    proposal = runtime_store.save_proposal(
+    proposal = save_proposal_fixture(
+        runtime_store,
         identity=proposer,
         domain="lithography",
         kind="concept_link",
         payload={"from": "RPM", "to": "rotational_speed"},
+        key_label="pending-approval",
     )
     before = set(runtime_store.pending_transaction_ids())
     real_append = runtime_store._append_audit_event_locked

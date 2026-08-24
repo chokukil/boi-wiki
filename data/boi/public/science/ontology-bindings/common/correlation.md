@@ -28,7 +28,7 @@ review:
   authorized_review_events: []
 science:
   binding_id: "sci:binding:common:correlation"
-  ontology_release_id: "sci:ontology:science-foundation-draft/0.1.0"
+  ontology_release_id: "sci:ontology:general-science-draft/0.1.0"
   concept_id: "sci:concept:correlation"
   aliases:
     - "correlation"

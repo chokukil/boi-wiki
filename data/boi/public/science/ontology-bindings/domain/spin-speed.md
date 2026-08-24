@@ -35,12 +35,15 @@
   },
   "science": {
     "binding_id": "sci:binding:domain:spin-speed",
-    "ontology_release_id": "sci:ontology:domain-packs-draft/0.1.0",
+    "ontology_release_id": "sci:ontology:general-science-draft/0.1.0",
     "concept_id": "sci:concept:spin-speed",
     "aliases": [
+      "RPM",
+      "rpm",
       "spin speed",
       "rotation speed",
-      "스핀 속도"
+      "스핀 속도",
+      "회전수"
     ],
     "meaning": "Interpret the listed aliases as sci:concept:spin-speed while retaining narrower process, state, and model distinctions.",
     "domain": "spin-coating",

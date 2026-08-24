@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -31,6 +32,7 @@ from boi_api.app.science.models import (
     ResolvedComponent,
     ResolvedRelease,
     ResolvedReleaseSet,
+    ReviewedSourceURLProfile,
     SourceSpan,
     VerificationReport,
 )
@@ -49,7 +51,9 @@ from boi_api.app.science.service import (
 from boi_api.app.science.source_identity import (
     ReviewedSourceURLIdentity,
     _build_reviewed_source_url_profile,
+    _issue_catalog_reviewed_source_url_identity,
     _issue_reviewed_source_url_identity,
+    _open_reviewed_source_url_identity,
 )
 from boi_api.app.science.storage import (
     ImmutableScienceRecordError,
@@ -242,6 +246,7 @@ def test_llm_config_uses_science_overrides_then_boi_fallback_without_exposing_se
             "BOI_LLM_API_KEY": "fallback-secret",
             "BOI_LLM_TEMPERATURE": "0.2",
             "BOI_SCIENCE_LLM_MAX_TOKENS": "512",
+            "BOI_SCIENCE_LLM_CONTEXT_LENGTH": "100096",
             "BOI_LLM_TIMEOUT_SECONDS": "7.5",
         }
     )
@@ -253,6 +258,7 @@ def test_llm_config_uses_science_overrides_then_boi_fallback_without_exposing_se
         "max_tokens": 512,
         "seed": None,
         "timeout_seconds": 7.5,
+        "context_length": 100096,
     }
     assert "science-llm.test" not in repr(config)
     assert "fallback-secret" not in repr(config)
@@ -322,6 +328,17 @@ def test_llm_client_posts_strict_schema_and_returns_only_validated_interpretatio
     body = seen_request["body"]
     assert isinstance(body, dict)
     assert body["response_format"]["json_schema"]["strict"] is True
+    transport_schema = body["response_format"]["json_schema"]["schema"]
+    transport_schema_text = json.dumps(transport_schema, sort_keys=True)
+    for unsupported_keyword in [
+        '"pattern"',
+        '"minLength"',
+        '"minItems"',
+        '"minimum"',
+        '"exclusiveMinimum"',
+        '"default"',
+    ]:
+        assert unsupported_keyword not in transport_schema_text
     assert body["temperature"] == 0.0
     assert result.payload.claims[0].ontology_refs == [
         "sci:binding:rpm",
@@ -331,6 +348,168 @@ def test_llm_client_posts_strict_schema_and_returns_only_validated_interpretatio
     assert result.response_digest.startswith("sha256:")
     assert "secret-token" not in repr(result)
     assert "science-llm.test" not in repr(result)
+
+
+def test_llm_client_can_use_prompt_json_when_server_rejects_response_format():
+    seen_request: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_request["body"] = json.loads(request.content)
+        return _openai_response(_llm_content())
+
+    config = ScienceLLMConfig.from_env(
+        {
+            "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+            "BOI_SCIENCE_LLM_MODEL": "fixture-model",
+            "BOI_SCIENCE_LLM_RESPONSE_FORMAT_MODE": "prompt_json",
+        }
+    )
+    result = ScienceLLMClient(config, transport=httpx.MockTransport(handler)).interpret(
+        "RPM 증가 시 두께 변화", ontology_candidates=[]
+    )
+
+    assert config.response_format_mode == "prompt_json"
+    assert "response_format" not in seen_request["body"]
+    assert result.payload.claims[0].normalized_claim.predicate == "increases"
+
+
+def test_llm_client_uses_lmstudio_native_reasoning_off_without_server_storage():
+    seen_request: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_request["url"] = str(request.url)
+        seen_request["authorization"] = request.headers.get("authorization")
+        seen_request["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model_instance_id": "fixture-instance",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": "```json\n"
+                        + json.dumps(_llm_content(), ensure_ascii=False)
+                        + "\n```",
+                    }
+                ],
+                "stats": {
+                    "input_tokens": 120,
+                    "total_output_tokens": 80,
+                    "reasoning_output_tokens": 0,
+                },
+            },
+        )
+
+    config = ScienceLLMConfig.from_env(
+        {
+            "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+            "BOI_SCIENCE_LLM_MODEL": "qwen/qwen3.8-27b",
+            "BOI_SCIENCE_LLM_API_KEY": "secret-token",
+            "BOI_SCIENCE_LLM_TRANSPORT_MODE": "lmstudio_native",
+            "BOI_SCIENCE_LLM_RESPONSE_FORMAT_MODE": "prompt_json",
+            "BOI_SCIENCE_LLM_REASONING_MODE": "disabled",
+            "BOI_SCIENCE_LLM_CONTEXT_LENGTH": "100096",
+            "BOI_SCIENCE_LLM_MAX_TOKENS": "4096",
+            "BOI_SCIENCE_LLM_SEED": "42",
+        }
+    )
+
+    result = ScienceLLMClient(
+        config,
+        transport=httpx.MockTransport(handler),
+    ).interpret("RPM 증가 시 두께 변화", ontology_candidates=[])
+
+    assert seen_request["url"] == "https://science-llm.test/api/v1/chat"
+    assert seen_request["authorization"] == "Bearer secret-token"
+    body = seen_request["body"]
+    assert body["reasoning"] == "off"
+    assert body["store"] is False
+    assert body["context_length"] == 100096
+    assert body["max_output_tokens"] == 4096
+    assert "seed" not in body
+    assert "response_format" not in body
+    assert result.payload.claims[0].normalized_claim.predicate == "increases"
+
+
+def test_llm_client_rejects_fenced_json_with_surrounding_prose():
+    content = "Result follows.\n```json\n" + json.dumps(_llm_content()) + "\n```"
+    config = ScienceLLMConfig.from_env(
+        {
+            "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+            "BOI_SCIENCE_LLM_MODEL": "fixture-model",
+        }
+    )
+    client = ScienceLLMClient(
+        config,
+        transport=httpx.MockTransport(
+            lambda _request: _openai_response(content)
+        ),
+    )
+
+    with pytest.raises(ScienceInterpretationUnavailable) as captured:
+        client.interpret("RPM 증가 시 두께 변화", ontology_candidates=[])
+
+    assert captured.value.diagnostic_code == "invalid_json"
+
+
+def test_llm_client_can_disable_qwen_thinking_for_bounded_extraction() -> None:
+    seen_request: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_request["body"] = json.loads(request.content)
+        return _openai_response(_llm_content())
+
+    config = ScienceLLMConfig.from_env(
+        {
+            "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+            "BOI_SCIENCE_LLM_MODEL": "qwen/qwen3.8-27b",
+            "BOI_SCIENCE_LLM_REASONING_MODE": "disabled",
+        }
+    )
+    ScienceLLMClient(config, transport=httpx.MockTransport(handler)).interpret(
+        "RPM 증가 시 두께 변화", ontology_candidates=[]
+    )
+
+    assert config.reasoning_mode == "disabled"
+    user_message = seen_request["body"]["messages"][1]["content"]
+    assert user_message.endswith("\n/no_think")
+
+
+def test_llm_client_retries_only_invalid_candidate_and_accepts_valid_schema() -> None:
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return _openai_response("not-json" if calls == 1 else _llm_content())
+
+    config = ScienceLLMConfig.from_env(
+        {
+            "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+            "BOI_SCIENCE_LLM_MODEL": "fixture-model",
+            "BOI_SCIENCE_LLM_MAX_ATTEMPTS": "2",
+        }
+    )
+    result = ScienceLLMClient(config, transport=httpx.MockTransport(handler)).interpret(
+        "RPM 증가 시 두께 변화", ontology_candidates=[]
+    )
+
+    assert config.max_attempts == 2
+    assert calls == 2
+    assert result.payload.claims[0].normalized_claim.predicate == "increases"
+
+
+def test_llm_config_rejects_unknown_response_format_mode() -> None:
+    with pytest.raises(ScienceInterpretationUnavailable) as captured:
+        ScienceLLMConfig.from_env(
+            {
+                "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+                "BOI_SCIENCE_LLM_MODEL": "fixture-model",
+                "BOI_SCIENCE_LLM_RESPONSE_FORMAT_MODE": "best_effort",
+            }
+        )
+
+    assert captured.value.diagnostic_code == "invalid_configuration"
 
 
 @pytest.mark.parametrize(
@@ -575,7 +754,7 @@ class _Catalog:
         self._reviewed_source_url = self.source_url
         self._reviewed_evidence_locator = json.loads(json.dumps(self.evidence_locator))
 
-    def resolve_reviewed_source_url_identity(self, release_set, evidence_id):
+    def _active_reviewed_source_url_profile(self, release_set, evidence_id):
         assert release_set == self.release_set
         if (
             evidence_id != "sci:evidence:spin-direction"
@@ -601,7 +780,21 @@ class _Catalog:
             raise ScienceOperationalError(
                 "reviewed Source URL identity failed closed fixture validation"
             ) from None
-        return _issue_reviewed_source_url_identity(profile)
+        return profile
+
+    def resolve_reviewed_source_url_identity(self, release_set, evidence_id):
+        # The production issuer accepts only the exact ScienceCatalog type. This
+        # narrow patch lets the application service fake exercise the same live
+        # revalidation behavior without publishing a test issuer in production.
+        with patch(
+            "boi_api.app.science.source_identity._is_exact_science_catalog",
+            return_value=True,
+        ):
+            return _issue_catalog_reviewed_source_url_identity(
+                self,
+                release_set,
+                evidence_id,
+            )
 
     def resolve_rule_set(self, release_set):
         self.resolve_legacy_calls += 1
@@ -650,6 +843,45 @@ class _Catalog:
             path=self.boi_root / "public/science/sources/spin-paper.md",
         )
 
+    def validate_verification_report_authority(self, report):
+        if (
+            report.release_selection != self.release_set.selection
+            or report.release_digests != self.release_set.release_digests
+        ):
+            raise ScienceOperationalError("report release is not fixture-authoritative")
+        for annotation in report.annotations:
+            knowledge = self.knowledge(annotation.knowledge_id)
+            if (
+                annotation.knowledge_digest != knowledge.digest
+                or annotation.text != knowledge.statement
+            ):
+                raise ScienceOperationalError(
+                    "report Knowledge is not fixture-authoritative"
+                )
+            for link in annotation.evidence_links:
+                expected = self._active_reviewed_source_url_profile(
+                    self.release_set,
+                    link.evidence_id,
+                )
+                if link.reviewed_source != expected:
+                    raise ScienceOperationalError(
+                        "report Source profile is not fixture-authoritative"
+                    )
+                evidence = self.evidence(link.evidence_id)
+                source = self.source(link.source_id)
+                if (
+                    link.evidence_digest != evidence.digest
+                    or link.source_digest != source.digest
+                    or link.original_text_hash != evidence.original_text_hash
+                    or link.quote_hash != evidence.original_text_hash
+                    or link.url != source.original_url
+                    or link.locator.model_dump(mode="json", exclude_none=True)
+                    != evidence.locator
+                ):
+                    raise ScienceOperationalError(
+                        "report Evidence is not fixture-authoritative"
+                    )
+
 
 @pytest.fixture
 def science_identity() -> AuthIdentity:
@@ -686,6 +918,7 @@ def _real_service(tmp_path: Path, content: dict[str, object] | None = None):
         tmp_path / "science-runtime",
         authorization=ScienceAuthorization(access_mode="pilot"),
         roles_for=lambda _identity: ["science.admin"],
+        report_authority_validator=catalog.validate_verification_report_authority,
     )
     llm = _StaticLLM(content or _llm_content())
     service = ScienceService(
@@ -775,6 +1008,93 @@ def test_interpret_document_persists_identity_bound_safe_metadata_and_catalog_me
     assert "The process stage changes rule applicability" not in persisted
 
 
+def test_interpret_document_sends_only_exact_alias_matched_ontology_candidates(
+    science_identity: AuthIdentity,
+):
+    service, catalog, _store, llm = _service()
+    catalog.bindings["sci:binding:viscosity"] = SimpleNamespace(
+        object_id="sci:binding:viscosity",
+        digest=sha256_digest("fixture-viscosity-binding"),
+        ontology_release_id="sci:ontology:0.1",
+        concept_id="sci:concept:viscosity",
+        aliases=["점도", "viscosity"],
+        meaning="dynamic viscosity",
+        domain="general-science",
+    )
+    service.ontology_binding_ids = (
+        *service.ontology_binding_ids,
+        "sci:binding:viscosity",
+    )
+
+    service.interpret_document(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        idempotency_key="science-request:matched-ontology-candidates",
+    )
+
+    assert llm.ontology_candidates is not None
+    assert {item["ontology_ref"] for item in llm.ontology_candidates} == {
+        "sci:binding:rpm",
+        "sci:binding:increases",
+        "sci:binding:film-thickness",
+    }
+
+
+def test_interpret_document_accepts_non_overlapping_roles_in_natural_text_order(
+    science_identity: AuthIdentity,
+):
+    document = "두께는 RPM을 높이면 증가한다."
+    content = _llm_content()
+    claim = content["claims"][0]
+    claim["source_span"] = {
+        "start": 0,
+        "end": len(document),
+        "exact": document,
+        "prefix": "",
+        "suffix": "",
+    }
+    claim["candidate_meanings"] = [
+        {
+            "ambiguity_id": "ambiguity:spin-stage",
+            "concept_role": "subject",
+            "surface_term": "RPM",
+            "ontology_ref": "sci:binding:rpm",
+            "meaning": "final coat spin speed",
+        },
+        {
+            "ambiguity_id": None,
+            "concept_role": "relation",
+            "surface_term": "높이면",
+            "ontology_ref": "sci:binding:increases",
+            "meaning": "increases",
+        },
+        {
+            "ambiguity_id": None,
+            "concept_role": "object",
+            "surface_term": "두께",
+            "ontology_ref": "sci:binding:film-thickness",
+            "meaning": "final dry film thickness",
+        },
+    ]
+    service, _catalog, _store, _llm = _service(content)
+
+    record = service.interpret_document(
+        document,
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        idempotency_key="science-request:natural-role-order",
+    )
+
+    assert record.decision_impact[0].issue_codes == ["USER_CONFIRMATION_REQUIRED"]
+    assert record.decision_impact[0].status == "requires_user_confirmation"
+    assert record.candidate_claims[0].interpretation.ontology_refs == [
+        "sci:binding:film-thickness",
+        "sci:binding:increases",
+        "sci:binding:rpm",
+    ]
+
+
 def test_interpret_document_reanchors_a_selection_to_full_document_offsets(
     science_identity: AuthIdentity,
 ):
@@ -813,6 +1133,371 @@ def test_interpret_document_uses_catalog_meaning_not_llm_meaning_prose(
     )
 
     assert record.candidate_meanings[0].meaning == "final coat spin speed"
+
+
+def test_detect_aliases_returns_exact_catalog_matches_without_a_verdict(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    document = "검토: RPM 증가 시 막 두께 변화"
+
+    result = service.detect_aliases(
+        document,
+        document_ref="boi:public:science:document:fixture",
+    )
+
+    payload = result.model_dump(mode="json")
+    assert payload["document_digest"] == sha256_digest(document)
+    assert [
+        (
+            item["surface_term"],
+            item["start"],
+            item["end"],
+            item["ontology_ref"],
+        )
+        for item in payload["matches"]
+    ] == [
+        ("RPM", 4, 7, "sci:binding:rpm"),
+        ("증가", 8, 10, "sci:binding:increases"),
+        ("막 두께", 13, 17, "sci:binding:film-thickness"),
+        ("두께", 15, 17, "sci:binding:film-thickness"),
+    ]
+    assert all(
+        match["binding_id"] == match["ontology_ref"]
+        and match["binding_digest"].startswith("sha256:")
+        and match["meaning"]
+        and match["domain"]
+        for match in payload["matches"]
+    )
+    assert "verdict" not in json.dumps(payload).lower()
+
+
+def test_external_claim_submission_reuses_server_validation_and_never_calls_llm(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, llm = _service()
+    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+
+    record = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="codex",
+        candidate=candidate,
+        idempotency_key="science-request:codex-submit-fixture",
+    )
+
+    assert llm.calls == 0
+    assert store.interpretations[record.interpretation_id] == record
+    assert record.submission_client_kind == "codex"
+    assert record.model_id == "claim-client/codex"
+    assert record.prompt_version == "science-claim-submission/0.1.0"
+    assert record.operation_binding.operation == "submit_claim_candidate"
+    assert record.decision_impact[0].issue_codes == ["USER_CONFIRMATION_REQUIRED"]
+    assert record.candidate_claims[0].interpretation.user_confirmed is False
+
+
+def test_agent_supplied_condition_cannot_directly_produce_a_verdict_or_report(
+    science_identity: AuthIdentity,
+):
+    content = _llm_content()
+    content["claims"][0]["normalized_claim"]["conditions"] = [
+        {"condition_id": "spin_time", "value": 60, "unit": "second"}
+    ]
+    candidate = ScienceInterpretationPayload.model_validate(content).claims[0]
+    service, _catalog, _store, _llm = _service()
+    submitted = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="codex",
+        candidate=candidate,
+        idempotency_key="science-request:unconfirmed-agent-condition",
+    )
+    claim_id = submitted.candidate_claims[0].claim_id
+    selection = ReleaseSelection(foundation="sci-release:foundation-0.1")
+
+    with pytest.raises(ScienceConfirmationRequired):
+        service.verify_claim(submitted.interpretation_id, claim_id, selection)
+    with pytest.raises(ScienceConfirmationRequired):
+        service.verify_document(
+            submitted.interpretation_id,
+            selection,
+            identity=science_identity,
+            idempotency_key="science-request:unconfirmed-condition-report",
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_issue"),
+    [
+        (
+            lambda candidate: candidate["ontology_refs"].append(
+                "sci:binding:does-not-exist"
+            ),
+            "UNKNOWN_ONTOLOGY_REF",
+        ),
+        (
+            lambda candidate: candidate["candidate_meanings"][0].update(
+                {"surface_term": "문서에 없는 RPM 별칭"}
+            ),
+            "COMPLETE_RELATION_SPAN_REQUIRED",
+        ),
+    ],
+    ids=["unknown-ontology-ref", "alias-absent-from-document"],
+)
+def test_external_claim_submission_blocks_untrusted_semantic_mismatches(
+    science_identity: AuthIdentity,
+    mutation,
+    expected_issue: str,
+):
+    content = _llm_content()
+    mutation(content["claims"][0])
+    candidate = ScienceInterpretationPayload.model_validate(content).claims[0]
+    service, _catalog, _store, _llm = _service()
+
+    record = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="claude",
+        candidate=candidate,
+        idempotency_key=f"science-request:blocked-{expected_issue}",
+    )
+
+    impact = record.decision_impact[0]
+    assert impact.status == "blocked_semantic_mismatch"
+    assert expected_issue in impact.issue_codes
+    with pytest.raises(ScienceConfirmationRequired):
+        service.confirm_interpretation(
+            record.interpretation_id,
+            claim_ids=[record.candidate_claims[0].claim_id],
+            identity=science_identity,
+            idempotency_key=f"science-request:blocked-confirm-{expected_issue}",
+        )
+
+
+def test_external_claim_submission_rejects_overlapping_role_spans(
+    science_identity: AuthIdentity,
+):
+    content = _llm_content()
+    claim = content["claims"][0]
+    claim["candidate_meanings"][1]["surface_term"] = "RPM 증가"
+    candidate = ScienceInterpretationPayload.model_validate(content).claims[0]
+    service, catalog, _store, _llm = _service()
+    catalog.bindings["sci:binding:increases"].aliases.append("RPM 증가")
+
+    record = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="other",
+        candidate=candidate,
+        idempotency_key="science-request:overlapping-role-spans",
+    )
+
+    assert record.decision_impact[0].status == "blocked_semantic_mismatch"
+    assert "COMPLETE_RELATION_SPAN_REQUIRED" in (
+        record.decision_impact[0].issue_codes
+    )
+
+
+def test_external_claim_submission_allows_non_overlapping_roles_in_natural_text_order(
+    science_identity: AuthIdentity,
+):
+    exact = "두께를 높이려면 RPM을 높여야 한다"
+    content = _llm_content()
+    claim = content["claims"][0]
+    claim["source_span"] = {
+        "start": 0,
+        "end": len(exact),
+        "exact": exact,
+        "prefix": "",
+        "suffix": "",
+    }
+    claim["candidate_meanings"] = [
+        {
+            "ambiguity_id": "ambiguity:spin-stage",
+            "concept_role": "subject",
+            "surface_term": "RPM",
+            "ontology_ref": "sci:binding:rpm",
+            "meaning": "untrusted",
+        },
+        {
+            "ambiguity_id": None,
+            "concept_role": "relation",
+            "surface_term": "높여야 한다",
+            "ontology_ref": "sci:binding:increases",
+            "meaning": "untrusted",
+        },
+        {
+            "ambiguity_id": None,
+            "concept_role": "object",
+            "surface_term": "두께",
+            "ontology_ref": "sci:binding:film-thickness",
+            "meaning": "untrusted",
+        },
+    ]
+    candidate = ScienceInterpretationPayload.model_validate(content).claims[0]
+    service, catalog, _store, _llm = _service()
+    catalog.bindings["sci:binding:increases"].aliases.append("높여야 한다")
+
+    record = service.submit_claim_candidate(
+        exact,
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="user",
+        candidate=candidate,
+        idempotency_key="science-request:natural-role-order",
+    )
+
+    assert record.decision_impact[0].status == "requires_user_confirmation"
+    assert record.decision_impact[0].issue_codes == ["USER_CONFIRMATION_REQUIRED"]
+
+
+def test_manual_correction_is_an_immutable_resubmission(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, _llm = _service()
+    blocked_content = _llm_content()
+    blocked_content["claims"][0]["candidate_meanings"][0]["surface_term"] = (
+        "문서에 없는 회전 속도"
+    )
+    blocked_candidate = ScienceInterpretationPayload.model_validate(
+        blocked_content
+    ).claims[0]
+    original = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="codex",
+        candidate=blocked_candidate,
+        idempotency_key="science-request:correction-original",
+    )
+
+    corrected_candidate = ScienceInterpretationPayload.model_validate(
+        _llm_content()
+    ).claims[0]
+
+    corrected = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="user",
+        candidate=corrected_candidate,
+        supersedes_claim_id=original.candidate_claims[0].claim_id,
+        idempotency_key="science-request:correction-user",
+    )
+
+    assert corrected.interpretation_id != original.interpretation_id
+    assert corrected.supersedes_claim_id == original.candidate_claims[0].claim_id
+    assert original.decision_impact[0].status == "blocked_semantic_mismatch"
+    assert corrected.decision_impact[0].status == "requires_user_confirmation"
+    assert store.interpretations[original.interpretation_id] == original
+
+
+def test_different_clients_produce_the_same_claim_and_deterministic_verdict(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    verdicts = []
+    claim_ids = []
+    for client_kind in ("codex", "claude"):
+        submitted = service.submit_claim_candidate(
+            "RPM 증가 시 두께 변화",
+            document_ref="boi:public:science:document:fixture",
+            identity=science_identity,
+            client_kind=client_kind,
+            candidate=candidate,
+            idempotency_key=f"science-request:{client_kind}-parity",
+        )
+        claim_id = submitted.candidate_claims[0].claim_id
+        confirmed = service.confirm_interpretation(
+            submitted.interpretation_id,
+            claim_ids=[claim_id],
+            identity=science_identity,
+            idempotency_key=f"science-request:{client_kind}-parity-confirm",
+        )
+        claim_ids.append(claim_id)
+        verdicts.append(
+            service.verify_claim(
+                confirmed.interpretation_id,
+                claim_id,
+                ReleaseSelection(foundation="sci-release:foundation-0.1"),
+            )
+        )
+
+    assert claim_ids[0] == claim_ids[1]
+    assert verdicts[0].model_dump(mode="json") == verdicts[1].model_dump(mode="json")
+
+
+def test_real_store_preserves_external_submission_confirmation_dependency(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, _llm = _real_service(tmp_path)
+    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    submitted = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="codex",
+        candidate=candidate,
+        idempotency_key="science-request:real-store-submit",
+    )
+    claim_id = submitted.candidate_claims[0].claim_id
+
+    confirmed = service.confirm_interpretation(
+        submitted.interpretation_id,
+        claim_ids=[claim_id],
+        identity=science_identity,
+        idempotency_key="science-request:real-store-confirm",
+    )
+
+    assert store.load_interpretation(submitted.interpretation_id) == submitted
+    assert store.load_interpretation(confirmed.interpretation_id) == confirmed
+    assert service.verify_claim(
+        confirmed.interpretation_id,
+        claim_id,
+        ReleaseSelection(foundation="sci-release:foundation-0.1"),
+    ).verdict == PrimaryVerdict.VIOLATION
+
+
+def test_external_claim_submission_cannot_use_an_inactive_release_for_verdict(
+    science_identity: AuthIdentity,
+):
+    service, catalog, _store, _llm = _service()
+    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    submitted = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="claude",
+        candidate=candidate,
+        idempotency_key="science-request:inactive-release-submit",
+    )
+    claim_id = submitted.candidate_claims[0].claim_id
+    confirmed = service.confirm_interpretation(
+        submitted.interpretation_id,
+        claim_ids=[claim_id],
+        identity=science_identity,
+        idempotency_key="science-request:inactive-release-confirm",
+    )
+    catalog.release = catalog.release.model_copy(
+        update={"status": "release_candidate"}
+    )
+    catalog.release_set = ResolvedReleaseSet.from_single_foundation(catalog.release)
+    catalog.rule_set = catalog.rule_set.model_copy(
+        update={"release_set_digest": catalog.release_set.combined_digest}
+    )
+
+    with pytest.raises(ScienceOperationalError, match="not operational"):
+        service.verify_claim(
+            confirmed.interpretation_id,
+            claim_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+        )
 
 
 def test_interpret_document_rejects_a_non_digest_response_identity(
@@ -993,6 +1678,75 @@ def test_interpretation_converts_missing_pinned_ontology_to_fail_closed_error(
         )
 
     assert store.interpretations == {}
+
+
+def test_experimental_llm_adapter_can_be_disabled_without_creating_a_candidate(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, _llm = _service()
+    service.llm_client = None
+
+    with pytest.raises(ScienceInterpretationUnavailable) as captured:
+        service.interpret_document(
+            "RPM 증가 시 두께 변화",
+            document_ref="boi:public:science:document:fixture",
+            identity=science_identity,
+            idempotency_key="science-request:experimental-adapter-disabled",
+        )
+
+    assert captured.value.diagnostic_code == "adapter_disabled"
+    assert store.interpretations == {}
+
+
+@pytest.mark.parametrize(
+    ("case", "expected_code"),
+    [
+        ("unavailable", "http_status_503"),
+        ("timeout", "timeout"),
+        ("empty", "invalid_json"),
+        ("invalid_json", "invalid_json"),
+        ("schema_mismatch", "schema_invalid"),
+    ],
+)
+def test_experimental_llm_failures_never_create_interpretation_or_report(
+    science_identity: AuthIdentity,
+    case: str,
+    expected_code: str,
+):
+    def handler(_request: httpx.Request) -> httpx.Response:
+        if case == "unavailable":
+            return httpx.Response(503)
+        if case == "timeout":
+            raise httpx.ReadTimeout("fixture timeout")
+        if case == "empty":
+            return _openai_response("")
+        if case == "invalid_json":
+            return _openai_response("not-json")
+        return _openai_response({"claims": []})
+
+    service, _catalog, store, _llm = _service()
+    service.llm_client = ScienceLLMClient(
+        ScienceLLMConfig.from_env(
+            {
+                "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+                "BOI_SCIENCE_LLM_MODEL": "qwen/qwen3.8-27b",
+                "BOI_SCIENCE_LLM_MAX_ATTEMPTS": "1",
+            }
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ScienceInterpretationUnavailable) as captured:
+        service.interpret_document(
+            "RPM 증가 시 두께 변화",
+            document_ref="boi:public:science:document:fixture",
+            identity=science_identity,
+            idempotency_key=f"science-request:experimental-{case}",
+        )
+
+    assert captured.value.diagnostic_code == expected_code
+    assert store.interpretations == {}
+    assert store.reports == {}
 
 
 @pytest.mark.parametrize(
@@ -1499,6 +2253,29 @@ def test_reviewed_source_identity_cannot_be_constructed_by_a_caller():
         ReviewedSourceURLIdentity()
 
 
+def test_candidate_preview_cannot_be_promoted_through_direct_identity_issuer():
+    catalog = _Catalog()
+    candidate = _build_reviewed_source_url_profile(
+        qualification_state="candidate",
+        release_set_digest=catalog.release_set.combined_digest,
+        source_id="sci:source:spin-paper",
+        source_digest=SOURCE_DIGEST,
+        evidence_id="sci:evidence:spin-direction",
+        evidence_digest=EVIDENCE_DIGEST,
+        canonical_source_url=catalog.source_url,
+        locator=EvidenceLocator.model_validate(catalog.evidence_locator),
+    )
+    payload = candidate.model_dump(mode="json")
+    payload["qualification_state"] = "active"
+    payload["profile_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "profile_digest"}
+    )
+    promoted = ReviewedSourceURLProfile.model_validate(payload)
+
+    with pytest.raises(TypeError, match="direct Source identity issuance is forbidden"):
+        _issue_reviewed_source_url_identity(promoted)
+
+
 def test_reviewed_source_identity_is_opaque_immutable_and_nonserializable():
     import copy
     import pickle
@@ -1514,6 +2291,29 @@ def test_reviewed_source_identity_is_opaque_immutable_and_nonserializable():
         copy.copy(identity)
     with pytest.raises(TypeError, match="cannot be serialized"):
         pickle.dumps(identity)
+
+
+def test_reviewed_source_identity_revalidates_catalog_on_every_open():
+    catalog = _Catalog()
+    identity = catalog.resolve_reviewed_source_url_identity(
+        catalog.release_set, "sci:evidence:spin-direction"
+    )
+    catalog.source_url = "https://example.test/reviewed-replacement"
+    catalog._review_current_source_identity()
+
+    with pytest.raises(TypeError, match="no longer authoritative"):
+        _open_reviewed_source_url_identity(identity)
+
+
+def test_catalog_identity_issuer_rejects_an_arbitrary_catalog_double():
+    catalog = _Catalog()
+
+    with pytest.raises(TypeError, match="exact ScienceCatalog"):
+        _issue_catalog_reviewed_source_url_identity(
+            catalog,
+            catalog.release_set,
+            "sci:evidence:spin-direction",
+        )
 
 
 def test_service_rejects_a_raw_unsealed_source_profile(
@@ -1567,6 +2367,313 @@ def test_candidate_source_profile_cannot_become_an_authoritative_report(
 
     with pytest.raises(ValidationError, match="active reviewed Source URL"):
         VerificationReport.model_validate(payload)
+
+
+def _report_with_coordinated_unreviewed_source(
+    report: VerificationReport,
+    *,
+    report_id: str,
+    source_url: str,
+) -> dict[str, object]:
+    payload = report.model_dump(mode="json")
+    payload["report_id"] = report_id
+    link = payload["annotations"][0]["evidence_links"][0]
+    link["url"] = source_url
+    profile = link["reviewed_source"]
+    profile["canonical_source_url"] = source_url
+    profile["canonical_source_url_digest"] = sha256_digest(source_url)
+    profile["profile_digest"] = sha256_digest(
+        {key: value for key, value in profile.items() if key != "profile_digest"}
+    )
+    payload["report_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "report_digest"}
+    )
+    return payload
+
+
+def _report_with_coordinated_unreleased_provenance(
+    report: VerificationReport,
+    *,
+    report_id: str,
+) -> dict[str, object]:
+    payload = report.model_dump(mode="json")
+    payload["report_id"] = report_id
+    selection = {
+        "foundation": "sci-release:not-in-catalog",
+        "domains": [],
+        "applications": [],
+    }
+    release_content_digest = sha256_digest("unreleased-release-content")
+    release_set_digest = sha256_digest("unreleased-release-set")
+    payload["release_selection"] = selection
+    payload["release_digests"] = {selection["foundation"]: release_content_digest}
+    binding = payload["operation_binding"]
+    binding["release_digest"] = sha256_digest(selection)
+    binding["request_digest"] = sha256_digest(
+        {
+            "operation": "verify_document",
+            "interpretation_id": payload["interpretation_ids"][0],
+            "claim_digest": binding["claim_digest"],
+            "release_selection": selection,
+        }
+    )
+    forged_source_id = "sci:source:not-in-catalog"
+    forged_source_digest = sha256_digest("unreleased-source")
+    forged_evidence_id = "sci:evidence:not-in-catalog"
+    forged_evidence_digest = sha256_digest("unreleased-evidence")
+    forged_knowledge_id = "sci:knowledge:not-in-catalog"
+    forged_knowledge_digest = sha256_digest("unreleased-knowledge")
+    forged_url = "https://unreviewed.example.test/all-provenance"
+    forged_locator = EvidenceLocator(section="fabricated section 999").model_dump(
+        mode="json"
+    )
+    for verdict in payload["verdict_packets"]:
+        verdict["releases"] = {
+            "selection": selection,
+            "digests": payload["release_digests"],
+            "combined_digest": release_set_digest,
+        }
+        verdict["knowledge_refs"] = [forged_knowledge_id]
+        verdict["evidence_refs"] = [forged_evidence_id]
+        for fact in verdict["explanation_facts"]:
+            fact["knowledge_refs"] = [forged_knowledge_id]
+            fact["evidence_refs"] = [forged_evidence_id]
+    for annotation in payload["annotations"]:
+        annotation["knowledge_id"] = forged_knowledge_id
+        annotation["knowledge_digest"] = forged_knowledge_digest
+        for link in annotation["evidence_links"]:
+            link["evidence_id"] = forged_evidence_id
+            link["evidence_digest"] = forged_evidence_digest
+            link["source_id"] = forged_source_id
+            link["source_digest"] = forged_source_digest
+            link["url"] = forged_url
+            link["locator"] = forged_locator
+            lookup = link["source_lookup"]
+            lookup.update(
+                {
+                    "source_id": forged_source_id,
+                    "source_digest": forged_source_digest,
+                    "boi_id": "boi:public:science:source:not-in-catalog",
+                    "versioned_path": "public/science/sources/not-in-catalog.md",
+                }
+            )
+            lookup["lookup_digest"] = sha256_digest(
+                {key: value for key, value in lookup.items() if key != "lookup_digest"}
+            )
+            profile = link["reviewed_source"]
+            profile.update(
+                {
+                    "release_set_digest": release_set_digest,
+                    "source_id": forged_source_id,
+                    "source_digest": forged_source_digest,
+                    "evidence_id": forged_evidence_id,
+                    "evidence_digest": forged_evidence_digest,
+                    "canonical_source_url": forged_url,
+                    "canonical_source_url_digest": sha256_digest(forged_url),
+                    "locator": forged_locator,
+                    "locator_digest": sha256_digest(forged_locator),
+                    "locator_url_digests": {},
+                }
+            )
+            profile["profile_digest"] = sha256_digest(
+                {
+                    key: value
+                    for key, value in profile.items()
+                    if key != "profile_digest"
+                }
+            )
+    payload["report_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "report_digest"}
+    )
+    return payload
+
+
+def test_report_annotations_must_exactly_cover_verdict_explanation_facts(
+    science_identity: AuthIdentity,
+):
+    service, catalog, _store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:annotation-fact-binding-base",
+    )
+    payload = report.model_dump(mode="json")
+    payload["annotations"][0]["fact_id"] = "sci:fact:not-in-verdict"
+    payload["report_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "report_digest"}
+    )
+
+    with pytest.raises(ValidationError, match="explanation fact"):
+        VerificationReport.model_validate(payload)
+
+
+def test_store_direct_save_rejects_self_consistent_unreviewed_source_profile(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:authority-direct-save-base",
+    )
+    forged = _report_with_coordinated_unreviewed_source(
+        report,
+        report_id="sci-report:coordinated-unreviewed-save",
+        source_url="https://unreviewed.example.test/replacement",
+    )
+    VerificationReport.model_validate(forged)
+
+    with pytest.raises(ImmutableScienceRecordError, match="Catalog authority"):
+        store.save_report(forged, identity=science_identity)
+
+    assert not store.record_path("reports", forged["report_id"]).exists()
+
+
+def test_store_private_load_rejects_self_consistent_unreviewed_source_profile(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:authority-private-load-base",
+    )
+    forged = _report_with_coordinated_unreviewed_source(
+        report,
+        report_id="sci-report:coordinated-unreviewed-load",
+        source_url="https://unreviewed.example.test/private-load",
+    )
+    path = store.record_path("reports", forged["report_id"])
+    path.write_bytes(canonical_json_bytes(forged))
+    path.chmod(0o600)
+
+    with pytest.raises(ImmutableScienceRecordError, match="Catalog authority"):
+        store.load_report(forged["report_id"])
+
+
+def test_store_rejects_coordinated_unreleased_release_and_provenance(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:authority-all-provenance-base",
+    )
+    forged = _report_with_coordinated_unreleased_provenance(
+        report,
+        report_id="sci-report:coordinated-unreleased-provenance",
+    )
+    VerificationReport.model_validate(forged)
+
+    with pytest.raises(ImmutableScienceRecordError, match="Catalog authority"):
+        store.save_report(forged, identity=science_identity)
+
+
+def test_store_wal_recovery_rejects_self_consistent_unreviewed_source_profile(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    real_append = store._append_audit_event_locked
+
+    def fail_report_audit(event):
+        if event.action == "report_saved":
+            raise OSError("simulated authority WAL interruption")
+        return real_append(event)
+
+    monkeypatch.setattr(store, "_append_audit_event_locked", fail_report_audit)
+    with pytest.raises(ScienceTransactionPendingError) as pending:
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key="science-request:authority-wal-base",
+        )
+    journal_path = next((store.root / "transactions").glob("*.json"))
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    forged = _report_with_coordinated_unreviewed_source(
+        VerificationReport.model_validate(journal["record"]),
+        report_id=pending.value.record_id,
+        source_url="https://unreviewed.example.test/from-wal",
+    )
+    journal["record"] = forged
+    journal["audit"]["details"]["report_digest"] = forged["report_digest"]
+    journal_path.write_bytes(canonical_json_bytes(journal))
+    store.record_path("reports", pending.value.record_id).unlink()
+    monkeypatch.setattr(store, "_append_audit_event_locked", real_append)
+
+    with pytest.raises(ImmutableScienceRecordError, match="Catalog authority"):
+        store.recover_pending_transactions()
+
+    assert not store.record_path("reports", pending.value.record_id).exists()
+    assert journal_path.exists()
+
+
+def test_store_requires_an_authoritative_report_validator(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, source_store, _llm = _real_service(tmp_path / "source")
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:missing-authority-base",
+    )
+    proposal = source_store.load_interpretation(
+        confirmed.operation_binding.source_interpretation_id
+    )
+    unbound_store = ScienceRuntimeStore(
+        tmp_path / "unbound",
+        authorization=ScienceAuthorization(access_mode="pilot"),
+        roles_for=lambda _identity: ["science.admin"],
+    )
+    unbound_store.save_interpretation(proposal, identity=science_identity)
+    unbound_store.save_interpretation(confirmed, identity=science_identity)
+
+    with pytest.raises(ImmutableScienceRecordError, match="Catalog authority"):
+        unbound_store.save_report(report, identity=science_identity)
+
+    assert not unbound_store.record_path("reports", report.report_id).exists()
+
+
+def test_store_catalog_validator_failure_discards_sensitive_exception_context(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:closed-authority-base",
+    )
+    secret = "https://hidden-authority-validator-secret.test/private"
+
+    def fail_authority(_report):
+        raise ValueError(secret)
+
+    store._report_authority_validator = fail_authority
+    with pytest.raises(ImmutableScienceRecordError) as captured:
+        store.save_report(report, identity=science_identity)
+
+    _assert_closed_runtime_validation_error(captured.value, secret=secret)
 
 
 @pytest.mark.parametrize(

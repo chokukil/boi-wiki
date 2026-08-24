@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.authorization import ScienceAuthorization
 from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.llm import ScienceInterpretationUnavailable
 from boi_api.app.science.models import ReleaseSelection, VerificationReport
+from boi_api.app.science.storage import ScienceRuntimeStore
 
 
 class FakeService:
@@ -57,6 +61,27 @@ class FakeService:
     def verify_document(self, interpretation_id: str, selection, **kwargs):
         self.calls.append(("verify_document", (interpretation_id, selection)))
         return self.report
+
+    def detect_aliases(self, document: str, **kwargs):
+        self.calls.append(("detect_aliases", document))
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "document_ref": kwargs["document_ref"],
+                "document_digest": sha256_digest(document),
+                "matches": [],
+            }
+        )
+
+    def submit_claim_candidate(self, document: str, **kwargs):
+        self.calls.append(("submit_claim_candidate", (document, kwargs)))
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "interpretation_id": "sci-interpretation:submitted",
+                "candidate_claims": [],
+                "decision_impact": [],
+                "submission_client_kind": kwargs["client_kind"],
+            }
+        )
 
 
 class FakeStore:
@@ -116,6 +141,8 @@ def _client(
     roles: list[str] | None = None,
     can_read: bool = True,
     can_export: bool = True,
+    employee_id: str = "100001",
+    runtime_store: object | None = None,
 ) -> tuple[TestClient, FakeService]:
     from boi_api.app.science.routes import (
         ScienceRouteDependencies,
@@ -123,7 +150,7 @@ def _client(
     )
 
     identity = AuthIdentity(
-        employee_id="100001",
+        employee_id=employee_id,
         display_name="Science Admin",
         roles=roles or ["science.admin", "boi.viewer"],
     )
@@ -132,7 +159,7 @@ def _client(
     dependencies = ScienceRouteDependencies(
         authorization=ScienceAuthorization("admin_only"),
         service_provider=lambda: service,
-        runtime_store=FakeStore(report),
+        runtime_store=runtime_store or FakeStore(report),
         catalog=FakeCatalog(),
         boi_root=None,
         current_identity_dependency=lambda: identity,
@@ -148,6 +175,60 @@ def _client(
     app = FastAPI()
     app.include_router(create_science_router(dependencies))
     return TestClient(app), service
+
+
+def _claim_candidate() -> dict:
+    exact = "RPM 증가 시 두께 변화"
+    return {
+        "source_span": {
+            "start": 0,
+            "end": len(exact),
+            "exact": exact,
+            "prefix": "",
+            "suffix": "",
+        },
+        "normalized_claim": {
+            "subject_concept_id": "sci:concept:rpm",
+            "relation_kind": "monotonic_direction",
+            "predicate": "increases",
+            "object_concept_id": "sci:concept:film-thickness",
+            "polarity": "positive",
+            "quantities": [],
+            "conditions": [],
+            "process_stage": "final_spin",
+            "material_state": "liquid_film",
+        },
+        "ontology_refs": [
+            "sci:binding:rpm",
+            "sci:binding:increases",
+            "sci:binding:film-thickness",
+        ],
+        "ambiguity_ids": [],
+        "candidate_meanings": [
+            {
+                "ambiguity_id": None,
+                "concept_role": "subject",
+                "surface_term": "RPM",
+                "ontology_ref": "sci:binding:rpm",
+                "meaning": "untrusted",
+            },
+            {
+                "ambiguity_id": None,
+                "concept_role": "relation",
+                "surface_term": "증가",
+                "ontology_ref": "sci:binding:increases",
+                "meaning": "untrusted",
+            },
+            {
+                "ambiguity_id": None,
+                "concept_role": "object",
+                "surface_term": "두께",
+                "ontology_ref": "sci:binding:film-thickness",
+                "meaning": "untrusted",
+            },
+        ],
+        "decision_impact": [],
+    }
 
 
 def test_report_exports_share_one_canonical_report_digest() -> None:
@@ -177,6 +258,67 @@ def test_verification_never_accepts_a_caller_authored_claim_packet() -> None:
             "interpretation_id": "sci-interpretation:confirmed",
             "release_selection": {"foundation": "sci-release:0.1.0"},
             "claim_packet": {"claim_id": "forged"},
+        },
+    )
+
+    assert response.status_code == 422
+    assert not service.calls
+
+
+def test_alias_detection_route_returns_only_exact_non_verdict_matches() -> None:
+    client, service = _client()
+
+    response = client.post(
+        "/api/science/aliases/detect",
+        json={
+            "document": "RPM 증가 시 두께 변화",
+            "request_id": "aliases-001",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["matches"] == []
+    assert "verdict" not in response.text.lower()
+    assert service.calls == [("detect_aliases", "RPM 증가 시 두께 변화")]
+
+
+def test_claim_submission_route_creates_only_a_paused_interpretation() -> None:
+    client, service = _client()
+
+    response = client.post(
+        "/api/science/claims/submit",
+        json={
+            "document": "RPM 증가 시 두께 변화",
+            "client_kind": "codex",
+            "candidate": _claim_candidate(),
+            "idempotency_key": "claim-submit-001",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["interpretation_id"] == "sci-interpretation:submitted"
+    assert "verdict" not in response.text.lower()
+    call, (_document, kwargs) = service.calls[0]
+    assert call == "submit_claim_candidate"
+    assert kwargs["client_kind"] == "codex"
+    assert kwargs["candidate"].normalized_claim.predicate == "increases"
+
+
+@pytest.mark.parametrize("forbidden", ["verdict", "evidence", "rule"])
+def test_claim_submission_rejects_client_authored_scientific_authority(
+    forbidden: str,
+) -> None:
+    client, service = _client()
+    candidate = _claim_candidate()
+    candidate[forbidden] = "client-forged"
+
+    response = client.post(
+        "/api/science/claims/submit",
+        json={
+            "document": "RPM 증가 시 두께 변화",
+            "client_kind": "claude",
+            "candidate": candidate,
+            "idempotency_key": f"claim-submit-forbidden-{forbidden}",
         },
     )
 
@@ -257,6 +399,140 @@ def test_proposal_requires_exact_digest_and_explicit_confirmation() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_proposal_exact_retry_returns_one_immutable_record_and_one_audit(
+    tmp_path,
+) -> None:
+    store = ScienceRuntimeStore(
+        tmp_path / "science-runtime",
+        authorization=ScienceAuthorization("admin_only"),
+        roles_for=lambda _identity: ["science.admin"],
+    )
+    client, _service = _client(runtime_store=store)
+    proposal = {
+        "domain": "lithography",
+        "kind": "term_alias",
+        "payload": {"alias": "PR"},
+    }
+    raw_key = "proposal-exact-retry-001"
+    request = {
+        "proposal": proposal,
+        "request_digest": sha256_digest(proposal),
+        "idempotency_key": raw_key,
+        "user_confirmed": True,
+    }
+
+    first = client.post("/api/science/proposals", json=request)
+    second = client.post("/api/science/proposals", json=request)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    rows = [
+        json.loads(line)
+        for line in store.audit_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["action"] for row in rows].count("proposal_saved") == 1
+    assert first.json()["idempotency_key_digest"] == sha256_digest(raw_key)
+    assert first.json()["request_digest"] == request["request_digest"]
+    persisted_bytes = b"".join(
+        path.read_bytes() for path in store.root.rglob("*") if path.is_file()
+    )
+    assert raw_key.encode() not in persisted_bytes
+
+
+@pytest.mark.parametrize(
+    "changed_proposal",
+    [
+        {
+            "domain": "materials",
+            "kind": "term_alias",
+            "payload": {"alias": "PR"},
+        },
+        {
+            "domain": "lithography",
+            "kind": "term_meaning",
+            "payload": {"alias": "PR"},
+        },
+        {
+            "domain": "lithography",
+            "kind": "term_alias",
+            "payload": {"alias": "photoresist"},
+        },
+    ],
+)
+def test_proposal_key_reuse_with_changed_request_returns_conflict(
+    tmp_path,
+    changed_proposal: dict[str, object],
+) -> None:
+    store = ScienceRuntimeStore(
+        tmp_path / "science-runtime",
+        authorization=ScienceAuthorization("admin_only"),
+        roles_for=lambda _identity: ["science.admin"],
+    )
+    client, _service = _client(runtime_store=store)
+    first_proposal = {
+        "domain": "lithography",
+        "kind": "term_alias",
+        "payload": {"alias": "PR"},
+    }
+    first = client.post(
+        "/api/science/proposals",
+        json={
+            "proposal": first_proposal,
+            "request_digest": sha256_digest(first_proposal),
+            "idempotency_key": "proposal-conflict-001",
+            "user_confirmed": True,
+        },
+    )
+    conflict = client.post(
+        "/api/science/proposals",
+        json={
+            "proposal": changed_proposal,
+            "request_digest": sha256_digest(changed_proposal),
+            "idempotency_key": "proposal-conflict-001",
+            "user_confirmed": True,
+        },
+    )
+
+    assert first.status_code == 200
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == (
+        "science_confirmation_or_identity_conflict"
+    )
+
+
+def test_proposal_key_reuse_by_another_actor_returns_conflict(tmp_path) -> None:
+    store = ScienceRuntimeStore(
+        tmp_path / "science-runtime",
+        authorization=ScienceAuthorization("admin_only"),
+        roles_for=lambda _identity: ["science.admin"],
+    )
+    first_client, _service = _client(
+        employee_id="100001",
+        runtime_store=store,
+    )
+    second_client, _service = _client(
+        employee_id="100002",
+        runtime_store=store,
+    )
+    proposal = {
+        "domain": "lithography",
+        "kind": "term_alias",
+        "payload": {"alias": "PR"},
+    }
+    request = {
+        "proposal": proposal,
+        "request_digest": sha256_digest(proposal),
+        "idempotency_key": "proposal-actor-conflict-001",
+        "user_confirmed": True,
+    }
+
+    assert first_client.post("/api/science/proposals", json=request).status_code == 200
+    conflict = second_client.post("/api/science/proposals", json=request)
+
+    assert conflict.status_code == 409
 
 
 def test_release_mutation_cannot_be_implied_without_authoritative_manager() -> None:

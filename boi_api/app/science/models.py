@@ -207,6 +207,9 @@ class ClaimCondition(ScienceModel):
 
 
 ConditionScalar: TypeAlias = str | int | float | bool
+ClaimSubmissionClientKind: TypeAlias = Literal[
+    "user", "codex", "claude", "qwen", "other"
+]
 
 
 class ConditionRange(ScienceModel):
@@ -536,6 +539,7 @@ class LLMModelSettings(ScienceModel):
     max_tokens: int | None = Field(default=None, gt=0)
     seed: int | None = None
     timeout_seconds: float | None = Field(default=None, gt=0)
+    context_length: int | None = Field(default=None, ge=2048, le=1_048_576)
 
     @field_validator("temperature", "top_p", "timeout_seconds", mode="before")
     @classmethod
@@ -576,6 +580,32 @@ class CandidateMeaningRecord(ScienceModel):
     domain: str | None = None
 
 
+class DetectedAlias(ScienceModel):
+    binding_id: str = Field(min_length=1)
+    ontology_ref: str = Field(min_length=1)
+    concept_id: str = Field(min_length=1)
+    surface_term: str = Field(min_length=1)
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    meaning: str = Field(min_length=1)
+    domain: str = Field(min_length=1)
+    binding_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def exact_span_and_binding(self) -> "DetectedAlias":
+        if self.binding_id != self.ontology_ref:
+            raise ValueError("detected alias binding identities must match")
+        if self.end - self.start != len(self.surface_term):
+            raise ValueError("detected alias span must match its exact surface term")
+        return self
+
+
+class AliasDetectionResult(ScienceModel):
+    document_ref: str = Field(min_length=1)
+    document_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    matches: list[DetectedAlias]
+
+
 class InterpretationDecisionImpact(ScienceModel):
     claim_id: str = Field(min_length=1)
     outcome_impact: Literal["unresolved"] = "unresolved"
@@ -607,7 +637,10 @@ class InterpretationRevisionEvent(ScienceModel):
 
 class ScienceOperationBinding(ScienceModel):
     operation: Literal[
-        "interpret_document", "confirm_interpretation", "verify_document"
+        "interpret_document",
+        "submit_claim_candidate",
+        "confirm_interpretation",
+        "verify_document",
     ]
     idempotency_key_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     actor_id: str = Field(min_length=1)
@@ -625,7 +658,7 @@ class ScienceOperationBinding(ScienceModel):
             raise ValueError("operation claim IDs must be unique")
         if self.claim_ids != sorted(self.claim_ids):
             raise ValueError("operation claim IDs must be canonical")
-        if self.operation == "interpret_document":
+        if self.operation in {"interpret_document", "submit_claim_candidate"}:
             if (
                 self.source_interpretation_id is not None
                 or self.release_digest is not None
@@ -662,6 +695,8 @@ class InterpretationRecord(ScienceModel):
     confirmed_claim_packet_digest: str | None
     response_digest: str
     operation_binding: ScienceOperationBinding
+    submission_client_kind: ClaimSubmissionClientKind | None = None
+    supersedes_claim_id: str | None = Field(default=None, min_length=1)
 
     @field_validator("model_id")
     @classmethod
@@ -703,7 +738,7 @@ class InterpretationRecord(ScienceModel):
         binding = self.operation_binding
         if binding.document_digest != self.document_digest:
             raise ValueError("operation document digest does not match interpretation")
-        if binding.operation == "interpret_document":
+        if binding.operation in {"interpret_document", "submit_claim_candidate"}:
             expected_claim_digest = sha256_digest(
                 {"claim_packets": self.candidate_claims}
             )
@@ -715,6 +750,16 @@ class InterpretationRecord(ScienceModel):
                 raise ValueError("proposal operation cannot contain confirmed claims")
             if self.user_revision_history:
                 raise ValueError("proposal operation cannot contain user revisions")
+            if binding.operation == "interpret_document" and (
+                self.submission_client_kind is not None
+                or self.supersedes_claim_id is not None
+            ):
+                raise ValueError("LLM interpretation cannot claim external submission")
+            if (
+                binding.operation == "submit_claim_candidate"
+                and self.submission_client_kind is None
+            ):
+                raise ValueError("external submission requires a client kind")
         elif binding.operation == "confirm_interpretation":
             confirmed_ids = sorted(claim.claim_id for claim in confirmed)
             if binding.claim_digest != self.confirmed_claim_packet_digest:
@@ -1007,6 +1052,57 @@ class VerificationReport(ScienceModel):
             annotation.claim_id not in set(claim_ids) for annotation in self.annotations
         ):
             raise ValueError("report annotation references an unknown claim")
+        expected_facts: dict[tuple[str, str], ExplanationFact] = {}
+        for verdict in self.verdict_packets:
+            fact_ids = [fact.fact_id for fact in verdict.explanation_facts]
+            if len(fact_ids) != len(set(fact_ids)):
+                raise ValueError("report verdict has duplicate explanation facts")
+            fact_knowledge = {
+                ref for fact in verdict.explanation_facts for ref in fact.knowledge_refs
+            }
+            fact_evidence = {
+                ref for fact in verdict.explanation_facts for ref in fact.evidence_refs
+            }
+            if (
+                set(verdict.knowledge_refs) != fact_knowledge
+                or set(verdict.evidence_refs) != fact_evidence
+            ):
+                raise ValueError(
+                    "report verdict references do not match its explanation facts"
+                )
+            for fact in verdict.explanation_facts:
+                key = (verdict.claim_id, fact.fact_id)
+                if key in expected_facts:
+                    raise ValueError("report has duplicate explanation fact identities")
+                expected_facts[key] = fact
+
+        annotations_by_fact: dict[tuple[str, str], list[GroundedAnnotation]] = {}
+        annotation_identities: set[tuple[str, str, str]] = set()
+        for annotation in self.annotations:
+            key = (annotation.claim_id, annotation.fact_id)
+            annotations_by_fact.setdefault(key, []).append(annotation)
+            identity = (*key, annotation.knowledge_id)
+            if identity in annotation_identities:
+                raise ValueError("report duplicates a grounded explanation fact")
+            annotation_identities.add(identity)
+            evidence_ids = [link.evidence_id for link in annotation.evidence_links]
+            if len(evidence_ids) != len(set(evidence_ids)):
+                raise ValueError("report duplicates Evidence in an explanation fact")
+
+        if set(annotations_by_fact) != set(expected_facts):
+            raise ValueError(
+                "report annotations do not exactly cover verdict explanation facts"
+            )
+        for key, fact in expected_facts.items():
+            annotations = annotations_by_fact[key]
+            if {item.knowledge_id for item in annotations} != set(
+                fact.knowledge_refs
+            ) or {
+                link.evidence_id for item in annotations for link in item.evidence_links
+            } != set(fact.evidence_refs):
+                raise ValueError(
+                    "report grounding does not match its verdict explanation fact"
+                )
         verdict_release_set_digests = {
             verdict.releases.combined_digest for verdict in self.verdict_packets
         }

@@ -34,8 +34,8 @@
   },
   "science_qualification": {
     "release_id": "sci-release:0.1.0",
-    "release_digest": "sha256:1dc6775741d7e1b9258ec91b48980e13995b561240e2a54b83e37f3912476bc7",
-    "result_digest": "sha256:3e1a08b7fea4ff6809592338d09e3a12b207480fec780dfc54d0a35f753e56a7",
+    "release_digest": "sha256:fdc321fe0d91788e10515c0f9bdae2a8d08355ca2bc8c8c49744d8508c819650",
+    "result_digest": "sha256:c543253b37bef0b1f8634f1ecbf2c1f708f36b6b30eda03764d6139c47b9470d",
     "lifecycle": "release_candidate",
     "public_case_count": 440,
     "activation_eligible": false
@@ -47,8 +47,8 @@
 > Candidate qualification only. This report is not a human review, approval, or active Science Release.
 
 - Release ID: `sci-release:0.1.0`
-- Release digest: `sha256:1dc6775741d7e1b9258ec91b48980e13995b561240e2a54b83e37f3912476bc7`
-- Result digest: `sha256:3e1a08b7fea4ff6809592338d09e3a12b207480fec780dfc54d0a35f753e56a7`
+- Release digest: `sha256:fdc321fe0d91788e10515c0f9bdae2a8d08355ca2bc8c8c49744d8508c819650`
+- Result digest: `sha256:c543253b37bef0b1f8634f1ecbf2c1f708f36b6b30eda03764d6139c47b9470d`
 - Lifecycle: `release_candidate`
 - Public cases: 440
 - activation_eligible: false
@@ -693,33 +693,35 @@ The exact component map remains in the Release manifest; this report lists one d
 - `sci-source:nist-statistics-handbook` — `sha256:e74602f67fdf1f7e48355793447c42715375a1fd574e1d055eea15df1093117e`
 - `sci-source:nist-tn-1297` — `sha256:c50c8fb4b9583376a50e093b1032fe9bb2d94d19e8b2e2738a19d54b6036c35c`
 - `sci-source:nistir-5851-1997` — `sha256:fc1c40fb4b87641aa2c7d7118d10c861884e55ef764ac6469b72064d62232606`
-- `sci:binding:common:accuracy` — `sha256:9440ed9554e949b4981dedcb423ab9a42853bb82686a62a4cb9796d54869eb0c`
-- `sci:binding:common:association` — `sha256:1160d97b115a619d94da02ee63ac09eb5f1f17d2c872c4b63810fc1fe7b36472`
-- `sci:binding:common:causation` — `sha256:afb49efe6908bafacfcacf546b94e9dac4ce5d727abc5735aa4b9c109a9db8cb`
-- `sci:binding:common:correlation` — `sha256:977859106234736a75aa705c290533894a7bcad32b33e7c6efe10348b7888634`
-- `sci:binding:common:dimension` — `sha256:44635ce589442b440a1ed2dbf11fc78f327cbd8e202e1eb18be2a60e586320ec`
-- `sci:binding:common:equilibrium` — `sha256:a6760255f1ad7f092c3d2eeadf64c8ba02a61516024167760e3f0a02a1941fd6`
-- `sci:binding:common:measurement-error` — `sha256:0d12f4a474ab0a8ba9db37284ed55148d7d2f0f860dda1426ee2f01b916c3606`
-- `sci:binding:common:measurement-uncertainty` — `sha256:ad9d313c7121bc454731445ec9737c3efd2b71c3baaf860332754e4c2f439228`
-- `sci:binding:common:model` — `sha256:b949178be1dfe5d58dc403e9e26d387e3a036f84f5842291bd2e05297fe5d7e9`
-- `sci:binding:common:precision` — `sha256:4ef403210f61fd9b977f312a6b7be5709fd53a9e1980578f65f2d2b607e9db3a`
-- `sci:binding:common:quantity` — `sha256:8fba82af9695f7e3bdf91b78d840f57213b95b26114b4c562f1cb6833fe133ba`
-- `sci:binding:common:steady-state` — `sha256:cd98ac5d8e4f055404537c68f81aea9c1c0a81cb1dcd31227189dcf89f80bbb0`
-- `sci:binding:common:unit` — `sha256:02645695020d70ce0e5ac85520cd01a7b00a3693bd318319add71e8f06b498c8`
-- `sci:binding:domain:angular-speed` — `sha256:2482e3ad2f554802263401364a8b23f9947fe521bd9e7970a6deae21424177d2`
-- `sci:binding:domain:bulk-property` — `sha256:d7561d0bc927d2807b6585a5ad51f1042fcbc72cb14a423dfa282d12c5fb4751`
-- `sci:binding:domain:catalyst` — `sha256:41a35485e64fa4947035abd2252a2a2e450129c1da1cfc55d4ff8307847e02f6`
-- `sci:binding:domain:conductivity` — `sha256:cd651031c7e40aef327242ce6bb71fb2dba4ee09559b1694b0dbb59998b979b5`
-- `sci:binding:domain:electric-power` — `sha256:2dffb92dcb82d1dc64ee894a9af3e89a669040ab5d45020de5b18ef088065be1`
-- `sci:binding:domain:equilibrium-constant` — `sha256:0be8e4286ebd51438add7be648cf709e1d1e51340b9e9deecdf203684654f11f`
-- `sci:binding:domain:film-thickness` — `sha256:9a1b3d040da1ff035a7774de8b049242e7b38154d34b3c812448d9a4de4e58fc`
-- `sci:binding:domain:mobility` — `sha256:db265fdb981a1c7c375038d2ffcb7dc65947f90161148f15deea78304443ba6b`
-- `sci:binding:domain:photoresist` — `sha256:f24b9444e170d17c2bcd3055e272b9691305e392f4930e7d91ac8aff5bec231c`
-- `sci:binding:domain:resistance` — `sha256:8ef618b186110acd1377d9060dad9f8a24678876f0c8ab20a3970c711797c3b0`
-- `sci:binding:domain:semiconductor` — `sha256:b6d7219d3bf8c033fd703df43f9d3a368e4d88709bcd515dc3e86b4833411312`
-- `sci:binding:domain:spin-speed` — `sha256:411b586f91d77875dd0bda4e1bd6fa8eda7740089053a08431d37c9b620d55b6`
-- `sci:binding:domain:thin-film-property` — `sha256:f528eedc5a4a2705399e38639523533bd3e2a3a2e9ff3c45c707f92a11f3c993`
-- `sci:binding:domain:viscosity` — `sha256:75572cd72a162169f8ec5463c386a98d38eb67b8e2cca00890af7228bea2166a`
+- `sci:binding:common:accuracy` — `sha256:8851b7d4e4c880e954ac8e235dd8ab9cf471fb506c90956c04f2dd369a13927e`
+- `sci:binding:common:association` — `sha256:0c3187a2c78c6e491cb2f797a7b03c75212c416016fd9b9b67cee72da33673f3`
+- `sci:binding:common:causation` — `sha256:7e52b5539bbf3b5af9cde8011cad99455389bfa77eb86c0259bdc0c39dbc8dd9`
+- `sci:binding:common:correlation` — `sha256:9e883d6ff3f0a267e2a730d3405d5fccc4804bd24f5baca9679bf3628f6486b5`
+- `sci:binding:common:decreases` — `sha256:a087ed9efe5cbf6a8087ea7b26df8a519f8964afe75e6586b770dd1bc260fa0f`
+- `sci:binding:common:dimension` — `sha256:87f37d264412267202e7aa5823fae9947b12ec1c3f3262b956e44f509d373178`
+- `sci:binding:common:equilibrium` — `sha256:22114776c41f8e4fb19077bbd23cde837ec68387021e94303486bbb248714e75`
+- `sci:binding:common:increases` — `sha256:514d154e19cbc91611876fa58e1a5b90b0509f7496b89b4a428bfa821646426c`
+- `sci:binding:common:measurement-error` — `sha256:d7f6e13b9c06666b536a162befdfee032e7eee2a736617074df4f414d700bddc`
+- `sci:binding:common:measurement-uncertainty` — `sha256:39be8150dc36b9d0a5fe4d0916b7e73750da3704b35e1a63147585d305242021`
+- `sci:binding:common:model` — `sha256:cf3356b37187ae5101f63aac6b3c8b26779e8488aaaa3d608b46762a0879ff13`
+- `sci:binding:common:precision` — `sha256:2fd8384c14d681c151aad6578a3546892e49cfa00f0c6025b200fd81763c9595`
+- `sci:binding:common:quantity` — `sha256:309e3f8a6eb53e278b8b27320e8f9ebe028b6e29715e02dd69c7e80a369ffc4e`
+- `sci:binding:common:steady-state` — `sha256:0a503715f2801d4101ad444b388adafdb6163c80fd0f7814bb4b7fb683b61682`
+- `sci:binding:common:unit` — `sha256:7c518eff7542227f101a67d813b029f57f425f6dfe2613e2eb1b4a2ce19f42da`
+- `sci:binding:domain:angular-speed` — `sha256:854941eb77c62dd1c9b7f65cbb08a30d3da830c524201eef9d445f626b2911fa`
+- `sci:binding:domain:bulk-property` — `sha256:5bf752100a2226458aabbf72860d2b23192c4ca15765d404dc9097fd841f5e16`
+- `sci:binding:domain:catalyst` — `sha256:be82c291549f3ae39248575739edc2623150635772ac7e12f57c327a7b392e3c`
+- `sci:binding:domain:conductivity` — `sha256:7851ae7a3222b80c18452d2ded0996aff3343328ee05431d9560fe8934d1d3ce`
+- `sci:binding:domain:electric-power` — `sha256:15b00a275432aa6283715c2f12dead9dad666678c34615d5ca9cbb04f704622a`
+- `sci:binding:domain:equilibrium-constant` — `sha256:f29bbe584bac4cae70079cd11b73a4653f4b788e71441a70e39d6780038e07b9`
+- `sci:binding:domain:film-thickness` — `sha256:677595a7636e75c8c64f25d2669e1eb6578e100aacd7bb438cc2b6fb0a970297`
+- `sci:binding:domain:mobility` — `sha256:1cbb28d11588fc4a6f1cfdc4d688f80528bab4b0e203782799eb0fd79c4f518d`
+- `sci:binding:domain:photoresist` — `sha256:aee8cee7b9781501278da78d61a40941ac1cca8b1a77598dee82e21596d7d9d3`
+- `sci:binding:domain:resistance` — `sha256:cb8c9b63894baf1c7d393ffa0ead77eac2b8915e5d3c01dc8ab794b2f442a4ac`
+- `sci:binding:domain:semiconductor` — `sha256:d91c12cb7073812bb955f636e9aac47ef7485366bb1c048e10a4240d29bdb0c3`
+- `sci:binding:domain:spin-speed` — `sha256:11f408f9641b077828c284615075e504b61e2b8538cc46965a7c0f0b6f90e1ac`
+- `sci:binding:domain:thin-film-property` — `sha256:949e1df471f28a8dcccb75fca7b950a3a98c8a4990f97a0b25e36b3d54f0326f`
+- `sci:binding:domain:viscosity` — `sha256:84eb8a8f016e76a875b24ed5a8fdb6bcc2056ae88789d2aabfbc32d1663b28fb`
 - `sci:chemistry:001` — `sha256:d1a8b4bd3f1f0848db65325abd1430305c92fa49994055a21755e187c710a138`
 - `sci:chemistry:002` — `sha256:148d8e8a36c0c71a03721676cf5e04ef056e2265a7a4f8e86b9a6b99a5d7abbb`
 - `sci:chemistry:003` — `sha256:54ecf554ab9b78a2cb89b3afb7d2320f9bf12b9777f45e8e822f785ef823fa02`

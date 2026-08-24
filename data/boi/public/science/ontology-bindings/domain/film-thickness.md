@@ -35,11 +35,15 @@
   },
   "science": {
     "binding_id": "sci:binding:domain:film-thickness",
-    "ontology_release_id": "sci:ontology:domain-packs-draft/0.1.0",
+    "ontology_release_id": "sci:ontology:general-science-draft/0.1.0",
     "concept_id": "sci:concept:film-thickness",
     "aliases": [
+      "Thickness",
+      "thickness",
       "film thickness",
       "resist thickness",
+      "두께",
+      "막두께",
       "막 두께"
     ],
     "meaning": "Interpret the listed aliases as sci:concept:film-thickness while retaining narrower process, state, and model distinctions.",
