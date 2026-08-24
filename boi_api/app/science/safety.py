@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
-from typing import Any, NoReturn
+from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 
 
@@ -99,37 +99,53 @@ def validate_model_identifier(value: str) -> str:
     return value
 
 
-_URL_CREDENTIAL_KEYS = {
-    "accesskey",
-    "accesstoken",
-    "apikey",
-    "auth",
-    "authorization",
-    "basicauth",
-    "bearer",
-    "clientsecret",
-    "credential",
-    "password",
-    "passwd",
-    "privatekey",
-    "secret",
-    "sig",
-    "signature",
-    "token",
-}
-_VENDOR_CREDENTIAL_PREFIXES = (
-    "xamz",
-    "xgoog",
-    "xms",
-    "sharedaccess",
-    "sas",
+_EXACT_CREDENTIAL_TOKENS = frozenset(
+    {
+        "accesskey",
+        "accesstoken",
+        "apikey",
+        "auth",
+        "authorization",
+        "basicauth",
+        "bearer",
+        "clientsecret",
+        "credential",
+        "password",
+        "passwd",
+        "privatekey",
+        "secret",
+        "sig",
+        "signature",
+        "token",
+        "xamz",
+        "xgoog",
+        "xms",
+        "sharedaccess",
+        "sas",
+        "presigned",
+        "xamzcredential",
+        "xamzsignature",
+        "xgoogcredential",
+        "xgoogsignature",
+        "xmscredential",
+        "xmssignature",
+        "sharedaccesssignature",
+    }
 )
-_GENERIC_CREDENTIAL_PREFIXES = tuple(sorted(_URL_CREDENTIAL_KEYS))
-_CREDENTIAL_PATH_PREFIXES = (
-    *_GENERIC_CREDENTIAL_PREFIXES,
-    *_VENDOR_CREDENTIAL_PREFIXES,
-    "bearer",
-    "presigned",
+_CREDENTIAL_TOKEN_SEQUENCES = (
+    ("access", "key"),
+    ("access", "token"),
+    ("api", "key"),
+    ("basic", "auth"),
+    ("client", "secret"),
+    ("private", "key"),
+    ("x", "amz", "credential"),
+    ("x", "amz", "signature"),
+    ("x", "goog", "credential"),
+    ("x", "goog", "signature"),
+    ("x", "ms", "credential"),
+    ("x", "ms", "signature"),
+    ("shared", "access", "signature"),
 )
 _STABLE_SOURCE_QUERIES = {"download=1", "download=true"}
 _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
@@ -144,10 +160,10 @@ class SciencePublicValidationError(ValueError):
         super().__init__("Science input failed closed validation")
 
 
-def raise_safe_science_validation_error() -> NoReturn:
-    """Raise a closed error without accepting or retaining the raw exception."""
+def closed_science_validation_error() -> SciencePublicValidationError:
+    """Build a closed error after an input-bearing exception scope has ended."""
 
-    raise SciencePublicValidationError() from None
+    return SciencePublicValidationError()
 
 
 def _validate_percent_syntax(value: str) -> None:
@@ -196,6 +212,29 @@ def _normalize_then_fully_decode(value: str) -> str:
     return decoded
 
 
+def _boundary_tokens(parts: Sequence[str]) -> tuple[str, ...]:
+    return tuple(
+        token for part in parts for token in re.findall(r"[a-z0-9]+", part.casefold())
+    )
+
+
+def _reject_credential_token_stream(parts: Sequence[str], *, location: str) -> None:
+    tokens = _boundary_tokens(parts)
+    if any(token in _EXACT_CREDENTIAL_TOKENS for token in tokens):
+        raise ScienceSensitivePersistenceError(
+            f"stable source URL {location} contains credential material"
+        )
+    for sequence in _CREDENTIAL_TOKEN_SEQUENCES:
+        width = len(sequence)
+        if any(
+            tokens[index : index + width] == sequence
+            for index in range(len(tokens) - width + 1)
+        ):
+            raise ScienceSensitivePersistenceError(
+                f"stable source URL {location} contains credential material"
+            )
+
+
 def _validate_stable_source_path(path: str) -> str:
     decoded_path = _normalize_then_fully_decode(path)
     if any(
@@ -209,21 +248,7 @@ def _validate_stable_source_path(path: str) -> str:
             "stable source URL path contains forbidden key-value delimiters"
         )
     segments = [segment for segment in decoded_path.split("/") if segment]
-    compact_segments = [
-        re.sub(r"[^a-z0-9]", "", segment.casefold()) for segment in segments
-    ]
-    for start in range(len(compact_segments)):
-        candidate = ""
-        for compact in compact_segments[start:]:
-            candidate += compact
-            if candidate.startswith(_CREDENTIAL_PATH_PREFIXES):
-                raise ScienceSensitivePersistenceError(
-                    "stable source URL path contains credential material"
-                )
-            if not any(
-                prefix.startswith(candidate) for prefix in _CREDENTIAL_PATH_PREFIXES
-            ):
-                break
+    _reject_credential_token_stream(segments, location="path")
     canonical_path = quote(decoded_path, safe="/-._~!$&'()*+,")
     if canonical_path != path:
         raise ScienceSensitivePersistenceError(
@@ -249,6 +274,7 @@ def _validate_canonical_hostname(hostname: str) -> None:
         raise ScienceSensitivePersistenceError(
             "stable source URL hostname is not canonical"
         )
+    _reject_credential_token_stream(labels, location="hostname")
 
 
 def validate_credential_free_https_url(value: str) -> str:

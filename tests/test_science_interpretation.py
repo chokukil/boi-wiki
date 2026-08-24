@@ -36,7 +36,7 @@ from boi_api.app.science.operational import _issue_operational_verification
 from boi_api.app.science.rules import ReleasedRule, ResolvedRuleSet, VerificationRule
 from boi_api.app.science.safety import (
     SciencePublicValidationError,
-    raise_safe_science_validation_error,
+    closed_science_validation_error,
     validate_credential_free_https_url,
 )
 from boi_api.app.science.service import (
@@ -1305,22 +1305,83 @@ _CANONICAL_URL_BYPASSES = [
     "https://exa\tmple.test/paper",
 ]
 
+_CREDENTIAL_TOKEN_FAMILIES = {
+    "accesskey": "access-key",
+    "accesstoken": "access-token",
+    "apikey": "api-key",
+    "auth": "auth",
+    "authorization": "authorization",
+    "basicauth": "basic-auth",
+    "bearer": "bearer",
+    "clientsecret": "client-secret",
+    "credential": "credential",
+    "password": "password",
+    "passwd": "passwd",
+    "privatekey": "private-key",
+    "secret": "secret",
+    "sig": "sig",
+    "signature": "signature",
+    "token": "token",
+    "xamz": "x-amz-signature",
+    "xgoog": "x-goog-signature",
+    "xms": "x-ms-signature",
+    "sharedaccess": "shared-access-signature",
+    "sas": "sas",
+    "presigned": "presigned",
+}
+_CREDENTIAL_SEQUENCE_MARKERS = {
+    "access-key",
+    "access-token",
+    "api-key",
+    "basic-auth",
+    "client-secret",
+    "private-key",
+    "x-amz-credential",
+    "x-amz-signature",
+    "x-goog-credential",
+    "x-goog-signature",
+    "x-ms-credential",
+    "x-ms-signature",
+    "shared-access-signature",
+}
 
-def test_task3_can_replace_raw_pydantic_url_errors_with_closed_diagnostic():
+_BOUNDARY_CREDENTIAL_URLS = [
+    url
+    for marker in sorted(
+        {
+            *_CREDENTIAL_TOKEN_FAMILIES,
+            *_CREDENTIAL_TOKEN_FAMILIES.values(),
+            *_CREDENTIAL_SEQUENCE_MARKERS,
+        }
+    )
+    for url in (
+        f"https://example.test/private/file-{marker}-hidden-boundary-value",
+        f"https://file-{marker}-hidden-boundary-value.example.test/paper",
+    )
+]
+_UNSAFE_STABLE_SOURCE_URLS = [
+    *_CANONICAL_URL_BYPASSES,
+    *_BOUNDARY_CREDENTIAL_URLS,
+]
+
+
+def test_task3_closed_validation_factory_drops_real_except_context():
     secret = "hidden-adapter-value"
-    raw_error: ValidationError | None = None
+    raw_rendered = ""
+    rejected = False
     try:
         EvidenceLocator(
             section="3.2",
             resource_url=f"https://example.test/private/api_key={secret}",
         )
     except ValidationError as exc:
-        raw_error = exc
-    assert raw_error is not None
-    assert secret in str(raw_error)
+        raw_rendered = str(exc)
+        rejected = True
+    assert rejected
+    assert secret not in raw_rendered
 
     with pytest.raises(SciencePublicValidationError) as captured:
-        raise_safe_science_validation_error()
+        raise closed_science_validation_error()
 
     assert captured.value.diagnostic_code == "invalid_science_input"
     assert secret not in str(captured.value)
@@ -1350,6 +1411,28 @@ def test_stable_source_url_rejects_noncanonical_authority_and_serialization(url:
 def test_stable_source_url_returns_the_exact_checked_ascii_serialization():
     url = "https://example.test/%ED%95%9C%EA%B8%80.pdf?download=true"
 
+    assert validate_credential_free_https_url(url) == url
+
+
+@pytest.mark.parametrize("url", _BOUNDARY_CREDENTIAL_URLS)
+def test_stable_source_url_rejects_exact_credential_tokens_anywhere(url: str):
+    with pytest.raises(ValueError):
+        validate_credential_free_https_url(url)
+
+
+def test_stable_source_url_matrix_covers_all_22_reviewed_credential_families():
+    assert len(_CREDENTIAL_TOKEN_FAMILIES) == 22
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.test/signals-and-systems/paper",
+        "https://example.test/sigma-model/paper",
+        "https://example.test/authors/feynman",
+    ],
+)
+def test_stable_source_url_allows_normal_scientific_tokens(url: str):
     assert validate_credential_free_https_url(url) == url
 
 
@@ -1414,7 +1497,7 @@ def test_service_rejects_every_credential_bearing_locator_url_without_echo(
             "requested_url",
             "resolved_url",
         )
-        for value in _CANONICAL_URL_BYPASSES
+        for value in _UNSAFE_STABLE_SOURCE_URLS
     ],
 )
 def test_real_service_rejects_every_noncanonical_source_url_before_report_storage(
@@ -1439,6 +1522,7 @@ def test_real_service_rejects_every_noncanonical_source_url_before_report_storag
         )
 
     assert "hidden-canonical-value" not in str(captured.value)
+    assert "hidden-boundary-value" not in str(captured.value)
     assert not list((store.root / "reports").glob("*.json"))
 
 
@@ -2012,7 +2096,7 @@ def test_real_store_direct_save_rejects_all_noncanonical_url_bypass_classes(
     )
     before = list((store.root / "reports").glob("*.json"))
 
-    for index, unsafe_url in enumerate(_CANONICAL_URL_BYPASSES):
+    for index, unsafe_url in enumerate(_UNSAFE_STABLE_SOURCE_URLS):
         injected = report.model_dump(mode="json")
         injected["report_id"] = f"sci-report:direct-{target_field}-{index}"
         link = injected["annotations"][0]["evidence_links"][0]
@@ -2027,6 +2111,7 @@ def test_real_store_direct_save_rejects_all_noncanonical_url_bypass_classes(
         with pytest.raises(ValueError) as captured:
             store.save_report(injected, identity=science_identity)
         assert "hidden-canonical-value" not in str(captured.value)
+        assert "hidden-boundary-value" not in str(captured.value)
 
     assert list((store.root / "reports").glob("*.json")) == before
 
@@ -2049,7 +2134,7 @@ def test_real_store_private_load_rejects_all_noncanonical_url_bypass_classes(
         idempotency_key="science-request:private-load-bypass-base",
     )
 
-    for index, unsafe_url in enumerate(_CANONICAL_URL_BYPASSES):
+    for index, unsafe_url in enumerate(_UNSAFE_STABLE_SOURCE_URLS):
         injected = report.model_dump(mode="json")
         injected["report_id"] = f"sci-report:load-{target_field}-{index}"
         link = injected["annotations"][0]["evidence_links"][0]
@@ -2067,6 +2152,7 @@ def test_real_store_private_load_rejects_all_noncanonical_url_bypass_classes(
         with pytest.raises(ValueError) as captured:
             store.load_report(injected["report_id"])
         assert "hidden-canonical-value" not in str(captured.value)
+        assert "hidden-boundary-value" not in str(captured.value)
         path.unlink()
 
 
@@ -2166,7 +2252,7 @@ def test_wal_recovery_rejects_all_noncanonical_url_bypass_classes(
     store.record_path("reports", report_id).unlink()
     monkeypatch.setattr(store, "_append_audit_event_locked", real_append)
 
-    for unsafe_url in _CANONICAL_URL_BYPASSES:
+    for unsafe_url in _UNSAFE_STABLE_SOURCE_URLS:
         journal = json.loads(json.dumps(original_journal))
         record = journal["record"]
         link = record["annotations"][0]["evidence_links"][0]
@@ -2183,6 +2269,7 @@ def test_wal_recovery_rejects_all_noncanonical_url_bypass_classes(
         with pytest.raises(ValueError) as captured:
             store.recover_pending_transactions()
         assert "hidden-canonical-value" not in str(captured.value)
+        assert "hidden-boundary-value" not in str(captured.value)
         assert not store.record_path("reports", report_id).exists()
 
 

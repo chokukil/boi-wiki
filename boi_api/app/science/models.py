@@ -20,7 +20,7 @@ from boi_api.app.science.safety import (
 class ScienceModel(BaseModel):
     """Base model that rejects undeclared packet fields."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 _REVIEWED_UNIT_ALIASES = {
