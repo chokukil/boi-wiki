@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Literal
+from urllib.parse import parse_qsl, urlsplit
 
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.anchors import resolve_anchor
@@ -20,16 +20,36 @@ from boi_api.app.science.llm import (
     ScienceLLMClient,
 )
 from boi_api.app.science.models import (
+    CandidateMeaningRecord,
     ClaimInterpretation,
     ClaimPacket,
+    EvidenceLink,
+    GroundedAnnotation,
+    InterpretationDecisionImpact,
     InterpretationRecord,
+    InterpretationRevisionEvent,
     ReleaseSelection,
     ResolvedReleaseSet,
+    ScienceOperationBinding,
+    SourceLookupIdentity,
     SourceSpan,
     VerificationReport,
     VerdictPacket,
 )
 from boi_api.app.science.operational import OperationalVerification
+from boi_api.app.science.safety import (
+    ScienceSensitivePersistenceError,
+    reject_sensitive_persistence,
+)
+from boi_api.app.science.storage import ImmutableScienceRecordError
+
+
+class ScienceConfirmationRequired(ScienceOperationalError):
+    """A server-validated interpretation still needs an explicit user action."""
+
+
+class ScienceIdempotencyConflict(ScienceOperationalError):
+    """A trusted idempotency key was already bound to another operation."""
 
 
 class ScienceService:
@@ -54,6 +74,102 @@ class ScienceService:
         self.ontology_binding_ids = tuple(ontology_binding_ids)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
+    @staticmethod
+    def _idempotency_digest(value: str) -> str:
+        if (
+            not isinstance(value, str)
+            or not 8 <= len(value) <= 256
+            or any(character.isspace() for character in value)
+        ):
+            raise ScienceIdempotencyConflict("trusted idempotency key is malformed")
+        return sha256_digest(value)
+
+    @classmethod
+    def _record_id(cls, prefix: Literal["interpretation", "report"], key: str) -> str:
+        return f"sci-{prefix}:" + cls._idempotency_digest(key).removeprefix("sha256:")
+
+    def _prompt_digest(self) -> str:
+        return sha256_digest(
+            {
+                "prompt_version": PROMPT_VERSION,
+                "system_prompt_digest": sha256_digest(
+                    ScienceLLMClient._system_prompt()
+                ),
+                "model_id": self.llm_client.config.model_id,
+                "model_settings": self.llm_client.config.safe_model_settings(),
+                "dictionary_release_id": self.dictionary_release_id,
+                "ontology_release_id": self.ontology_release_id,
+                "ontology_binding_ids": self.ontology_binding_ids,
+            }
+        )
+
+    @staticmethod
+    def _assert_operation_retry(
+        actual: ScienceOperationBinding,
+        expected: ScienceOperationBinding,
+        *,
+        derived_claim_digest: bool = False,
+    ) -> None:
+        fields = {
+            "operation",
+            "idempotency_key_digest",
+            "actor_id",
+            "request_digest",
+            "document_digest",
+            "release_digest",
+            "prompt_digest",
+        }
+        if not derived_claim_digest:
+            fields.add("claim_digest")
+        if any(getattr(actual, field) != getattr(expected, field) for field in fields):
+            raise ScienceIdempotencyConflict(
+                "idempotency key is already bound to different canonical inputs"
+            )
+
+    def _existing_interpretation(
+        self,
+        interpretation_id: str,
+        expected: ScienceOperationBinding,
+        *,
+        derived_claim_digest: bool = False,
+    ) -> InterpretationRecord | None:
+        recover = getattr(self.runtime_store, "recover_pending_transactions", None)
+        if callable(recover):
+            recover()
+        try:
+            record = self.runtime_store.load_interpretation(interpretation_id)
+        except KeyError:
+            return None
+        if record.operation_binding is None:
+            raise ScienceIdempotencyConflict(
+                "idempotency key collides with an unbound legacy record"
+            )
+        self._assert_operation_retry(
+            record.operation_binding,
+            expected,
+            derived_claim_digest=derived_claim_digest,
+        )
+        return record
+
+    def _existing_report(
+        self,
+        report_id: str,
+        expected: ScienceOperationBinding,
+    ) -> VerificationReport | None:
+        recover = getattr(self.runtime_store, "recover_pending_transactions", None)
+        if callable(recover):
+            recover()
+        try:
+            report = self.runtime_store.load_report(report_id)
+        except KeyError:
+            return None
+        if report.operation_binding is None:
+            raise ScienceIdempotencyConflict(
+                "idempotency key collides with an unbound legacy record"
+            )
+        self._assert_operation_retry(report.operation_binding, expected)
+        return report
+
     def _ontology_index(self) -> dict[str, dict[str, object]]:
         index: dict[str, dict[str, object]] = {}
         concepts: set[str] = set()
@@ -76,12 +192,20 @@ class ScienceService:
                     "ontology binding is not from the selected ontology release"
                 )
             concept_id = getattr(binding, "concept_id", None)
+            binding_digest = getattr(binding, "digest", None)
             meaning = getattr(binding, "meaning", None)
             aliases = getattr(binding, "aliases", None)
             domain = getattr(binding, "domain", None)
             if (
                 not isinstance(concept_id, str)
                 or not concept_id
+                or not isinstance(binding_digest, str)
+                or not binding_digest.startswith("sha256:")
+                or len(binding_digest) != 71
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in binding_digest.removeprefix("sha256:")
+                )
                 or not isinstance(meaning, str)
                 or not meaning
                 or not isinstance(aliases, list)
@@ -100,6 +224,7 @@ class ScienceService:
             index[binding_id] = {
                 "ontology_ref": binding_id,
                 "concept_id": concept_id,
+                "binding_digest": binding_digest,
                 "aliases": list(aliases),
                 "meaning": meaning,
                 "domain": domain,
@@ -135,7 +260,11 @@ class ScienceService:
         document_digest: str,
         selection_start: int,
         ontology_index: Mapping[str, Mapping[str, object]],
-    ) -> tuple[ClaimPacket, list[dict[str, object]], list[dict[str, object]]]:
+    ) -> tuple[
+        ClaimPacket,
+        list[CandidateMeaningRecord],
+        InterpretationDecisionImpact,
+    ]:
         resolved_local = resolve_anchor(
             interpreted_text,
             candidate.source_span,
@@ -156,26 +285,29 @@ class ScienceService:
         meaning_refs = {
             meaning.ontology_ref for meaning in candidate.candidate_meanings
         }
-        unknown_refs = (supplied_refs | meaning_refs) - set(ontology_index)
+        proposed_refs = supplied_refs | meaning_refs
+        issues: set[str] = {"USER_CONFIRMATION_REQUIRED"}
+        if not supplied_refs:
+            issues.add("ONTOLOGY_REFS_REQUIRED")
+        unknown_refs = proposed_refs - set(ontology_index)
         if unknown_refs:
-            raise ScienceInterpretationUnavailable(
-                "LLM returned an ontology reference outside the pinned index"
-            )
-        known_concepts = {str(item["concept_id"]) for item in ontology_index.values()}
-        normalized = candidate.normalized_claim
-        if {
-            normalized.subject_concept_id,
-            normalized.object_concept_id,
-        } - known_concepts:
-            raise ScienceInterpretationUnavailable(
-                "LLM returned a concept outside the pinned ontology index"
-            )
+            issues.add("UNKNOWN_ONTOLOGY_REF")
+        if supplied_refs != meaning_refs:
+            issues.add("ONTOLOGY_REF_MISMATCH")
 
-        decisive_ambiguities = sorted(
-            impact.ambiguity_id
-            for impact in candidate.decision_impact
-            if impact.changes_outcome
-        )
+        normalized = candidate.normalized_claim
+        by_role: dict[str, list[Any]] = {"subject": [], "relation": [], "object": []}
+        for meaning in candidate.candidate_meanings:
+            by_role[meaning.concept_role].append(meaning)
+        role_issue = {
+            "subject": "SUBJECT_BINDING_REQUIRED",
+            "relation": "RELATION_BINDING_REQUIRED",
+            "object": "OBJECT_BINDING_REQUIRED",
+        }
+        for role, meanings_for_role in by_role.items():
+            if len(meanings_for_role) != 1:
+                issues.add(role_issue[role])
+
         claim_id = "sci-claim:" + sha256_digest(
             {
                 "document_digest": document_digest,
@@ -190,34 +322,113 @@ class ScienceService:
             source_span=resolved,
             normalized_claim=normalized,
             interpretation=ClaimInterpretation(
-                ontology_refs=sorted(supplied_refs | meaning_refs),
-                ambiguity_ids=decisive_ambiguities,
-                user_confirmed=not decisive_ambiguities,
+                ontology_refs=[],
+                proposed_ontology_refs=sorted(proposed_refs),
+                ambiguity_ids=sorted(candidate.ambiguity_ids),
+                user_confirmed=False,
             ),
         )
-        meanings = []
+
+        expected_concepts = {
+            "subject": normalized.subject_concept_id,
+            "relation": normalized.predicate,
+            "object": normalized.object_concept_id,
+        }
+        meanings: list[CandidateMeaningRecord] = []
+        surface_positions: dict[str, int] = {}
+        validated_refs: set[str] = set()
         for meaning in candidate.candidate_meanings:
-            if meaning.surface_term not in resolved.exact:
-                raise ScienceInterpretationUnavailable(
-                    "ontology candidate term is not anchored in the claim text"
-                )
-            canonical = ontology_index[meaning.ontology_ref]
+            canonical = ontology_index.get(meaning.ontology_ref)
+            binding_matches = False
+            alias_matches = False
+            if canonical is not None:
+                concept_id = str(canonical["concept_id"])
+                binding_matches = concept_id == expected_concepts[meaning.concept_role]
+                if not binding_matches:
+                    issues.add("BINDING_CONCEPT_MISMATCH")
+                aliases = canonical["aliases"]
+                alias_matches = meaning.surface_term in aliases
+                if not alias_matches:
+                    issues.add("ALIAS_BINDING_MISMATCH")
+                canonical_meaning = str(canonical["meaning"])
+                domain = str(canonical["domain"])
+            else:
+                concept_id = None
+                canonical_meaning = None
+                domain = None
+            occurrence_count = resolved.exact.count(meaning.surface_term)
+            position = resolved.exact.find(meaning.surface_term)
+            if occurrence_count != 1:
+                issues.add("COMPLETE_RELATION_SPAN_REQUIRED")
+            if position >= 0 and meaning.concept_role not in surface_positions:
+                surface_positions[meaning.concept_role] = position
+            if (
+                canonical is not None
+                and binding_matches
+                and alias_matches
+                and occurrence_count == 1
+                and meaning.ontology_ref in supplied_refs
+                and len(by_role[meaning.concept_role]) == 1
+            ):
+                validated_refs.add(meaning.ontology_ref)
             meanings.append(
-                {
-                    "claim_id": claim_id,
-                    "ambiguity_id": meaning.ambiguity_id,
-                    "surface_term": meaning.surface_term,
-                    "ontology_ref": meaning.ontology_ref,
-                    "concept_id": canonical["concept_id"],
-                    "meaning": canonical["meaning"],
-                    "domain": canonical["domain"],
-                }
+                CandidateMeaningRecord(
+                    claim_id=claim_id,
+                    ambiguity_id=meaning.ambiguity_id,
+                    concept_role=meaning.concept_role,
+                    surface_term=meaning.surface_term,
+                    ontology_ref=meaning.ontology_ref,
+                    binding_digest=(
+                        str(canonical["binding_digest"])
+                        if canonical is not None
+                        else None
+                    ),
+                    concept_id=concept_id,
+                    meaning=canonical_meaning,
+                    domain=domain,
+                )
             )
-        impacts = [
-            {"claim_id": claim_id, **impact.model_dump(mode="json")}
-            for impact in candidate.decision_impact
+        if set(surface_positions) != {"subject", "relation", "object"} or not (
+            surface_positions.get("subject", 0)
+            < surface_positions.get("relation", 0)
+            < surface_positions.get("object", 0)
+        ):
+            issues.add("COMPLETE_RELATION_SPAN_REQUIRED")
+        claim = claim.model_copy(
+            update={
+                "interpretation": claim.interpretation.model_copy(
+                    update={"ontology_refs": sorted(validated_refs)}
+                )
+            },
+            deep=True,
+        )
+
+        ordered_issues = [
+            issue
+            for issue in (
+                "USER_CONFIRMATION_REQUIRED",
+                "ONTOLOGY_REFS_REQUIRED",
+                "UNKNOWN_ONTOLOGY_REF",
+                "ONTOLOGY_REF_MISMATCH",
+                "SUBJECT_BINDING_REQUIRED",
+                "RELATION_BINDING_REQUIRED",
+                "OBJECT_BINDING_REQUIRED",
+                "BINDING_CONCEPT_MISMATCH",
+                "ALIAS_BINDING_MISMATCH",
+                "COMPLETE_RELATION_SPAN_REQUIRED",
+            )
+            if issue in issues
         ]
-        return claim, meanings, impacts
+        impact = InterpretationDecisionImpact(
+            claim_id=claim_id,
+            status=(
+                "requires_user_confirmation"
+                if ordered_issues == ["USER_CONFIRMATION_REQUIRED"]
+                else "blocked_semantic_mismatch"
+            ),
+            issue_codes=ordered_issues,
+        )
+        return claim, meanings, impact
 
     def interpret_document(
         self,
@@ -225,12 +436,42 @@ class ScienceService:
         *,
         document_ref: str,
         identity: AuthIdentity,
+        idempotency_key: str,
         selection_anchor: SourceSpan | None = None,
-        user_revision_history: Sequence[Mapping[str, object]] = (),
     ) -> InterpretationRecord:
         if not document_text:
             raise ScienceInterpretationUnavailable("document text must be nonempty")
         document_digest = sha256_digest(document_text)
+        interpretation_id = self._record_id("interpretation", idempotency_key)
+        prompt_digest = self._prompt_digest()
+        request_digest = sha256_digest(
+            {
+                "operation": "interpret_document",
+                "document_ref": document_ref,
+                "document_digest": document_digest,
+                "selection_anchor": selection_anchor,
+                "dictionary_release_id": self.dictionary_release_id,
+                "ontology_release_id": self.ontology_release_id,
+            }
+        )
+        pending_binding = ScienceOperationBinding(
+            operation="interpret_document",
+            idempotency_key_digest=self._idempotency_digest(idempotency_key),
+            actor_id=identity.employee_id,
+            request_digest=request_digest,
+            document_digest=document_digest,
+            claim_digest=None,
+            release_digest=None,
+            prompt_digest=prompt_digest,
+        )
+        existing = self._existing_interpretation(
+            interpretation_id,
+            pending_binding,
+            derived_claim_digest=True,
+        )
+        if existing is not None:
+            return existing
+
         selection_start = 0
         interpreted_text = document_text
         if selection_anchor is not None:
@@ -261,10 +502,10 @@ class ScienceService:
                 "LLM response digest is not a canonical SHA-256 identity"
             )
         claims: list[ClaimPacket] = []
-        meanings: list[dict[str, object]] = []
-        impacts: list[dict[str, object]] = []
+        meanings: list[CandidateMeaningRecord] = []
+        impacts: list[InterpretationDecisionImpact] = []
         for candidate in result.payload.claims:
-            claim, candidate_meanings, decision_impacts = self._claim_from_candidate(
+            claim, candidate_meanings, decision_impact = self._claim_from_candidate(
                 candidate,
                 document_text=document_text,
                 interpreted_text=interpreted_text,
@@ -275,19 +516,19 @@ class ScienceService:
             )
             claims.append(claim)
             meanings.extend(candidate_meanings)
-            impacts.extend(decision_impacts)
+            impacts.append(decision_impact)
         claim_ids = [claim.claim_id for claim in claims]
         if len(claim_ids) != len(set(claim_ids)):
             raise ScienceInterpretationUnavailable(
                 "LLM returned duplicate scientific claim candidates"
             )
 
-        confirmed_claims = [
-            claim for claim in claims if claim.interpretation.user_confirmed
-        ]
-        confirmed_digest = self._confirmed_claims_digest(confirmed_claims)
+        claim_digest = sha256_digest({"claim_packets": claims})
+        operation_binding = pending_binding.model_copy(
+            update={"claim_digest": claim_digest}
+        )
         record = InterpretationRecord(
-            interpretation_id=f"sci-interpretation:{uuid.uuid4()}",
+            interpretation_id=interpretation_id,
             document_digest=document_digest,
             candidate_claims=claims,
             model_id=self.llm_client.config.model_id,
@@ -300,11 +541,22 @@ class ScienceService:
             ),
             candidate_meanings=meanings,
             decision_impact=impacts,
-            user_revision_history=deepcopy(list(user_revision_history)),
-            confirmed_claim_packet_digest=confirmed_digest,
+            user_revision_history=[],
+            confirmed_claim_packet_digest=None,
             response_digest=response_digest,
+            operation_binding=operation_binding,
         )
-        return self.runtime_store.save_interpretation(record, identity=identity)
+        try:
+            return self.runtime_store.save_interpretation(record, identity=identity)
+        except ImmutableScienceRecordError:
+            winner = self._existing_interpretation(
+                interpretation_id,
+                pending_binding,
+                derived_claim_digest=True,
+            )
+            if winner is None:
+                raise
+            return winner
 
     @staticmethod
     def _confirmed_claims_digest(claims: Sequence[ClaimPacket]) -> str | None:
@@ -313,6 +565,129 @@ class ScienceService:
         if len(claims) == 1:
             return sha256_digest(claims[0])
         return sha256_digest({"claim_packets": list(claims)})
+
+    def confirm_interpretation(
+        self,
+        source_interpretation_id: str,
+        *,
+        claim_ids: Sequence[str],
+        identity: AuthIdentity,
+        idempotency_key: str,
+    ) -> InterpretationRecord:
+        source = self.runtime_store.load_interpretation(source_interpretation_id)
+        if source.interpretation_id != source_interpretation_id:
+            raise ScienceOperationalError(
+                "stored interpretation identity does not match the requested record"
+            )
+        selected_ids = sorted(claim_ids)
+        if not selected_ids or len(selected_ids) != len(set(selected_ids)):
+            raise ScienceConfirmationRequired(
+                "confirmation requires unique stored claim identities"
+            )
+        claims_by_id = {claim.claim_id: claim for claim in source.candidate_claims}
+        if set(selected_ids) - set(claims_by_id):
+            raise ScienceConfirmationRequired(
+                "confirmation references an unknown claim candidate"
+            )
+        impacts_by_claim = {
+            impact.claim_id: impact for impact in source.decision_impact
+        }
+        for claim_id in selected_ids:
+            impact = impacts_by_claim.get(claim_id)
+            if impact is None or impact.status != "requires_user_confirmation":
+                raise ScienceConfirmationRequired(
+                    "semantic mismatch must be revised before confirmation"
+                )
+            if impact.issue_codes != ["USER_CONFIRMATION_REQUIRED"]:
+                raise ScienceConfirmationRequired(
+                    "semantic mismatch must be revised before confirmation"
+                )
+
+        selected = set(selected_ids)
+        confirmed_claims = [
+            claim.model_copy(
+                update={
+                    "interpretation": claim.interpretation.model_copy(
+                        update={"ambiguity_ids": [], "user_confirmed": True}
+                    )
+                },
+                deep=True,
+            )
+            if claim.claim_id in selected
+            else claim.model_copy(deep=True)
+            for claim in source.candidate_claims
+        ]
+        confirmed_digest = self._confirmed_claims_digest(
+            [claim for claim in confirmed_claims if claim.claim_id in selected]
+        )
+        if confirmed_digest is None:
+            raise ScienceConfirmationRequired(
+                "confirmation requires at least one validated claim"
+            )
+        request_digest = sha256_digest(
+            {
+                "operation": "confirm_interpretation",
+                "source_interpretation_id": source_interpretation_id,
+                "source_response_digest": source.response_digest,
+                "claim_ids": selected_ids,
+            }
+        )
+        interpretation_id = self._record_id("interpretation", idempotency_key)
+        binding = ScienceOperationBinding(
+            operation="confirm_interpretation",
+            idempotency_key_digest=self._idempotency_digest(idempotency_key),
+            actor_id=identity.employee_id,
+            request_digest=request_digest,
+            document_digest=source.document_digest,
+            claim_digest=confirmed_digest,
+            release_digest=None,
+            prompt_digest=(
+                source.operation_binding.prompt_digest
+                if source.operation_binding is not None
+                else sha256_digest(
+                    {
+                        "prompt_version": source.prompt_version,
+                        "response_digest": source.response_digest,
+                    }
+                )
+            ),
+        )
+        existing = self._existing_interpretation(interpretation_id, binding)
+        if existing is not None:
+            return existing
+
+        occurred_at = self._clock()
+        if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
+            raise ScienceOperationalError(
+                "Science confirmation clock must be timezone-aware"
+            )
+        revision = InterpretationRevisionEvent(
+            action="claim_confirmed",
+            actor_id=identity.employee_id,
+            source_interpretation_id=source_interpretation_id,
+            claim_ids=selected_ids,
+            occurred_at=occurred_at,
+        )
+        record = source.model_copy(
+            update={
+                "interpretation_id": interpretation_id,
+                "candidate_claims": confirmed_claims,
+                "user_revision_history": [*source.user_revision_history, revision],
+                "confirmed_claim_packet_digest": confirmed_digest,
+                "operation_binding": binding,
+            },
+            deep=True,
+        )
+        record = InterpretationRecord.model_validate(
+            record.model_dump(mode="json", exclude_none=False)
+        )
+        try:
+            return self.runtime_store.save_interpretation(record, identity=identity)
+        except ImmutableScienceRecordError:
+            winner = self._existing_interpretation(interpretation_id, binding)
+            if winner is None:
+                raise
+            return winner
 
     def _operational_verification(
         self,
@@ -399,7 +774,7 @@ class ScienceService:
         self,
         release_set: ResolvedReleaseSet,
         evidence_ref: str,
-    ) -> dict[str, object]:
+    ) -> EvidenceLink:
         evidence = self._pinned_object(
             release_set,
             ref=evidence_ref,
@@ -417,24 +792,116 @@ class ScienceService:
             kind="source",
         )
         url = getattr(source, "original_url", None)
-        if not isinstance(url, str) or not url.startswith("https://"):
+        parsed_url = urlsplit(url) if isinstance(url, str) else None
+        forbidden_query_keys = {
+            "accesstoken",
+            "apikey",
+            "authorization",
+            "basicauth",
+            "clientsecret",
+            "credential",
+            "password",
+            "privatekey",
+            "secret",
+            "token",
+        }
+        query_items = (
+            parse_qsl(parsed_url.query, keep_blank_values=True)
+            if parsed_url is not None
+            else []
+        )
+        fragment_items = (
+            parse_qsl(parsed_url.fragment, keep_blank_values=True)
+            if parsed_url is not None
+            else []
+        )
+        try:
+            reject_sensitive_persistence(
+                [value for _key, value in [*query_items, *fragment_items]],
+                path="source_url_parameters",
+            )
+            safe_parameter_values = True
+        except ScienceSensitivePersistenceError:
+            safe_parameter_values = False
+        if (
+            not isinstance(url, str)
+            or parsed_url is None
+            or parsed_url.scheme != "https"
+            or not parsed_url.hostname
+            or parsed_url.username is not None
+            or parsed_url.password is not None
+            or not safe_parameter_values
+            or any(
+                key.lower().replace("-", "").replace("_", "") in forbidden_query_keys
+                for key, _value in [*query_items, *fragment_items]
+            )
+        ):
             raise ScienceOperationalError(
                 f"grounded Evidence has no approved source link: {evidence_ref}"
             )
-        return {
-            "evidence_id": evidence_ref,
-            "source_id": source_id,
-            "url": url,
-            "locator": deepcopy(dict(locator)),
+        original_text = getattr(evidence, "original_text", None)
+        original_text_hash = getattr(evidence, "original_text_hash", None)
+        if (
+            not isinstance(original_text, str)
+            or not isinstance(original_text_hash, str)
+            or sha256_digest(original_text) != original_text_hash
+        ):
+            raise ScienceOperationalError(
+                f"grounded Evidence quote hash is invalid: {evidence_ref}"
+            )
+        required_source_fields = {
+            "boi_id": getattr(source, "boi_id", None),
+            "visibility": getattr(source, "visibility", None),
+            "classification": getattr(source, "classification", None),
+            "acl_policy": getattr(source, "acl_policy", None),
         }
+        if not all(
+            isinstance(value, str) and value
+            for value in required_source_fields.values()
+        ):
+            raise ScienceOperationalError(
+                f"grounded Source has no exact ACL identity: {source_id}"
+            )
+        path = getattr(source, "path", None)
+        boi_root = getattr(self.catalog, "boi_root", None)
+        try:
+            versioned_path = path.relative_to(boi_root).as_posix()
+        except (AttributeError, TypeError, ValueError):
+            raise ScienceOperationalError(
+                f"grounded Source has no versioned lookup path: {source_id}"
+            ) from None
+        source_lookup_data = {
+            "source_id": source_id,
+            "source_digest": source.digest,
+            "boi_id": required_source_fields["boi_id"],
+            "versioned_path": versioned_path,
+            "visibility": required_source_fields["visibility"],
+            "classification": required_source_fields["classification"],
+            "acl_policy": required_source_fields["acl_policy"],
+        }
+        source_lookup = SourceLookupIdentity(
+            **source_lookup_data,
+            lookup_digest=sha256_digest(source_lookup_data),
+        )
+        return EvidenceLink(
+            evidence_id=evidence_ref,
+            evidence_digest=evidence.digest,
+            source_id=source_id,
+            source_digest=source.digest,
+            original_text_hash=original_text_hash,
+            quote_hash=original_text_hash,
+            url=url,
+            locator=deepcopy(dict(locator)),
+            source_lookup=source_lookup,
+        )
 
     def _grounded_annotations(
         self,
         claim_id: str,
         verdict: VerdictPacket,
         release_set: ResolvedReleaseSet,
-    ) -> list[dict[str, object]]:
-        annotations: list[dict[str, object]] = []
+    ) -> list[GroundedAnnotation]:
+        annotations: list[GroundedAnnotation] = []
         for fact in verdict.explanation_facts:
             allowed_evidence = set(fact.evidence_refs)
             mapped_evidence: set[str] = set()
@@ -463,16 +930,17 @@ class ScienceService:
                     )
                 mapped_evidence.update(sentence_evidence)
                 annotations.append(
-                    {
-                        "claim_id": claim_id,
-                        "fact_id": fact.fact_id,
-                        "text": statement,
-                        "knowledge_refs": [knowledge_ref],
-                        "evidence_links": [
+                    GroundedAnnotation(
+                        claim_id=claim_id,
+                        fact_id=fact.fact_id,
+                        text=statement,
+                        knowledge_id=knowledge_ref,
+                        knowledge_digest=knowledge.digest,
+                        evidence_links=[
                             self._evidence_link(release_set, evidence_ref)
                             for evidence_ref in sentence_evidence
                         ],
-                    }
+                    )
                 )
             if mapped_evidence != allowed_evidence:
                 raise ScienceOperationalError(
@@ -482,9 +950,41 @@ class ScienceService:
 
     def verify_claim(
         self,
-        claim: ClaimPacket,
+        interpretation_id: str,
+        claim_id: str,
         selection: ReleaseSelection,
     ) -> VerdictPacket:
+        interpretation = self.runtime_store.load_interpretation(interpretation_id)
+        matching = [
+            claim
+            for claim in interpretation.candidate_claims
+            if claim.claim_id == claim_id
+        ]
+        if len(matching) != 1:
+            raise ScienceConfirmationRequired(
+                "verification requires one stored claim candidate"
+            )
+        claim = matching[0]
+        if (
+            not claim.interpretation.user_confirmed
+            or claim.interpretation.ambiguity_ids
+        ):
+            raise ScienceConfirmationRequired(
+                "verification requires an explicitly confirmed interpretation"
+            )
+        confirmed = [
+            item
+            for item in interpretation.candidate_claims
+            if item.interpretation.user_confirmed
+            and not item.interpretation.ambiguity_ids
+        ]
+        if (
+            interpretation.confirmed_claim_packet_digest
+            != self._confirmed_claims_digest(confirmed)
+        ):
+            raise ScienceOperationalError(
+                "confirmed Claim Packet digest does not match the stored claims"
+            )
         release_set, operational = self._operational_verification(selection)
         verdict = verify_scientific_claim(claim, operational)
         self._assert_verdict_release_binding(verdict, release_set)
@@ -496,6 +996,7 @@ class ScienceService:
         selection: ReleaseSelection,
         *,
         identity: AuthIdentity,
+        idempotency_key: str,
     ) -> VerificationReport:
         interpretation = self.runtime_store.load_interpretation(interpretation_id)
         if interpretation.interpretation_id != interpretation_id:
@@ -514,11 +1015,6 @@ class ScienceService:
                 raise ScienceOperationalError(
                     "stored interpretation claim/document binding is inconsistent"
                 )
-        release_set, operational = self._operational_verification(selection)
-
-        verdicts: list[VerdictPacket] = []
-        unresolved: list[dict[str, object]] = []
-        annotations: list[dict[str, object]] = []
         confirmed_claims = [
             claim
             for claim in interpretation.candidate_claims
@@ -532,23 +1028,53 @@ class ScienceService:
             raise ScienceOperationalError(
                 "confirmed Claim Packet digest does not match the stored claims"
             )
-        for claim in interpretation.candidate_claims:
-            if (
-                claim.interpretation.ambiguity_ids
-                or not claim.interpretation.user_confirmed
-            ):
-                unresolved.append(
+        if len(confirmed_claims) != len(interpretation.candidate_claims):
+            raise ScienceConfirmationRequired(
+                "document verification requires all claim candidates to be confirmed"
+            )
+
+        claim_digest = interpretation.confirmed_claim_packet_digest
+        if claim_digest is None:
+            raise ScienceConfirmationRequired(
+                "document verification requires a confirmed Claim Packet digest"
+            )
+        release_digest = sha256_digest(selection)
+        request_digest = sha256_digest(
+            {
+                "operation": "verify_document",
+                "interpretation_id": interpretation_id,
+                "claim_digest": claim_digest,
+                "release_selection": selection,
+            }
+        )
+        report_id = self._record_id("report", idempotency_key)
+        binding = ScienceOperationBinding(
+            operation="verify_document",
+            idempotency_key_digest=self._idempotency_digest(idempotency_key),
+            actor_id=identity.employee_id,
+            request_digest=request_digest,
+            document_digest=interpretation.document_digest,
+            claim_digest=claim_digest,
+            release_digest=release_digest,
+            prompt_digest=(
+                interpretation.operation_binding.prompt_digest
+                if interpretation.operation_binding is not None
+                else sha256_digest(
                     {
-                        "claim_id": claim.claim_id,
-                        "ambiguity_ids": list(claim.interpretation.ambiguity_ids),
-                        "decision_impact": [
-                            deepcopy(impact)
-                            for impact in interpretation.decision_impact
-                            if impact.get("claim_id") == claim.claim_id
-                        ],
+                        "prompt_version": interpretation.prompt_version,
+                        "response_digest": interpretation.response_digest,
                     }
                 )
-                continue
+            ),
+        )
+        existing = self._existing_report(report_id, binding)
+        if existing is not None:
+            return existing
+
+        release_set, operational = self._operational_verification(selection)
+        verdicts: list[VerdictPacket] = []
+        annotations: list[GroundedAnnotation] = []
+        for claim in confirmed_claims:
             verdict = verify_scientific_claim(claim, operational)
             self._assert_verdict_release_binding(verdict, release_set)
             verdicts.append(verdict)
@@ -560,25 +1086,32 @@ class ScienceService:
         if created_at.tzinfo is None or created_at.utcoffset() is None:
             raise ScienceOperationalError("Science report clock must be timezone-aware")
         payload = {
-            "report_id": f"sci-report:{uuid.uuid4()}",
+            "report_id": report_id,
             "document_ref": interpretation.candidate_claims[0].document_ref,
             "document_digest": interpretation.document_digest,
             "release_selection": selection,
             "release_digests": release_set.release_digests,
             "interpretation_ids": [interpretation.interpretation_id],
+            "confirmed_claims": confirmed_claims,
             "verdict_packets": verdicts,
-            "unresolved_ambiguities": unresolved,
+            "unresolved_ambiguities": [],
             "annotations": annotations,
             "created_at": created_at,
             "created_by": identity.employee_id,
+            "operation_binding": binding,
         }
-        report = VerificationReport(**payload, report_digest="sha256:pending")
-        report = report.model_copy(
-            update={
-                "report_digest": sha256_digest(
-                    report.model_dump(mode="json", exclude={"report_digest"})
-                )
-            },
-            deep=True,
+        canonical_payload = VerificationReport.model_construct(
+            **payload,
+            report_digest="sha256:pending",
+        ).model_dump(mode="json", exclude={"report_digest"})
+        report = VerificationReport(
+            **payload,
+            report_digest=sha256_digest(canonical_payload),
         )
-        return self.runtime_store.save_report(report, identity=identity)
+        try:
+            return self.runtime_store.save_report(report, identity=identity)
+        except ImmutableScienceRecordError:
+            winner = self._existing_report(report_id, binding)
+            if winner is None:
+                raise
+            return winner

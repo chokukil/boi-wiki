@@ -4,9 +4,15 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from math import isfinite
-from typing import Any, Literal, TypeAlias
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.safety import (
+    reject_sensitive_persistence,
+    validate_model_identifier,
+)
 
 
 class ScienceModel(BaseModel):
@@ -242,9 +248,9 @@ class ConditionConstraint(ScienceModel):
                 or self.unit is not None
             ):
                 raise ValueError("membership condition requires only nonempty values")
-            if len({(type(value).__name__, repr(value)) for value in self.values}) != len(
-                self.values
-            ):
+            if len(
+                {(type(value).__name__, repr(value)) for value in self.values}
+            ) != len(self.values):
                 raise ValueError("membership condition values must be unique")
             kinds = {
                 "boolean"
@@ -255,7 +261,9 @@ class ConditionConstraint(ScienceModel):
                 for value in self.values
             }
             if len(kinds) != 1:
-                raise ValueError("membership condition values must have one scalar type")
+                raise ValueError(
+                    "membership condition values must have one scalar type"
+                )
             if any(
                 isinstance(value, float) and not isfinite(value)
                 for value in self.values
@@ -304,6 +312,7 @@ class NormalizedClaim(ScienceModel):
 
 class ClaimInterpretation(ScienceModel):
     ontology_refs: list[str]
+    proposed_ontology_refs: list[str] = Field(default_factory=list)
     ambiguity_ids: list[str]
     user_confirmed: bool
 
@@ -539,6 +548,82 @@ class LLMModelSettings(ScienceModel):
         return value
 
 
+InterpretationIssueCode: TypeAlias = Literal[
+    "USER_CONFIRMATION_REQUIRED",
+    "ONTOLOGY_REFS_REQUIRED",
+    "UNKNOWN_ONTOLOGY_REF",
+    "ONTOLOGY_REF_MISMATCH",
+    "SUBJECT_BINDING_REQUIRED",
+    "RELATION_BINDING_REQUIRED",
+    "OBJECT_BINDING_REQUIRED",
+    "BINDING_CONCEPT_MISMATCH",
+    "ALIAS_BINDING_MISMATCH",
+    "COMPLETE_RELATION_SPAN_REQUIRED",
+]
+
+
+class CandidateMeaningRecord(ScienceModel):
+    claim_id: str = Field(min_length=1)
+    ambiguity_id: str | None = None
+    concept_role: Literal["subject", "relation", "object"]
+    surface_term: str = Field(min_length=1)
+    ontology_ref: str = Field(min_length=1)
+    binding_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    concept_id: str | None = None
+    meaning: str | None = None
+    domain: str | None = None
+
+
+class InterpretationDecisionImpact(ScienceModel):
+    claim_id: str = Field(min_length=1)
+    outcome_impact: Literal["unresolved"] = "unresolved"
+    status: Literal["requires_user_confirmation", "blocked_semantic_mismatch"]
+    issue_codes: list[InterpretationIssueCode] = Field(min_length=1)
+
+    @field_validator("issue_codes")
+    @classmethod
+    def unique_issue_codes(cls, value: list[InterpretationIssueCode]):
+        if len(value) != len(set(value)):
+            raise ValueError("interpretation issue codes must be unique")
+        return value
+
+
+class InterpretationRevisionEvent(ScienceModel):
+    action: Literal["claim_confirmed"]
+    actor_id: str = Field(min_length=1)
+    source_interpretation_id: str = Field(min_length=1)
+    claim_ids: list[str] = Field(min_length=1)
+    occurred_at: datetime
+
+    @field_validator("claim_ids")
+    @classmethod
+    def unique_claim_ids(cls, value: list[str]):
+        if len(value) != len(set(value)):
+            raise ValueError("revision claim IDs must be unique")
+        return value
+
+
+class ScienceOperationBinding(ScienceModel):
+    operation: Literal[
+        "interpret_document", "confirm_interpretation", "verify_document"
+    ]
+    idempotency_key_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    actor_id: str = Field(min_length=1)
+    request_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    document_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    claim_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    release_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    prompt_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+def _confirmed_packet_digest(claims: list[ClaimPacket]) -> str | None:
+    if not claims:
+        return None
+    if len(claims) == 1:
+        return sha256_digest(claims[0])
+    return sha256_digest({"claim_packets": claims})
+
+
 class InterpretationRecord(ScienceModel):
     interpretation_id: str
     document_digest: str
@@ -549,11 +634,127 @@ class InterpretationRecord(ScienceModel):
     dictionary_release_id: str
     ontology_release_id: str
     ontology_refs: list[str]
-    candidate_meanings: list[dict[str, Any]]
-    decision_impact: list[dict[str, Any]]
-    user_revision_history: list[dict[str, Any]]
+    candidate_meanings: list[CandidateMeaningRecord]
+    decision_impact: list[InterpretationDecisionImpact]
+    user_revision_history: list[InterpretationRevisionEvent]
     confirmed_claim_packet_digest: str | None
     response_digest: str
+    operation_binding: ScienceOperationBinding | None = None
+
+    @field_validator("model_id")
+    @classmethod
+    def safe_model_id(cls, value: str) -> str:
+        return validate_model_identifier(value)
+
+    @model_validator(mode="after")
+    def safe_non_source_provenance(self) -> "InterpretationRecord":
+        payload = self.model_dump(mode="json", exclude_none=False)
+        for claim in payload["candidate_claims"]:
+            claim.pop("source_span", None)
+        for meaning in payload["candidate_meanings"]:
+            meaning.pop("surface_term", None)
+        reject_sensitive_persistence(payload, path="interpretation")
+        claim_ids = [claim.claim_id for claim in self.candidate_claims]
+        if len(claim_ids) != len(set(claim_ids)):
+            raise ValueError("interpretation claim IDs must be unique")
+        if {meaning.claim_id for meaning in self.candidate_meanings} - set(claim_ids):
+            raise ValueError("candidate meaning references an unknown claim")
+        if {impact.claim_id for impact in self.decision_impact} != set(claim_ids):
+            raise ValueError("decision impact must cover every candidate claim")
+        expected_refs = sorted(
+            {
+                ref
+                for claim in self.candidate_claims
+                for ref in claim.interpretation.ontology_refs
+            }
+        )
+        if self.ontology_refs != expected_refs:
+            raise ValueError("interpretation ontology refs do not match its claims")
+        confirmed = [
+            claim
+            for claim in self.candidate_claims
+            if claim.interpretation.user_confirmed
+            and not claim.interpretation.ambiguity_ids
+        ]
+        if self.confirmed_claim_packet_digest != _confirmed_packet_digest(confirmed):
+            raise ValueError("confirmed Claim Packet digest does not match its claims")
+        if self.operation_binding is not None:
+            binding = self.operation_binding
+            if binding.document_digest != self.document_digest:
+                raise ValueError(
+                    "operation document digest does not match interpretation"
+                )
+            if binding.operation == "interpret_document":
+                expected_claim_digest = sha256_digest(
+                    {"claim_packets": self.candidate_claims}
+                )
+                if binding.claim_digest != expected_claim_digest:
+                    raise ValueError("operation claim digest does not match proposals")
+            elif binding.operation == "confirm_interpretation":
+                if binding.claim_digest != self.confirmed_claim_packet_digest:
+                    raise ValueError(
+                        "operation claim digest does not match confirmation"
+                    )
+                if (
+                    not self.user_revision_history
+                    or self.user_revision_history[-1].actor_id != binding.actor_id
+                ):
+                    raise ValueError("confirmation revision is not identity-bound")
+            else:
+                raise ValueError("report operation cannot bind an interpretation")
+        return self
+
+
+class SourceLookupIdentity(ScienceModel):
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    boi_id: str = Field(min_length=1)
+    versioned_path: str = Field(min_length=1)
+    visibility: str = Field(min_length=1)
+    classification: str = Field(min_length=1)
+    acl_policy: str = Field(min_length=1)
+    lookup_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def exact_lookup_digest(self) -> "SourceLookupIdentity":
+        expected = sha256_digest(
+            self.model_dump(mode="json", exclude={"lookup_digest"})
+        )
+        if self.lookup_digest != expected:
+            raise ValueError("source lookup digest does not match its exact identity")
+        return self
+
+
+class EvidenceLink(ScienceModel):
+    evidence_id: str = Field(min_length=1)
+    evidence_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    original_text_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    quote_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    url: str = Field(min_length=1)
+    locator: dict[str, str | int | bool]
+    source_lookup: SourceLookupIdentity
+
+    @model_validator(mode="after")
+    def exact_quote_and_source_identity(self) -> "EvidenceLink":
+        if self.quote_hash != self.original_text_hash:
+            raise ValueError("Evidence quote hash must match original_text_hash")
+        if (
+            self.source_lookup.source_id != self.source_id
+            or self.source_lookup.source_digest != self.source_digest
+        ):
+            raise ValueError("Evidence Source lookup identity does not match its link")
+        return self
+
+
+class GroundedAnnotation(ScienceModel):
+    claim_id: str = Field(min_length=1)
+    fact_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    knowledge_id: str = Field(min_length=1)
+    knowledge_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    evidence_links: list[EvidenceLink] = Field(min_length=1)
 
 
 class VerificationReport(ScienceModel):
@@ -563,9 +764,78 @@ class VerificationReport(ScienceModel):
     release_selection: ReleaseSelection
     release_digests: dict[str, str]
     interpretation_ids: list[str]
+    confirmed_claims: list[ClaimPacket] = Field(default_factory=list)
     verdict_packets: list[VerdictPacket]
-    unresolved_ambiguities: list[dict[str, Any]]
-    annotations: list[dict[str, Any]]
+    unresolved_ambiguities: list[InterpretationDecisionImpact]
+    annotations: list[GroundedAnnotation]
     created_at: datetime
     created_by: str
     report_digest: str
+    operation_binding: ScienceOperationBinding | None = None
+
+    @model_validator(mode="after")
+    def safe_non_source_provenance(self) -> "VerificationReport":
+        payload = self.model_dump(mode="json", exclude_none=False)
+        for claim in payload["confirmed_claims"]:
+            claim.pop("source_span", None)
+        for verdict in payload["verdict_packets"]:
+            verdict.pop("corrected_claim", None)
+            verdict.pop("limitations", None)
+        for annotation in payload["annotations"]:
+            annotation.pop("text", None)
+            for link in annotation["evidence_links"]:
+                link.pop("url", None)
+                link.pop("locator", None)
+        reject_sensitive_persistence(payload, path="report")
+        if self.operation_binding is not None:
+            binding = self.operation_binding
+            if binding.operation != "verify_document":
+                raise ValueError("report requires a verify_document operation binding")
+            if binding.actor_id != self.created_by:
+                raise ValueError("report actor does not match its operation binding")
+            if binding.document_digest != self.document_digest:
+                raise ValueError("report document digest does not match its operation")
+            if len(self.interpretation_ids) != 1:
+                raise ValueError("report requires one exact interpretation identity")
+            if self.unresolved_ambiguities:
+                raise ValueError(
+                    "authoritative report cannot contain unresolved claims"
+                )
+            if any(
+                not claim.interpretation.user_confirmed
+                or claim.interpretation.ambiguity_ids
+                for claim in self.confirmed_claims
+            ):
+                raise ValueError("report contains an unconfirmed claim")
+            claim_digest = _confirmed_packet_digest(self.confirmed_claims)
+            if binding.claim_digest != claim_digest:
+                raise ValueError("report operation claim digest is inconsistent")
+            if binding.release_digest != sha256_digest(self.release_selection):
+                raise ValueError("report operation release digest is inconsistent")
+            expected_request_digest = sha256_digest(
+                {
+                    "operation": "verify_document",
+                    "interpretation_id": self.interpretation_ids[0],
+                    "claim_digest": claim_digest,
+                    "release_selection": self.release_selection,
+                }
+            )
+            if binding.request_digest != expected_request_digest:
+                raise ValueError("report operation request digest is inconsistent")
+            claim_ids = [claim.claim_id for claim in self.confirmed_claims]
+            verdict_ids = [verdict.claim_id for verdict in self.verdict_packets]
+            if len(claim_ids) != len(set(claim_ids)) or set(verdict_ids) != set(
+                claim_ids
+            ):
+                raise ValueError("report verdicts do not cover exact confirmed claims")
+            if any(
+                annotation.claim_id not in set(claim_ids)
+                for annotation in self.annotations
+            ):
+                raise ValueError("report annotation references an unknown claim")
+            expected_report_digest = sha256_digest(
+                self.model_dump(mode="json", exclude={"report_digest"})
+            )
+            if self.report_digest != expected_report_digest:
+                raise ValueError("report digest does not match immutable report bytes")
+        return self

@@ -32,6 +32,10 @@ from boi_api.app.science.models import (
     ScienceModel,
     VerificationReport,
 )
+from boi_api.app.science.safety import (
+    ScienceSensitivePersistenceError,
+    reject_sensitive_persistence as _reject_sensitive_scalars,
+)
 
 
 ProposalKind = Literal[
@@ -79,33 +83,6 @@ _RECORD_AUDIT_ACTIONS = {
     "proposal_approved_for_release_candidate",
 }
 
-_SENSITIVE_KEYS = {
-    "api_key",
-    "apikey",
-    "authorization",
-    "base_url",
-    "credential",
-    "credentials",
-    "endpoint",
-    "password",
-    "secret",
-    "token",
-    "url",
-}
-_SENSITIVE_SCALAR_PATTERNS = (
-    re.compile(r"(?i)\b(?:https?|wss?)://"),
-    re.compile(r"(?i)\b(?:sk|pk|rk|ghp|xox[baprs])-[A-Za-z0-9_-]{8,}\b"),
-    re.compile(
-        r"(?i)\b(?:localhost|(?:[a-z0-9-]+\.)+[a-z]{2,})"
-        r":[0-9]{2,5}(?:/[^\s]*)?"
-    ),
-    re.compile(r"(?i)\b(?:bearer|basic)(?:\s|[-_:])+[^\s]+"),
-    re.compile(
-        r"(?i)\b(?:api[_-]?key|authorization|base[_-]?url|credential|"
-        r"endpoint|password|secret|token)\s*[:=]"
-    ),
-)
-
 
 class ImmutableScienceRecordError(RuntimeError):
     """A runtime identifier already names different canonical bytes."""
@@ -113,10 +90,6 @@ class ImmutableScienceRecordError(RuntimeError):
 
 class UnsafeScienceRuntimePathError(RuntimeError):
     """A runtime path changed identity or is not a private owned file."""
-
-
-class ScienceSensitivePersistenceError(ValueError):
-    """A secret or service endpoint reached a non-secret persistence boundary."""
 
 
 class ScienceTransactionPendingError(RuntimeError):
@@ -295,40 +268,6 @@ class _RecordPublicationError(RuntimeError):
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _normalized_key(key: object) -> str:
-    raw = str(key).strip().replace("-", "_")
-    snake = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", raw)
-    return snake.lower()
-
-
-def _sensitive_key(key: object) -> bool:
-    normalized = _normalized_key(key)
-    return normalized in _SENSITIVE_KEYS or any(
-        normalized.endswith(f"_{suffix}") for suffix in _SENSITIVE_KEYS
-    )
-
-
-def _reject_sensitive_scalars(value: Any, *, path: str = "value") -> None:
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            if _sensitive_key(key):
-                raise ScienceSensitivePersistenceError(
-                    f"sensitive field is forbidden at {path}.{key}"
-                )
-            _reject_sensitive_scalars(item, path=f"{path}.{key}")
-        return
-    if isinstance(value, (list, tuple)):
-        for index, item in enumerate(value):
-            _reject_sensitive_scalars(item, path=f"{path}[{index}]")
-        return
-    if isinstance(value, str) and any(
-        pattern.search(value) for pattern in _SENSITIVE_SCALAR_PATTERNS
-    ):
-        raise ScienceSensitivePersistenceError(
-            f"credential or endpoint scalar is forbidden at {path}"
-        )
 
 
 class ScienceRuntimeStore:

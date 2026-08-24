@@ -7,7 +7,7 @@ import os
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from pydantic import Field, model_validator
@@ -19,6 +19,10 @@ from boi_api.app.science.models import (
     ScienceModel,
     SourceSpan,
 )
+from boi_api.app.science.safety import (
+    ScienceSensitivePersistenceError,
+    validate_model_identifier,
+)
 
 
 PROMPT_VERSION = "science-interpretation/0.1.0"
@@ -27,9 +31,19 @@ PROMPT_VERSION = "science-interpretation/0.1.0"
 class ScienceInterpretationUnavailable(RuntimeError):
     """Interpretation failed without producing a usable claim candidate."""
 
+    def __init__(
+        self,
+        message: str = "Science interpretation failed closed",
+        *,
+        diagnostic_code: str = "invalid_response",
+    ) -> None:
+        super().__init__(message)
+        self.diagnostic_code = diagnostic_code
+
 
 class CandidateMeaning(ScienceModel):
     ambiguity_id: str | None = None
+    concept_role: Literal["subject", "relation", "object"]
     surface_term: str = Field(min_length=1)
     ontology_ref: str = Field(min_length=1)
     meaning: str = Field(min_length=1)
@@ -105,8 +119,16 @@ class ScienceLLMConfig:
         api_key = cls._first(values, "BOI_SCIENCE_LLM_API_KEY", "BOI_LLM_API_KEY")
         if not base_url or not model_id:
             raise ScienceInterpretationUnavailable(
-                "Science LLM base URL and model must be configured"
-            )
+                "Science LLM configuration is unavailable",
+                diagnostic_code="invalid_configuration",
+            ) from None
+        try:
+            validate_model_identifier(model_id)
+        except ScienceSensitivePersistenceError:
+            raise ScienceInterpretationUnavailable(
+                "Science LLM configuration is invalid",
+                diagnostic_code="invalid_configuration",
+            ) from None
 
         setting_names = {
             "temperature": "TEMPERATURE",
@@ -126,10 +148,11 @@ class ScienceLLMConfig:
                 raw_settings[field_name] = value
         try:
             settings = LLMModelSettings.model_validate(raw_settings)
-        except ValueError as exc:
+        except ValueError:
             raise ScienceInterpretationUnavailable(
-                "Science LLM generation settings are invalid"
-            ) from exc
+                "Science LLM configuration is invalid",
+                diagnostic_code="invalid_configuration",
+            ) from None
         return cls(
             model_id=model_id,
             settings=settings,
@@ -141,6 +164,7 @@ class ScienceLLMConfig:
         return self.settings.model_copy(deep=True)
 
     def safe_metadata(self) -> dict[str, object]:
+        validate_model_identifier(self.model_id)
         return {
             "model_id": self.model_id,
             "model_settings": self.settings.model_dump(mode="json"),
@@ -162,7 +186,8 @@ def _reject_forbidden_output_fields(value: object, *, path: str = "output") -> N
                 for forbidden in _FORBIDDEN_OUTPUT_TERMS
             ):
                 raise ScienceInterpretationUnavailable(
-                    f"forbidden LLM output field at {path}.{key}"
+                    "Science interpretation output contains a forbidden field",
+                    diagnostic_code="forbidden_output",
                 )
             _reject_forbidden_output_fields(item, path=f"{path}.{key}")
     elif isinstance(value, list):
@@ -243,6 +268,29 @@ class ScienceLLMClient:
                 )
                 response.raise_for_status()
                 envelope = response.json()
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            raise ScienceInterpretationUnavailable(
+                "Science interpretation service returned an error",
+                diagnostic_code=f"http_status_{status}",
+            ) from None
+        except httpx.TimeoutException:
+            raise ScienceInterpretationUnavailable(
+                "Science interpretation service timed out",
+                diagnostic_code="timeout",
+            ) from None
+        except httpx.HTTPError:
+            raise ScienceInterpretationUnavailable(
+                "Science interpretation transport failed",
+                diagnostic_code="transport_error",
+            ) from None
+        except (json.JSONDecodeError, ValueError):
+            raise ScienceInterpretationUnavailable(
+                "Science interpretation response envelope is invalid",
+                diagnostic_code="invalid_envelope",
+            ) from None
+
+        try:
             if not isinstance(envelope, Mapping):
                 raise ValueError("completion envelope must be an object")
             choices = envelope.get("choices")
@@ -260,12 +308,21 @@ class ScienceLLMClient:
             decoded = json.loads(content)
             _reject_forbidden_output_fields(decoded)
             payload = ScienceInterpretationPayload.model_validate(decoded)
-        except ScienceInterpretationUnavailable:
-            raise
-        except (httpx.HTTPError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        except ScienceInterpretationUnavailable as exc:
             raise ScienceInterpretationUnavailable(
-                "Science interpretation failed closed"
-            ) from exc
+                "Science interpretation output contains a forbidden field",
+                diagnostic_code=exc.diagnostic_code,
+            ) from None
+        except json.JSONDecodeError:
+            raise ScienceInterpretationUnavailable(
+                "Science interpretation content is not valid JSON",
+                diagnostic_code="invalid_json",
+            ) from None
+        except (TypeError, ValueError):
+            raise ScienceInterpretationUnavailable(
+                "Science interpretation response does not match the schema",
+                diagnostic_code="schema_invalid",
+            ) from None
 
         return ScienceLLMResult(
             payload=payload,
