@@ -4,7 +4,7 @@ Date: 2026-08-25 (Asia/Seoul)
 
 Branch: `codex/science-application`
 
-Implementation commit: `d749af8d888cee4383a0987dab3e57d3456bb4ec`
+Implementation commit: `6615892d99c1e59e96630af703cc770b508928d7`
 
 Reviewed base: `1a28f8bf653db9fb27040fb6a9832af50e48f859`
 
@@ -13,7 +13,7 @@ Foundation enforcement base: `707ddb7ee680326bf006dd5d05582e4d5bc3bc04`
 ## Scope and trust boundaries
 
 This change fixes every Critical/Important finding in the Task 2 review and all
-four follow-up re-reviews, including the final token-boundary report,
+five follow-up re-reviews, including the acceptance compact-token report,
 while preserving the Task 1 atomic record/audit protocol and the Foundation
 Catalog-issued operational capability.
 
@@ -77,6 +77,11 @@ Catalog-issued operational capability.
   recognizes all 22 generic/vendor families plus `X-Amz`/`X-Goog`/`X-Ms`
   credential/signature and SharedAccessSignature forms without treating
   `signals`, `sigma`, or `authors` as `sig`/`auth` markers.
+- Long unambiguous credential families and vendor combinations are also found
+  anywhere inside one compact alphanumeric token, including a preceding
+  `file`. Short ambiguous `auth`/`sig`/`token`/`secret`/`sas` markers require an
+  exact token boundary or a reviewed long, high-diversity opaque-value suffix;
+  `tokenization` and `secretory` therefore remain valid scientific paths.
 - Stable source queries are denied by default. The only current reviewed
   exception is `download=true|1`, which preserves the checked-in BIPM immutable
   PDF source links without admitting a signed or tracking URL.
@@ -87,6 +92,11 @@ Catalog-issued operational capability.
   `closed_science_validation_error()` factory is called only after the raw
   validation exception scope exits, so the future Task 3 REST adapter can raise
   a closed error with neither a cause nor implicit secret-bearing context.
+- The same scope-exit rule is now enforced by `validate_with_closed_error()` at
+  the real service, Store save/load, and report WAL recovery conversions. The
+  helper drops its validation callback before raising, and no raw Pydantic
+  exception remains in `__cause__`, `__context__`, traceback, or serialized
+  exception chains.
 
 ## RED evidence
 
@@ -156,6 +166,14 @@ The review fixes were implemented in adversarial TDD slices.
     reviewed separated vendor credential/signature sequence and exercises the
     same URLs through service, Store save/load, and WAL recovery.
 
+11. The acceptance compact matrix added 44 family-plus-opaque path/hostname
+    cases. Together with four real exception-retention probes it produced `48
+    failed`: every compact URL was accepted, so the service/save/load/WAL probes
+    could not yet reach their chain assertions. The independent acceptance
+    review had already shown that the same four production conversions retained
+    raw Pydantic `ValidationError.errors()` in `__context__`; both defects are
+    now exercised by the combined GREEN matrix.
+
 ## GREEN behavior
 
 ### C1: proposal-only interpretation and explicit confirmation
@@ -198,6 +216,10 @@ The review fixes were implemented in adversarial TDD slices.
   factory takes no raw exception and is invoked after the `except` scope; the
   real adapter-pattern test proves the raised closed error has no cause, no
   context, and no secret-bearing text.
+- Production locator validation and immutable report save, private load, and
+  WAL recovery use the same scope-exit wrapper. Tests inspect the real errors'
+  cause, context, formatted traceback, `args`, `__dict__`, and recursively
+  serialized exception chain; none retains a Pydantic error or opaque value.
 
 ### I2: immutable, self-verifying grounding snapshot
 
@@ -239,7 +261,7 @@ Focused Task 2 review-fix suite:
 ```text
 umask 077 && TMPDIR=/tmp/boi-sci-pytest /tmp/boi-sci-uv/bin/pytest -q \
   tests/test_science_interpretation.py --tb=short
-573 passed in 16.06s
+799 passed in 31.21s
 ```
 
 Fresh combined Task 2 + Task 1 + Foundation regression:
@@ -251,7 +273,7 @@ umask 077 && TMPDIR=/tmp/boi-sci-pytest /tmp/boi-sci-uv/bin/pytest -q \
   tests/test_science_catalog.py tests/test_science_engine.py \
   tests/test_science_models.py tests/test_science_profile.py \
   tests/test_science_source_ledger.py --tb=short
-984 passed in 20.89s
+1210 passed in 28.60s
 ```
 
 Static verification:
@@ -286,10 +308,16 @@ Ruff 0.16 rule. Compile and diff checks completed with no output/errors.
   resolution.
 - No endpoint, API key, raw idempotency key, LLM reason, LLM Evidence, or LLM
   locator is stored.
-- The stable-source policy rejects only exact reviewed boundary tokens and
-  multi-token sequences, including those appearing after benign path/hostname
-  tokens or split across segments/labels. It intentionally permits the ordinary
+- The stable-source boundary layer rejects exact reviewed tokens and multi-token
+  sequences, including those appearing after benign path/hostname tokens or
+  split across segments/labels. It intentionally permits the ordinary
   scientific tokens `signals`, `sigma`, and `authors`.
+- Compact-token matching is limited to the reviewed long families; ambiguous
+  short markers require either a boundary or the tested opaque-value shape. The
+  176-case service matrix and direct save/load/WAL loops cover both compact
+  family and `file`-prefixed forms across all four URL fields.
+- No production service/runtime conversion raises a replacement exception from
+  inside a caught Pydantic validation scope.
 - Proposed invalid ontology refs cannot be confirmed and cannot enter a verdict,
   annotation, Evidence link, or report.
 - Task 1 no-follow IO, atomic publication, audit WAL, recovery, collision checks,
