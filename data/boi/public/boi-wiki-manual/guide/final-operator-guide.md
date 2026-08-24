@@ -56,6 +56,7 @@ BoI Wiki core는 계속 가볍게 유지한다. source of truth는 OKF Markdown/
 | 필요 | 문서 |
 |---|---|
 | 전체 개요 | [BoI Wiki Manual Overview](/public/boi-wiki-manual/overview.md) |
+| 과학적 문서 검증 | [Science Verifier 운영과 신뢰 경계](/public/boi-wiki-manual/guide/science-verifier-operation.md) |
 | 권한과 사번 기준 identity | [SSO and Permission Model](/public/boi-wiki-manual/security/sso-and-permissions.md) |
 | Team/Public 공유와 promotion | [Visibility and Promotion Policy](/public/boi-wiki-manual/operations/visibility-and-promotion-policy.md) |
 | MCP 등록과 tool catalog | [BoI Wiki MCP 등록과 사용](/public/boi-wiki-manual/mcp/register-and-use-boi-wiki-mcp.md) |

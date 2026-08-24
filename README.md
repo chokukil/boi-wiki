@@ -23,6 +23,7 @@ AI는 사내 Bitbucket 저장소를 먼저 읽어 보고, DNS·라우팅·연결
 이 저장소는 공유 런타임입니다.
 
 - BoI Wiki Web UI와 BoI API
+- 활성 Science Release의 Rule·Evidence만 사용하는 문서 중심 Science Verifier
 - Kafka Event Broker와 Event Router
 - API, Webhook, MCP, Langflow, Manual, Event Broker, BoI Writer action을 실행하는 Action Gateway
 - Event Contract, WorkflowDefinition, Action/Event Skill registry
@@ -96,6 +97,7 @@ curl -s http://localhost:28000/api/harness/acceptance
 - BoI Inbox: http://localhost:28000/inbox?employee_id=100001
 - BoI Operations Center: http://localhost:28000/ops?employee_id=100001
 - SOP: http://localhost:28000/sops?employee_id=100001
+- Science Verifier: http://localhost:28000/science-verifier?employee_id=100001
 - SOP 추가: http://localhost:28000/sops/new?employee_id=100001
 - Event Broker: http://localhost:28000/events?employee_id=100001
 - Event 카탈로그: http://localhost:28000/event-types?employee_id=100001
@@ -110,6 +112,8 @@ curl -s http://localhost:28000/api/harness/acceptance
 - Langflow: http://localhost:7860
 
 기본 인증 모드는 `BOI_AUTH_MODE=dev`입니다. PoC와 테스트 편의를 위해 `employee_id` selector/query를 허용합니다.
+
+Science Verifier는 기본적으로 LLM 없이 동작합니다. 등록 별칭을 결정론적으로 찾고, 사용자 또는 Codex·Claude 같은 외부 Agent가 제출한 Claim 후보를 서버가 다시 검증한 뒤, 사람에게 확인된 Claim만 활성 Release로 판정합니다. Qwen 경로는 `BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED=1`일 때만 노출되는 선택적 실험 어댑터이며 장애 시 판정과 빨간 표시를 만들지 않습니다. 운영·권한·Release 승인 경계는 [Science Verifier 운영 가이드](data/boi/public/boi-wiki-manual/guide/science-verifier-operation.md)를 따릅니다.
 
 BoI Agent의 Pilot 완료 기준은 단일 질문이 아니라 REST/Web Pet/MCP 시나리오 매트릭스 통과입니다. 상세 기준은 http://localhost:28000/docs/boi:public:boi-wiki-manual:agent:boi-agent-scenario-validation?employee_id=100001 에 정리되어 있습니다.
 
