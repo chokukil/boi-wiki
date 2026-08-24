@@ -15,13 +15,45 @@ class ScienceModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def _canonical_unit_field(value: str) -> str:
+_REVIEWED_UNIT_ALIASES = {
+    "K": "kelvin",
+    "kelvin": "kelvin",
+    "°C": "°C",
+    "degC": "°C",
+    "degree_Celsius": "°C",
+    "m": "meter",
+    "meter": "meter",
+    "cm": "centimeter",
+    "centimeter": "centimeter",
+    "V": "volt",
+    "volt": "volt",
+    "A": "ampere",
+    "ampere": "ampere",
+    "Ω": "ohm",
+    "ohm": "ohm",
+}
+
+
+def canonical_science_unit_token(value: object) -> str:
+    """Return the reviewed canonical spelling for a unit or registered product."""
+
+    if not isinstance(value, str):
+        raise ValueError("unit token must be a string")
     token = value.strip()
     if not token:
         raise ValueError("unit token must be nonempty")
     if token == "pH":
         raise ValueError("ambiguous unit token: pH")
-    return token
+    if token.count("*") == 1:
+        factors = [
+            _REVIEWED_UNIT_ALIASES.get(factor.strip(), factor.strip())
+            for factor in token.split("*")
+        ]
+        if "pH" in factors:
+            raise ValueError("ambiguous unit token: pH")
+        if sorted(factors) == ["ampere", "ohm"]:
+            return "ampere * ohm"
+    return _REVIEWED_UNIT_ALIASES.get(token, token)
 
 
 def _canonical_identifier(value: str, field_name: str) -> str:
@@ -104,7 +136,7 @@ class ClaimQuantity(ScienceModel):
     @field_validator("unit")
     @classmethod
     def canonical_unit(cls, value: str) -> str:
-        return _canonical_unit_field(value)
+        return canonical_science_unit_token(value)
 
     @field_validator("value")
     @classmethod
@@ -127,7 +159,7 @@ class ClaimCondition(ScienceModel):
     @field_validator("unit")
     @classmethod
     def canonical_unit(cls, value: str | None) -> str | None:
-        return _canonical_unit_field(value) if value is not None else None
+        return canonical_science_unit_token(value) if value is not None else None
 
     @field_validator("value")
     @classmethod
@@ -135,6 +167,13 @@ class ClaimCondition(ScienceModel):
         if isinstance(value, float) and not isfinite(value):
             raise ValueError("condition value must be finite")
         return value
+
+    @model_validator(mode="after")
+    def unit_requires_numeric_value(self) -> "ClaimCondition":
+        numeric = isinstance(self.value, (int, float)) and not isinstance(self.value, bool)
+        if self.unit is not None and not numeric:
+            raise ValueError("condition unit requires a numeric value")
+        return self
 
 
 ConditionScalar: TypeAlias = str | int | float | bool
@@ -165,7 +204,7 @@ class ConditionConstraint(ScienceModel):
     @field_validator("unit")
     @classmethod
     def canonical_unit(cls, value: str | None) -> str | None:
-        return _canonical_unit_field(value) if value is not None else None
+        return canonical_science_unit_token(value) if value is not None else None
 
     @model_validator(mode="after")
     def valid_operand(self) -> "ConditionConstraint":

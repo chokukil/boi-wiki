@@ -8,7 +8,12 @@ from typing import Any
 
 import pint
 
-from boi_api.app.science.models import ClaimQuantity, ConversionKind, ScienceModel
+from boi_api.app.science.models import (
+    ClaimQuantity,
+    ConversionKind,
+    ScienceModel,
+    canonical_science_unit_token,
+)
 
 
 class InvalidQuantityError(ValueError):
@@ -31,20 +36,15 @@ class UnregisteredConversionError(InvalidQuantityError):
     """No exact allowlisted conversion is registered for the requested pair."""
 
 
-_AMBIGUOUS_UNIT_TOKENS = frozenset({"pH"})
-
-
 def canonical_unit_token(unit: object) -> str:
     """Canonicalize spelling noise before any unit policy or registry lookup."""
 
-    if not isinstance(unit, str):
-        raise InvalidQuantityError("unit token must be a string")
-    token = unit.strip()
-    if not token:
-        raise InvalidQuantityError("unit token must be nonempty")
-    if token in _AMBIGUOUS_UNIT_TOKENS:
-        raise AmbiguousUnitError(f"ambiguous unit token: {token}")
-    return token
+    try:
+        return canonical_science_unit_token(unit)
+    except ValueError as exc:
+        if str(exc) == "ambiguous unit token: pH":
+            raise AmbiguousUnitError(str(exc)) from exc
+        raise InvalidQuantityError(str(exc)) from exc
 
 
 class NormalizedQuantity(ScienceModel):
@@ -106,6 +106,12 @@ class ConversionRegistry:
             raise UnsupportedConversionError("logarithmic conversion is unsupported")
         source_unit = canonical_unit_token(source_unit)
         target_unit = canonical_unit_token(target_unit)
+        if (
+            source_unit == target_unit
+            and conversion_id is None
+            and kind in {ConversionKind.MULTIPLICATIVE, ConversionKind.AFFINE}
+        ):
+            return magnitude
         definition = self._definitions.get((source_unit, target_unit, kind))
         if definition is None or (
             conversion_id is not None and definition.conversion_id != conversion_id
@@ -193,29 +199,21 @@ conversion_registry = ConversionRegistry(
                 Decimal("1"),
                 Decimal("0"),
             ),
-            *(
-                (
-                    "sci-conversion:celsius-kelvin",
-                    ConversionKind.AFFINE,
-                    source,
-                    target,
-                    Decimal("1"),
-                    Decimal("273.15"),
-                )
-                for source in ("°C", "degC", "degree_Celsius")
-                for target in ("K", "kelvin")
+            (
+                "sci-conversion:celsius-kelvin",
+                ConversionKind.AFFINE,
+                "°C",
+                "kelvin",
+                Decimal("1"),
+                Decimal("273.15"),
             ),
-            *(
-                (
-                    "sci-conversion:kelvin-celsius",
-                    ConversionKind.AFFINE,
-                    source,
-                    target,
-                    Decimal("1"),
-                    Decimal("-273.15"),
-                )
-                for source in ("K", "kelvin")
-                for target in ("°C", "degC", "degree_Celsius")
+            (
+                "sci-conversion:kelvin-celsius",
+                ConversionKind.AFFINE,
+                "kelvin",
+                "°C",
+                Decimal("1"),
+                Decimal("-273.15"),
             ),
         )
     )

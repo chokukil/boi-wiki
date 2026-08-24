@@ -695,6 +695,56 @@ def test_typed_condition_range_normalizes_units_at_both_boundaries():
     assert evaluation.condition_evaluations[0].satisfied is True
 
 
+@pytest.mark.parametrize(
+    ("rule_value", "rule_unit", "claim_value", "claim_unit"),
+    [
+        (1, "meter", 1, "m"),
+        (1, "m", 1, "meter"),
+        (25, "degree_Celsius", 298.15, "K"),
+        (298.15, "kelvin", 25, "degC"),
+    ],
+)
+def test_condition_evaluator_accepts_reviewed_aliases_in_both_orders(
+    rule_value: int | float,
+    rule_unit: str,
+    claim_value: int | float,
+    claim_unit: str,
+):
+    """Alias spelling or argument order must not turn a reviewed condition unregistered."""
+    rule = rule_fixture(
+        "sci:rule:reviewed-condition-alias",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        required_conditions=[
+            {
+                "key": "setting",
+                "operator": "eq",
+                "value": rule_value,
+                "unit": rule_unit,
+            }
+        ],
+    )
+    claim = claim_fixture(
+        "claim:reviewed-condition-alias",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        typed_conditions=[
+            {"condition_id": "setting", "value": claim_value, "unit": claim_unit}
+        ],
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.applicability == "IN_SCOPE"
+    assert evaluation.outcome == "SUPPORTS"
+    assert evaluation.condition_evaluations[0].satisfied is True
+
+
 def test_typed_condition_missing_required_unit_is_missing_conditions():
     """A bare number cannot satisfy a Rule that declares a measurement unit."""
     rule = rule_fixture(
@@ -721,7 +771,7 @@ def test_typed_condition_missing_required_unit_is_missing_conditions():
 
     assert evaluation.applicability == "MISSING_CONDITIONS"
     assert evaluation.outcome == "UNDECIDED"
-    assert "MISSING_CONDITION_UNIT" in evaluation.reason_codes
+    assert "INCOMPATIBLE_CONDITION_UNIT_PRESENCE" in evaluation.reason_codes
 
 
 def test_same_number_with_incompatible_condition_units_cannot_create_false_red():
@@ -751,6 +801,130 @@ def test_same_number_with_incompatible_condition_units_cannot_create_false_red()
     assert evaluation.applicability == "OUTSIDE_DOMAIN"
     assert evaluation.outcome == "UNDECIDED"
     assert "INCOMPATIBLE_CONDITION_UNITS" in evaluation.reason_codes
+
+
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        {"key": "setting", "operator": "eq", "value": 1},
+        {"key": "setting", "operator": "ne", "value": 2},
+        {
+            "key": "setting",
+            "operator": "range",
+            "range": {"minimum": 0, "maximum": 2},
+        },
+        {"key": "setting", "operator": "gt", "value": 0},
+    ],
+    ids=["eq", "ne", "range", "ordered"],
+)
+@pytest.mark.parametrize("unit_side", ["claim", "rule"])
+def test_condition_evaluator_requires_symmetric_unit_presence(
+    constraint: dict[str, object],
+    unit_side: str,
+):
+    """Dropping either unit-presence check would let an incomparable magnitude gate red."""
+    rule_constraint = dict(constraint)
+    if unit_side == "rule":
+        rule_constraint["unit"] = "second"
+    claim_condition: dict[str, object] = {"condition_id": "setting", "value": 1}
+    if unit_side == "claim":
+        claim_condition["unit"] = "second"
+    rule = rule_fixture(
+        "sci:rule:symmetric-unit-presence",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        required_conditions=[rule_constraint],
+    )
+    claim = claim_fixture(
+        "claim:symmetric-unit-presence",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:response",
+        typed_conditions=[claim_condition],
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.applicability == "MISSING_CONDITIONS"
+    assert evaluation.outcome == "UNDECIDED"
+    assert "INCOMPATIBLE_CONDITION_UNIT_PRESENCE" in evaluation.reason_codes
+
+
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        {"key": "setting", "operator": "eq", "value": 1},
+        {"key": "setting", "operator": "ne", "value": 2},
+        {
+            "key": "setting",
+            "operator": "range",
+            "range": {"minimum": 0, "maximum": 2},
+        },
+        {"key": "setting", "operator": "gte", "value": 1},
+    ],
+    ids=["eq", "ne", "range", "ordered"],
+)
+@pytest.mark.parametrize("unit_side", ["claim", "rule"])
+def test_verify_claim_cannot_turn_one_sided_condition_unit_red(
+    constraint: dict[str, object],
+    unit_side: str,
+    release_set: ResolvedReleaseSet,
+    rule_set: ResolvedRuleSet,
+):
+    """One-sided units cannot satisfy a comparison in full verification."""
+    rule_constraint = dict(constraint)
+    if unit_side == "rule":
+        rule_constraint["unit"] = "second"
+    claim_condition: dict[str, object] = {"condition_id": "setting", "value": 1}
+    if unit_side == "claim":
+        claim_condition["unit"] = "second"
+    replacement = rule_fixture(
+        "sci:rule:spin-direction",
+        "directional_relation",
+        subject="sci:concept:spin-speed",
+        object_="sci:concept:film-thickness",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        required_conditions=[rule_constraint],
+    )
+    pinned_release_set, pinned_rule_set = repin_single_foundation_rule(
+        release_set, rule_set, replacement
+    )
+    claim = claim_fixture(
+        "claim:verify-one-sided-condition-unit",
+        subject="sci:concept:spin-speed",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:film-thickness",
+        typed_conditions=[claim_condition],
+    )
+
+    packet = verify_claim(claim, pinned_release_set, rule_set=pinned_rule_set)
+
+    assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
+    assert "INCOMPATIBLE_CONDITION_UNIT_PRESENCE" in packet.reason_codes
+    assert packet.corrected_claim is None
+
+
+@pytest.mark.parametrize("value", ["fixed", True, None])
+def test_claim_condition_rejects_a_unit_on_nonnumeric_value(value: object):
+    """A categorical or missing value cannot acquire measurement semantics from a unit token."""
+    with pytest.raises(ValidationError, match="condition unit requires a numeric value"):
+        claim_fixture(
+            "claim:nonnumeric-condition-unit",
+            subject="sci:concept:input",
+            relation="monotonic_direction",
+            predicate="increases",
+            object_="sci:concept:response",
+            typed_conditions=[
+                {"condition_id": "setting", "value": value, "unit": "second"}
+            ],
+        )
 
 
 @pytest.mark.parametrize("identifier", ["", "   "])
@@ -1548,6 +1722,98 @@ def test_product_equation_rejects_unregistered_composite_unit_conversion():
 
 
 @pytest.mark.parametrize(
+    ("left_unit", "right_unit"),
+    [("V", "volt"), ("volt", "V")],
+)
+def test_equal_equation_accepts_reviewed_voltage_aliases_in_both_orders(
+    left_unit: str,
+    right_unit: str,
+):
+    """An equal equation over a reviewed alias family must not require a new conversion."""
+    rule = rule_fixture(
+        "sci:rule:reviewed-equal-alias",
+        "equation_constraint",
+        subject="sci:concept:voltage-comparison",
+        object_="sci:concept:voltage",
+        equation={
+            "left_quantity_kind": "left_voltage",
+            "right_quantity_kinds": ["right_voltage"],
+            "operator": "equal",
+        },
+    )
+    claim = claim_fixture(
+        "claim:reviewed-equal-alias",
+        subject="sci:concept:voltage-comparison",
+        relation="equation",
+        predicate="equals",
+        object_="sci:concept:voltage",
+        quantities=[
+            {"quantity_kind": "left_voltage", "value": 10, "unit": left_unit},
+            {"quantity_kind": "right_voltage", "value": 10, "unit": right_unit},
+        ],
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.applicability == "IN_SCOPE"
+    assert evaluation.outcome == "SUPPORTS"
+
+
+@pytest.mark.parametrize(
+    ("right_kinds", "quantities"),
+    [
+        (
+            ["current", "resistance"],
+            [
+                {"quantity_kind": "current", "value": 2, "unit": "A"},
+                {"quantity_kind": "resistance", "value": 5, "unit": "Ω"},
+            ],
+        ),
+        (
+            ["resistance", "current"],
+            [
+                {"quantity_kind": "resistance", "value": 5, "unit": "ohm"},
+                {"quantity_kind": "current", "value": 2, "unit": "ampere"},
+            ],
+        ),
+    ],
+    ids=["symbol-aliases", "commuted-product"],
+)
+def test_ohm_law_product_uses_reviewed_aliases_and_commutative_canonical_order(
+    right_kinds: list[str],
+    quantities: list[dict[str, object]],
+):
+    """Changing alias or factor order must retain the one reviewed Ohm-law conversion."""
+    rule = rule_fixture(
+        "sci:rule:reviewed-ohm-product-alias",
+        "equation_constraint",
+        subject="sci:concept:circuit",
+        object_="sci:concept:voltage",
+        equation={
+            "left_quantity_kind": "voltage",
+            "right_quantity_kinds": right_kinds,
+            "operator": "product",
+        },
+    )
+    claim = claim_fixture(
+        "claim:reviewed-ohm-product-alias",
+        subject="sci:concept:circuit",
+        relation="equation",
+        predicate="equals",
+        object_="sci:concept:voltage",
+        quantities=[
+            {"quantity_kind": "voltage", "value": 10, "unit": "V"},
+            *quantities,
+        ],
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.applicability == "IN_SCOPE"
+    assert evaluation.outcome == "SUPPORTS"
+
+
+@pytest.mark.parametrize(
     "payload",
     [
         {
@@ -1665,6 +1931,86 @@ def test_quantity_validation_is_finite_defined_and_dimension_safe(tmp_path):
     definitions.write_text("smoot = 1.7018 * meter", encoding="utf-8")
     with pytest.raises(PermissionError, match="locked"):
         ureg.load_definitions(definitions)
+
+
+@pytest.mark.parametrize(
+    ("left_unit", "right_unit"),
+    [
+        ("K", "kelvin"),
+        ("°C", "degC"),
+        ("degC", "degree_Celsius"),
+        ("m", "meter"),
+        ("cm", "centimeter"),
+        ("V", "volt"),
+        ("A", "ampere"),
+        ("Ω", "ohm"),
+    ],
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_every_registered_unit_family_has_reviewed_alias_normalization(
+    left_unit: str,
+    right_unit: str,
+    reverse: bool,
+):
+    """Removing any reviewed alias must fail equality in at least one argument order."""
+    if reverse:
+        left_unit, right_unit = right_unit, left_unit
+
+    assert compare_quantities(
+        {"quantity_kind": "left", "value": 1, "unit": left_unit},
+        {"quantity_kind": "right", "value": 1, "unit": right_unit},
+    ) == 0
+
+
+@pytest.mark.parametrize(
+    ("left_value", "left_unit", "right_value", "right_unit"),
+    [
+        (1, "m", 100, "cm"),
+        (100, "centimeter", 1, "meter"),
+        (25, "degree_Celsius", 298.15, "K"),
+        (298.15, "kelvin", 25, "degC"),
+    ],
+)
+def test_registered_conversions_accept_canonical_aliases_in_both_directions(
+    left_value: int | float,
+    left_unit: str,
+    right_value: int | float,
+    right_unit: str,
+):
+    """Alias normalization must happen before exact reviewed conversion lookup."""
+    assert compare_quantities(
+        {"quantity_kind": "left", "value": left_value, "unit": left_unit},
+        {"quantity_kind": "right", "value": right_value, "unit": right_unit},
+    ) == 0
+
+
+@pytest.mark.parametrize(
+    ("source_unit", "target_unit", "kind"),
+    [
+        ("K", "kelvin", "affine"),
+        ("degC", "degree_Celsius", "affine"),
+        ("m", "meter", "multiplicative"),
+        ("cm", "centimeter", "multiplicative"),
+        ("V", "volt", "multiplicative"),
+        ("A", "ampere", "multiplicative"),
+        ("Ω", "ohm", "multiplicative"),
+    ],
+)
+def test_convert_value_treats_reviewed_aliases_as_identity_before_lookup(
+    source_unit: str,
+    target_unit: str,
+    kind: str,
+):
+    """Canonical aliases are one unit and must not require an invented conversion entry."""
+    from boi_api.app.science.models import ConversionKind
+    from boi_api.app.science.units import convert_value
+
+    assert convert_value(
+        Decimal("1"),
+        source_unit,
+        target_unit,
+        kind=ConversionKind(kind),
+    ) == Decimal("1")
 
 
 def test_allowlisted_multiplicative_and_affine_conversions_use_decimal_arithmetic():

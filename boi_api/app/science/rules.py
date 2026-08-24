@@ -234,8 +234,8 @@ def _condition_evaluations(
         reason_code = "CONDITION_VALUE_MISMATCH"
         if actual_value is None:
             reason_code = "MISSING_CONDITION_VALUE"
-        elif constraint.unit is not None and actual_unit is None:
-            reason_code = "MISSING_CONDITION_UNIT"
+        elif (constraint.unit is None) != (actual_unit is None):
+            reason_code = "INCOMPATIBLE_CONDITION_UNIT_PRESENCE"
         elif not _compatible_condition_scalar(constraint, actual_value):
             reason_code = "INCOMPATIBLE_CONDITION_TYPES"
         else:
@@ -410,7 +410,7 @@ def _applicability_gate(
         item.reason_code
         in {
             "MISSING_CONDITION_VALUE",
-            "MISSING_CONDITION_UNIT",
+            "INCOMPATIBLE_CONDITION_UNIT_PRESENCE",
             "INCOMPATIBLE_CONDITION_TYPES",
         }
         for item in validity
