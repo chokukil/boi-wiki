@@ -9,7 +9,7 @@ from typing import Any
 from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
 from boi_api.app.science.models import ResolvedReleaseSet
 from boi_api.app.science.rules import ResolvedRuleSet
-
+from boi_api.app.science.safety import validate_with_closed_error
 
 _ISSUER_CAPABILITY = object()
 _SEAL = object()
@@ -68,13 +68,16 @@ class OperationalVerification:
             or approval_snapshot is None
         ):
             raise TypeError(
-                "OperationalVerification is issued only by active ScienceCatalog resolution"
+                "OperationalVerification is issued only by active "
+                "ScienceCatalog resolution"
             )
         self = super().__new__(cls)
         attestation = _attestation_payload(release_set, rule_set, approval_snapshot)
         object.__setattr__(self, "_release_bytes", canonical_json_bytes(release_set))
         object.__setattr__(self, "_rule_bytes", canonical_json_bytes(rule_set))
-        object.__setattr__(self, "_attestation_bytes", canonical_json_bytes(attestation))
+        object.__setattr__(
+            self, "_attestation_bytes", canonical_json_bytes(attestation)
+        )
         object.__setattr__(self, "_attestation_digest", sha256_digest(attestation))
         object.__setattr__(self, "_seal", _SEAL)
         return self
@@ -130,17 +133,24 @@ def _open_operational_verification(
         or getattr(operational, "_seal", None) is not _SEAL
     ):
         raise TypeError("Catalog-issued operational verification is required")
-    release_set = ResolvedReleaseSet.model_validate_json(operational._release_bytes)
-    rule_set = ResolvedRuleSet.model_validate_json(operational._rule_bytes)
+    release_set = validate_with_closed_error(
+        lambda: ResolvedReleaseSet.model_validate_json(operational._release_bytes),
+        caught=(ValueError,),
+        closed_error=TypeError("operational verification attestation is invalid"),
+    )
+    rule_set = validate_with_closed_error(
+        lambda: ResolvedRuleSet.model_validate_json(operational._rule_bytes),
+        caught=(ValueError,),
+        closed_error=TypeError("operational verification attestation is invalid"),
+    )
     attestation = json.loads(operational._attestation_bytes)
     expected = _attestation_payload(
         release_set,
         rule_set,
         list(attestation.get("approval_snapshot", [])),
     )
-    if (
-        attestation != expected
-        or operational._attestation_digest != sha256_digest(expected)
+    if attestation != expected or operational._attestation_digest != sha256_digest(
+        expected
     ):
         raise TypeError("operational verification attestation is invalid")
     return release_set, rule_set, attestation

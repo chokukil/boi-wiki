@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import httpx
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationError, model_validator
 
 from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.models import (
@@ -22,8 +22,8 @@ from boi_api.app.science.models import (
 from boi_api.app.science.safety import (
     ScienceSensitivePersistenceError,
     validate_model_identifier,
+    validate_with_closed_error,
 )
-
 
 PROMPT_VERSION = "science-interpretation/0.1.0"
 
@@ -122,13 +122,14 @@ class ScienceLLMConfig:
                 "Science LLM configuration is unavailable",
                 diagnostic_code="invalid_configuration",
             ) from None
-        try:
-            validate_model_identifier(model_id)
-        except ScienceSensitivePersistenceError:
-            raise ScienceInterpretationUnavailable(
+        validate_with_closed_error(
+            lambda: validate_model_identifier(model_id),
+            caught=(ScienceSensitivePersistenceError,),
+            closed_error=ScienceInterpretationUnavailable(
                 "Science LLM configuration is invalid",
                 diagnostic_code="invalid_configuration",
-            ) from None
+            ),
+        )
 
         setting_names = {
             "temperature": "TEMPERATURE",
@@ -146,13 +147,14 @@ class ScienceLLMConfig:
             )
             if value:
                 raw_settings[field_name] = value
-        try:
-            settings = LLMModelSettings.model_validate(raw_settings)
-        except ValueError:
-            raise ScienceInterpretationUnavailable(
+        settings = validate_with_closed_error(
+            lambda: LLMModelSettings.model_validate(raw_settings),
+            caught=(ValidationError, ValueError),
+            closed_error=ScienceInterpretationUnavailable(
                 "Science LLM configuration is invalid",
                 diagnostic_code="invalid_configuration",
-            ) from None
+            ),
+        )
         return cls(
             model_id=model_id,
             settings=settings,
@@ -256,41 +258,46 @@ class ScienceLLMClient:
         if self.config._api_key:
             headers["authorization"] = f"Bearer {self.config._api_key}"
 
-        try:
-            with httpx.Client(
-                transport=self._transport,
-                timeout=float(timeout),
-            ) as client:
-                response = client.post(
-                    f"{self.config._base_url}/chat/completions",
-                    headers=headers,
-                    json=request_body,
-                )
-                response.raise_for_status()
-                envelope = response.json()
-        except httpx.HTTPStatusError as exc:
-            status = exc.response.status_code
-            raise ScienceInterpretationUnavailable(
-                "Science interpretation service returned an error",
-                diagnostic_code=f"http_status_{status}",
-            ) from None
-        except httpx.TimeoutException:
-            raise ScienceInterpretationUnavailable(
-                "Science interpretation service timed out",
-                diagnostic_code="timeout",
-            ) from None
-        except httpx.HTTPError:
-            raise ScienceInterpretationUnavailable(
-                "Science interpretation transport failed",
-                diagnostic_code="transport_error",
-            ) from None
-        except (json.JSONDecodeError, ValueError):
-            raise ScienceInterpretationUnavailable(
-                "Science interpretation response envelope is invalid",
-                diagnostic_code="invalid_envelope",
-            ) from None
+        def request_envelope() -> tuple[object | None, str | None]:
+            try:
+                with httpx.Client(
+                    transport=self._transport,
+                    timeout=float(timeout),
+                ) as client:
+                    response = client.post(
+                        f"{self.config._base_url}/chat/completions",
+                        headers=headers,
+                        json=request_body,
+                    )
+                    response.raise_for_status()
+                    return response.json(), None
+            except httpx.HTTPStatusError as exc:
+                return None, f"http_status_{exc.response.status_code}"
+            except httpx.TimeoutException:
+                return None, "timeout"
+            except httpx.HTTPError:
+                return None, "transport_error"
+            except (json.JSONDecodeError, ValueError):
+                return None, "invalid_envelope"
 
-        try:
+        envelope, request_error = request_envelope()
+        if request_error is not None:
+            messages = {
+                "timeout": "Science interpretation service timed out",
+                "transport_error": "Science interpretation transport failed",
+                "invalid_envelope": (
+                    "Science interpretation response envelope is invalid"
+                ),
+            }
+            raise ScienceInterpretationUnavailable(
+                messages.get(
+                    request_error,
+                    "Science interpretation service returned an error",
+                ),
+                diagnostic_code=request_error,
+            )
+
+        def extract_content() -> str:
             if not isinstance(envelope, Mapping):
                 raise ValueError("completion envelope must be an object")
             choices = envelope.get("choices")
@@ -305,24 +312,33 @@ class ScienceLLMClient:
             content = message.get("content")
             if not isinstance(content, str):
                 raise ValueError("assistant content must be a JSON string")
-            decoded = json.loads(content)
-            _reject_forbidden_output_fields(decoded)
-            payload = ScienceInterpretationPayload.model_validate(decoded)
-        except ScienceInterpretationUnavailable as exc:
-            raise ScienceInterpretationUnavailable(
-                "Science interpretation output contains a forbidden field",
-                diagnostic_code=exc.diagnostic_code,
-            ) from None
-        except json.JSONDecodeError:
-            raise ScienceInterpretationUnavailable(
+            return content
+
+        content = validate_with_closed_error(
+            extract_content,
+            caught=(TypeError, ValueError),
+            closed_error=ScienceInterpretationUnavailable(
+                "Science interpretation response envelope is invalid",
+                diagnostic_code="invalid_envelope",
+            ),
+        )
+        decoded = validate_with_closed_error(
+            lambda: json.loads(content),
+            caught=(json.JSONDecodeError, ValueError),
+            closed_error=ScienceInterpretationUnavailable(
                 "Science interpretation content is not valid JSON",
                 diagnostic_code="invalid_json",
-            ) from None
-        except (TypeError, ValueError):
-            raise ScienceInterpretationUnavailable(
+            ),
+        )
+        _reject_forbidden_output_fields(decoded)
+        payload = validate_with_closed_error(
+            lambda: ScienceInterpretationPayload.model_validate(decoded),
+            caught=(ValidationError, TypeError, ValueError),
+            closed_error=ScienceInterpretationUnavailable(
                 "Science interpretation response does not match the schema",
                 diagnostic_code="schema_invalid",
-            ) from None
+            ),
+        )
 
         return ScienceLLMResult(
             payload=payload,

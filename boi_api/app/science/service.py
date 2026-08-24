@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal
 
@@ -25,7 +24,6 @@ from boi_api.app.science.models import (
     ClaimInterpretation,
     ClaimPacket,
     EvidenceLink,
-    EvidenceLocator,
     GroundedAnnotation,
     InterpretationDecisionImpact,
     InterpretationRecord,
@@ -39,10 +37,10 @@ from boi_api.app.science.models import (
     VerificationReport,
 )
 from boi_api.app.science.operational import OperationalVerification
-from boi_api.app.science.safety import (
-    ScienceSensitivePersistenceError,
-    validate_credential_free_https_url,
-    validate_with_closed_error,
+from boi_api.app.science.safety import validate_with_closed_error
+from boi_api.app.science.source_identity import (
+    ReviewedSourceURLIdentity,
+    _open_reviewed_source_url_identity,
 )
 from boi_api.app.science.storage import ImmutableScienceRecordError
 
@@ -525,24 +523,34 @@ class ScienceService:
         operation_binding = pending_binding.model_copy(
             update={"claim_digest": claim_digest, "claim_ids": sorted(claim_ids)}
         )
-        record = InterpretationRecord(
-            interpretation_id=interpretation_id,
-            document_digest=document_digest,
-            candidate_claims=claims,
-            model_id=self.llm_client.config.model_id,
-            model_settings=self.llm_client.config.safe_model_settings(),
-            prompt_version=PROMPT_VERSION,
-            dictionary_release_id=self.dictionary_release_id,
-            ontology_release_id=self.ontology_release_id,
-            ontology_refs=sorted(
-                {ref for claim in claims for ref in claim.interpretation.ontology_refs}
+        record = validate_with_closed_error(
+            lambda: InterpretationRecord(
+                interpretation_id=interpretation_id,
+                document_digest=document_digest,
+                candidate_claims=claims,
+                model_id=self.llm_client.config.model_id,
+                model_settings=self.llm_client.config.safe_model_settings(),
+                prompt_version=PROMPT_VERSION,
+                dictionary_release_id=self.dictionary_release_id,
+                ontology_release_id=self.ontology_release_id,
+                ontology_refs=sorted(
+                    {
+                        ref
+                        for claim in claims
+                        for ref in claim.interpretation.ontology_refs
+                    }
+                ),
+                candidate_meanings=meanings,
+                decision_impact=impacts,
+                user_revision_history=[],
+                confirmed_claim_packet_digest=None,
+                response_digest=response_digest,
+                operation_binding=operation_binding,
             ),
-            candidate_meanings=meanings,
-            decision_impact=impacts,
-            user_revision_history=[],
-            confirmed_claim_packet_digest=None,
-            response_digest=response_digest,
-            operation_binding=operation_binding,
+            caught=(ValidationError, ValueError),
+            closed_error=ScienceInterpretationUnavailable(
+                "Science interpretation record failed closed validation"
+            ),
         )
         try:
             return self.runtime_store.save_interpretation(record, identity=identity)
@@ -673,8 +681,14 @@ class ScienceService:
             },
             deep=True,
         )
-        record = InterpretationRecord.model_validate(
-            record.model_dump(mode="json", exclude_none=False)
+        record = validate_with_closed_error(
+            lambda: InterpretationRecord.model_validate(
+                record.model_dump(mode="json", exclude_none=False)
+            ),
+            caught=(ValidationError, ValueError),
+            closed_error=ScienceConfirmationRequired(
+                "confirmation failed closed validation"
+            ),
         )
         try:
             return self.runtime_store.save_interpretation(record, identity=identity)
@@ -770,6 +784,27 @@ class ScienceService:
         release_set: ResolvedReleaseSet,
         evidence_ref: str,
     ) -> EvidenceLink:
+        identity = self.catalog.resolve_reviewed_source_url_identity(
+            release_set, evidence_ref
+        )
+        if type(identity) is not ReviewedSourceURLIdentity:
+            raise ScienceOperationalError(
+                "Catalog-issued reviewed Source URL identity is required"
+            )
+        reviewed_source = validate_with_closed_error(
+            lambda: _open_reviewed_source_url_identity(identity),
+            caught=(TypeError, ValueError),
+            closed_error=ScienceOperationalError(
+                "reviewed Source URL identity failed closed validation"
+            ),
+        )
+        if (
+            reviewed_source.release_set_digest != release_set.combined_digest
+            or reviewed_source.evidence_id != evidence_ref
+        ):
+            raise ScienceOperationalError(
+                "reviewed Source URL identity does not match the exact release"
+            )
         evidence = self._pinned_object(
             release_set,
             ref=evidence_ref,
@@ -777,30 +812,31 @@ class ScienceService:
         )
         source_id = getattr(evidence, "source_id", None)
         locator = getattr(evidence, "locator", None)
-        if not isinstance(source_id, str) or not isinstance(locator, Mapping):
+        if (
+            not isinstance(source_id, str)
+            or not isinstance(locator, Mapping)
+            or source_id != reviewed_source.source_id
+            or evidence.digest != reviewed_source.evidence_digest
+            or dict(locator)
+            != reviewed_source.locator.model_dump(mode="json", exclude_none=True)
+        ):
             raise ScienceOperationalError(
-                f"grounded Evidence has no source locator: {evidence_ref}"
+                "grounded Evidence does not match its reviewed identity: "
+                f"{evidence_ref}"
             )
-        safe_locator = validate_with_closed_error(
-            lambda: EvidenceLocator.model_validate(deepcopy(dict(locator))),
-            caught=(ValidationError, ScienceSensitivePersistenceError),
-            closed_error=ScienceOperationalError(
-                "grounded Evidence locator failed closed safety validation"
-            ),
-        )
         source = self._pinned_object(
             release_set,
             ref=source_id,
             kind="source",
         )
         url = getattr(source, "original_url", None)
-        safe_source_url = validate_with_closed_error(
-            lambda: validate_credential_free_https_url(url),
-            caught=(ScienceSensitivePersistenceError,),
-            closed_error=ScienceOperationalError(
-                f"grounded Evidence has no approved source link: {evidence_ref}"
-            ),
-        )
+        if (
+            source.digest != reviewed_source.source_digest
+            or url != reviewed_source.canonical_source_url
+        ):
+            raise ScienceOperationalError(
+                f"grounded Source does not match its reviewed identity: {source_id}"
+            )
         original_text = getattr(evidence, "original_text", None)
         original_text_hash = getattr(evidence, "original_text_hash", None)
         if (
@@ -852,9 +888,10 @@ class ScienceService:
             source_digest=source.digest,
             original_text_hash=original_text_hash,
             quote_hash=original_text_hash,
-            url=safe_source_url,
-            locator=safe_locator,
+            url=reviewed_source.canonical_source_url,
+            locator=reviewed_source.locator,
             source_lookup=source_lookup,
+            reviewed_source=reviewed_source,
         )
 
     def _grounded_annotations(
@@ -917,13 +954,19 @@ class ScienceService:
 
         try:
             stored = self.runtime_store.load_interpretation(interpretation_id)
-            interpretation = InterpretationRecord.model_validate(
-                stored.model_dump(mode="json", exclude_none=False)
-            )
         except (KeyError, ValueError, AttributeError):
             raise ScienceConfirmationRequired(
                 "verification requires a valid stored confirmation"
             ) from None
+        interpretation = validate_with_closed_error(
+            lambda: InterpretationRecord.model_validate(
+                stored.model_dump(mode="json", exclude_none=False)
+            ),
+            caught=(ValidationError, ValueError, AttributeError),
+            closed_error=ScienceConfirmationRequired(
+                "verification requires a valid stored confirmation"
+            ),
+        )
         binding = interpretation.operation_binding
         if (
             interpretation.interpretation_id != interpretation_id
@@ -937,13 +980,19 @@ class ScienceService:
             source_stored = self.runtime_store.load_interpretation(
                 binding.source_interpretation_id
             )
-            source = InterpretationRecord.model_validate(
-                source_stored.model_dump(mode="json", exclude_none=False)
-            )
         except (KeyError, ValueError, AttributeError):
             raise ScienceConfirmationRequired(
                 "confirmation proposal dependency is unavailable"
             ) from None
+        source = validate_with_closed_error(
+            lambda: InterpretationRecord.model_validate(
+                source_stored.model_dump(mode="json", exclude_none=False)
+            ),
+            caught=(ValidationError, ValueError, AttributeError),
+            closed_error=ScienceConfirmationRequired(
+                "confirmation proposal dependency is unavailable"
+            ),
+        )
         if (
             source.interpretation_id != binding.source_interpretation_id
             or source.operation_binding.operation != "interpret_document"

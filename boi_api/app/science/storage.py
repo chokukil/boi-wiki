@@ -604,17 +604,20 @@ class ScienceRuntimeStore:
         canonical = self._existing_bytes_locked(collection, record_id)
         if canonical is None:
             raise KeyError(f"unknown Science runtime record: {record_id}")
-        payload = json.loads(canonical.decode("utf-8"))
-        if model in {InterpretationRecord, VerificationReport}:
-            record = validate_with_closed_error(
-                lambda: model.model_validate(payload),
-                caught=(ValidationError, ScienceSensitivePersistenceError),
-                closed_error=ScienceSensitivePersistenceError(
-                    "unsafe Science runtime record rejected"
-                ),
-            )
-        else:
-            record = model.model_validate(payload)
+        payload = validate_with_closed_error(
+            lambda: json.loads(canonical.decode("utf-8")),
+            caught=(UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError),
+            closed_error=ImmutableScienceRecordError(
+                "Science runtime record is invalid"
+            ),
+        )
+        record = validate_with_closed_error(
+            lambda: model.model_validate(payload),
+            caught=(ValidationError, ScienceSensitivePersistenceError, ValueError),
+            closed_error=ScienceSensitivePersistenceError(
+                "unsafe Science runtime record rejected"
+            ),
+        )
         identifier_field = {
             "interpretations": "interpretation_id",
             "reports": "report_id",
@@ -652,10 +655,16 @@ class ScienceRuntimeStore:
             "details": dict(details),
         }
         _reject_sensitive_scalars(raw, path="audit")
-        return ScienceAuditRecord(
-            event_id=f"sci-audit:{uuid.uuid4()}",
-            occurred_at=_utc_now(),
-            **raw,
+        return validate_with_closed_error(
+            lambda: ScienceAuditRecord(
+                event_id=f"sci-audit:{uuid.uuid4()}",
+                occurred_at=_utc_now(),
+                **raw,
+            ),
+            caught=(ValidationError, ScienceSensitivePersistenceError, ValueError),
+            closed_error=ScienceSensitivePersistenceError(
+                "unsafe Science audit event rejected"
+            ),
         )
 
     def _open_audit_locked(self) -> tuple[int, bool]:
@@ -713,7 +722,9 @@ class ScienceRuntimeStore:
         actor_id: str,
     ) -> tuple[AuditAction, str, dict[str, Any], str]:
         if collection == "interpretations":
-            interpretation = InterpretationRecord.model_validate(record)
+            if not isinstance(record, InterpretationRecord):
+                raise ImmutableScienceRecordError("invalid interpretation transaction")
+            interpretation = record
             return (
                 "interpretation_saved",
                 interpretation.interpretation_id,
@@ -721,7 +732,9 @@ class ScienceRuntimeStore:
                 actor_id,
             )
         if collection == "reports":
-            report = VerificationReport.model_validate(record)
+            if not isinstance(record, VerificationReport):
+                raise ImmutableScienceRecordError("invalid report transaction")
+            report = record
             return (
                 "report_saved",
                 report.report_id,
@@ -732,14 +745,18 @@ class ScienceRuntimeStore:
                 report.created_by,
             )
         if collection == "proposals":
-            proposal = ScienceProposalRecord.model_validate(record)
+            if not isinstance(record, ScienceProposalRecord):
+                raise ImmutableScienceRecordError("invalid proposal transaction")
+            proposal = record
             return (
                 "proposal_saved",
                 proposal.proposal_id,
                 {"domain": proposal.domain, "kind": proposal.kind},
                 proposal.created_by,
             )
-        approval = ScienceProposalApproval.model_validate(record)
+        if not isinstance(record, ScienceProposalApproval):
+            raise ImmutableScienceRecordError("invalid proposal approval transaction")
+        approval = record
         return (
             "proposal_approved_for_release_candidate",
             approval.proposal_id,
@@ -751,16 +768,13 @@ class ScienceRuntimeStore:
         self, journal: ScienceTransactionJournal
     ) -> ScienceModel:
         record_model = self._record_model(journal.collection)
-        if journal.collection in {"interpretations", "reports"}:
-            record = validate_with_closed_error(
-                lambda: record_model.model_validate(journal.record),
-                caught=(ValidationError, ScienceSensitivePersistenceError),
-                closed_error=ScienceSensitivePersistenceError(
-                    "unsafe Science transaction record rejected"
-                ),
-            )
-        else:
-            record = record_model.model_validate(journal.record)
+        record = validate_with_closed_error(
+            lambda: record_model.model_validate(journal.record),
+            caught=(ValidationError, ScienceSensitivePersistenceError, ValueError),
+            closed_error=ScienceSensitivePersistenceError(
+                "unsafe Science transaction record rejected"
+            ),
+        )
         embedded_id = self._record_identifier(journal.collection, record)
         if embedded_id != journal.record_id:
             raise ImmutableScienceRecordError(
@@ -849,15 +863,25 @@ class ScienceRuntimeStore:
                 raise ImmutableScienceRecordError(
                     f"Science audit row {line_number} is empty"
                 )
-            try:
-                payload = json.loads(row[:-1].decode("utf-8"))
-                event = ScienceAuditRecord.model_validate(payload)
-            except ScienceSensitivePersistenceError:
-                raise
-            except (UnicodeDecodeError, ValueError, TypeError) as exc:
-                raise ImmutableScienceRecordError(
+            payload = validate_with_closed_error(
+                lambda row=row: json.loads(row[:-1].decode("utf-8")),
+                caught=(
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                    ValueError,
+                    TypeError,
+                ),
+                closed_error=ImmutableScienceRecordError(
                     f"Science audit row {line_number} is invalid JSON or schema"
-                ) from exc
+                ),
+            )
+            event = validate_with_closed_error(
+                lambda payload=payload: ScienceAuditRecord.model_validate(payload),
+                caught=(ValidationError, ScienceSensitivePersistenceError, ValueError),
+                closed_error=ImmutableScienceRecordError(
+                    f"Science audit row {line_number} is invalid JSON or schema"
+                ),
+            )
             canonical_row = canonical_json_bytes(event) + b"\n"
             if canonical_row != row:
                 raise ImmutableScienceRecordError(
@@ -871,8 +895,14 @@ class ScienceRuntimeStore:
         return rows
 
     def _append_audit_event_locked(self, event: ScienceAuditRecord) -> None:
-        validated = ScienceAuditRecord.model_validate(
-            event.model_dump(mode="json", exclude_none=False)
+        validated = validate_with_closed_error(
+            lambda: ScienceAuditRecord.model_validate(
+                event.model_dump(mode="json", exclude_none=False)
+            ),
+            caught=(ValidationError, ScienceSensitivePersistenceError, ValueError),
+            closed_error=ImmutableScienceRecordError(
+                "Science audit event failed closed validation"
+            ),
         )
         row = canonical_json_bytes(validated) + b"\n"
         existing_rows = self._audit_rows_from_complete_content(
@@ -942,25 +972,55 @@ class ScienceRuntimeStore:
                 canonical = self._read_all(descriptor)
             finally:
                 os.close(descriptor)
-            try:
-                payload = json.loads(canonical.decode("utf-8"))
-                if not isinstance(payload, dict):
-                    raise ValueError("Science journal root must be an object")
-                transaction_kind = payload.get("transaction_kind", "record")
-                if transaction_kind == "record":
-                    journal: ScienceJournal = ScienceTransactionJournal.model_validate(
-                        payload
-                    )
-                elif transaction_kind == "audit_only":
-                    journal = ScienceAuditTransactionJournal.model_validate(payload)
-                else:
-                    raise ValueError("unknown Science transaction kind")
-            except ScienceSensitivePersistenceError:
-                raise
-            except (UnicodeDecodeError, ValueError, TypeError) as exc:
+            payload = validate_with_closed_error(
+                lambda canonical=canonical: json.loads(canonical.decode("utf-8")),
+                caught=(
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                    ValueError,
+                    TypeError,
+                ),
+                closed_error=ImmutableScienceRecordError(
+                    "Science transaction journal is invalid"
+                ),
+            )
+            if not isinstance(payload, dict):
                 raise ImmutableScienceRecordError(
                     "Science transaction journal is invalid"
-                ) from exc
+                )
+            transaction_kind = payload.get("transaction_kind", "record")
+            if transaction_kind == "record":
+                journal: ScienceJournal = validate_with_closed_error(
+                    lambda payload=payload: ScienceTransactionJournal.model_validate(
+                        payload
+                    ),
+                    caught=(
+                        ValidationError,
+                        ScienceSensitivePersistenceError,
+                        ValueError,
+                    ),
+                    closed_error=ImmutableScienceRecordError(
+                        "Science transaction journal is invalid"
+                    ),
+                )
+            elif transaction_kind == "audit_only":
+                journal = validate_with_closed_error(
+                    lambda payload=payload: (
+                        ScienceAuditTransactionJournal.model_validate(payload)
+                    ),
+                    caught=(
+                        ValidationError,
+                        ScienceSensitivePersistenceError,
+                        ValueError,
+                    ),
+                    closed_error=ImmutableScienceRecordError(
+                        "Science transaction journal is invalid"
+                    ),
+                )
+            else:
+                raise ImmutableScienceRecordError(
+                    "Science transaction journal is invalid"
+                )
             if name != self._filename(journal.transaction_id):
                 raise ImmutableScienceRecordError(
                     "Science transaction journal filename mismatch"
@@ -1044,12 +1104,17 @@ class ScienceRuntimeStore:
         record_targets: set[tuple[CollectionName, str]] = set()
         journal_event_ids: set[str] = set()
         planned_note_targets: set[str] = set()
-        ledger_note_targets = {
-            event.target_id: event_id
-            for event_id, row in audit_rows.items()
-            if (event := ScienceAuditRecord.model_validate_json(row[:-1])).action
-            == "standalone_note_recorded"
-        }
+        ledger_note_targets: dict[str, str] = {}
+        for event_id, row in audit_rows.items():
+            event = validate_with_closed_error(
+                lambda row=row: ScienceAuditRecord.model_validate_json(row[:-1]),
+                caught=(ValidationError, ScienceSensitivePersistenceError, ValueError),
+                closed_error=ImmutableScienceRecordError(
+                    "Science audit row failed closed recovery validation"
+                ),
+            )
+            if event.action == "standalone_note_recorded":
+                ledger_note_targets[event.target_id] = event_id
 
         for item in plan:
             journal = item.journal
@@ -1102,7 +1167,11 @@ class ScienceRuntimeStore:
             if not isinstance(journal, ScienceTransactionJournal):
                 continue
             if journal.collection == "proposal-approvals":
-                approval = ScienceProposalApproval.model_validate(item.record)
+                if not isinstance(item.record, ScienceProposalApproval):
+                    raise ImmutableScienceRecordError(
+                        "Science approval transaction record is invalid"
+                    )
+                approval = item.record
                 try:
                     proposal = self._load_locked(
                         "proposals", approval.proposal_id, ScienceProposalRecord
@@ -1113,7 +1182,11 @@ class ScienceRuntimeStore:
                     ) from exc
                 self._validate_approval_dependency(approval, proposal)
             elif journal.collection == "interpretations":
-                interpretation = InterpretationRecord.model_validate(item.record)
+                if not isinstance(item.record, InterpretationRecord):
+                    raise ImmutableScienceRecordError(
+                        "Science interpretation transaction record is invalid"
+                    )
+                interpretation = item.record
                 if (
                     interpretation.operation_binding.operation
                     == "confirm_interpretation"
@@ -1130,7 +1203,11 @@ class ScienceRuntimeStore:
                     )
                     self._validate_confirmation_dependency(interpretation, source)
             elif journal.collection == "reports":
-                report = VerificationReport.model_validate(item.record)
+                if not isinstance(item.record, VerificationReport):
+                    raise ImmutableScienceRecordError(
+                        "Science report transaction record is invalid"
+                    )
+                report = item.record
                 self._validate_report_dependency_locked(report)
 
     def _recover_pending_transactions_locked(
@@ -1533,13 +1610,19 @@ class ScienceRuntimeStore:
         kind: ProposalKind,
         payload: Mapping[str, Any],
     ) -> ScienceProposalRecord:
-        proposal = ScienceProposalRecord(
-            proposal_id=f"sci-proposal:{uuid.uuid4()}",
-            created_at=_utc_now(),
-            created_by=identity.employee_id,
-            domain=domain,
-            kind=kind,
-            payload=dict(payload),
+        proposal = validate_with_closed_error(
+            lambda: ScienceProposalRecord(
+                proposal_id=f"sci-proposal:{uuid.uuid4()}",
+                created_at=_utc_now(),
+                created_by=identity.employee_id,
+                domain=domain,
+                kind=kind,
+                payload=dict(payload),
+            ),
+            caught=(ValidationError, ScienceSensitivePersistenceError, ValueError),
+            closed_error=ScienceSensitivePersistenceError(
+                "unsafe Science proposal rejected"
+            ),
         )
         audit = self._new_audit_event(
             identity=identity,

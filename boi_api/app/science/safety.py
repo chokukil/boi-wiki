@@ -99,81 +99,6 @@ def validate_model_identifier(value: str) -> str:
     return value
 
 
-_EXACT_CREDENTIAL_TOKENS = frozenset(
-    {
-        "accesskey",
-        "accesstoken",
-        "apikey",
-        "auth",
-        "authorization",
-        "basicauth",
-        "bearer",
-        "clientsecret",
-        "credential",
-        "password",
-        "passwd",
-        "privatekey",
-        "secret",
-        "sig",
-        "signature",
-        "token",
-        "xamz",
-        "xgoog",
-        "xms",
-        "sharedaccess",
-        "sas",
-        "presigned",
-        "xamzcredential",
-        "xamzsignature",
-        "xgoogcredential",
-        "xgoogsignature",
-        "xmscredential",
-        "xmssignature",
-        "sharedaccesssignature",
-    }
-)
-_LONG_COMPACT_CREDENTIAL_FAMILIES = (
-    "accesskey",
-    "accesstoken",
-    "apikey",
-    "authorization",
-    "basicauth",
-    "bearer",
-    "clientsecret",
-    "credential",
-    "password",
-    "passwd",
-    "privatekey",
-    "signature",
-    "xamz",
-    "xgoog",
-    "xms",
-    "sharedaccess",
-    "presigned",
-    "xamzcredential",
-    "xamzsignature",
-    "xgoogcredential",
-    "xgoogsignature",
-    "xmscredential",
-    "xmssignature",
-    "sharedaccesssignature",
-)
-_SHORT_AMBIGUOUS_CREDENTIAL_MARKERS = ("auth", "sig", "token", "secret", "sas")
-_CREDENTIAL_TOKEN_SEQUENCES = (
-    ("access", "key"),
-    ("access", "token"),
-    ("api", "key"),
-    ("basic", "auth"),
-    ("client", "secret"),
-    ("private", "key"),
-    ("x", "amz", "credential"),
-    ("x", "amz", "signature"),
-    ("x", "goog", "credential"),
-    ("x", "goog", "signature"),
-    ("x", "ms", "credential"),
-    ("x", "ms", "signature"),
-    ("shared", "access", "signature"),
-)
 _STABLE_SOURCE_QUERIES = {"download=1", "download=true"}
 _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 
@@ -265,54 +190,6 @@ def _normalize_then_fully_decode(value: str) -> str:
     return decoded
 
 
-def _boundary_tokens(parts: Sequence[str]) -> tuple[str, ...]:
-    return tuple(
-        token for part in parts for token in re.findall(r"[a-z0-9]+", part.casefold())
-    )
-
-
-def _looks_like_compact_opaque_value(value: str) -> bool:
-    return (
-        len(value) >= 24
-        and value.isalnum()
-        and sum(character.isdigit() for character in value) >= 4
-        and len(set(value)) >= 8
-    )
-
-
-def _contains_compact_credential(token: str) -> bool:
-    if any(family in token for family in _LONG_COMPACT_CREDENTIAL_FAMILIES):
-        return True
-    for marker in _SHORT_AMBIGUOUS_CREDENTIAL_MARKERS:
-        offset = 0
-        while (index := token.find(marker, offset)) >= 0:
-            suffix = token[index + len(marker) :]
-            if _looks_like_compact_opaque_value(suffix):
-                return True
-            offset = index + 1
-    return False
-
-
-def _reject_credential_token_stream(parts: Sequence[str], *, location: str) -> None:
-    tokens = _boundary_tokens(parts)
-    if any(
-        token in _EXACT_CREDENTIAL_TOKENS or _contains_compact_credential(token)
-        for token in tokens
-    ):
-        raise ScienceSensitivePersistenceError(
-            f"stable source URL {location} contains credential material"
-        )
-    for sequence in _CREDENTIAL_TOKEN_SEQUENCES:
-        width = len(sequence)
-        if any(
-            tokens[index : index + width] == sequence
-            for index in range(len(tokens) - width + 1)
-        ):
-            raise ScienceSensitivePersistenceError(
-                f"stable source URL {location} contains credential material"
-            )
-
-
 def _validate_stable_source_path(path: str) -> str:
     decoded_path = _normalize_then_fully_decode(path)
     if any(
@@ -321,13 +198,11 @@ def _validate_stable_source_path(path: str) -> str:
         raise ScienceSensitivePersistenceError(
             "stable source URL path contains control characters"
         )
-    if any(delimiter in decoded_path for delimiter in ("=", "@", ":", ";", "\\")):
+    if "\\" in decoded_path:
         raise ScienceSensitivePersistenceError(
-            "stable source URL path contains forbidden key-value delimiters"
+            "stable source URL path contains a forbidden separator"
         )
-    segments = [segment for segment in decoded_path.split("/") if segment]
-    _reject_credential_token_stream(segments, location="path")
-    canonical_path = quote(decoded_path, safe="/-._~!$&'()*+,")
+    canonical_path = quote(decoded_path, safe="/-._~!$&'()*+,;=:@")
     if canonical_path != path:
         raise ScienceSensitivePersistenceError(
             "stable source URL path is not canonical"
@@ -352,11 +227,10 @@ def _validate_canonical_hostname(hostname: str) -> None:
         raise ScienceSensitivePersistenceError(
             "stable source URL hostname is not canonical"
         )
-    _reject_credential_token_stream(labels, location="hostname")
 
 
 def validate_credential_free_https_url(value: str) -> str:
-    """Admit one stable HTTPS source identity with no bearer material."""
+    """Admit a canonical stable HTTPS identifier; release review supplies trust."""
 
     if not isinstance(value, str):
         raise ScienceSensitivePersistenceError("reviewed URL must be a string")

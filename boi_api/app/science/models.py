@@ -801,6 +801,49 @@ class EvidenceLocator(ScienceModel):
         return self
 
 
+class ReviewedSourceURLProfile(ScienceModel):
+    schema_version: Literal["science-reviewed-source-url/0.1"] = (
+        "science-reviewed-source-url/0.1"
+    )
+    qualification_state: Literal["candidate", "active"]
+    release_set_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    evidence_id: str = Field(min_length=1)
+    evidence_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    canonical_source_url: str = Field(min_length=1)
+    canonical_source_url_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    locator: EvidenceLocator
+    locator_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    locator_url_digests: dict[str, str]
+    profile_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @field_validator("canonical_source_url")
+    @classmethod
+    def canonical_public_source_url(cls, value: str) -> str:
+        return validate_credential_free_https_url(value)
+
+    @model_validator(mode="after")
+    def exact_qualification_digests(self) -> "ReviewedSourceURLProfile":
+        if self.canonical_source_url_digest != sha256_digest(self.canonical_source_url):
+            raise ValueError("reviewed Source URL digest is not exact")
+        if self.locator_digest != sha256_digest(self.locator):
+            raise ValueError("reviewed Evidence locator digest is not exact")
+        expected_url_digests = {
+            field_name: sha256_digest(value)
+            for field_name in ("resource_url", "requested_url", "resolved_url")
+            if (value := getattr(self.locator, field_name)) is not None
+        }
+        if self.locator_url_digests != expected_url_digests:
+            raise ValueError("reviewed Evidence locator URL digests are not exact")
+        expected_profile_digest = sha256_digest(
+            self.model_dump(mode="json", exclude={"profile_digest"})
+        )
+        if self.profile_digest != expected_profile_digest:
+            raise ValueError("reviewed Source URL profile digest is not exact")
+        return self
+
+
 class EvidenceLink(ScienceModel):
     evidence_id: str = Field(min_length=1)
     evidence_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
@@ -811,6 +854,7 @@ class EvidenceLink(ScienceModel):
     url: str = Field(min_length=1)
     locator: EvidenceLocator
     source_lookup: SourceLookupIdentity
+    reviewed_source: ReviewedSourceURLProfile
 
     @field_validator("url")
     @classmethod
@@ -826,6 +870,20 @@ class EvidenceLink(ScienceModel):
             or self.source_lookup.source_digest != self.source_digest
         ):
             raise ValueError("Evidence Source lookup identity does not match its link")
+        reviewed = self.reviewed_source
+        if reviewed.qualification_state != "active":
+            raise ValueError("Evidence link requires an active reviewed Source URL")
+        if (
+            reviewed.source_id != self.source_id
+            or reviewed.source_digest != self.source_digest
+            or reviewed.evidence_id != self.evidence_id
+            or reviewed.evidence_digest != self.evidence_digest
+            or reviewed.canonical_source_url != self.url
+            or reviewed.locator != self.locator
+        ):
+            raise ValueError(
+                "Evidence link does not match its reviewed Source identity"
+            )
         return self
 
 
@@ -866,13 +924,18 @@ class VerificationReport(ScienceModel):
             annotation.pop("text", None)
             for link in annotation["evidence_links"]:
                 link.pop("url", None)
-                locator = link["locator"]
-                for field_name in (
-                    "resource_url",
-                    "requested_url",
-                    "resolved_url",
+                for locator in (
+                    link["locator"],
+                    link["reviewed_source"]["locator"],
                 ):
-                    locator.pop(field_name, None)
+                    for field_name in (
+                        "resource_url",
+                        "requested_url",
+                        "resolved_url",
+                    ):
+                        locator.pop(field_name, None)
+                link["reviewed_source"].pop("canonical_source_url", None)
+                link["reviewed_source"].pop("locator_url_digests", None)
         reject_sensitive_persistence(payload, path="report")
         binding = self.operation_binding
         if binding.operation != "verify_document":
@@ -944,6 +1007,18 @@ class VerificationReport(ScienceModel):
             annotation.claim_id not in set(claim_ids) for annotation in self.annotations
         ):
             raise ValueError("report annotation references an unknown claim")
+        verdict_release_set_digests = {
+            verdict.releases.combined_digest for verdict in self.verdict_packets
+        }
+        if len(verdict_release_set_digests) != 1:
+            raise ValueError("report verdicts do not share one release-set digest")
+        release_set_digest = next(iter(verdict_release_set_digests))
+        if any(
+            link.reviewed_source.release_set_digest != release_set_digest
+            for annotation in self.annotations
+            for link in annotation.evidence_links
+        ):
+            raise ValueError("report Evidence profile does not match its release set")
         expected_report_digest = sha256_digest(
             self.model_dump(mode="json", exclude={"report_digest"})
         )

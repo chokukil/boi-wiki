@@ -821,7 +821,7 @@ def test_audit_rejects_unknown_but_nonsecret_action_details(
     science_admin: AuthIdentity,
 ):
     """Allowing arbitrary audit mappings would make secret exclusion non-auditable."""
-    with pytest.raises(ValidationError, match="Extra inputs"):
+    with pytest.raises(ScienceSensitivePersistenceError, match="failed|rejected"):
         runtime_store.append_audit(
             identity=science_admin,
             action="standalone_note_recorded",

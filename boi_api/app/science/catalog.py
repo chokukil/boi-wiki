@@ -21,6 +21,7 @@ from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
 from boi_api.app.science.models import (
     ConditionConstraint,
+    EvidenceLocator,
     PackDependency,
     PackRelationKind,
     ReleaseCompatibilityResult,
@@ -28,6 +29,7 @@ from boi_api.app.science.models import (
     ResolvedComponent,
     ResolvedRelease,
     ResolvedReleaseSet,
+    ReviewedSourceURLProfile,
 )
 from boi_api.app.science.operational import (
     OperationalVerification,
@@ -43,7 +45,15 @@ from boi_api.app.science.rules import (
     ResolvedRuleSet,
     VerificationRule,
 )
-
+from boi_api.app.science.safety import (
+    ScienceSensitivePersistenceError,
+    validate_with_closed_error,
+)
+from boi_api.app.science.source_identity import (
+    ReviewedSourceURLIdentity,
+    _build_reviewed_source_url_profile,
+    _issue_reviewed_source_url_identity,
+)
 
 ObjectKind = Literal[
     "source",
@@ -344,12 +354,13 @@ class ScienceCatalog:
             raise ScienceCatalogError(
                 f"science pack has invalid dependencies: {pack.object_id}"
             )
-        try:
-            return tuple(PackDependency.model_validate(item) for item in value)
-        except ValidationError as exc:
-            raise ScienceCatalogError(
+        return validate_with_closed_error(
+            lambda: tuple(PackDependency.model_validate(item) for item in value),
+            caught=(ValidationError, ValueError),
+            closed_error=ScienceCatalogError(
                 f"science pack has invalid typed relationship edges: {pack.object_id}"
-            ) from exc
+            ),
+        )
 
     def _require_many(self, kind: ObjectKind, refs: Iterable[str]) -> None:
         for ref in refs:
@@ -425,12 +436,13 @@ class ScienceCatalog:
             for field_name in VerificationRule.model_fields
             if hasattr(rule, field_name)
         }
-        try:
-            return VerificationRule.model_validate(payload)
-        except ValidationError as exc:
-            raise ScienceCatalogError(
+        return validate_with_closed_error(
+            lambda: VerificationRule.model_validate(payload),
+            caught=(ValidationError, ValueError),
+            closed_error=ScienceCatalogError(
                 f"invalid verification rule payload: {rule.object_id}"
-            ) from exc
+            ),
+        )
 
     def resolve_release(self, release_id: str) -> ResolvedRelease:
         release = self._require("release", release_id)
@@ -524,7 +536,15 @@ class ScienceCatalog:
         """Resolve a serializable candidate Rule set for qualification only."""
 
         resolved = self._resolved_rule_set(release_set)
-        return QualificationRuleSet.model_validate(resolved.model_dump(mode="json"))
+        return validate_with_closed_error(
+            lambda: QualificationRuleSet.model_validate(
+                resolved.model_dump(mode="json")
+            ),
+            caught=(ValidationError, ValueError),
+            closed_error=ScienceCatalogError(
+                "qualification Rule set failed closed validation"
+            ),
+        )
 
     def resolve_operational_rule_set(
         self, release_set: ResolvedReleaseSet
@@ -564,6 +584,104 @@ class ScienceCatalog:
         """Backward-named operational resolver; qualification has a distinct method/type."""
 
         return self.resolve_operational_rule_set(release_set)
+
+    def _reviewed_source_url_profile(
+        self,
+        release_set: ResolvedReleaseSet,
+        evidence_id: str,
+        *,
+        qualification_state: Literal["candidate", "active"],
+    ) -> ReviewedSourceURLProfile:
+        component_by_ref = {
+            component.ref: component for component in release_set.components
+        }
+        evidence_component = component_by_ref.get(evidence_id)
+        evidence = self._require("evidence", evidence_id)
+        if (
+            evidence_component is None
+            or evidence_component.kind != "evidence"
+            or evidence_component.declared_digest != evidence_component.actual_digest
+            or evidence_component.actual_digest != evidence.digest
+        ):
+            raise ScienceOperationalError(
+                f"reviewed Evidence is not exactly pinned: {evidence_id}"
+            )
+        source_id = self._string_field(evidence, "source_id")
+        source_component = component_by_ref.get(source_id)
+        source = self._require("source", source_id)
+        if (
+            source_component is None
+            or source_component.kind != "source"
+            or source_component.declared_digest != source_component.actual_digest
+            or source_component.actual_digest != source.digest
+        ):
+            raise ScienceOperationalError(
+                f"reviewed Source is not exactly pinned: {source_id}"
+            )
+        raw_locator = getattr(evidence, "locator", None)
+        if not isinstance(raw_locator, Mapping):
+            raise ScienceOperationalError(
+                f"reviewed Evidence has no locator: {evidence_id}"
+            )
+        locator = validate_with_closed_error(
+            lambda: EvidenceLocator.model_validate(deepcopy(dict(raw_locator))),
+            caught=(ValidationError, ScienceSensitivePersistenceError),
+            closed_error=ScienceOperationalError(
+                "reviewed Evidence locator failed closed validation"
+            ),
+        )
+        source_url = getattr(source, "original_url", None)
+        return validate_with_closed_error(
+            lambda: _build_reviewed_source_url_profile(
+                qualification_state=qualification_state,
+                release_set_digest=release_set.combined_digest,
+                source_id=source_id,
+                source_digest=source.digest,
+                evidence_id=evidence_id,
+                evidence_digest=evidence.digest,
+                canonical_source_url=source_url,
+                locator=locator,
+            ),
+            caught=(ValidationError, ScienceSensitivePersistenceError),
+            closed_error=ScienceOperationalError(
+                "reviewed Source URL profile failed closed validation"
+            ),
+        )
+
+    def preview_reviewed_source_url_profile(
+        self, release_set: ResolvedReleaseSet, evidence_id: str
+    ) -> ReviewedSourceURLProfile:
+        """Return a serializable candidate preview that has no operational authority."""
+
+        return self._reviewed_source_url_profile(
+            release_set, evidence_id, qualification_state="candidate"
+        )
+
+    def resolve_reviewed_source_url_identity(
+        self, release_set: ResolvedReleaseSet, evidence_id: str
+    ) -> ReviewedSourceURLIdentity:
+        """Issue an opaque identity for one exact active released Source/Evidence pair."""
+
+        resolved = self.resolve_release_set(release_set.selection)
+        if resolved != release_set:
+            raise ScienceOperationalError(
+                "reviewed Source URL requires the exact current release set"
+            )
+        releases = (
+            resolved.foundation_release,
+            *resolved.domain_releases,
+            *resolved.application_releases,
+        )
+        if any(release.status not in {"active", "superseded"} for release in releases):
+            raise ScienceOperationalError(
+                "candidate or withdrawn releases cannot issue reviewed Source URLs"
+            )
+        for release in releases:
+            self._assert_active_decision_components(release)
+        profile = self._reviewed_source_url_profile(
+            resolved, evidence_id, qualification_state="active"
+        )
+        return _issue_reviewed_source_url_identity(profile)
 
     @staticmethod
     def _family_is_within(claim_family: str, boundary: str) -> bool:
@@ -611,14 +729,15 @@ class ScienceCatalog:
                 raise ScienceCatalogError(
                     f"Evidence has invalid embedded claim scope: {use.evidence_ref}"
                 )
-            try:
-                scope_constraints = [
+            scope_constraints = validate_with_closed_error(
+                lambda raw_constraints=raw_constraints: [
                     ConditionConstraint.model_validate(item) for item in raw_constraints
-                ]
-            except ValidationError as exc:
-                raise ScienceCatalogError(
+                ],
+                caught=(ValidationError, ValueError),
+                closed_error=ScienceCatalogError(
                     f"Evidence has invalid embedded claim scope: {use.evidence_ref}"
-                ) from exc
+                ),
+            )
             executable = {
                 sha256_digest(condition): condition
                 for condition in (*rule.required_conditions, *rule.validity_conditions)

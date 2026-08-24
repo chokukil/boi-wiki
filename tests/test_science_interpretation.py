@@ -32,6 +32,7 @@ from boi_api.app.science.models import (
     ResolvedRelease,
     ResolvedReleaseSet,
     SourceSpan,
+    VerificationReport,
 )
 from boi_api.app.science.operational import _issue_operational_verification
 from boi_api.app.science.rules import ReleasedRule, ResolvedRuleSet, VerificationRule
@@ -45,7 +46,13 @@ from boi_api.app.science.service import (
     ScienceIdempotencyConflict,
     ScienceService,
 )
+from boi_api.app.science.source_identity import (
+    ReviewedSourceURLIdentity,
+    _build_reviewed_source_url_profile,
+    _issue_reviewed_source_url_identity,
+)
 from boi_api.app.science.storage import (
+    ImmutableScienceRecordError,
     ScienceRuntimeStore,
     ScienceTransactionPendingError,
 )
@@ -522,6 +529,7 @@ class _Catalog:
         )
         self.source_url = "https://example.test/spin-paper"
         self.evidence_locator = {"section": "3.2", "equation": "7"}
+        self._review_current_source_identity()
         self.bindings = {
             "sci:binding:rpm": SimpleNamespace(
                 object_id="sci:binding:rpm",
@@ -562,6 +570,38 @@ class _Catalog:
         if self.operational_override is not None:
             return self.operational_override
         return _issue_operational_verification(release_set, self.rule_set, [])
+
+    def _review_current_source_identity(self):
+        self._reviewed_source_url = self.source_url
+        self._reviewed_evidence_locator = json.loads(json.dumps(self.evidence_locator))
+
+    def resolve_reviewed_source_url_identity(self, release_set, evidence_id):
+        assert release_set == self.release_set
+        if (
+            evidence_id != "sci:evidence:spin-direction"
+            or self.source_url != self._reviewed_source_url
+            or self.evidence_locator != self._reviewed_evidence_locator
+        ):
+            raise ScienceOperationalError(
+                "reviewed Source URL identity does not match the fixture release"
+            )
+        try:
+            locator = EvidenceLocator.model_validate(self._reviewed_evidence_locator)
+            profile = _build_reviewed_source_url_profile(
+                qualification_state="active",
+                release_set_digest=release_set.combined_digest,
+                source_id="sci:source:spin-paper",
+                source_digest=SOURCE_DIGEST,
+                evidence_id=evidence_id,
+                evidence_digest=EVIDENCE_DIGEST,
+                canonical_source_url=self._reviewed_source_url,
+                locator=locator,
+            )
+        except ValueError:
+            raise ScienceOperationalError(
+                "reviewed Source URL identity failed closed fixture validation"
+            ) from None
+        return _issue_reviewed_source_url_identity(profile)
 
     def resolve_rule_set(self, release_set):
         self.resolve_legacy_calls += 1
@@ -815,7 +855,7 @@ def test_interpretation_rejects_recursive_secret_or_endpoint_scalars_before_save
         content["claims"][0]["normalized_claim"][field] = value
     service, _catalog, store, _llm = _service(content)
 
-    with pytest.raises(ValueError, match="credential or endpoint"):
+    with pytest.raises(ScienceInterpretationUnavailable, match="failed closed"):
         service.interpret_document(
             "RPM 증가 시 두께 변화",
             document_ref="boi:public:science:document:fixture",
@@ -842,7 +882,7 @@ def test_identity_bound_revision_rejects_endpoint_shaped_actor_before_save(
         roles=["science.admin"],
     )
 
-    with pytest.raises(ValueError, match="credential or endpoint"):
+    with pytest.raises(ScienceConfirmationRequired, match="failed closed"):
         service.confirm_interpretation(
             proposal.interpretation_id,
             claim_ids=[proposal.candidate_claims[0].claim_id],
@@ -863,7 +903,7 @@ def test_record_boundary_rejects_an_unsafe_programmatically_constructed_model_id
         _base_url="https://runtime-only.test/v1",
     )
 
-    with pytest.raises(ValueError, match="model_id"):
+    with pytest.raises(ScienceInterpretationUnavailable, match="failed closed"):
         service.interpret_document(
             "RPM 증가 시 두께 변화",
             document_ref="boi:public:science:document:fixture",
@@ -1383,7 +1423,7 @@ def test_task3_closed_validation_factory_drops_real_except_context():
     try:
         EvidenceLocator(
             section="3.2",
-            resource_url=f"https://example.test/private/api_key={secret}",
+            resource_url=f"https://example.test/private?token={secret}",
         )
     except ValidationError as exc:
         raw_rendered = str(exc)
@@ -1426,9 +1466,8 @@ def test_stable_source_url_returns_the_exact_checked_ascii_serialization():
 
 
 @pytest.mark.parametrize("url", _BOUNDARY_CREDENTIAL_URLS)
-def test_stable_source_url_rejects_exact_credential_tokens_anywhere(url: str):
-    with pytest.raises(ValueError):
-        validate_credential_free_https_url(url)
+def test_stable_source_url_syntax_does_not_guess_from_scientific_path_text(url: str):
+    assert validate_credential_free_https_url(url) == url
 
 
 def test_stable_source_url_matrix_covers_all_22_reviewed_credential_families():
@@ -1437,9 +1476,8 @@ def test_stable_source_url_matrix_covers_all_22_reviewed_credential_families():
 
 
 @pytest.mark.parametrize("url", _COMPACT_CREDENTIAL_URLS)
-def test_stable_source_url_rejects_compact_credential_plus_opaque_value(url: str):
-    with pytest.raises(ValueError):
-        validate_credential_free_https_url(url)
+def test_stable_source_url_syntax_does_not_use_entropy_heuristics(url: str):
+    assert validate_credential_free_https_url(url) == url
 
 
 @pytest.mark.parametrize(
@@ -1456,6 +1494,159 @@ def test_stable_source_url_allows_normal_scientific_tokens(url: str):
     assert validate_credential_free_https_url(url) == url
 
 
+def test_reviewed_source_identity_cannot_be_constructed_by_a_caller():
+    with pytest.raises(TypeError, match="issued only"):
+        ReviewedSourceURLIdentity()
+
+
+def test_reviewed_source_identity_is_opaque_immutable_and_nonserializable():
+    import copy
+    import pickle
+
+    catalog = _Catalog()
+    identity = catalog.resolve_reviewed_source_url_identity(
+        catalog.release_set, "sci:evidence:spin-direction"
+    )
+
+    with pytest.raises(AttributeError, match="immutable"):
+        identity.profile = "forged"
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.copy(identity)
+    with pytest.raises(TypeError, match="cannot be serialized"):
+        pickle.dumps(identity)
+
+
+def test_service_rejects_a_raw_unsealed_source_profile(
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    raw_profile = _build_reviewed_source_url_profile(
+        qualification_state="active",
+        release_set_digest=catalog.release_set.combined_digest,
+        source_id="sci:source:spin-paper",
+        source_digest=SOURCE_DIGEST,
+        evidence_id="sci:evidence:spin-direction",
+        evidence_digest=EVIDENCE_DIGEST,
+        canonical_source_url=catalog.source_url,
+        locator=EvidenceLocator.model_validate(catalog.evidence_locator),
+    )
+    catalog.resolve_reviewed_source_url_identity = lambda *_args: raw_profile
+
+    with pytest.raises(ScienceOperationalError, match="Catalog-issued"):
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key="science-request:raw-source-profile",
+        )
+
+    assert store.reports == {}
+
+
+def test_candidate_source_profile_cannot_become_an_authoritative_report(
+    science_identity: AuthIdentity,
+):
+    service, catalog, _store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:candidate-profile-base",
+    )
+    payload = report.model_dump(mode="json")
+    profile = payload["annotations"][0]["evidence_links"][0]["reviewed_source"]
+    profile["qualification_state"] = "candidate"
+    profile["profile_digest"] = sha256_digest(
+        {key: value for key, value in profile.items() if key != "profile_digest"}
+    )
+    payload["report_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "report_digest"}
+    )
+
+    with pytest.raises(ValidationError, match="active reviewed Source URL"):
+        VerificationReport.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "release_set_digest",
+        "source_digest",
+        "evidence_digest",
+        "canonical_source_url_digest",
+        "locator_digest",
+        "locator_url_digests",
+        "profile_digest",
+    ],
+)
+def test_store_revalidates_every_reviewed_source_profile_binding(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+    field_name: str,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key=f"science-request:profile-binding-base-{field_name}",
+    )
+    payload = report.model_dump(mode="json")
+    payload["report_id"] = f"sci-report:profile-binding-{field_name}"
+    profile = payload["annotations"][0]["evidence_links"][0]["reviewed_source"]
+    if field_name == "locator_url_digests":
+        profile[field_name] = {"resource_url": sha256_digest("different")}
+    else:
+        profile[field_name] = sha256_digest(f"different-{field_name}")
+    if field_name != "profile_digest":
+        profile["profile_digest"] = sha256_digest(
+            {key: value for key, value in profile.items() if key != "profile_digest"}
+        )
+    payload["report_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "report_digest"}
+    )
+
+    with pytest.raises(ValueError):
+        store.save_report(payload, identity=science_identity)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.test/authors2026semiconductorcalibration1234/paper",
+        "https://example.test/tokenization2026semiconductormodel1234/paper",
+        "https://example.test/secretorypathway2026measurement1234/paper",
+        "https://example.test/signalsandsystems2026measurement1234/paper",
+        "https://example.test/sasakicrystalstructure2026data1234/paper",
+    ],
+)
+def test_catalog_reviewed_scientific_paths_remain_operational(
+    science_identity: AuthIdentity,
+    url: str,
+):
+    service, catalog, _store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    catalog.source_url = url
+    catalog._review_current_source_identity()
+
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key=f"science-request:reviewed-path-{sha256_digest(url)[7:19]}",
+    )
+
+    link = report.annotations[0].evidence_links[0]
+    assert link.url == url
+    assert link.reviewed_source.qualification_state == "active"
+    assert (
+        link.reviewed_source.release_set_digest == catalog.release_set.combined_digest
+    )
+
+
 @pytest.mark.parametrize("source_url", _CREDENTIAL_BEARING_SOURCE_URLS)
 def test_verify_document_rejects_credential_bearing_source_urls(
     science_identity: AuthIdentity,
@@ -1465,7 +1656,7 @@ def test_verify_document_rejects_credential_bearing_source_urls(
     record = _confirmed_interpretation(service, science_identity)
     catalog.source_url = source_url
 
-    with pytest.raises(ScienceOperationalError, match="approved source link"):
+    with pytest.raises(ScienceOperationalError, match="reviewed Source URL"):
         service.verify_document(
             record.interpretation_id,
             ReleaseSelection(foundation=catalog.release.release_id),
@@ -1559,6 +1750,7 @@ def test_stable_source_url_policy_allows_only_reviewed_download_query(
         "resolved_url": stable_url,
         "section": "3.2",
     }
+    catalog._review_current_source_identity()
 
     report = service.verify_document(
         confirmed.interpretation_id,
@@ -1589,7 +1781,7 @@ def test_stable_source_url_policy_rejects_unreviewed_query_keys_and_values(
     confirmed = _confirmed_interpretation(service, science_identity)
     catalog.source_url = f"https://example.test/paper?{query}"
 
-    with pytest.raises(ScienceOperationalError, match="approved source link"):
+    with pytest.raises(ScienceOperationalError, match="reviewed Source URL"):
         service.verify_document(
             confirmed.interpretation_id,
             ReleaseSelection(foundation=catalog.release.release_id),
@@ -2136,6 +2328,94 @@ def _assert_closed_runtime_validation_error(
     assert secret not in serialized
 
 
+def test_llm_numeric_settings_drop_input_bearing_validation_context():
+    secret = "hidden-llm-validation-secret"
+
+    with pytest.raises(ScienceInterpretationUnavailable) as captured:
+        ScienceLLMConfig.from_env(
+            {
+                "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+                "BOI_SCIENCE_LLM_MODEL": "fixture-model",
+                "BOI_SCIENCE_LLM_TEMPERATURE": secret,
+            }
+        )
+
+    _assert_closed_runtime_validation_error(captured.value, secret=secret)
+
+
+def test_llm_response_schema_drops_input_bearing_validation_context():
+    secret = "hidden-response-validation-secret"
+    content = _llm_content()
+    content["claims"][0]["candidate_meanings"][0]["concept_role"] = secret
+    client = ScienceLLMClient(
+        ScienceLLMConfig.from_env(
+            {
+                "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+                "BOI_SCIENCE_LLM_MODEL": "fixture-model",
+            }
+        ),
+        transport=httpx.MockTransport(lambda _request: _openai_response(content)),
+    )
+
+    with pytest.raises(ScienceInterpretationUnavailable) as captured:
+        client.interpret("RPM 증가 시 두께 변화", ontology_candidates=[])
+
+    _assert_closed_runtime_validation_error(captured.value, secret=secret)
+
+
+def test_authoritative_confirmation_drops_invalid_stored_record_context(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    secret = "https://hidden-confirmation-validation-secret.test/v1"
+    payload = confirmed.model_dump(mode="json")
+    payload["prompt_version"] = secret
+    malformed = SimpleNamespace(model_dump=lambda **_kwargs: payload)
+    store.load_interpretation = lambda _record_id: malformed
+
+    with pytest.raises(ScienceConfirmationRequired) as captured:
+        service._authoritative_confirmation(confirmed.interpretation_id)
+
+    _assert_closed_runtime_validation_error(captured.value, secret=secret)
+
+
+def test_top_level_wal_envelope_drops_input_bearing_validation_context(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    real_append = store._append_audit_event_locked
+
+    def fail_report_audit(event):
+        if event.action == "report_saved":
+            raise OSError("simulated top-level WAL interruption")
+        return real_append(event)
+
+    monkeypatch.setattr(store, "_append_audit_event_locked", fail_report_audit)
+    with pytest.raises(ScienceTransactionPendingError) as pending:
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key="science-request:closed-top-level-wal",
+        )
+    journal_path = next((store.root / "transactions").glob("*.json"))
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    secret = "hidden-wal-envelope-validation-secret"
+    journal["prepared_at"] = secret
+    journal_path.write_bytes(canonical_json_bytes(journal))
+    store.record_path("reports", pending.value.record_id).unlink()
+    monkeypatch.setattr(store, "_append_audit_event_locked", real_append)
+
+    with pytest.raises(ImmutableScienceRecordError) as captured:
+        store.recover_pending_transactions()
+
+    _assert_closed_runtime_validation_error(captured.value, secret=secret)
+
+
 def _report_with_compact_locator_secret(report, *, report_id: str) -> dict[str, object]:
     injected = report.model_dump(mode="json")
     injected["report_id"] = report_id
@@ -2477,6 +2757,7 @@ def test_closed_locator_accepts_reviewed_scientific_location_fields(
         "pdf_page_index": 4,
         "exact": True,
     }
+    catalog._review_current_source_identity()
 
     report = service.verify_document(
         confirmed.interpretation_id,
