@@ -322,6 +322,17 @@ def test_llm_client_posts_strict_schema_and_returns_only_validated_interpretatio
     body = seen_request["body"]
     assert isinstance(body, dict)
     assert body["response_format"]["json_schema"]["strict"] is True
+    transport_schema = body["response_format"]["json_schema"]["schema"]
+    transport_schema_text = json.dumps(transport_schema, sort_keys=True)
+    for unsupported_keyword in [
+        '"pattern"',
+        '"minLength"',
+        '"minItems"',
+        '"minimum"',
+        '"exclusiveMinimum"',
+        '"default"',
+    ]:
+        assert unsupported_keyword not in transport_schema_text
     assert body["temperature"] == 0.0
     assert result.payload.claims[0].ontology_refs == [
         "sci:binding:rpm",
@@ -331,6 +342,65 @@ def test_llm_client_posts_strict_schema_and_returns_only_validated_interpretatio
     assert result.response_digest.startswith("sha256:")
     assert "secret-token" not in repr(result)
     assert "science-llm.test" not in repr(result)
+
+
+def test_llm_client_can_use_prompt_json_when_server_rejects_response_format():
+    seen_request: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_request["body"] = json.loads(request.content)
+        return _openai_response(_llm_content())
+
+    config = ScienceLLMConfig.from_env(
+        {
+            "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+            "BOI_SCIENCE_LLM_MODEL": "fixture-model",
+            "BOI_SCIENCE_LLM_RESPONSE_FORMAT_MODE": "prompt_json",
+        }
+    )
+    result = ScienceLLMClient(config, transport=httpx.MockTransport(handler)).interpret(
+        "RPM 증가 시 두께 변화", ontology_candidates=[]
+    )
+
+    assert config.response_format_mode == "prompt_json"
+    assert "response_format" not in seen_request["body"]
+    assert result.payload.claims[0].normalized_claim.predicate == "increases"
+
+
+def test_llm_client_can_disable_qwen_thinking_for_bounded_extraction() -> None:
+    seen_request: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_request["body"] = json.loads(request.content)
+        return _openai_response(_llm_content())
+
+    config = ScienceLLMConfig.from_env(
+        {
+            "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+            "BOI_SCIENCE_LLM_MODEL": "qwen/qwen3.8-27b",
+            "BOI_SCIENCE_LLM_REASONING_MODE": "disabled",
+        }
+    )
+    ScienceLLMClient(config, transport=httpx.MockTransport(handler)).interpret(
+        "RPM 증가 시 두께 변화", ontology_candidates=[]
+    )
+
+    assert config.reasoning_mode == "disabled"
+    user_message = seen_request["body"]["messages"][1]["content"]
+    assert user_message.endswith("\n/no_think")
+
+
+def test_llm_config_rejects_unknown_response_format_mode() -> None:
+    with pytest.raises(ScienceInterpretationUnavailable) as captured:
+        ScienceLLMConfig.from_env(
+            {
+                "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+                "BOI_SCIENCE_LLM_MODEL": "fixture-model",
+                "BOI_SCIENCE_LLM_RESPONSE_FORMAT_MODE": "best_effort",
+            }
+        )
+
+    assert captured.value.diagnostic_code == "invalid_configuration"
 
 
 @pytest.mark.parametrize(

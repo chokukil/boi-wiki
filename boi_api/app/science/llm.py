@@ -100,6 +100,8 @@ class ScienceLLMConfig:
     """Runtime connection values plus the safe settings allowed in records."""
 
     model_id: str
+    response_format_mode: Literal["json_schema", "prompt_json"] = "json_schema"
+    reasoning_mode: Literal["default", "disabled"] = "default"
     settings: LLMModelSettings = field(default_factory=LLMModelSettings, repr=False)
     _base_url: str = field(default="", repr=False)
     _api_key: str = field(default="", repr=False)
@@ -117,9 +119,35 @@ class ScienceLLMConfig:
         ).rstrip("/")
         model_id = cls._first(values, "BOI_SCIENCE_LLM_MODEL", "BOI_LLM_MODEL")
         api_key = cls._first(values, "BOI_SCIENCE_LLM_API_KEY", "BOI_LLM_API_KEY")
+        response_format_mode = (
+            cls._first(
+                values,
+                "BOI_SCIENCE_LLM_RESPONSE_FORMAT_MODE",
+                "BOI_LLM_RESPONSE_FORMAT_MODE",
+            )
+            or "json_schema"
+        )
+        reasoning_mode = (
+            cls._first(
+                values,
+                "BOI_SCIENCE_LLM_REASONING_MODE",
+                "BOI_LLM_REASONING_MODE",
+            )
+            or "default"
+        )
         if not base_url or not model_id:
             raise ScienceInterpretationUnavailable(
                 "Science LLM configuration is unavailable",
+                diagnostic_code="invalid_configuration",
+            ) from None
+        if response_format_mode not in {"json_schema", "prompt_json"}:
+            raise ScienceInterpretationUnavailable(
+                "Science LLM response format configuration is invalid",
+                diagnostic_code="invalid_configuration",
+            ) from None
+        if reasoning_mode not in {"default", "disabled"}:
+            raise ScienceInterpretationUnavailable(
+                "Science LLM reasoning configuration is invalid",
                 diagnostic_code="invalid_configuration",
             ) from None
         validate_with_closed_error(
@@ -157,6 +185,8 @@ class ScienceLLMConfig:
         )
         return cls(
             model_id=model_id,
+            response_format_mode=response_format_mode,
+            reasoning_mode=reasoning_mode,
             settings=settings,
             _base_url=base_url,
             _api_key=api_key,
@@ -220,37 +250,84 @@ class ScienceLLMClient:
             + json.dumps(schema, ensure_ascii=False, sort_keys=True)
         )
 
+    @staticmethod
+    def _transport_schema() -> dict[str, Any]:
+        """Return a grammar-compatible shape; Pydantic remains authoritative.
+
+        Some OpenAI-compatible grammar engines reject otherwise valid JSON Schema
+        validation keywords.  The transport grammar constrains structure and types,
+        while the unmodified model schema in the prompt and the local Pydantic model
+        enforce every range, pattern, uniqueness, and cross-field condition.
+        """
+
+        unsupported = {
+            "default",
+            "exclusiveMaximum",
+            "exclusiveMinimum",
+            "format",
+            "maximum",
+            "minItems",
+            "minLength",
+            "minimum",
+            "pattern",
+            "title",
+        }
+
+        def sanitize(value: object) -> object:
+            if isinstance(value, Mapping):
+                return {
+                    str(key): sanitize(item)
+                    for key, item in value.items()
+                    if key not in unsupported
+                }
+            if isinstance(value, list):
+                return [sanitize(item) for item in value]
+            return value
+
+        schema = sanitize(ScienceInterpretationPayload.model_json_schema())
+        if not isinstance(schema, dict):
+            raise ScienceInterpretationUnavailable(
+                "Science interpretation transport schema is unavailable",
+                diagnostic_code="invalid_configuration",
+            )
+        return schema
+
     def interpret(
         self,
         document_text: str,
         *,
         ontology_candidates: Sequence[Mapping[str, Any]],
     ) -> ScienceLLMResult:
+        user_content = json.dumps(
+            {
+                "document_text": document_text,
+                "ontology_candidates": list(ontology_candidates),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        if self.config.reasoning_mode == "disabled":
+            user_content += "\n/no_think"
+
         request_body: dict[str, object] = {
             "model": self.config.model_id,
             "messages": [
                 {"role": "system", "content": self._system_prompt()},
                 {
                     "role": "user",
-                    "content": json.dumps(
-                        {
-                            "document_text": document_text,
-                            "ontology_candidates": list(ontology_candidates),
-                        },
-                        ensure_ascii=False,
-                        sort_keys=True,
-                    ),
+                    "content": user_content,
                 },
             ],
-            "response_format": {
+        }
+        if self.config.response_format_mode == "json_schema":
+            request_body["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "science_interpretation",
                     "strict": True,
-                    "schema": ScienceInterpretationPayload.model_json_schema(),
+                    "schema": self._transport_schema(),
                 },
-            },
-        }
+            }
         generation = self.config.settings.model_dump(exclude_none=True)
         timeout = generation.pop("timeout_seconds", None) or 30.0
         request_body.update(generation)

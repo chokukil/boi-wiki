@@ -97,6 +97,8 @@ class ScienceService:
                     ScienceLLMClient._system_prompt()
                 ),
                 "model_id": self.llm_client.config.model_id,
+                "response_format_mode": self.llm_client.config.response_format_mode,
+                "reasoning_mode": self.llm_client.config.reasoning_mode,
                 "model_settings": self.llm_client.config.safe_model_settings(),
                 "dictionary_release_id": self.dictionary_release_id,
                 "ontology_release_id": self.ontology_release_id,
