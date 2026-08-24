@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -11,6 +13,7 @@ from boi_api.app.science.authorization import ScienceAuthorization
 from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.llm import ScienceInterpretationUnavailable
 from boi_api.app.science.models import ReleaseSelection, VerificationReport
+from boi_api.app.science.storage import ScienceRuntimeStore
 
 
 class FakeService:
@@ -116,6 +119,8 @@ def _client(
     roles: list[str] | None = None,
     can_read: bool = True,
     can_export: bool = True,
+    employee_id: str = "100001",
+    runtime_store: object | None = None,
 ) -> tuple[TestClient, FakeService]:
     from boi_api.app.science.routes import (
         ScienceRouteDependencies,
@@ -123,7 +128,7 @@ def _client(
     )
 
     identity = AuthIdentity(
-        employee_id="100001",
+        employee_id=employee_id,
         display_name="Science Admin",
         roles=roles or ["science.admin", "boi.viewer"],
     )
@@ -132,7 +137,7 @@ def _client(
     dependencies = ScienceRouteDependencies(
         authorization=ScienceAuthorization("admin_only"),
         service_provider=lambda: service,
-        runtime_store=FakeStore(report),
+        runtime_store=runtime_store or FakeStore(report),
         catalog=FakeCatalog(),
         boi_root=None,
         current_identity_dependency=lambda: identity,
@@ -257,6 +262,140 @@ def test_proposal_requires_exact_digest_and_explicit_confirmation() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_proposal_exact_retry_returns_one_immutable_record_and_one_audit(
+    tmp_path,
+) -> None:
+    store = ScienceRuntimeStore(
+        tmp_path / "science-runtime",
+        authorization=ScienceAuthorization("admin_only"),
+        roles_for=lambda _identity: ["science.admin"],
+    )
+    client, _service = _client(runtime_store=store)
+    proposal = {
+        "domain": "lithography",
+        "kind": "term_alias",
+        "payload": {"alias": "PR"},
+    }
+    raw_key = "proposal-exact-retry-001"
+    request = {
+        "proposal": proposal,
+        "request_digest": sha256_digest(proposal),
+        "idempotency_key": raw_key,
+        "user_confirmed": True,
+    }
+
+    first = client.post("/api/science/proposals", json=request)
+    second = client.post("/api/science/proposals", json=request)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json() == first.json()
+    rows = [
+        json.loads(line)
+        for line in store.audit_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["action"] for row in rows].count("proposal_saved") == 1
+    assert first.json()["idempotency_key_digest"] == sha256_digest(raw_key)
+    assert first.json()["request_digest"] == request["request_digest"]
+    persisted_bytes = b"".join(
+        path.read_bytes() for path in store.root.rglob("*") if path.is_file()
+    )
+    assert raw_key.encode() not in persisted_bytes
+
+
+@pytest.mark.parametrize(
+    "changed_proposal",
+    [
+        {
+            "domain": "materials",
+            "kind": "term_alias",
+            "payload": {"alias": "PR"},
+        },
+        {
+            "domain": "lithography",
+            "kind": "term_meaning",
+            "payload": {"alias": "PR"},
+        },
+        {
+            "domain": "lithography",
+            "kind": "term_alias",
+            "payload": {"alias": "photoresist"},
+        },
+    ],
+)
+def test_proposal_key_reuse_with_changed_request_returns_conflict(
+    tmp_path,
+    changed_proposal: dict[str, object],
+) -> None:
+    store = ScienceRuntimeStore(
+        tmp_path / "science-runtime",
+        authorization=ScienceAuthorization("admin_only"),
+        roles_for=lambda _identity: ["science.admin"],
+    )
+    client, _service = _client(runtime_store=store)
+    first_proposal = {
+        "domain": "lithography",
+        "kind": "term_alias",
+        "payload": {"alias": "PR"},
+    }
+    first = client.post(
+        "/api/science/proposals",
+        json={
+            "proposal": first_proposal,
+            "request_digest": sha256_digest(first_proposal),
+            "idempotency_key": "proposal-conflict-001",
+            "user_confirmed": True,
+        },
+    )
+    conflict = client.post(
+        "/api/science/proposals",
+        json={
+            "proposal": changed_proposal,
+            "request_digest": sha256_digest(changed_proposal),
+            "idempotency_key": "proposal-conflict-001",
+            "user_confirmed": True,
+        },
+    )
+
+    assert first.status_code == 200
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == (
+        "science_confirmation_or_identity_conflict"
+    )
+
+
+def test_proposal_key_reuse_by_another_actor_returns_conflict(tmp_path) -> None:
+    store = ScienceRuntimeStore(
+        tmp_path / "science-runtime",
+        authorization=ScienceAuthorization("admin_only"),
+        roles_for=lambda _identity: ["science.admin"],
+    )
+    first_client, _service = _client(
+        employee_id="100001",
+        runtime_store=store,
+    )
+    second_client, _service = _client(
+        employee_id="100002",
+        runtime_store=store,
+    )
+    proposal = {
+        "domain": "lithography",
+        "kind": "term_alias",
+        "payload": {"alias": "PR"},
+    }
+    request = {
+        "proposal": proposal,
+        "request_digest": sha256_digest(proposal),
+        "idempotency_key": "proposal-actor-conflict-001",
+        "user_confirmed": True,
+    }
+
+    assert first_client.post("/api/science/proposals", json=request).status_code == 200
+    conflict = second_client.post("/api/science/proposals", json=request)
+
+    assert conflict.status_code == 409
 
 
 def test_release_mutation_cannot_be_implied_without_authoritative_manager() -> None:

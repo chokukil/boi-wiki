@@ -424,17 +424,14 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
         request: CreateProposalRequest,
         identity: AuthIdentity = Depends(science_identity),
     ) -> dict[str, Any]:
-        payload = {
-            **request.proposal.payload,
-            "request_digest": request.request_digest,
-            "idempotency_key_digest": sha256_digest(request.idempotency_key),
-        }
         proposal = _invoke(
             lambda: dependencies.runtime_store.save_proposal(
                 identity=identity,
                 domain=request.proposal.domain,
                 kind=request.proposal.kind,
-                payload=payload,
+                payload=request.proposal.payload,
+                idempotency_key=request.idempotency_key,
+                request_digest=request.request_digest,
             )
         )
         return _json_model(proposal)
