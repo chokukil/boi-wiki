@@ -35,7 +35,7 @@
   },
   "science": {
     "binding_id": "sci:binding:domain:conductivity",
-    "ontology_release_id": "sci:ontology:domain-packs-draft/0.1.0",
+    "ontology_release_id": "sci:ontology:general-science-draft/0.1.0",
     "concept_id": "sci:concept:conductivity",
     "aliases": [
       "conductivity",

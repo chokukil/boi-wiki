@@ -1,4 +1,4 @@
-"""Strict, non-authoritative LLM interpretation boundary."""
+"""Optional experimental, non-authoritative LLM interpretation adapter."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from boi_api.app.science.safety import (
     validate_with_closed_error,
 )
 
-PROMPT_VERSION = "science-interpretation/0.1.0"
+PROMPT_VERSION = "science-interpretation/0.2.0"
 
 
 class ScienceInterpretationUnavailable(RuntimeError):
@@ -100,6 +100,7 @@ class ScienceLLMConfig:
     """Runtime connection values plus the safe settings allowed in records."""
 
     model_id: str
+    transport_mode: Literal["openai_compat", "lmstudio_native"] = "openai_compat"
     response_format_mode: Literal["json_schema", "prompt_json"] = "json_schema"
     reasoning_mode: Literal["default", "disabled"] = "default"
     max_attempts: int = 1
@@ -120,6 +121,14 @@ class ScienceLLMConfig:
         ).rstrip("/")
         model_id = cls._first(values, "BOI_SCIENCE_LLM_MODEL", "BOI_LLM_MODEL")
         api_key = cls._first(values, "BOI_SCIENCE_LLM_API_KEY", "BOI_LLM_API_KEY")
+        transport_mode = (
+            cls._first(
+                values,
+                "BOI_SCIENCE_LLM_TRANSPORT_MODE",
+                "BOI_LLM_TRANSPORT_MODE",
+            )
+            or "openai_compat"
+        )
         response_format_mode = (
             cls._first(
                 values,
@@ -154,6 +163,19 @@ class ScienceLLMConfig:
                 "Science LLM response format configuration is invalid",
                 diagnostic_code="invalid_configuration",
             ) from None
+        if transport_mode not in {"openai_compat", "lmstudio_native"}:
+            raise ScienceInterpretationUnavailable(
+                "Science LLM transport configuration is invalid",
+                diagnostic_code="invalid_configuration",
+            ) from None
+        if (
+            transport_mode == "lmstudio_native"
+            and response_format_mode != "prompt_json"
+        ):
+            raise ScienceInterpretationUnavailable(
+                "Science LLM native transport requires prompt JSON validation",
+                diagnostic_code="invalid_configuration",
+            ) from None
         if reasoning_mode not in {"default", "disabled"}:
             raise ScienceInterpretationUnavailable(
                 "Science LLM reasoning configuration is invalid",
@@ -183,6 +205,7 @@ class ScienceLLMConfig:
             "max_tokens": "MAX_TOKENS",
             "seed": "SEED",
             "timeout_seconds": "TIMEOUT_SECONDS",
+            "context_length": "CONTEXT_LENGTH",
         }
         raw_settings: dict[str, str] = {}
         for field_name, suffix in setting_names.items():
@@ -203,6 +226,7 @@ class ScienceLLMConfig:
         )
         return cls(
             model_id=model_id,
+            transport_mode=transport_mode,
             response_format_mode=response_format_mode,
             reasoning_mode=reasoning_mode,
             max_attempts=max_attempts,
@@ -224,6 +248,19 @@ class ScienceLLMConfig:
 
 _CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _FORBIDDEN_OUTPUT_TERMS = {"verdict", "citation", "evidence", "locator"}
+
+
+def _decode_json_content(content: str) -> object:
+    """Accept JSON or one exact JSON Markdown transport fence, never prose."""
+
+    stripped = content.strip()
+    opening = "```json\n"
+    closing = "\n```"
+    if stripped.startswith(opening) and stripped.endswith(closing):
+        if stripped.count("```") != 2:
+            raise ValueError("nested or repeated JSON fences are not allowed")
+        stripped = stripped[len(opening) : -len(closing)]
+    return json.loads(stripped)
 
 
 def _reject_forbidden_output_fields(value: object, *, path: str = "output") -> None:
@@ -265,7 +302,14 @@ class ScienceLLMClient:
             "Extract scientific claim candidates only. Ontology entries are candidate "
             "meanings, never truth or a verdict. Do not output verdicts, citations, "
             "evidence IDs, evidence text, or source locators. Do not fill missing "
-            "conditions. Return exactly one JSON value matching this strict schema: "
+            "conditions. Use only ontology_ref values from ontology_candidates; never "
+            "invent one. Every candidate_meanings surface_term must be one exact, "
+            "single-occurrence substring of the claim span and an exact alias of its "
+            "selected ontology candidate. Provide exactly one subject, relation, and "
+            "object meaning per claim; their textual order may vary. The normalized "
+            "subject_concept_id, predicate, and object_concept_id must respectively "
+            "equal the selected subject, relation, and object candidate concept_id. "
+            "Return exactly one JSON value matching this strict schema: "
             + json.dumps(schema, ensure_ascii=False, sort_keys=True)
         )
 
@@ -363,28 +407,50 @@ class ScienceLLMClient:
         if self.config.reasoning_mode == "disabled":
             user_content += "\n/no_think"
 
-        request_body: dict[str, object] = {
-            "model": self.config.model_id,
-            "messages": [
-                {"role": "system", "content": self._system_prompt()},
-                {
-                    "role": "user",
-                    "content": user_content,
-                },
-            ],
-        }
-        if self.config.response_format_mode == "json_schema":
-            request_body["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "science_interpretation",
-                    "strict": True,
-                    "schema": self._transport_schema(),
-                },
-            }
         generation = self.config.settings.model_dump(exclude_none=True)
         timeout = generation.pop("timeout_seconds", None) or 30.0
-        request_body.update(generation)
+        context_length = generation.pop("context_length", None)
+        if self.config.transport_mode == "lmstudio_native":
+            request_url = (
+                self.config._base_url.removesuffix("/v1") + "/api/v1/chat"
+            )
+            max_output_tokens = generation.pop("max_tokens", None)
+            generation.pop("seed", None)
+            request_body: dict[str, object] = {
+                "model": self.config.model_id,
+                "input": user_content,
+                "system_prompt": self._system_prompt(),
+                "store": False,
+                **generation,
+            }
+            if self.config.reasoning_mode == "disabled":
+                request_body["reasoning"] = "off"
+            if context_length is not None:
+                request_body["context_length"] = context_length
+            if max_output_tokens is not None:
+                request_body["max_output_tokens"] = max_output_tokens
+        else:
+            request_url = f"{self.config._base_url}/chat/completions"
+            request_body = {
+                "model": self.config.model_id,
+                "messages": [
+                    {"role": "system", "content": self._system_prompt()},
+                    {
+                        "role": "user",
+                        "content": user_content,
+                    },
+                ],
+            }
+            if self.config.response_format_mode == "json_schema":
+                request_body["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "science_interpretation",
+                        "strict": True,
+                        "schema": self._transport_schema(),
+                    },
+                }
+            request_body.update(generation)
         headers = {"content-type": "application/json"}
         if self.config._api_key:
             headers["authorization"] = f"Bearer {self.config._api_key}"
@@ -396,7 +462,7 @@ class ScienceLLMClient:
                     timeout=float(timeout),
                 ) as client:
                     response = client.post(
-                        f"{self.config._base_url}/chat/completions",
+                        request_url,
                         headers=headers,
                         json=request_body,
                     )
@@ -431,6 +497,23 @@ class ScienceLLMClient:
         def extract_content() -> str:
             if not isinstance(envelope, Mapping):
                 raise ValueError("completion envelope must be an object")
+            if self.config.transport_mode == "lmstudio_native":
+                output = envelope.get("output")
+                if not isinstance(output, list):
+                    raise ValueError("native completion output must be a list")
+                if any(
+                    not isinstance(item, Mapping)
+                    or item.get("type") not in {"message", "reasoning"}
+                    for item in output
+                ):
+                    raise ValueError("native completion contains an unexpected item")
+                messages = [item for item in output if item.get("type") == "message"]
+                if len(messages) != 1:
+                    raise ValueError("native completion must contain one message")
+                content = messages[0].get("content")
+                if not isinstance(content, str):
+                    raise ValueError("native assistant content must be a JSON string")
+                return content
             choices = envelope.get("choices")
             if not isinstance(choices, list) or len(choices) != 1:
                 raise ValueError("completion must contain exactly one choice")
@@ -454,7 +537,7 @@ class ScienceLLMClient:
             ),
         )
         decoded = validate_with_closed_error(
-            lambda: json.loads(content),
+            lambda: _decode_json_content(content),
             caught=(json.JSONDecodeError, ValueError),
             closed_error=ScienceInterpretationUnavailable(
                 "Science interpretation content is not valid JSON",

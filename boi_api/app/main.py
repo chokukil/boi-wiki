@@ -155,11 +155,14 @@ BOI_RUNTIME_ROOT = Path(os.getenv("BOI_RUNTIME_ROOT") or str(BOI_CONTENT_ROOT.pa
 DATA_ROOT = Path(os.getenv("DATA_ROOT") or str(BOI_CONTENT_ROOT))
 SCIENCE_RUNTIME_ROOT = Path(os.getenv("SCIENCE_RUNTIME_ROOT") or str(BOI_RUNTIME_ROOT / "science"))
 BOI_SCIENCE_ACCESS_MODE = os.getenv("BOI_SCIENCE_ACCESS_MODE", "admin_only").strip().lower()
+BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED = os.getenv(
+    "BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED", "0"
+).strip().lower() in {"1", "true", "yes", "on"}
 BOI_SCIENCE_DICTIONARY_RELEASE_ID = os.getenv(
     "BOI_SCIENCE_DICTIONARY_RELEASE_ID", "boi:dictionary:current/0.1.0"
 ).strip()
 BOI_SCIENCE_ONTOLOGY_RELEASE_ID = os.getenv(
-    "BOI_SCIENCE_ONTOLOGY_RELEASE_ID", "sci:ontology:domain-packs-draft/0.1.0"
+    "BOI_SCIENCE_ONTOLOGY_RELEASE_ID", "sci:ontology:general-science-draft/0.1.0"
 ).strip()
 EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT") or str(BOI_RUNTIME_ROOT / "events"))
 EVENT_CATALOG_ROOT = Path(os.getenv("EVENT_CATALOG_ROOT", "/data/event_catalog"))
@@ -32339,7 +32342,11 @@ def _configure_science_verifier() -> None:
         return ScienceService(
             catalog=catalog,
             runtime_store=runtime_store,
-            llm_client=ScienceLLMClient(ScienceLLMConfig.from_env()),
+            llm_client=(
+                ScienceLLMClient(ScienceLLMConfig.from_env())
+                if BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED
+                else None
+            ),
             dictionary_release_id=BOI_SCIENCE_DICTIONARY_RELEASE_ID,
             ontology_release_id=BOI_SCIENCE_ONTOLOGY_RELEASE_ID,
             ontology_binding_ids=[binding.object_id for binding in bindings],

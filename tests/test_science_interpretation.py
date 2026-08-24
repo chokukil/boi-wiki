@@ -246,6 +246,7 @@ def test_llm_config_uses_science_overrides_then_boi_fallback_without_exposing_se
             "BOI_LLM_API_KEY": "fallback-secret",
             "BOI_LLM_TEMPERATURE": "0.2",
             "BOI_SCIENCE_LLM_MAX_TOKENS": "512",
+            "BOI_SCIENCE_LLM_CONTEXT_LENGTH": "100096",
             "BOI_LLM_TIMEOUT_SECONDS": "7.5",
         }
     )
@@ -257,6 +258,7 @@ def test_llm_config_uses_science_overrides_then_boi_fallback_without_exposing_se
         "max_tokens": 512,
         "seed": None,
         "timeout_seconds": 7.5,
+        "context_length": 100096,
     }
     assert "science-llm.test" not in repr(config)
     assert "fallback-secret" not in repr(config)
@@ -369,6 +371,85 @@ def test_llm_client_can_use_prompt_json_when_server_rejects_response_format():
     assert config.response_format_mode == "prompt_json"
     assert "response_format" not in seen_request["body"]
     assert result.payload.claims[0].normalized_claim.predicate == "increases"
+
+
+def test_llm_client_uses_lmstudio_native_reasoning_off_without_server_storage():
+    seen_request: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_request["url"] = str(request.url)
+        seen_request["authorization"] = request.headers.get("authorization")
+        seen_request["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model_instance_id": "fixture-instance",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": "```json\n"
+                        + json.dumps(_llm_content(), ensure_ascii=False)
+                        + "\n```",
+                    }
+                ],
+                "stats": {
+                    "input_tokens": 120,
+                    "total_output_tokens": 80,
+                    "reasoning_output_tokens": 0,
+                },
+            },
+        )
+
+    config = ScienceLLMConfig.from_env(
+        {
+            "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+            "BOI_SCIENCE_LLM_MODEL": "qwen/qwen3.8-27b",
+            "BOI_SCIENCE_LLM_API_KEY": "secret-token",
+            "BOI_SCIENCE_LLM_TRANSPORT_MODE": "lmstudio_native",
+            "BOI_SCIENCE_LLM_RESPONSE_FORMAT_MODE": "prompt_json",
+            "BOI_SCIENCE_LLM_REASONING_MODE": "disabled",
+            "BOI_SCIENCE_LLM_CONTEXT_LENGTH": "100096",
+            "BOI_SCIENCE_LLM_MAX_TOKENS": "4096",
+            "BOI_SCIENCE_LLM_SEED": "42",
+        }
+    )
+
+    result = ScienceLLMClient(
+        config,
+        transport=httpx.MockTransport(handler),
+    ).interpret("RPM 증가 시 두께 변화", ontology_candidates=[])
+
+    assert seen_request["url"] == "https://science-llm.test/api/v1/chat"
+    assert seen_request["authorization"] == "Bearer secret-token"
+    body = seen_request["body"]
+    assert body["reasoning"] == "off"
+    assert body["store"] is False
+    assert body["context_length"] == 100096
+    assert body["max_output_tokens"] == 4096
+    assert "seed" not in body
+    assert "response_format" not in body
+    assert result.payload.claims[0].normalized_claim.predicate == "increases"
+
+
+def test_llm_client_rejects_fenced_json_with_surrounding_prose():
+    content = "Result follows.\n```json\n" + json.dumps(_llm_content()) + "\n```"
+    config = ScienceLLMConfig.from_env(
+        {
+            "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+            "BOI_SCIENCE_LLM_MODEL": "fixture-model",
+        }
+    )
+    client = ScienceLLMClient(
+        config,
+        transport=httpx.MockTransport(
+            lambda _request: _openai_response(content)
+        ),
+    )
+
+    with pytest.raises(ScienceInterpretationUnavailable) as captured:
+        client.interpret("RPM 증가 시 두께 변화", ontology_candidates=[])
+
+    assert captured.value.diagnostic_code == "invalid_json"
 
 
 def test_llm_client_can_disable_qwen_thinking_for_bounded_extraction() -> None:
@@ -927,6 +1008,93 @@ def test_interpret_document_persists_identity_bound_safe_metadata_and_catalog_me
     assert "The process stage changes rule applicability" not in persisted
 
 
+def test_interpret_document_sends_only_exact_alias_matched_ontology_candidates(
+    science_identity: AuthIdentity,
+):
+    service, catalog, _store, llm = _service()
+    catalog.bindings["sci:binding:viscosity"] = SimpleNamespace(
+        object_id="sci:binding:viscosity",
+        digest=sha256_digest("fixture-viscosity-binding"),
+        ontology_release_id="sci:ontology:0.1",
+        concept_id="sci:concept:viscosity",
+        aliases=["점도", "viscosity"],
+        meaning="dynamic viscosity",
+        domain="general-science",
+    )
+    service.ontology_binding_ids = (
+        *service.ontology_binding_ids,
+        "sci:binding:viscosity",
+    )
+
+    service.interpret_document(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        idempotency_key="science-request:matched-ontology-candidates",
+    )
+
+    assert llm.ontology_candidates is not None
+    assert {item["ontology_ref"] for item in llm.ontology_candidates} == {
+        "sci:binding:rpm",
+        "sci:binding:increases",
+        "sci:binding:film-thickness",
+    }
+
+
+def test_interpret_document_accepts_non_overlapping_roles_in_natural_text_order(
+    science_identity: AuthIdentity,
+):
+    document = "두께는 RPM을 높이면 증가한다."
+    content = _llm_content()
+    claim = content["claims"][0]
+    claim["source_span"] = {
+        "start": 0,
+        "end": len(document),
+        "exact": document,
+        "prefix": "",
+        "suffix": "",
+    }
+    claim["candidate_meanings"] = [
+        {
+            "ambiguity_id": "ambiguity:spin-stage",
+            "concept_role": "subject",
+            "surface_term": "RPM",
+            "ontology_ref": "sci:binding:rpm",
+            "meaning": "final coat spin speed",
+        },
+        {
+            "ambiguity_id": None,
+            "concept_role": "relation",
+            "surface_term": "높이면",
+            "ontology_ref": "sci:binding:increases",
+            "meaning": "increases",
+        },
+        {
+            "ambiguity_id": None,
+            "concept_role": "object",
+            "surface_term": "두께",
+            "ontology_ref": "sci:binding:film-thickness",
+            "meaning": "final dry film thickness",
+        },
+    ]
+    service, _catalog, _store, _llm = _service(content)
+
+    record = service.interpret_document(
+        document,
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        idempotency_key="science-request:natural-role-order",
+    )
+
+    assert record.decision_impact[0].issue_codes == ["USER_CONFIRMATION_REQUIRED"]
+    assert record.decision_impact[0].status == "requires_user_confirmation"
+    assert record.candidate_claims[0].interpretation.ontology_refs == [
+        "sci:binding:film-thickness",
+        "sci:binding:increases",
+        "sci:binding:rpm",
+    ]
+
+
 def test_interpret_document_reanchors_a_selection_to_full_document_offsets(
     science_identity: AuthIdentity,
 ):
@@ -1144,6 +1312,24 @@ def test_interpretation_converts_missing_pinned_ontology_to_fail_closed_error(
             idempotency_key=INTERPRET_KEY,
         )
 
+    assert store.interpretations == {}
+
+
+def test_experimental_llm_adapter_can_be_disabled_without_creating_a_candidate(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, _llm = _service()
+    service.llm_client = None
+
+    with pytest.raises(ScienceInterpretationUnavailable) as captured:
+        service.interpret_document(
+            "RPM 증가 시 두께 변화",
+            document_ref="boi:public:science:document:fixture",
+            identity=science_identity,
+            idempotency_key="science-request:experimental-adapter-disabled",
+        )
+
+    assert captured.value.diagnostic_code == "adapter_disabled"
     assert store.interpretations == {}
 
 

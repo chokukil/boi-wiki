@@ -35,7 +35,7 @@
   },
   "science": {
     "binding_id": "sci:binding:domain:bulk-property",
-    "ontology_release_id": "sci:ontology:domain-packs-draft/0.1.0",
+    "ontology_release_id": "sci:ontology:general-science-draft/0.1.0",
     "concept_id": "sci:concept:bulk-property",
     "aliases": [
       "bulk property",

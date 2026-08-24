@@ -536,6 +536,7 @@ class LLMModelSettings(ScienceModel):
     max_tokens: int | None = Field(default=None, gt=0)
     seed: int | None = None
     timeout_seconds: float | None = Field(default=None, gt=0)
+    context_length: int | None = Field(default=None, ge=2048, le=1_048_576)
 
     @field_validator("temperature", "top_p", "timeout_seconds", mode="before")
     @classmethod

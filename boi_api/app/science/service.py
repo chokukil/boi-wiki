@@ -61,7 +61,7 @@ class ScienceService:
         *,
         catalog: Any,
         runtime_store: Any,
-        llm_client: ScienceLLMClient,
+        llm_client: ScienceLLMClient | None,
         dictionary_release_id: str,
         ontology_release_id: str,
         ontology_binding_ids: Sequence[str],
@@ -90,6 +90,11 @@ class ScienceService:
         return f"sci-{prefix}:" + cls._idempotency_digest(key).removeprefix("sha256:")
 
     def _prompt_digest(self) -> str:
+        if self.llm_client is None:
+            raise ScienceInterpretationUnavailable(
+                "Experimental Science LLM adapter is disabled",
+                diagnostic_code="adapter_disabled",
+            )
         return sha256_digest(
             {
                 "prompt_version": PROMPT_VERSION,
@@ -97,6 +102,7 @@ class ScienceService:
                     ScienceLLMClient._system_prompt()
                 ),
                 "model_id": self.llm_client.config.model_id,
+                "transport_mode": self.llm_client.config.transport_mode,
                 "response_format_mode": self.llm_client.config.response_format_mode,
                 "reasoning_mode": self.llm_client.config.reasoning_mode,
                 "max_attempts": self.llm_client.config.max_attempts,
@@ -332,7 +338,7 @@ class ScienceService:
             "object": normalized.object_concept_id,
         }
         meanings: list[CandidateMeaningRecord] = []
-        surface_positions: dict[str, int] = {}
+        surface_spans: dict[str, tuple[int, int]] = {}
         validated_refs: set[str] = set()
         for meaning in candidate.candidate_meanings:
             canonical = ontology_index.get(meaning.ontology_ref)
@@ -357,8 +363,11 @@ class ScienceService:
             position = resolved.exact.find(meaning.surface_term)
             if occurrence_count != 1:
                 issues.add("COMPLETE_RELATION_SPAN_REQUIRED")
-            if position >= 0 and meaning.concept_role not in surface_positions:
-                surface_positions[meaning.concept_role] = position
+            if position >= 0 and meaning.concept_role not in surface_spans:
+                surface_spans[meaning.concept_role] = (
+                    position,
+                    position + len(meaning.surface_term),
+                )
             if (
                 canonical is not None
                 and binding_matches
@@ -385,10 +394,17 @@ class ScienceService:
                     domain=domain,
                 )
             )
-        if set(surface_positions) != {"subject", "relation", "object"} or not (
-            surface_positions.get("subject", 0)
-            < surface_positions.get("relation", 0)
-            < surface_positions.get("object", 0)
+        ordered_surface_spans = sorted(surface_spans.values())
+        has_overlapping_roles = any(
+            left[1] > right[0]
+            for left, right in zip(
+                ordered_surface_spans,
+                ordered_surface_spans[1:],
+                strict=False,
+            )
+        )
+        if set(surface_spans) != {"subject", "relation", "object"} or (
+            has_overlapping_roles
         ):
             issues.add("COMPLETE_RELATION_SPAN_REQUIRED")
         claim = claim.model_copy(
@@ -482,7 +498,14 @@ class ScienceService:
             selection_start = selection.start
             interpreted_text = selection.exact
 
-        ontology_index = self._ontology_index()
+        ontology_index = {
+            binding_id: candidate
+            for binding_id, candidate in self._ontology_index().items()
+            if any(
+                alias in interpreted_text
+                for alias in candidate["aliases"]
+            )
+        }
         result = self.llm_client.interpret(
             interpreted_text,
             ontology_candidates=list(ontology_index.values()),
