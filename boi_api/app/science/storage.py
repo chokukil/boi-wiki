@@ -61,6 +61,10 @@ _COLLECTIONS: tuple[str, ...] = (
 )
 _DOMAIN_PATTERN = r"^[a-z0-9][a-z0-9-]*$"
 _RUNTIME_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:@#-]*$"
+_TRUSTED_ACTOR_RE = re.compile(r"^(?:[0-9]{1,32}|svc:[a-z0-9][a-z0-9._-]{0,127})$")
+_INTERPRETATION_ID_RE = re.compile(r"^sci-interpretation:[A-Za-z0-9][A-Za-z0-9._-]*$")
+_REPORT_ID_RE = re.compile(r"^sci-report:[A-Za-z0-9][A-Za-z0-9._-]*$")
+_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.[0-9a-f]{32}\.tmp$")
 _UUID_PATTERN = (
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 )
@@ -80,6 +84,11 @@ _SENSITIVE_KEYS = {
 }
 _SENSITIVE_SCALAR_PATTERNS = (
     re.compile(r"(?i)\b(?:https?|wss?)://"),
+    re.compile(r"(?i)\b(?:sk|pk|rk|ghp|xox[baprs])-[A-Za-z0-9_-]{8,}\b"),
+    re.compile(
+        r"(?i)\b(?:localhost|(?:[a-z0-9-]+\.)+[a-z]{2,})"
+        r":[0-9]{2,5}(?:/[^\s]*)?"
+    ),
     re.compile(r"(?i)\b(?:bearer|basic)(?:\s|[-_:])+[^\s]+"),
     re.compile(
         r"(?i)\b(?:api[_-]?key|authorization|base[_-]?url|credential|"
@@ -144,12 +153,12 @@ class ScienceProposalApproval(ScienceModel):
 
 
 class InterpretationSavedAuditDetails(ScienceModel):
-    document_digest: str = Field(min_length=1)
+    document_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
 
 class ReportSavedAuditDetails(ScienceModel):
-    document_digest: str = Field(min_length=1)
-    report_digest: str = Field(min_length=1)
+    document_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    report_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
 
 class ProposalSavedAuditDetails(ScienceModel):
@@ -183,6 +192,23 @@ class ScienceAuditRecord(ScienceModel):
         detail_model = _AUDIT_DETAIL_MODELS[self.action]
         validated = detail_model.model_validate(self.details)
         self.details = validated.model_dump(mode="json", exclude_none=False)
+        _reject_sensitive_scalars(
+            self.model_dump(mode="json", exclude_none=False), path="audit"
+        )
+        if not _TRUSTED_ACTOR_RE.fullmatch(self.actor):
+            raise ValueError("Science audit actor is not a trusted typed identity")
+        if self.action == "interpretation_saved":
+            target_matches = _INTERPRETATION_ID_RE.fullmatch(self.target_id)
+        elif self.action == "report_saved":
+            target_matches = _REPORT_ID_RE.fullmatch(self.target_id)
+        else:
+            target_matches = re.fullmatch(
+                rf"sci-proposal:{_UUID_PATTERN}", self.target_id
+            )
+        if not target_matches:
+            raise ValueError(
+                f"Science audit target is invalid for action {self.action}"
+            )
         return self
 
 
@@ -191,6 +217,7 @@ class ScienceTransactionJournal(ScienceModel):
     prepared_at: datetime
     collection: CollectionName
     record_id: str = Field(min_length=1, pattern=_RUNTIME_ID_PATTERN)
+    actor_id: str = Field(min_length=1, pattern=_RUNTIME_ID_PATTERN)
     record: dict[str, Any]
     audit: ScienceAuditRecord
 
@@ -339,24 +366,34 @@ class ScienceRuntimeStore:
             raise UnsafeScienceRuntimePathError(f"{label} must use a private mode")
 
     def _verify_bindings(self) -> None:
+        self._verify_directory_fd(self._root_fd, label="runtime root")
         try:
             root_metadata = os.lstat(self.root)
         except FileNotFoundError as exc:
             raise UnsafeScienceRuntimePathError(
                 "Science runtime root disappeared"
             ) from exc
-        if (
-            stat.S_ISLNK(root_metadata.st_mode)
-            or (
-                root_metadata.st_dev,
-                root_metadata.st_ino,
-            )
-            != self._root_identity
+        if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(
+            root_metadata.st_mode
         ):
             raise UnsafeScienceRuntimePathError(
                 "Science runtime root directory changed"
             )
+        if root_metadata.st_uid != os.geteuid():
+            raise UnsafeScienceRuntimePathError(
+                "Science runtime root has the wrong owner"
+            )
+        if stat.S_IMODE(root_metadata.st_mode) & 0o077:
+            raise UnsafeScienceRuntimePathError("Science runtime root is not private")
+        if (
+            root_metadata.st_dev,
+            root_metadata.st_ino,
+        ) != self._root_identity:
+            raise UnsafeScienceRuntimePathError(
+                "Science runtime root directory changed"
+            )
         for collection, descriptor in self._dir_fds.items():
+            self._verify_directory_fd(descriptor, label=f"{collection} directory")
             try:
                 current = os.stat(
                     collection, dir_fd=self._root_fd, follow_symlinks=False
@@ -366,7 +403,19 @@ class ScienceRuntimeStore:
                     f"Science {collection} directory changed or disappeared"
                 ) from exc
             pinned = os.fstat(descriptor)
-            if not stat.S_ISDIR(current.st_mode) or (
+            if not stat.S_ISDIR(current.st_mode) or stat.S_ISLNK(current.st_mode):
+                raise UnsafeScienceRuntimePathError(
+                    f"Science {collection} directory changed"
+                )
+            if current.st_uid != os.geteuid():
+                raise UnsafeScienceRuntimePathError(
+                    f"Science {collection} directory has the wrong owner"
+                )
+            if stat.S_IMODE(current.st_mode) & 0o077:
+                raise UnsafeScienceRuntimePathError(
+                    f"Science {collection} directory is not private"
+                )
+            if (
                 current.st_dev,
                 current.st_ino,
             ) != (pinned.st_dev, pinned.st_ino):
@@ -485,7 +534,7 @@ class ScienceRuntimeStore:
 
         directory_fd = self._dir_fds[collection]
         destination = self._filename(record_id)
-        temporary = f".{destination}.{uuid.uuid4().hex}.tmp"
+        temporary = f".{destination.removesuffix('.json')}.{uuid.uuid4().hex}.tmp"
         descriptor = os.open(
             temporary,
             os.O_CREAT
@@ -552,17 +601,14 @@ class ScienceRuntimeStore:
             raise KeyError(f"unknown Science runtime record: {record_id}")
         payload = json.loads(canonical.decode("utf-8"))
         record = model.model_validate(payload)
-        identifier = next(
-            getattr(record, field_name)
-            for field_name in (
-                "interpretation_id",
-                "report_id",
-                "proposal_id",
-                "approval_id",
-                "transaction_id",
-            )
-            if hasattr(record, field_name)
-        )
+        identifier_field = {
+            "interpretations": "interpretation_id",
+            "reports": "report_id",
+            "proposals": "proposal_id",
+            "proposal-approvals": "approval_id",
+            "transactions": "transaction_id",
+        }[collection]
+        identifier = getattr(record, identifier_field)
         if identifier != record_id:
             raise ImmutableScienceRecordError(
                 f"Science runtime record identity mismatch for {record_id}"
@@ -626,8 +672,157 @@ class ScienceRuntimeStore:
         self._verify_regular_fd(descriptor, label="Science audit")
         return descriptor, created
 
+    @staticmethod
+    def _record_model(collection: CollectionName) -> type[ScienceModel]:
+        return {
+            "interpretations": InterpretationRecord,
+            "reports": VerificationReport,
+            "proposals": ScienceProposalRecord,
+            "proposal-approvals": ScienceProposalApproval,
+        }[collection]
+
+    @staticmethod
+    def _record_identifier(collection: CollectionName, record: ScienceModel) -> str:
+        field_name = {
+            "interpretations": "interpretation_id",
+            "reports": "report_id",
+            "proposals": "proposal_id",
+            "proposal-approvals": "approval_id",
+        }[collection]
+        return str(getattr(record, field_name))
+
+    @staticmethod
+    def _expected_audit_contract(
+        collection: CollectionName,
+        record: ScienceModel,
+        *,
+        actor_id: str,
+    ) -> tuple[AuditAction, str, dict[str, Any], str]:
+        if collection == "interpretations":
+            interpretation = InterpretationRecord.model_validate(record)
+            return (
+                "interpretation_saved",
+                interpretation.interpretation_id,
+                {"document_digest": interpretation.document_digest},
+                actor_id,
+            )
+        if collection == "reports":
+            report = VerificationReport.model_validate(record)
+            return (
+                "report_saved",
+                report.report_id,
+                {
+                    "document_digest": report.document_digest,
+                    "report_digest": report.report_digest,
+                },
+                report.created_by,
+            )
+        if collection == "proposals":
+            proposal = ScienceProposalRecord.model_validate(record)
+            return (
+                "proposal_saved",
+                proposal.proposal_id,
+                {"domain": proposal.domain, "kind": proposal.kind},
+                proposal.created_by,
+            )
+        approval = ScienceProposalApproval.model_validate(record)
+        return (
+            "proposal_approved_for_release_candidate",
+            approval.proposal_id,
+            {"approval_id": approval.approval_id, "domain": approval.domain},
+            approval.approved_by,
+        )
+
+    def _validate_journal_semantics(
+        self, journal: ScienceTransactionJournal
+    ) -> ScienceModel:
+        record = self._record_model(journal.collection).model_validate(journal.record)
+        embedded_id = self._record_identifier(journal.collection, record)
+        if embedded_id != journal.record_id:
+            raise ImmutableScienceRecordError(
+                "Science transaction record identity does not match record_id"
+            )
+        expected_action, expected_target, expected_details, expected_actor = (
+            self._expected_audit_contract(
+                journal.collection, record, actor_id=journal.actor_id
+            )
+        )
+        actual = journal.audit
+        if journal.actor_id != actual.actor or expected_actor != actual.actor:
+            raise ImmutableScienceRecordError(
+                "Science transaction audit actor linkage mismatch"
+            )
+        if (
+            actual.action != expected_action
+            or actual.target_id != expected_target
+            or actual.details != expected_details
+        ):
+            raise ImmutableScienceRecordError(
+                "Science transaction audit contract does not match its record"
+            )
+        return record
+
+    def _audit_content_locked(self) -> bytes:
+        try:
+            descriptor = self._open_existing(
+                self._root_fd, "audit.jsonl", label="Science audit"
+            )
+        except FileNotFoundError:
+            return b""
+        try:
+            return self._read_all(descriptor)
+        finally:
+            os.close(descriptor)
+
+    @staticmethod
+    def _audit_rows_from_complete_content(
+        content: bytes,
+    ) -> dict[str, bytes]:
+        if content and not content.endswith(b"\n"):
+            raise ImmutableScienceRecordError(
+                "Science audit contains a partial JSONL row"
+            )
+        rows: dict[str, bytes] = {}
+        for line_number, row in enumerate(content.splitlines(keepends=True), start=1):
+            if row == b"\n":
+                raise ImmutableScienceRecordError(
+                    f"Science audit row {line_number} is empty"
+                )
+            try:
+                payload = json.loads(row[:-1].decode("utf-8"))
+                event = ScienceAuditRecord.model_validate(payload)
+            except ScienceSensitivePersistenceError:
+                raise
+            except (UnicodeDecodeError, ValueError, TypeError) as exc:
+                raise ImmutableScienceRecordError(
+                    f"Science audit row {line_number} is invalid JSON or schema"
+                ) from exc
+            canonical_row = canonical_json_bytes(event) + b"\n"
+            if canonical_row != row:
+                raise ImmutableScienceRecordError(
+                    f"Science audit row {line_number} is not canonical"
+                )
+            if event.event_id in rows:
+                raise ImmutableScienceRecordError(
+                    f"Science audit contains duplicate event ID {event.event_id}"
+                )
+            rows[event.event_id] = canonical_row
+        return rows
+
     def _append_audit_event_locked(self, event: ScienceAuditRecord) -> None:
-        row = canonical_json_bytes(event) + b"\n"
+        validated = ScienceAuditRecord.model_validate(
+            event.model_dump(mode="json", exclude_none=False)
+        )
+        row = canonical_json_bytes(validated) + b"\n"
+        existing_rows = self._audit_rows_from_complete_content(
+            self._audit_content_locked()
+        )
+        if validated.event_id in existing_rows:
+            if existing_rows[validated.event_id] == row:
+                return
+            raise ImmutableScienceRecordError(
+                f"Science audit event ID collision for {validated.event_id}"
+            )
         descriptor, created = self._open_audit_locked()
         prior_eof = os.lseek(descriptor, 0, os.SEEK_END)
         try:
@@ -644,34 +839,39 @@ class ScienceRuntimeStore:
             raise
         os.close(descriptor)
 
-    def _audit_event_exists_locked(self, event_id: str) -> bool:
-        try:
-            descriptor = self._open_existing(
-                self._root_fd, "audit.jsonl", label="Science audit"
-            )
-        except FileNotFoundError:
-            return False
-        try:
-            content = self._read_all(descriptor)
-        finally:
-            os.close(descriptor)
-        if content and not content.endswith(b"\n"):
-            raise ImmutableScienceRecordError(
-                "Science audit contains a partial JSONL row"
-            )
-        for raw_line in content.splitlines():
-            event = ScienceAuditRecord.model_validate(json.loads(raw_line))
-            if event.event_id == event_id:
-                return True
-        return False
+    def _scan_transaction_entries_locked(
+        self,
+    ) -> tuple[list[str], dict[str, list[str]]]:
+        journals: list[str] = []
+        temporary: dict[str, list[str]] = {
+            collection: [] for collection in _COLLECTIONS
+        }
+        for collection in _COLLECTIONS:
+            for name in sorted(os.listdir(self._dir_fds[collection])):
+                if _TEMPORARY_NAME_RE.fullmatch(name):
+                    descriptor = self._open_existing(
+                        self._dir_fds[collection],
+                        name,
+                        label=f"Science {collection} temporary residue",
+                    )
+                    os.close(descriptor)
+                    temporary[collection].append(name)
+                    continue
+                if collection == "transactions":
+                    if not name.endswith(".json"):
+                        raise UnsafeScienceRuntimePathError(
+                            f"unexpected Science transaction entry: {name}"
+                        )
+                    journals.append(name)
+        return journals, temporary
 
-    def _transaction_journals_locked(self) -> list[ScienceTransactionJournal]:
-        journals: list[ScienceTransactionJournal] = []
-        for name in sorted(os.listdir(self._dir_fds["transactions"])):
-            if not name.endswith(".json"):
-                raise UnsafeScienceRuntimePathError(
-                    f"unexpected Science transaction entry: {name}"
-                )
+    def _transaction_journals_locked(
+        self, names: list[str] | None = None
+    ) -> list[tuple[ScienceTransactionJournal, ScienceModel]]:
+        if names is None:
+            names, _ = self._scan_transaction_entries_locked()
+        journals: list[tuple[ScienceTransactionJournal, ScienceModel]] = []
+        for name in names:
             descriptor = self._open_existing(
                 self._dir_fds["transactions"],
                 name,
@@ -681,7 +881,14 @@ class ScienceRuntimeStore:
                 canonical = self._read_all(descriptor)
             finally:
                 os.close(descriptor)
-            journal = ScienceTransactionJournal.model_validate_json(canonical)
+            try:
+                journal = ScienceTransactionJournal.model_validate_json(canonical)
+            except ScienceSensitivePersistenceError:
+                raise
+            except (ValueError, TypeError) as exc:
+                raise ImmutableScienceRecordError(
+                    "Science transaction journal is invalid"
+                ) from exc
             if name != self._filename(journal.transaction_id):
                 raise ImmutableScienceRecordError(
                     "Science transaction journal filename mismatch"
@@ -690,25 +897,69 @@ class ScienceRuntimeStore:
                 raise ImmutableScienceRecordError(
                     "Science transaction journal is not canonical"
                 )
-            journals.append(journal)
+            record = self._validate_journal_semantics(journal)
+            journals.append((journal, record))
         return journals
+
+    def _remove_temporary_residues_locked(
+        self, temporary: dict[str, list[str]]
+    ) -> None:
+        for collection, names in temporary.items():
+            if not names:
+                continue
+            for name in names:
+                os.unlink(name, dir_fd=self._dir_fds[collection])
+            os.fsync(self._dir_fds[collection])
+
+    def _truncate_audit_locked(self, length: int) -> None:
+        descriptor = os.open(
+            "audit.jsonl",
+            os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0),
+            dir_fd=self._root_fd,
+        )
+        try:
+            self._verify_regular_fd(descriptor, label="Science audit")
+            os.ftruncate(descriptor, length)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def _prepare_recovery_locked(
+        self,
+    ) -> tuple[list[tuple[ScienceTransactionJournal, ScienceModel]], dict[str, bytes]]:
+        names, temporary = self._scan_transaction_entries_locked()
+        journals = self._transaction_journals_locked(names)
+        audit_content = self._audit_content_locked()
+        complete_content = audit_content
+        truncate_to: int | None = None
+        if audit_content and not audit_content.endswith(b"\n"):
+            last_newline = audit_content.rfind(b"\n")
+            truncate_to = last_newline + 1
+            complete_content = audit_content[:truncate_to]
+            partial = audit_content[truncate_to:]
+            candidates = {
+                canonical_json_bytes(journal.audit) + b"\n"
+                for journal, _ in journals
+                if (canonical_json_bytes(journal.audit) + b"\n").startswith(partial)
+            }
+            if len(candidates) != 1:
+                raise ImmutableScienceRecordError(
+                    "Science audit partial row is not bound to one pending journal"
+                )
+        rows = self._audit_rows_from_complete_content(complete_content)
+        self._remove_temporary_residues_locked(temporary)
+        if truncate_to is not None:
+            self._truncate_audit_locked(truncate_to)
+        return journals, rows
 
     def _recover_pending_transactions_locked(
         self, *, record_id: str | None = None
     ) -> int:
-        model_by_collection: dict[str, type[ScienceModel]] = {
-            "interpretations": InterpretationRecord,
-            "reports": VerificationReport,
-            "proposals": ScienceProposalRecord,
-            "proposal-approvals": ScienceProposalApproval,
-        }
+        journals, audit_rows = self._prepare_recovery_locked()
         recovered = 0
-        for journal in self._transaction_journals_locked():
+        for journal, record in journals:
             if record_id is not None and journal.record_id != record_id:
                 continue
-            record = model_by_collection[journal.collection].model_validate(
-                journal.record
-            )
             record_bytes = canonical_json_bytes(record)
             existing = self._existing_bytes_locked(
                 journal.collection, journal.record_id
@@ -730,9 +981,16 @@ class ScienceRuntimeStore:
                 raise ImmutableScienceRecordError(
                     f"immutable record collision for {journal.record_id}"
                 )
-            if not self._audit_event_exists_locked(journal.audit.event_id):
+            expected_row = canonical_json_bytes(journal.audit) + b"\n"
+            existing_row = audit_rows.get(journal.audit.event_id)
+            if existing_row is not None and existing_row != expected_row:
+                raise ImmutableScienceRecordError(
+                    f"Science audit event ID collision for {journal.audit.event_id}"
+                )
+            if existing_row is None:
                 try:
                     self._append_audit_event_locked(journal.audit)
+                    audit_rows[journal.audit.event_id] = expected_row
                 except BaseException as exc:
                     raise ScienceTransactionPendingError(
                         journal.transaction_id,
@@ -778,9 +1036,11 @@ class ScienceRuntimeStore:
             prepared_at=_utc_now(),
             collection=collection,
             record_id=record_id,
+            actor_id=audit.actor,
             record=record.model_dump(mode="json", exclude_none=False),
             audit=audit,
         )
+        self._validate_journal_semantics(journal)
         try:
             self._publish_bytes_locked(
                 "transactions", transaction_id, canonical_json_bytes(journal)
@@ -803,7 +1063,16 @@ class ScienceRuntimeStore:
             self._publish_bytes_locked(collection, record_id, record_bytes)
         except _RecordPublicationError as exc:
             if not exc.published:
-                self._remove_record_locked("transactions", transaction_id)
+                try:
+                    self._remove_record_locked("transactions", transaction_id)
+                except BaseException as cleanup_error:
+                    raise ScienceTransactionPendingError(
+                        transaction_id,
+                        record_id,
+                        record_published=False,
+                        audit_pending=True,
+                        cause=cleanup_error,
+                    ) from cleanup_error
                 raise exc.cause
             raise ScienceTransactionPendingError(
                 transaction_id,
@@ -831,7 +1100,7 @@ class ScienceRuntimeStore:
                 transaction_id,
                 record_id,
                 record_published=True,
-                audit_pending=not self._audit_event_exists_locked(audit.event_id),
+                audit_pending=False,
                 cause=exc,
             ) from exc
         return True
@@ -942,13 +1211,24 @@ class ScienceRuntimeStore:
             approval_id = "sci-approval:" + proposal.proposal_id.removeprefix(
                 "sci-proposal:"
             )
-            existing = self._existing_bytes_locked("proposal-approvals", approval_id)
-            if existing is not None:
-                approval = ScienceProposalApproval.model_validate_json(existing)
-                if approval.approved_by == identity.employee_id:
+            self._recover_pending_transactions_locked(record_id=approval_id)
+            if (
+                self._existing_bytes_locked("proposal-approvals", approval_id)
+                is not None
+            ):
+                approval = self._load_locked(
+                    "proposal-approvals", approval_id, ScienceProposalApproval
+                )
+                if (
+                    approval.approval_id == approval_id
+                    and approval.proposal_id == proposal.proposal_id
+                    and approval.domain == proposal.domain
+                    and approval.proposal_kind == proposal.kind
+                    and approval.approved_by == identity.employee_id
+                ):
                     return approval
                 raise ImmutableScienceRecordError(
-                    f"immutable record collision for {approval_id}"
+                    f"Science approval linkage collision for {approval_id}"
                 )
             approval = ScienceProposalApproval(
                 approval_id=approval_id,
@@ -997,7 +1277,7 @@ class ScienceRuntimeStore:
         with self._exclusive():
             return [
                 journal.transaction_id
-                for journal in self._transaction_journals_locked()
+                for journal, _ in self._transaction_journals_locked()
             ]
 
     def recover_pending_transactions(self) -> int:
