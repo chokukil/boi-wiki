@@ -46,7 +46,7 @@
         "claim_packet": {
           "claim_id": "claim:common:004:clear_violation",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 160,
@@ -104,7 +104,7 @@
         "claim_packet": {
           "claim_id": "claim:common:004:in_scope_consistency",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 390,
@@ -162,7 +162,7 @@
         "claim_packet": {
           "claim_id": "claim:common:004:missing_required_condition",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 635,
@@ -215,7 +215,7 @@
         "claim_packet": {
           "claim_id": "claim:common:004:outside_validity_domain",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 949,
@@ -273,7 +273,7 @@
         "claim_packet": {
           "claim_id": "claim:common:004:empirical_verification_required",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 1270,
@@ -335,7 +335,7 @@
         "claim_packet": {
           "claim_id": "claim:common:004:negation",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 1581,
@@ -393,7 +393,7 @@
         "claim_packet": {
           "claim_id": "claim:common:004:unit_variation",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 1834,
@@ -468,7 +468,7 @@
         "claim_packet": {
           "claim_id": "claim:common:004:decision_changing_ambiguity",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 2132,
@@ -522,7 +522,7 @@
         "alternative_claim_packet": {
           "claim_id": "claim:common:004:decision_changing_ambiguity:alternative",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 2132,
@@ -578,14 +578,14 @@
         "claim_packet": {
           "claim_id": "claim:common:004:paraphrase",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 2431,
             "end": 2693,
             "exact": "In equivalent wording, the document states that a measurement result is generally expressed as a measured quantity value together with a measurement uncertainty. The reviewed quantities are measured quantity value = 1 meter; measurement uncertainty = 0.01 meter.",
             "prefix": " = 1 meter; measurement uncertainty = 0.01 meter.\n\n[paraphrase]\n",
-            "suffix": "\n\n[false_red_prevention]\nA quantity value written without uncert"
+            "suffix": "\n\n[false_red_prevention]\nA calibration note lists a measured val"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-result-expression",
@@ -636,12 +636,12 @@
         "claim_packet": {
           "claim_id": "claim:common:004:false_red_prevention",
           "document_ref": "qualification-fixture:common:004",
-          "document_digest": "sha256:604d046da15f1315c970218e9513bd41ca08ff58e87cc6ff4a93900d267aa802",
+          "document_digest": "sha256:89d4d4c29393fa54bff6d4c47e3076091dcf6a33708e1675cec5b0c295252b41",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 2718,
-            "end": 2925,
-            "exact": "A quantity value written without uncertainty does not satisfy this reviewed measurement-result expression. The reviewed quantities are measured quantity value = 1 meter; measurement uncertainty = 0.01 meter.",
+            "end": 2950,
+            "exact": "A calibration note lists a measured value and a standard-deviation estimate, but does not present them as a VIM measurement result. The reviewed quantities are measured quantity value = 1 meter; measurement uncertainty = 0.01 meter.",
             "prefix": "; measurement uncertainty = 0.01 meter.\n\n[false_red_prevention]\n",
             "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
@@ -666,7 +666,7 @@
             "conditions": [
               {
                 "condition_id": "definition_context",
-                "value": "quantity_value_only"
+                "value": "calibration_note"
               }
             ],
             "process_stage": null,

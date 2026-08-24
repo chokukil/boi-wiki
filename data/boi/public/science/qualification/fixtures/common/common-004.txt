@@ -30,6 +30,6 @@ A smudged yes-or-no mark appears in the margin beside the statement “A measure
 In equivalent wording, the document states that a measurement result is generally expressed as a measured quantity value together with a measurement uncertainty. The reviewed quantities are measured quantity value = 1 meter; measurement uncertainty = 0.01 meter.
 
 [false_red_prevention]
-A quantity value written without uncertainty does not satisfy this reviewed measurement-result expression. The reviewed quantities are measured quantity value = 1 meter; measurement uncertainty = 0.01 meter.
+A calibration note lists a measured value and a standard-deviation estimate, but does not present them as a VIM measurement result. The reviewed quantities are measured quantity value = 1 meter; measurement uncertainty = 0.01 meter.
 
 End of immutable qualification fixture.

@@ -157,7 +157,7 @@ def _rewrite_measurement_result(case: dict[str, Any]) -> None:
         if kind == "missing_required_condition":
             _remove_condition(packet, "definition_context")
         elif kind == "false_red_prevention":
-            _condition(packet, "definition_context", "quantity_value_only")
+            _condition(packet, "definition_context", "calibration_note")
     if kind == "missing_required_condition":
         case["expected_verdict"] = "INSUFFICIENT_INFORMATION"
     elif kind == "false_red_prevention":
@@ -320,6 +320,11 @@ def _base_text_for_case(
     case: dict[str, Any],
     original_text: str,
 ) -> str:
+    if rule_id == "sci-rule:common:004" and case["case_kind"] == "false_red_prevention":
+        return (
+            "A calibration note lists a measured value and a standard-deviation estimate, "
+            "but does not present them as a VIM measurement result"
+        )
     if rule_id in RECORD_RULES:
         return _rewrite_record_rule(case, RECORD_RULES[rule_id])
     replacement = _rewrite_three_false_red_cases(rule_id, case)
