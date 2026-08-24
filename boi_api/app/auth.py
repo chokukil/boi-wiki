@@ -37,10 +37,11 @@ DEV_POWER_USER_ROLES = [
 DEV_DEFAULT_ROLES = DEV_VIEWER_ROLES
 DEFAULT_USER_ROLES: dict[str, list[str]] = {
     "100001": [*DEV_POWER_USER_ROLES, "boi.admin"],
-    "100002": DEV_POWER_USER_ROLES,
+    "100002": [*DEV_POWER_USER_ROLES, "science.power_user:lithography"],
     "100003": DEV_VIEWER_ROLES,
 }
 DEV_ADMIN_ROLES = [*DEV_POWER_USER_ROLES, "boi.admin"]
+DEV_SCIENCE_ADMIN_ROLES = [*DEV_ADMIN_ROLES, "science.admin"]
 HCP_MANAGER_ROLES = [*DEV_POWER_USER_ROLES, "boi.admin"]
 HCP_DEPLOY_APPROVER_ROLES = [
     "boi.viewer",
@@ -169,7 +170,11 @@ def name_for_employee(employee_id: str) -> str:
 def dev_identity(employee_id: str | None) -> AuthIdentity:
     resolved = employee_id or os.getenv("DEMO_EMPLOYEE_ID", "100001")
     configured_roles = dev_user_roles().get(resolved, DEV_DEFAULT_ROLES)
-    roles = DEV_ADMIN_ROLES if resolved == os.getenv("BOI_DEV_ADMIN_EMPLOYEE_ID", "100001") else configured_roles
+    roles = (
+        DEV_SCIENCE_ADMIN_ROLES
+        if resolved == os.getenv("BOI_DEV_ADMIN_EMPLOYEE_ID", "100001")
+        else configured_roles
+    )
     return AuthIdentity(
         employee_id=resolved,
         display_name=name_for_employee(resolved),
