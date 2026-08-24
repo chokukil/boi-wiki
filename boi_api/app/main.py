@@ -32310,6 +32310,7 @@ def _configure_science_verifier() -> None:
         SCIENCE_RUNTIME_ROOT,
         authorization=authorization,
         roles_for=science_roles,
+        report_authority_validator=catalog.validate_verification_report_authority,
     )
 
     def load_document(identity: AuthIdentity, boi_ref: str) -> str | None:

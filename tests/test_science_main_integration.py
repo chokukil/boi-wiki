@@ -9,6 +9,12 @@ def test_main_application_registers_science_verifier_routes(boi_app_module) -> N
     assert "/api/science/interpret" in paths
     assert "/api/science/verify-document" in paths
     assert "/api/science/reports/{report_id}/export" in paths
+    validator = (
+        boi_app_module.app.state.science_runtime_store._report_authority_validator
+    )
+    assert validator is not None
+    assert validator.__self__ is boi_app_module.app.state.science_catalog
+    assert validator.__name__ == "validate_verification_report_authority"
 
 
 def test_main_application_keeps_science_authorization_separate(boi_app_module) -> None:
