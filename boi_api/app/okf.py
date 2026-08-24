@@ -9,6 +9,8 @@ from typing import Any, Iterable
 
 import yaml
 
+from boi_api.app.science.profile import validate_sci_profile_metadata
+
 REQUIRED_FIELDS = [
     "okf_version",
     "boi_profile_version",
@@ -377,6 +379,7 @@ def lint_markdown_file(
         validate_okf_core_metadata(metadata)
         + validate_boi_profile_metadata(metadata)
         + validate_boi_profile_path_acl(metadata, path, boi_root)
+        + validate_sci_profile_metadata(metadata)
     )
     edges = markdown_link_edges(path, body, boi_root)
     if strict_links:
