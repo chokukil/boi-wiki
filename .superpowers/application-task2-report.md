@@ -4,7 +4,7 @@ Date: 2026-08-25 (Asia/Seoul)
 
 Branch: `codex/science-application`
 
-Implementation commit: `8d6b08aedc6aa87522c11bfae35e6eac832b13bd`
+Implementation commit: `60db1336dd0756a00beabf396995363eb11ab7b6`
 
 Reviewed base: `1a28f8bf653db9fb27040fb6a9832af50e48f859`
 
@@ -61,6 +61,23 @@ record/audit protocol and the Foundation Catalog-issued operational capability.
 - Service and store failures return closed diagnostics; rejected locator secret
   values and credential URLs are never echoed or written to immutable storage.
 
+### Final I1: one stable-source URL policy
+
+- `validate_credential_free_https_url()` is now the single policy used by all
+  three Evidence locator URL fields, the persisted Source link, and the service
+  Source lookup before report construction.
+- It repeatedly percent-decodes and NFKC-normalizes URL components, scans path
+  segments for credential/bearer/signature keys, rejects userinfo, every
+  fragment, duplicate query keys, `X-Amz-*`, `sig`, `signature`, token/auth/
+  password/secret families, and all unreviewed query keys or values.
+- Stable source queries are denied by default. The only current reviewed
+  exception is `download=true|1`, which preserves the checked-in BIPM immutable
+  PDF source links without admitting a signed or tracking URL.
+- Adversarial tests cover Source and `resource_url`/`requested_url`/
+  `resolved_url` values through service, real Store save, direct private-file
+  load, and WAL recovery, including nested non-URL locator secrets. Every
+  returned failure is sanitized and no rejected report is published.
+
 ## RED evidence
 
 The review fixes were implemented in adversarial TDD slices.
@@ -106,6 +123,12 @@ The review fixes were implemented in adversarial TDD slices.
    locator metadata was copied outside the recursive validator. Tests now also
    recompute the outer report digest to prove the inner locator boundary is
    independently authoritative.
+
+8. The final review's path/signature cases produced 40 RED failures: literal,
+   percent-encoded, and double-encoded `api_key` paths, bearer path segments,
+   `X-Amz-Signature`, `signature`, `sig`, `X-Amz-Credential`, fragments, and
+   Source URLs were persisted. The same matrix is now GREEN across all URL
+   fields and storage/recovery paths.
 
 ## GREEN behavior
 
@@ -184,27 +207,28 @@ The review fixes were implemented in adversarial TDD slices.
 Focused Task 2 review-fix suite:
 
 ```text
-TMPDIR=/tmp /tmp/boi-sci-uv/bin/pytest -q -s \
+umask 077 && TMPDIR=/tmp /tmp/boi-sci-uv/bin/pytest -q -s \
   tests/test_science_interpretation.py --tb=short
-62 passed in 0.74s
+124 passed in 5.41s
 ```
 
 Fresh combined Task 2 + Task 1 + Foundation regression:
 
 ```text
-TMPDIR=/tmp /tmp/boi-sci-uv/bin/pytest -q -s \
+umask 077 && TMPDIR=/tmp /tmp/boi-sci-uv/bin/pytest -q -s \
   tests/test_science_interpretation.py \
   tests/test_science_authorization.py tests/test_science_storage.py \
   tests/test_science_catalog.py tests/test_science_engine.py \
   tests/test_science_models.py tests/test_science_profile.py \
   tests/test_science_source_ledger.py --tb=short
-473 passed in 5.44s
+535 passed in 6.53s
 ```
 
 Static verification:
 
 ```text
-ruff check boi_api/app/science/models.py boi_api/app/science/safety.py \
+/tmp/boi-sci-uv/bin/ruff check --select E,F,I \
+  boi_api/app/science/models.py boi_api/app/science/safety.py \
   boi_api/app/science/service.py boi_api/app/science/storage.py \
   tests/test_science_interpretation.py tests/test_science_storage.py \
   tests/test_science_models.py
@@ -218,7 +242,10 @@ python -m compileall -q boi_api/app/science tests/test_science_interpretation.py
 git diff --check
 ```
 
-Both commands completed with no output/errors after the reported Ruff results.
+The Ruff result uses Ruff 0.16.4 and explicitly states the repository's clean
+contract for syntax, undefined names, line length, and import ordering
+(`E,F,I`). It does not claim that the repository has adopted every optional
+Ruff 0.16 rule. Compile and diff checks completed with no output/errors.
 
 ## Self-review
 
@@ -234,5 +261,7 @@ Both commands completed with no output/errors after the reported Ruff results.
 - Task 1 no-follow IO, atomic publication, audit WAL, recovery, collision checks,
   and authorization code were not weakened. Its secret validator was moved to a
   shared module without changing the public exception import.
+- The root agent's intentional Task 3 REST-contract plan update was preserved
+  verbatim in the implementation commit; this task did not implement Task 3.
 - No merge, cherry-pick, push, release activation, or external state change was
   performed.
