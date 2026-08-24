@@ -4,7 +4,7 @@ Date: 2026-08-25 (Asia/Seoul)
 
 Branch: `codex/science-application`
 
-Implementation commit: `60db1336dd0756a00beabf396995363eb11ab7b6`
+Implementation commit: `6f136fe6a6ef611a630705b933d5dfba37dfc2aa`
 
 Reviewed base: `1a28f8bf653db9fb27040fb6a9832af50e48f859`
 
@@ -12,9 +12,10 @@ Foundation enforcement base: `707ddb7ee680326bf006dd5d05582e4d5bc3bc04`
 
 ## Scope and trust boundaries
 
-This change fixes every Critical/Important finding in
-`.superpowers/application-task2-review.md` while preserving the Task 1 atomic
-record/audit protocol and the Foundation Catalog-issued operational capability.
+This change fixes every Critical/Important finding in the Task 2 review and all
+three follow-up re-reviews, including the final canonical URL-boundary report,
+while preserving the Task 1 atomic record/audit protocol and the Foundation
+Catalog-issued operational capability.
 
 - The LLM produces proposals only. It cannot set `user_confirmed`, decide
   outcome impact, create a verdict, cite Evidence, or supply a locator.
@@ -66,17 +67,24 @@ record/audit protocol and the Foundation Catalog-issued operational capability.
 - `validate_credential_free_https_url()` is now the single policy used by all
   three Evidence locator URL fields, the persisted Source link, and the service
   Source lookup before report construction.
-- It repeatedly percent-decodes and NFKC-normalizes URL components, scans path
-  segments for credential/bearer/signature keys, rejects userinfo, every
-  fragment, duplicate query keys, `X-Amz-*`, `sig`, `signature`, token/auth/
-  password/secret families, and all unreviewed query keys or values.
+- The exact persisted string must be its checked canonical ASCII serialization.
+  Raw C0/space characters, NFKC-changing input, malformed percent syntax,
+  noncanonical scheme/hostname/port, percent-encoded authority, userinfo, and
+  every fragment fail closed before parsing can discard or reinterpret bytes.
+- Path normalization runs before every strict percent-decode iteration. The
+  complete decoded path and compact segments are checked before canonical
+  re-encoding. Generic credential prefixes, `X-Amz`/`X-Goog`/`X-Ms`,
+  SharedAccess/SAS, bearer/presigned forms, forbidden key-value delimiters, and
+  credential names split across path segments are rejected.
 - Stable source queries are denied by default. The only current reviewed
   exception is `download=true|1`, which preserves the checked-in BIPM immutable
   PDF source links without admitting a signed or tracking URL.
 - Adversarial tests cover Source and `resource_url`/`requested_url`/
   `resolved_url` values through service, real Store save, direct private-file
   load, and WAL recovery, including nested non-URL locator secrets. Every
-  returned failure is sanitized and no rejected report is published.
+  returned failure is sanitized and no rejected report is published. A closed
+  `raise_safe_science_validation_error()` helper is available for Task 3 so a
+  raw input-bearing Pydantic error is never returned by the future REST layer.
 
 ## RED evidence
 
@@ -129,6 +137,14 @@ The review fixes were implemented in adversarial TDD slices.
    `X-Amz-Signature`, `signature`, `sig`, `X-Amz-Credential`, fragments, and
    Source URLs were persisted. The same matrix is now GREEN across all URL
    fields and storage/recovery paths.
+
+9. The canonical-boundary re-review matrix initially produced 68 RED failures
+   across service, direct Store save, private load, and WAL recovery. It covered
+   NFKC separators/percent signs, malformed percent syntax, vendor signature
+   families, encoded/double-encoded authority userinfo, and raw whitespace/C0
+   input. Three compact generic credential prefixes then produced 12 additional
+   service RED failures, and `/api/key-hidden` produced four more, proving a
+   split-prefix path bypass before the final bounded segment-prefix scan.
 
 ## GREEN behavior
 
@@ -207,21 +223,21 @@ The review fixes were implemented in adversarial TDD slices.
 Focused Task 2 review-fix suite:
 
 ```text
-umask 077 && TMPDIR=/tmp /tmp/boi-sci-uv/bin/pytest -q -s \
+umask 077 && TMPDIR=/tmp/boi-sci-pytest /tmp/boi-sci-uv/bin/pytest -q \
   tests/test_science_interpretation.py --tb=short
-124 passed in 5.41s
+219 passed in 12.52s
 ```
 
 Fresh combined Task 2 + Task 1 + Foundation regression:
 
 ```text
-umask 077 && TMPDIR=/tmp /tmp/boi-sci-uv/bin/pytest -q -s \
+umask 077 && TMPDIR=/tmp/boi-sci-pytest /tmp/boi-sci-uv/bin/pytest -q \
   tests/test_science_interpretation.py \
   tests/test_science_authorization.py tests/test_science_storage.py \
   tests/test_science_catalog.py tests/test_science_engine.py \
   tests/test_science_models.py tests/test_science_profile.py \
   tests/test_science_source_ledger.py --tb=short
-535 passed in 6.53s
+630 passed in 9.26s
 ```
 
 Static verification:
@@ -256,6 +272,9 @@ Ruff 0.16 rule. Compile and diff checks completed with no output/errors.
   resolution.
 - No endpoint, API key, raw idempotency key, LLM reason, LLM Evidence, or LLM
   locator is stored.
+- The stable-source policy deliberately rejects opaque compact credential
+  prefixes, including prefixes split across path segments. No permissive
+  exception was added for ambiguous bearer-like source identifiers.
 - Proposed invalid ontology refs cannot be confirmed and cannot enter a verdict,
   annotation, Evidence link, or report.
 - Task 1 no-follow IO, atomic publication, audit WAL, recovery, collision checks,
