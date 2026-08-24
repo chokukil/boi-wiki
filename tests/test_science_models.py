@@ -10,8 +10,11 @@ from pydantic import ValidationError
 from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
 from boi_api.app.science.models import (
     ClaimPacket,
+    InterpretationRecord,
+    PackDependency,
     PrimaryVerdict,
     ResolvedRelease,
+    ResolvedReleaseSet,
     VerificationReport,
 )
 
@@ -95,3 +98,96 @@ def test_release_and_report_preserve_tuple_components_and_json_serialization():
 
     assert isinstance(release.components, tuple)
     assert canonical_json_bytes(report).startswith(b'{"annotations":[]')
+
+
+@pytest.mark.parametrize(
+    "relation",
+    ["depends_on", "uses", "specializes", "adds_evidence", "validated_by", "supersedes"],
+)
+def test_pack_dependency_is_a_closed_typed_edge(relation: str):
+    """Removing the enum boundary would let an executable override edge enter a Pack graph."""
+    edge = PackDependency.model_validate({"relation": relation, "ref": "sci-pack:foundation"})
+
+    assert edge.relation.value == relation
+    assert edge.ref == "sci-pack:foundation"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"relation": "override", "ref": "sci-pack:foundation"},
+        {"ref": "sci-pack:foundation"},
+        {"relation": "uses", "ref": ""},
+    ],
+)
+def test_pack_dependency_rejects_override_missing_relation_and_malformed_ref(payload: dict):
+    """Loosening either edge field must fail before catalog relationship resolution."""
+    with pytest.raises(ValidationError):
+        PackDependency.model_validate(payload)
+
+
+@pytest.mark.parametrize("nonfinite", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("location", ["quantity", "condition"])
+def test_claim_packet_rejects_literal_nonfinite_numbers(nonfinite: float, location: str):
+    """Removing either finite-number gate would admit non-canonical scientific inputs."""
+    fixture = load_named_fixture("claims.json", "monotonic-increase")
+    if location == "quantity":
+        fixture["normalized_claim"]["quantities"] = [
+            {"quantity_kind": "temperature", "value": nonfinite, "unit": "kelvin"}
+        ]
+    else:
+        fixture["normalized_claim"]["conditions"] = [
+            {"condition_id": "temperature", "value": nonfinite, "unit": "kelvin"}
+        ]
+
+    with pytest.raises(ValidationError, match="finite"):
+        ClaimPacket.model_validate(fixture)
+
+
+@pytest.mark.parametrize("nonfinite", [float("nan"), float("inf"), float("-inf")])
+def test_interpretation_model_settings_reject_nonfinite_numbers(nonfinite: float):
+    """A model setting must remain canonical even though it cannot affect the verdict engine."""
+    payload = {
+        "interpretation_id": "sci-interpretation:fixture",
+        "document_digest": "sha256:document",
+        "candidate_claims": [],
+        "model_id": "fixture-model",
+        "model_settings": {"temperature": nonfinite},
+        "prompt_version": "0.1",
+        "dictionary_release_id": "dictionary:0.1",
+        "ontology_release_id": "ontology:0.1",
+        "ontology_refs": [],
+        "candidate_meanings": [],
+        "decision_impact": [],
+        "user_revision_history": [],
+        "confirmed_claim_packet_digest": None,
+        "response_digest": "sha256:response",
+    }
+
+    with pytest.raises(ValidationError, match="finite"):
+        InterpretationRecord.model_validate(payload)
+
+
+@pytest.mark.parametrize("nonfinite", [float("nan"), float("inf"), float("-inf")])
+def test_canonical_json_rejects_nonfinite_literals(nonfinite: float):
+    """Allowing JSON NaN extensions would make digests non-canonical across runtimes."""
+    with pytest.raises(ValueError, match="Out of range float values"):
+        canonical_json_bytes({"value": nonfinite})
+
+
+@pytest.mark.parametrize("mutation", ["combined_digest", "components"])
+def test_resolved_release_set_rejects_a_nonexact_combination(mutation: str):
+    """A forged digest or omitted component must not remain an exact resolved Release set."""
+    release = ResolvedRelease.model_validate(
+        load_named_fixture("releases/release.json", "foundation-release")
+    )
+    resolved = ResolvedReleaseSet.from_single_foundation(release)
+    payload = resolved.model_dump(mode="json")
+    if mutation == "combined_digest":
+        payload["combined_digest"] = "sha256:forged"
+    else:
+        payload["components"] = []
+        payload["rule_components"] = []
+
+    with pytest.raises(ValidationError, match="exact combined digest|exactly match resolved releases"):
+        ResolvedReleaseSet.model_validate(payload)

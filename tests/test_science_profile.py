@@ -253,3 +253,63 @@ def test_non_science_documents_do_not_receive_science_errors():
 
     assert not is_science_document(metadata)
     assert validate_sci_profile_metadata(metadata) == []
+
+
+@pytest.mark.parametrize("profile_version", [None, 0.1, "0.2"])
+def test_every_science_document_requires_exact_string_profile_version(profile_version: object):
+    """Dropping or loosening the profile version must not admit an unknown Science schema."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-source")
+    if profile_version is None:
+        del metadata["sci_profile_version"]
+    else:
+        metadata["sci_profile_version"] = profile_version
+
+    assert "sci_profile_version must be exactly string '0.1'" in validate_sci_profile_metadata(
+        metadata
+    )
+
+
+@pytest.mark.parametrize(
+    ("dependency", "error"),
+    [
+        ("sci-pack:foundation", "science.dependencies items must be typed relationship edges"),
+        ({"ref": "sci-pack:foundation"}, "science.dependencies relation is required"),
+        (
+            {"relation": "override", "ref": "sci-pack:foundation"},
+            "science.dependencies relation is invalid",
+        ),
+        (
+            {"relation": "custom", "ref": "sci-pack:foundation"},
+            "science.dependencies relation is invalid",
+        ),
+        ({"relation": "uses", "ref": ""}, "science.dependencies ref is invalid"),
+        ({"relation": "uses", "ref": "sci-pack:bad ref"}, "science.dependencies ref is invalid"),
+        (
+            {"relation": "uses", "ref": "sci-pack:foundation", "override": True},
+            "science.dependencies items must be typed relationship edges",
+        ),
+    ],
+)
+def test_pack_dependencies_require_closed_typed_relationship_edges(dependency: object, error: str):
+    """A primitive, missing, malformed, override, or unknown Pack edge must fail profile lint."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-pack")
+    metadata["science"]["dependencies"] = [dependency]
+
+    assert error in validate_sci_profile_metadata(metadata)
+
+
+def test_pack_dependencies_collection_must_be_a_list():
+    """A mapping collection must not bypass item-level typed-edge validation."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-pack")
+    metadata["science"]["dependencies"] = {
+        "relation": "uses",
+        "ref": "sci-pack:foundation",
+    }
+
+    assert "science.dependencies must be a list" in validate_sci_profile_metadata(metadata)

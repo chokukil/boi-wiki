@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any, Literal
+from math import isfinite
+from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ScienceModel(BaseModel):
@@ -54,6 +55,11 @@ class PackRelationKind(str, Enum):
     SUPERSEDES = "supersedes"
 
 
+class PackDependency(ScienceModel):
+    relation: PackRelationKind
+    ref: str = Field(min_length=1, pattern=r"^sci-pack:[^\s]+$")
+
+
 class SourceSpan(ScienceModel):
     offset_encoding: Literal["unicode_code_point"] = "unicode_code_point"
     start: int = Field(ge=0)
@@ -74,11 +80,67 @@ class ClaimQuantity(ScienceModel):
     value: Decimal
     unit: str
 
+    @field_validator("value")
+    @classmethod
+    def finite_value(cls, value: Decimal) -> Decimal:
+        if not value.is_finite():
+            raise ValueError("quantity value must be finite")
+        return value
+
 
 class ClaimCondition(ScienceModel):
     condition_id: str
     value: str | int | float | bool | None
     unit: str | None = None
+
+    @field_validator("value")
+    @classmethod
+    def finite_value(cls, value: str | int | float | bool | None):
+        if isinstance(value, float) and not isfinite(value):
+            raise ValueError("condition value must be finite")
+        return value
+
+
+ConditionScalar: TypeAlias = str | int | float | bool
+
+
+class ConditionRange(ScienceModel):
+    minimum: Decimal
+    maximum: Decimal
+    minimum_inclusive: bool = True
+    maximum_inclusive: bool = True
+
+    @model_validator(mode="after")
+    def finite_ordered_range(self) -> "ConditionRange":
+        if not self.minimum.is_finite() or not self.maximum.is_finite():
+            raise ValueError("condition range must be finite")
+        if self.minimum > self.maximum:
+            raise ValueError("condition range minimum cannot exceed maximum")
+        return self
+
+
+class ConditionConstraint(ScienceModel):
+    key: str = Field(min_length=1)
+    operator: Literal["eq", "ne", "lt", "lte", "gt", "gte", "range"]
+    value: ConditionScalar | None = None
+    range: ConditionRange | None = None
+    unit: str | None = None
+
+    @model_validator(mode="after")
+    def valid_operand(self) -> "ConditionConstraint":
+        if self.operator == "range":
+            if self.range is None or self.value is not None:
+                raise ValueError("range condition requires only a range operand")
+        elif self.value is None or self.range is not None:
+            raise ValueError("condition operator requires only a value operand")
+        if isinstance(self.value, float) and not isfinite(self.value):
+            raise ValueError("condition constraint value must be finite")
+        numeric = isinstance(self.value, (int, float)) and not isinstance(self.value, bool)
+        if self.unit is not None and self.operator != "range" and not numeric:
+            raise ValueError("condition unit requires a numeric value")
+        if self.operator in {"lt", "lte", "gt", "gte"} and not numeric:
+            raise ValueError("ordered condition operator requires a numeric value")
+        return self
 
 
 class NormalizedClaim(ScienceModel):
@@ -110,9 +172,13 @@ class ClaimPacket(ScienceModel):
 
 class ConditionEvaluation(ScienceModel):
     condition_id: str
-    expected: str | int | float | bool | None
+    operator: Literal["eq", "ne", "lt", "lte", "gt", "gte", "range"] = "eq"
+    expected: ConditionScalar | ConditionRange | None
     actual: str | int | float | bool | None
+    expected_unit: str | None = None
+    actual_unit: str | None = None
     satisfied: bool
+    reason_code: str | None = None
 
 
 class ReleaseSelection(ScienceModel):
@@ -147,6 +213,115 @@ class ResolvedRelease(ScienceModel):
     known_limitations: list[str]
 
 
+class ReleaseCompatibilityResult(ScienceModel):
+    compatible: bool
+    checked_pack_dependencies: tuple[PackDependency, ...]
+
+
+class ResolvedReleaseSet(ScienceModel):
+    selection: ReleaseSelection
+    foundation_release: ResolvedRelease
+    domain_releases: tuple[ResolvedRelease, ...]
+    application_releases: tuple[ResolvedRelease, ...]
+    compatibility: ReleaseCompatibilityResult
+    release_digests: dict[str, str]
+    combined_digest: str
+    components: tuple[ResolvedComponent, ...]
+    rule_components: tuple[ResolvedComponent, ...]
+
+    @staticmethod
+    def combined_digest_for(
+        selection: ReleaseSelection,
+        release_digests: dict[str, str],
+        components: tuple[ResolvedComponent, ...],
+        compatibility: ReleaseCompatibilityResult,
+    ) -> str:
+        from boi_api.app.science.digests import sha256_digest
+
+        return sha256_digest(
+            {
+                "selection": selection,
+                "release_digests": release_digests,
+                "components": components,
+                "compatibility": compatibility,
+            }
+        )
+
+    @classmethod
+    def from_single_foundation(cls, release: ResolvedRelease) -> "ResolvedReleaseSet":
+        """Adapt the original single-Foundation boundary without inventing other roles."""
+        selection = ReleaseSelection(foundation=release.release_id)
+        components = tuple(sorted(release.components, key=lambda item: item.ref))
+        compatibility = ReleaseCompatibilityResult(
+            compatible=True,
+            checked_pack_dependencies=(),
+        )
+        release_digests = {release.release_id: release.content_hash}
+        combined_digest = cls.combined_digest_for(
+            selection,
+            release_digests,
+            components,
+            compatibility,
+        )
+        return cls(
+            selection=selection,
+            foundation_release=release,
+            domain_releases=(),
+            application_releases=(),
+            compatibility=compatibility,
+            release_digests=release_digests,
+            combined_digest=combined_digest,
+            components=components,
+            rule_components=tuple(
+                component for component in components if component.kind == "rule"
+            ),
+        )
+
+    @model_validator(mode="after")
+    def exact_selection_and_combined_order(self) -> "ResolvedReleaseSet":
+        if self.foundation_release.release_id != self.selection.foundation:
+            raise ValueError("Foundation release does not match original selection")
+        if [release.release_id for release in self.domain_releases] != self.selection.domains:
+            raise ValueError("Domain releases do not match original selection")
+        if [release.release_id for release in self.application_releases] != self.selection.applications:
+            raise ValueError("Application releases do not match original selection")
+        releases = (
+            self.foundation_release,
+            *self.domain_releases,
+            *self.application_releases,
+        )
+        expected_digests = {release.release_id: release.content_hash for release in releases}
+        if self.release_digests != expected_digests:
+            raise ValueError("release digest map does not match resolved selection")
+        release_components = tuple(
+            sorted(
+                (
+                    component
+                    for release in releases
+                    for component in release.components
+                ),
+                key=lambda item: item.ref,
+            )
+        )
+        release_component_refs = [component.ref for component in release_components]
+        if len(release_component_refs) != len(set(release_component_refs)):
+            raise ValueError("resolved releases contain duplicate components")
+        if self.components != release_components:
+            raise ValueError("combined release components must exactly match resolved releases")
+        if self.rule_components != tuple(
+            component for component in self.components if component.kind == "rule"
+        ):
+            raise ValueError("combined release rule components are inconsistent")
+        if self.combined_digest != self.combined_digest_for(
+            self.selection,
+            self.release_digests,
+            self.components,
+            self.compatibility,
+        ):
+            raise ValueError("Release set has an invalid exact combined digest")
+        return self
+
+
 class RuleEvaluation(ScienceModel):
     rule_id: str
     applicability: Literal[
@@ -169,11 +344,17 @@ class ExplanationFact(ScienceModel):
     evidence_refs: list[str]
 
 
+class VerdictReleaseSet(ScienceModel):
+    selection: ReleaseSelection
+    digests: dict[str, str]
+    combined_digest: str
+
+
 class VerdictPacket(ScienceModel):
     claim_id: str
     claim_packet_digest: str
     verifier_version: str
-    releases: ReleaseSelection
+    releases: VerdictReleaseSet
     verdict: PrimaryVerdict
     reason_codes: list[str]
     condition_evaluations: list[ConditionEvaluation]
@@ -200,6 +381,15 @@ class InterpretationRecord(ScienceModel):
     user_revision_history: list[dict[str, Any]]
     confirmed_claim_packet_digest: str | None
     response_digest: str
+
+    @field_validator("model_settings")
+    @classmethod
+    def finite_model_settings(
+        cls, settings: dict[str, str | int | float | bool]
+    ) -> dict[str, str | int | float | bool]:
+        if any(isinstance(value, float) and not isfinite(value) for value in settings.values()):
+            raise ValueError("model settings must be finite")
+        return settings
 
 
 class VerificationReport(ScienceModel):

@@ -10,9 +10,9 @@ from boi_api.app.science.models import (
     ConditionEvaluation,
     ExplanationFact,
     PrimaryVerdict,
-    ReleaseSelection,
-    ResolvedRelease,
+    ResolvedReleaseSet,
     VerdictPacket,
+    VerdictReleaseSet,
 )
 from boi_api.app.science.rules import (
     DetailedRuleEvaluation,
@@ -27,13 +27,12 @@ class UnresolvedAmbiguityError(ValueError):
     """A decision-changing ambiguity must be resolved before verification."""
 
 
-def _resolved_refs(release: ResolvedRelease, kind: str) -> set[str]:
+def _resolved_refs(release_set: ResolvedReleaseSet, kind: str) -> set[str]:
     return {
         component.ref
-        for component in release.components
+        for component in release_set.components
         if component.kind == kind
         and component.declared_digest == component.actual_digest
-        and release.component_digests.get(component.ref) == component.actual_digest
     }
 
 
@@ -59,14 +58,25 @@ def _grounded(
     )
 
 
-def _rule_set_integrity(release: ResolvedRelease, rule_set: ResolvedRuleSet) -> list[str]:
-    if rule_set.release_id != release.release_id:
-        return ["RULE_SET_RELEASE_MISMATCH"]
+def _rule_set_integrity(
+    release_set: ResolvedReleaseSet, rule_set: ResolvedRuleSet
+) -> list[str]:
+    if not release_set.compatibility.compatible:
+        return ["INCOMPATIBLE_RELEASE_SET"]
+    if release_set.combined_digest != ResolvedReleaseSet.combined_digest_for(
+        release_set.selection,
+        release_set.release_digests,
+        release_set.components,
+        release_set.compatibility,
+    ):
+        return ["RELEASE_SET_DIGEST_MISMATCH"]
+    if rule_set.release_set_digest != release_set.combined_digest:
+        return ["RULE_SET_RELEASE_SET_MISMATCH"]
 
     supplied_ids = [released.rule.rule_id for released in rule_set.rules]
     if len(supplied_ids) != len(set(supplied_ids)):
         return ["DUPLICATE_RULE_ID"]
-    pinned = {component.ref: component for component in release.components if component.kind == "rule"}
+    pinned = {component.ref: component for component in release_set.rule_components}
     supplied = set(supplied_ids)
     pinned_ids = set(pinned)
     if supplied != pinned_ids:
@@ -83,7 +93,6 @@ def _rule_set_integrity(release: ResolvedRelease, rule_set: ResolvedRuleSet) -> 
         if (
             released.component_digest != component.actual_digest
             or component.declared_digest != component.actual_digest
-            or release.component_digests.get(rule_id) != component.actual_digest
         ):
             reasons.add("RULE_COMPONENT_DIGEST_MISMATCH")
         if (
@@ -161,7 +170,7 @@ def _conditions(evaluations: list[DetailedRuleEvaluation]) -> list[ConditionEval
 
 def verify_claim(
     claim: ClaimPacket,
-    release: ResolvedRelease,
+    release_set: ResolvedReleaseSet,
     verifier_version: str = "science-verifier/0.1.0",
     *,
     rule_set: ResolvedRuleSet,
@@ -175,11 +184,11 @@ def verify_claim(
             f"unresolved decision-changing ambiguity must stop before verification: {ambiguity}"
         )
 
-    integrity_reasons = _rule_set_integrity(release, rule_set)
+    integrity_reasons = _rule_set_integrity(release_set, rule_set)
     supplied_rules = tuple(released.rule for released in rule_set.rules)
-    pinned_rules = _resolved_refs(release, "rule")
-    knowledge_refs = _resolved_refs(release, "knowledge")
-    evidence_refs = _resolved_refs(release, "evidence")
+    pinned_rules = _resolved_refs(release_set, "rule")
+    knowledge_refs = _resolved_refs(release_set, "knowledge")
+    evidence_refs = _resolved_refs(release_set, "evidence")
     candidates = [rule for rule in supplied_rules if _is_concept_candidate(rule, claim)]
     trusted = [
         rule
@@ -249,7 +258,11 @@ def verify_claim(
         claim_id=claim.claim_id,
         claim_packet_digest=sha256_digest(claim),
         verifier_version=verifier_version,
-        releases=ReleaseSelection(foundation=release.release_id),
+        releases=VerdictReleaseSet(
+            selection=release_set.selection,
+            digests=release_set.release_digests,
+            combined_digest=release_set.combined_digest,
+        ),
         verdict=verdict,
         reason_codes=reason_codes,
         condition_evaluations=_conditions(decisive),
@@ -258,5 +271,15 @@ def verify_claim(
         evidence_refs=selected_evidence,
         corrected_claim=corrected_claim,
         explanation_facts=explanation_facts,
-        limitations=sorted(set(release.known_limitations)),
+        limitations=sorted(
+            {
+                limitation
+                for release in (
+                    release_set.foundation_release,
+                    *release_set.domain_releases,
+                    *release_set.application_releases,
+                )
+                for limitation in release.known_limitations
+            }
+        ),
     )

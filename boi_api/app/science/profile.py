@@ -89,6 +89,15 @@ ASSURANCE_BASES = {
     "hypothesis",
 }
 
+PACK_RELATIONS = {
+    "depends_on",
+    "uses",
+    "specializes",
+    "adds_evidence",
+    "validated_by",
+    "supersedes",
+}
+
 
 def is_science_document(metadata: dict[str, Any]) -> bool:
     """Return whether metadata declares a supported stored Science object."""
@@ -120,11 +129,16 @@ def validate_sci_profile_metadata(metadata: dict[str, Any]) -> list[str]:
     if not is_science_document(metadata):
         return []
 
+    errors: list[str] = []
+    if metadata.get("sci_profile_version") != "0.1" or not isinstance(
+        metadata.get("sci_profile_version"), str
+    ):
+        errors.append("sci_profile_version must be exactly string '0.1'")
+
     science = metadata.get("science")
     if not isinstance(science, Mapping):
-        return ["science is required"]
+        return errors + ["science is required"]
 
-    errors: list[str] = []
     for field_name in sorted(SCIENCE_TYPE_REQUIREMENTS[metadata["type"]]):
         if science.get(field_name) in (None, ""):
             errors.append(f"science.{field_name} is required")
@@ -155,6 +169,32 @@ def validate_sci_profile_metadata(metadata: dict[str, Any]) -> list[str]:
             expected_hash = "sha256:" + hashlib.sha256(original_text.encode("utf-8")).hexdigest()
             if original_text_hash != expected_hash:
                 errors.append("science.original_text_hash must match original_text UTF-8 SHA-256")
+
+    if metadata["type"] == "boi/science-pack":
+        dependencies = science.get("dependencies")
+        if not isinstance(dependencies, list):
+            errors.append("science.dependencies must be a list")
+        else:
+            for dependency in dependencies:
+                if not isinstance(dependency, Mapping):
+                    errors.append("science.dependencies items must be typed relationship edges")
+                    continue
+                if not set(dependency) <= {"relation", "ref"}:
+                    errors.append("science.dependencies items must be typed relationship edges")
+                    continue
+                relation = dependency.get("relation")
+                if relation is None:
+                    errors.append("science.dependencies relation is required")
+                elif relation not in PACK_RELATIONS:
+                    errors.append("science.dependencies relation is invalid")
+                ref = dependency.get("ref")
+                if (
+                    not isinstance(ref, str)
+                    or not ref.startswith("sci-pack:")
+                    or not ref.removeprefix("sci-pack:").strip()
+                    or any(character.isspace() for character in ref)
+                ):
+                    errors.append("science.dependencies ref is invalid")
 
     if "evidence_refs" in science:
         science_refs, science_ref_errors = _validate_reference_collection(

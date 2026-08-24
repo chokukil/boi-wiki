@@ -94,7 +94,7 @@ def _object_metadata() -> dict[str, tuple[str, dict, str]]:
         ),
         "rule": (
             "boi/science-rule",
-            {"rule_id": "sci:rule:fixture", "pack_id": "sci-pack:fixture", "rule_kind": "directional_relation", "inputs": ["sci:concept:input", "sci:concept:response"], "outcomes": ["VIOLATION", "CONSISTENT"], "subject_concept_id": "sci:concept:input", "object_concept_id": "sci:concept:response", "relation_kind": "monotonic_direction", "expected_predicate": "decreases", "knowledge_refs": ["sci:knowledge:fixture"], "evidence_refs": ["sci:evidence:fixture"]},
+            {"rule_id": "sci:rule:fixture", "pack_id": "sci-pack:fixture", "rule_kind": "directional_relation", "inputs": ["sci:concept:input", "sci:concept:response"], "outcomes": ["VIOLATION", "CONSISTENT"], "subject_concept_id": "sci:concept:input", "object_concept_id": "sci:concept:response", "relation_kind": "monotonic_direction", "expected_predicate": "decreases", "contradiction_predicates": ["increases"], "knowledge_refs": ["sci:knowledge:fixture"], "evidence_refs": ["sci:evidence:fixture"]},
             "rules/rule.md",
         ),
         "binding": (
@@ -146,6 +146,43 @@ def _component_digest(boi_root: Path, relative: str) -> str:
     path = boi_root / "public" / "science" / relative
     frontmatter, body = path.read_text(encoding="utf-8").split("---", 2)[1:]
     return _canonical_digest(yaml.safe_load(frontmatter), body)
+
+
+def _add_pack(
+    boi_root: Path,
+    *,
+    pack_id: str,
+    dependencies: list[dict[str, str]],
+) -> str:
+    relative = f"packs/{pack_id.replace(':', '-')}.md"
+    science = {
+        "pack_id": pack_id,
+        "name": pack_id,
+        "version": "0.1.0",
+        "dependencies": dependencies,
+        "knowledge_refs": [],
+        "rule_refs": [],
+        "qualification_refs": [],
+    }
+    _write_document(
+        boi_root,
+        relative,
+        _metadata("boi/science-pack", science, boi_id=f"boi:public:science:{pack_id}"),
+    )
+    return relative
+
+
+def _replace_release_components(
+    boi_root: Path,
+    release_id: str,
+    components: dict[str, str],
+) -> None:
+    relative = f"releases/{release_id.replace(':', '-')}.md"
+    path = boi_root / "public/science" / relative
+    metadata = yaml.safe_load(path.read_text(encoding="utf-8").split("---", 2)[1])
+    metadata["science"]["components"] = list(components)
+    metadata["science"]["component_digests"] = components
+    _write_release(boi_root, relative, metadata)
 
 
 def test_release_resolver_rejects_digest_drift(science_tree: Path):
@@ -291,13 +328,19 @@ def test_qualification_case_queries_and_release_sets_are_deterministic(science_t
     assert [case.case_id for case in catalog.qualification_cases("sci:rule:fixture")] == ["case:first", "case:second"]
     assert [case.case_id for case in catalog.qualification_cases_for_pack("sci-pack:fixture")] == ["case:first", "case:second"]
     assert catalog.claim_fixture("case:first") == {"claim_id": "claim:first"}
-    assert [release.release_id for release in catalog.resolve_release_set(ReleaseSelection(foundation="sci-release:0.1.0"))] == ["sci-release:0.1.0"]
+    resolved = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:0.1.0")
+    )
+    assert resolved.foundation_release.release_id == "sci-release:0.1.0"
+    assert resolved.domain_releases == ()
+    assert resolved.application_releases == ()
 
 
 def test_catalog_produces_digest_bound_typed_rule_set(science_tree: Path):
     """A resolved Rule must bind its typed semantics to the exact pinned OKF component."""
     from boi_api.app.science.catalog import ScienceCatalog
     from boi_api.app.science.digests import sha256_digest
+    from boi_api.app.science.models import ReleaseSelection
 
     digest = _component_digest(science_tree, "rules/rule.md")
     release_path = science_tree / "public/science/releases/sci-release-0.1.0.md"
@@ -306,14 +349,18 @@ def test_catalog_produces_digest_bound_typed_rule_set(science_tree: Path):
     metadata["science"]["components"] = ["sci:rule:fixture"]
     _write_release(science_tree, "releases/sci-release-0.1.0.md", metadata)
     catalog = ScienceCatalog(science_tree)
-    release = catalog.resolve_release("sci-release:0.1.0")
+    release_set = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:0.1.0")
+    )
 
-    rule_set = catalog.resolve_rule_set(release)
+    rule_set = catalog.resolve_rule_set(release_set)
 
-    assert rule_set.release_id == release.release_id
+    assert rule_set.release_set_digest == release_set.combined_digest
     assert len(rule_set.rules) == 1
     released = rule_set.rules[0]
-    component = next(item for item in release.components if item.ref == released.rule.rule_id)
+    component = next(
+        item for item in release_set.components if item.ref == released.rule.rule_id
+    )
     assert released.component_digest == component.actual_digest == digest
     assert released.semantic_digest == component.semantic_digest == sha256_digest(released.rule)
 
@@ -466,3 +513,256 @@ def test_catalog_rejects_an_id_reused_by_different_science_object_kinds(science_
 
     with pytest.raises(ScienceCatalogError, match="duplicate science ID: sci:rule:fixture"):
         ScienceCatalog(science_tree)
+
+
+def test_catalog_does_not_index_a_science_document_without_profile_version(science_tree: Path):
+    """Bypassing direct lint must not let an unversioned Science object enter the catalog."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceCatalogError
+
+    source = science_tree / "public/science/sources/source.md"
+    metadata = yaml.safe_load(source.read_text(encoding="utf-8").split("---", 2)[1])
+    del metadata["sci_profile_version"]
+    _write_document(science_tree, "sources/source.md", metadata)
+
+    with pytest.raises(ScienceCatalogError, match="sci_profile_version must be exactly string '0.1'"):
+        ScienceCatalog(science_tree)
+
+
+def test_catalog_rejects_a_pack_dependency_without_typed_relation(science_tree: Path):
+    """Catalog reference checks must not treat a bare Pack ref as a dependency edge."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceCatalogError
+
+    pack = science_tree / "public/science/packs/pack.md"
+    metadata = yaml.safe_load(pack.read_text(encoding="utf-8").split("---", 2)[1])
+    metadata["science"]["dependencies"] = ["sci-pack:fixture"]
+    _write_document(science_tree, "packs/pack.md", metadata)
+
+    with pytest.raises(ScienceCatalogError, match="typed relationship edges"):
+        ScienceCatalog(science_tree)
+
+
+def test_resolved_release_set_preserves_roles_and_builds_deterministic_combined_rules(
+    science_tree: Path,
+):
+    """Dropping role, digest, component, or rule composition must break the release boundary."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.models import ReleaseSelection, ResolvedReleaseSet
+
+    foundation_components = {
+        "sci-pack:fixture": _component_digest(science_tree, "packs/pack.md"),
+        "sci:rule:fixture": _component_digest(science_tree, "rules/rule.md"),
+    }
+    _replace_release_components(
+        science_tree, "sci-release:0.1.0", foundation_components
+    )
+    domain_relative = _add_pack(
+        science_tree,
+        pack_id="sci-pack:domain",
+        dependencies=[{"relation": "depends_on", "ref": "sci-pack:fixture"}],
+    )
+    _add_release(science_tree, release_id="sci-release:domain", status="release_candidate")
+    _replace_release_components(
+        science_tree,
+        "sci-release:domain",
+        {"sci-pack:domain": _component_digest(science_tree, domain_relative)},
+    )
+    application_relative = _add_pack(
+        science_tree,
+        pack_id="sci-pack:application",
+        dependencies=[{"relation": "specializes", "ref": "sci-pack:domain"}],
+    )
+    _add_release(
+        science_tree, release_id="sci-release:application", status="release_candidate"
+    )
+    _replace_release_components(
+        science_tree,
+        "sci-release:application",
+        {"sci-pack:application": _component_digest(science_tree, application_relative)},
+    )
+    selection = ReleaseSelection(
+        foundation="sci-release:0.1.0",
+        domains=["sci-release:domain"],
+        applications=["sci-release:application"],
+    )
+    catalog = ScienceCatalog(science_tree)
+
+    resolved = catalog.resolve_release_set(selection)
+    rule_set = catalog.resolve_rule_set(resolved)
+
+    assert isinstance(resolved, ResolvedReleaseSet)
+    assert resolved.selection == selection
+    assert resolved.foundation_release.release_id == selection.foundation
+    assert [release.release_id for release in resolved.domain_releases] == selection.domains
+    assert [release.release_id for release in resolved.application_releases] == selection.applications
+    assert resolved.compatibility.compatible is True
+    assert resolved.release_digests == {
+        release_id: resolved_release.content_hash
+        for release_id, resolved_release in [
+            (resolved.foundation_release.release_id, resolved.foundation_release),
+            (resolved.domain_releases[0].release_id, resolved.domain_releases[0]),
+            (resolved.application_releases[0].release_id, resolved.application_releases[0]),
+        ]
+    }
+    assert [component.ref for component in resolved.components] == [
+        "sci-pack:application",
+        "sci-pack:domain",
+        "sci-pack:fixture",
+        "sci:rule:fixture",
+    ]
+    assert [component.ref for component in resolved.rule_components] == ["sci:rule:fixture"]
+    assert resolved.combined_digest.startswith("sha256:")
+    assert rule_set.release_set_digest == resolved.combined_digest
+    assert [released.rule.rule_id for released in rule_set.rules] == ["sci:rule:fixture"]
+    assert catalog.resolve_release_set(selection).combined_digest == resolved.combined_digest
+
+
+def test_release_set_rejects_duplicate_components_across_release_roles(science_tree: Path):
+    """The same component must not be silently relabeled as both Foundation and Domain."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceOperationalError
+    from boi_api.app.science.models import ReleaseSelection
+
+    digest = _component_digest(science_tree, "packs/pack.md")
+    _replace_release_components(science_tree, "sci-release:0.1.0", {"sci-pack:fixture": digest})
+    _add_release(science_tree, release_id="sci-release:domain", status="release_candidate")
+    _replace_release_components(science_tree, "sci-release:domain", {"sci-pack:fixture": digest})
+
+    with pytest.raises(ScienceOperationalError, match="duplicate component across releases"):
+        ScienceCatalog(science_tree).resolve_release_set(
+            ReleaseSelection(
+                foundation="sci-release:0.1.0", domains=["sci-release:domain"]
+            )
+        )
+
+
+def test_release_set_rejects_pack_dependency_absent_from_selection(science_tree: Path):
+    """A globally indexed Pack cannot satisfy a dependency unless its Release is selected."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceOperationalError
+    from boi_api.app.science.models import ReleaseSelection
+
+    foundation_digest = _component_digest(science_tree, "packs/pack.md")
+    _replace_release_components(
+        science_tree, "sci-release:0.1.0", {"sci-pack:fixture": foundation_digest}
+    )
+    _add_pack(science_tree, pack_id="sci-pack:unselected", dependencies=[])
+    domain_relative = _add_pack(
+        science_tree,
+        pack_id="sci-pack:domain",
+        dependencies=[{"relation": "uses", "ref": "sci-pack:unselected"}],
+    )
+    _add_release(science_tree, release_id="sci-release:domain", status="release_candidate")
+    _replace_release_components(
+        science_tree,
+        "sci-release:domain",
+        {"sci-pack:domain": _component_digest(science_tree, domain_relative)},
+    )
+
+    with pytest.raises(ScienceOperationalError, match="incompatible Pack dependency"):
+        ScienceCatalog(science_tree).resolve_release_set(
+            ReleaseSelection(
+                foundation="sci-release:0.1.0", domains=["sci-release:domain"]
+            )
+        )
+
+
+def test_catalog_to_engine_cross_task_proof_uses_exact_full_release_selection(
+    science_tree: Path,
+):
+    """Breaking any stored-object, release, rule, grounding, or role boundary must fail E2E."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.engine import verify_claim
+    from boi_api.app.science.models import ClaimPacket, PrimaryVerdict, ReleaseSelection
+
+    foundation_components = {
+        "sci:source:fixture": _component_digest(science_tree, "sources/source.md"),
+        "sci:evidence:fixture": _component_digest(science_tree, "evidence/evidence.md"),
+        "sci:knowledge:fixture": _component_digest(science_tree, "knowledge/knowledge.md"),
+        "sci:rule:fixture": _component_digest(science_tree, "rules/rule.md"),
+        "sci-pack:fixture": _component_digest(science_tree, "packs/pack.md"),
+    }
+    _replace_release_components(
+        science_tree,
+        "sci-release:0.1.0",
+        foundation_components,
+    )
+    domain_relative = _add_pack(
+        science_tree,
+        pack_id="sci-pack:domain-proof",
+        dependencies=[{"relation": "uses", "ref": "sci-pack:fixture"}],
+    )
+    _add_release(
+        science_tree, release_id="sci-release:domain-proof", status="release_candidate"
+    )
+    _replace_release_components(
+        science_tree,
+        "sci-release:domain-proof",
+        {"sci-pack:domain-proof": _component_digest(science_tree, domain_relative)},
+    )
+    application_relative = _add_pack(
+        science_tree,
+        pack_id="sci-pack:application-proof",
+        dependencies=[{"relation": "specializes", "ref": "sci-pack:domain-proof"}],
+    )
+    _add_release(
+        science_tree,
+        release_id="sci-release:application-proof",
+        status="release_candidate",
+    )
+    _replace_release_components(
+        science_tree,
+        "sci-release:application-proof",
+        {
+            "sci-pack:application-proof": _component_digest(
+                science_tree, application_relative
+            )
+        },
+    )
+    selection = ReleaseSelection(
+        foundation="sci-release:0.1.0",
+        domains=["sci-release:domain-proof"],
+        applications=["sci-release:application-proof"],
+    )
+    claim = ClaimPacket.model_validate(
+        {
+            "claim_id": "claim:cross-task-proof",
+            "document_ref": "boi:public:science:document:proof",
+            "document_digest": "sha256:document-proof",
+            "source_span": {
+                "start": 0,
+                "end": len("input increases response"),
+                "exact": "input increases response",
+            },
+            "normalized_claim": {
+                "subject_concept_id": "sci:concept:input",
+                "relation_kind": "monotonic_direction",
+                "predicate": "increases",
+                "object_concept_id": "sci:concept:response",
+                "polarity": "positive",
+                "quantities": [],
+                "conditions": [],
+                "process_stage": None,
+                "material_state": None,
+            },
+            "interpretation": {
+                "ontology_refs": ["sci:concept:input", "sci:concept:response"],
+                "ambiguity_ids": [],
+                "user_confirmed": True,
+            },
+        }
+    )
+    catalog = ScienceCatalog(science_tree)
+
+    release_set = catalog.resolve_release_set(selection)
+    rule_set = catalog.resolve_rule_set(release_set)
+    packet = verify_claim(claim, release_set, rule_set=rule_set)
+
+    assert packet.verdict is PrimaryVerdict.VIOLATION
+    assert packet.decisive_rule_ids == ["sci:rule:fixture"]
+    assert packet.knowledge_refs == ["sci:knowledge:fixture"]
+    assert packet.evidence_refs == ["sci:evidence:fixture"]
+    assert packet.releases.selection == selection
+    assert packet.releases.digests == release_set.release_digests
+    assert packet.releases.combined_digest == release_set.combined_digest

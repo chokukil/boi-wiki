@@ -10,6 +10,8 @@ import pint
 from pydantic import Field, model_validator
 
 from boi_api.app.science.models import (
+    ClaimCondition,
+    ConditionConstraint,
     ConditionEvaluation,
     NormalizedClaim,
     RelationKind,
@@ -20,6 +22,7 @@ from boi_api.app.science.models import (
 from boi_api.app.science.units import (
     IncompatibleDimensionsError,
     _pint_quantity,
+    compare_quantities,
     expected_dimensionality,
     validate_quantity,
 )
@@ -63,9 +66,10 @@ class VerificationRule(ScienceModel):
     object_concept_id: str
     relation_kind: RelationKind | None = None
     expected_predicate: str | None = None
+    contradiction_predicates: list[str] = Field(default_factory=list)
     expected_polarity: Literal["positive", "negative"] = "positive"
-    required_conditions: dict[str, ConditionValue] = Field(default_factory=dict)
-    validity_conditions: dict[str, ConditionValue] = Field(default_factory=dict)
+    required_conditions: list[ConditionConstraint] = Field(default_factory=list)
+    validity_conditions: list[ConditionConstraint] = Field(default_factory=list)
     expected_dimensions: dict[str, str] = Field(default_factory=dict)
     equation: EquationConstraint | None = None
     knowledge_refs: list[str] = Field(min_length=1)
@@ -74,6 +78,11 @@ class VerificationRule(ScienceModel):
 
     @model_validator(mode="after")
     def has_kind_specific_constraint(self) -> "VerificationRule":
+        condition_keys = [
+            condition.key for condition in (*self.required_conditions, *self.validity_conditions)
+        ]
+        if len(condition_keys) != len(set(condition_keys)):
+            raise ValueError("condition constraint keys must be unique across a rule")
         if (
             self.rule_kind is not RuleKind.DIRECTIONAL_RELATION
             and "expected_polarity" in self.model_fields_set
@@ -85,16 +94,42 @@ class VerificationRule(ScienceModel):
         ):
             raise ValueError(f"rule kind payload invalid for {self.rule_kind.value}")
         if self.rule_kind is RuleKind.DIRECTIONAL_RELATION:
-            if self.expected_predicate is None or self.equation is not None or self.expected_dimensions:
+            if (
+                self.expected_predicate is None
+                or "contradiction_predicates" not in self.model_fields_set
+                or self.equation is not None
+                or self.expected_dimensions
+            ):
                 raise ValueError("rule kind payload invalid for directional_relation")
+            if (
+                self.expected_predicate in self.contradiction_predicates
+                or len(set(self.contradiction_predicates)) != len(self.contradiction_predicates)
+                or any(not predicate.strip() for predicate in self.contradiction_predicates)
+            ):
+                raise ValueError("directional contradiction predicates must be unique explicit opposites")
         elif self.rule_kind is RuleKind.EQUATION_CONSTRAINT:
-            if self.equation is None or self.expected_predicate is not None or self.expected_dimensions:
+            if (
+                self.equation is None
+                or self.expected_predicate is not None
+                or "contradiction_predicates" in self.model_fields_set
+                or self.expected_dimensions
+            ):
                 raise ValueError("rule kind payload invalid for equation_constraint")
         elif self.rule_kind is RuleKind.DIMENSION_CONSTRAINT:
-            if not self.expected_dimensions or self.expected_predicate is not None or self.equation is not None:
+            if (
+                not self.expected_dimensions
+                or self.expected_predicate is not None
+                or "contradiction_predicates" in self.model_fields_set
+                or self.equation is not None
+            ):
                 raise ValueError("rule kind payload invalid for dimension_constraint")
         else:
-            if self.expected_predicate is not None or self.equation is not None or self.expected_dimensions:
+            if (
+                self.expected_predicate is not None
+                or "contradiction_predicates" in self.model_fields_set
+                or self.equation is not None
+                or self.expected_dimensions
+            ):
                 raise ValueError(f"rule kind payload invalid for {self.rule_kind.value}")
         if self.rule_kind is RuleKind.VALIDITY_DOMAIN and not self.validity_conditions:
             raise ValueError("rule kind payload invalid for validity_domain")
@@ -110,9 +145,9 @@ class ReleasedRule(ScienceModel):
 
 
 class ResolvedRuleSet(ScienceModel):
-    """The complete set of typed rules resolved for one immutable Release."""
+    """The complete set of typed rules resolved for one immutable Release set."""
 
-    release_id: str
+    release_set_digest: str
     rules: tuple[ReleasedRule, ...]
 
     @model_validator(mode="after")
@@ -135,10 +170,14 @@ RuleEvaluator: TypeAlias = Callable[
 ]
 
 
-def _claim_values(claim: NormalizedClaim) -> dict[str, ConditionValue]:
-    values = {condition.condition_id: condition.value for condition in claim.conditions}
-    values["process_stage"] = claim.process_stage
-    values["material_state"] = claim.material_state
+def _claim_values(claim: NormalizedClaim) -> dict[str, ClaimCondition]:
+    values = {condition.condition_id: condition for condition in claim.conditions}
+    values["process_stage"] = ClaimCondition(
+        condition_id="process_stage", value=claim.process_stage
+    )
+    values["material_state"] = ClaimCondition(
+        condition_id="material_state", value=claim.material_state
+    )
     return values
 
 
@@ -151,20 +190,113 @@ def _concept_match(rule: VerificationRule, claim: NormalizedClaim) -> bool:
 
 
 def _condition_evaluations(
-    expected: dict[str, ConditionValue], claim: NormalizedClaim
+    expected: list[ConditionConstraint], claim: NormalizedClaim
 ) -> list[ConditionEvaluation]:
     actual = _claim_values(claim)
-    return [
-        ConditionEvaluation(
-            condition_id=condition_id,
-            expected=expected_value,
-            actual=actual.get(condition_id),
-            satisfied=condition_id in actual
-            and actual[condition_id] is not None
-            and actual[condition_id] == expected_value,
+    evaluations: list[ConditionEvaluation] = []
+    for constraint in sorted(expected, key=lambda item: item.key):
+        actual_condition = actual.get(constraint.key)
+        actual_value = actual_condition.value if actual_condition is not None else None
+        actual_unit = actual_condition.unit if actual_condition is not None else None
+        expected_value: object = constraint.range or constraint.value
+        satisfied = False
+        reason_code = "CONDITION_VALUE_MISMATCH"
+        if actual_value is None:
+            reason_code = "MISSING_CONDITION_VALUE"
+        elif constraint.unit is not None and actual_unit is None:
+            reason_code = "MISSING_CONDITION_UNIT"
+        else:
+            try:
+                if constraint.operator == "range":
+                    assert constraint.range is not None
+                    if constraint.unit is not None and actual_unit is not None:
+                        lower = compare_quantities(
+                            {
+                                "quantity_kind": constraint.key,
+                                "value": actual_value,
+                                "unit": actual_unit,
+                            },
+                            {
+                                "quantity_kind": constraint.key,
+                                "value": constraint.range.minimum,
+                                "unit": constraint.unit,
+                            },
+                        )
+                        upper = compare_quantities(
+                            {
+                                "quantity_kind": constraint.key,
+                                "value": actual_value,
+                                "unit": actual_unit,
+                            },
+                            {
+                                "quantity_kind": constraint.key,
+                                "value": constraint.range.maximum,
+                                "unit": constraint.unit,
+                            },
+                        )
+                    else:
+                        actual_decimal = Decimal(str(actual_value))
+                        lower = (actual_decimal > constraint.range.minimum) - (
+                            actual_decimal < constraint.range.minimum
+                        )
+                        upper = (actual_decimal > constraint.range.maximum) - (
+                            actual_decimal < constraint.range.maximum
+                        )
+                    lower_ok = lower >= 0 if constraint.range.minimum_inclusive else lower > 0
+                    upper_ok = upper <= 0 if constraint.range.maximum_inclusive else upper < 0
+                    satisfied = lower_ok and upper_ok
+                elif constraint.unit is not None and actual_unit is not None:
+                    compared = compare_quantities(
+                        {
+                            "quantity_kind": constraint.key,
+                            "value": actual_value,
+                            "unit": actual_unit,
+                        },
+                        {
+                            "quantity_kind": constraint.key,
+                            "value": constraint.value,
+                            "unit": constraint.unit,
+                        },
+                    )
+                    satisfied = {
+                        "eq": compared == 0,
+                        "ne": compared != 0,
+                        "lt": compared < 0,
+                        "lte": compared <= 0,
+                        "gt": compared > 0,
+                        "gte": compared >= 0,
+                    }[constraint.operator]
+                elif constraint.operator in {"eq", "ne"}:
+                    satisfied = (
+                        actual_value == constraint.value
+                        if constraint.operator == "eq"
+                        else actual_value != constraint.value
+                    )
+                else:
+                    actual_decimal = Decimal(str(actual_value))
+                    expected_decimal = Decimal(str(constraint.value))
+                    satisfied = {
+                        "lt": actual_decimal < expected_decimal,
+                        "lte": actual_decimal <= expected_decimal,
+                        "gt": actual_decimal > expected_decimal,
+                        "gte": actual_decimal >= expected_decimal,
+                    }[constraint.operator]
+                reason_code = "CONDITION_SATISFIED" if satisfied else reason_code
+            except IncompatibleDimensionsError:
+                reason_code = "INCOMPATIBLE_CONDITION_UNITS"
+        evaluations.append(
+            ConditionEvaluation(
+                condition_id=constraint.key,
+                operator=constraint.operator,
+                expected=expected_value,
+                actual=actual_value,
+                expected_unit=constraint.unit,
+                actual_unit=actual_unit,
+                satisfied=satisfied,
+                reason_code=reason_code,
+            )
         )
-        for condition_id, expected_value in sorted(expected.items())
-    ]
+    return evaluations
 
 
 def _base_evaluation(
@@ -208,23 +340,54 @@ def _applicability_gate(
             reason_codes=["CONCEPTS_NOT_MATCHED"],
         )
     required = _condition_evaluations(rule.required_conditions, claim)
+    if any(item.reason_code == "INCOMPATIBLE_CONDITION_UNITS" for item in required):
+        return _base_evaluation(
+            rule,
+            claim,
+            applicability="OUTSIDE_DOMAIN",
+            outcome="UNDECIDED",
+            reason_codes=["INCOMPATIBLE_CONDITION_UNITS"],
+            conditions=required,
+        )
     if any(not item.satisfied for item in required):
+        details = {
+            item.reason_code
+            for item in required
+            if not item.satisfied and item.reason_code is not None
+        }
         return _base_evaluation(
             rule,
             claim,
             applicability="MISSING_CONDITIONS",
             outcome="UNDECIDED",
-            reason_codes=["MISSING_REQUIRED_CONDITIONS"],
+            reason_codes=sorted({"MISSING_REQUIRED_CONDITIONS", *details}),
             conditions=required,
         )
     validity = _condition_evaluations(rule.validity_conditions, claim)
-    if any(item.actual is None for item in validity):
+    if any(item.reason_code == "INCOMPATIBLE_CONDITION_UNITS" for item in validity):
+        return _base_evaluation(
+            rule,
+            claim,
+            applicability="OUTSIDE_DOMAIN",
+            outcome="UNDECIDED",
+            reason_codes=["INCOMPATIBLE_CONDITION_UNITS"],
+            conditions=required + validity,
+        )
+    if any(
+        item.reason_code in {"MISSING_CONDITION_VALUE", "MISSING_CONDITION_UNIT"}
+        for item in validity
+    ):
+        details = {
+            item.reason_code
+            for item in validity
+            if not item.satisfied and item.reason_code is not None
+        }
         return _base_evaluation(
             rule,
             claim,
             applicability="MISSING_CONDITIONS",
             outcome="UNDECIDED",
-            reason_codes=["MISSING_VALIDITY_CONDITIONS"],
+            reason_codes=sorted({"MISSING_VALIDITY_CONDITIONS", *details}),
             conditions=required + validity,
         )
     if any(not item.satisfied for item in validity):
@@ -246,16 +409,25 @@ def _predicate_evaluation(
     if isinstance(gated, DetailedRuleEvaluation):
         return gated
     required, validity = gated
-    matches = (
-        claim.predicate == rule.expected_predicate
-        and claim.polarity == rule.expected_polarity
-    )
+    same_polarity = claim.polarity == rule.expected_polarity
+    if claim.predicate == rule.expected_predicate:
+        outcome = "SUPPORTS" if same_polarity else "CONTRADICTS"
+    elif claim.predicate in rule.contradiction_predicates:
+        outcome = "CONTRADICTS" if same_polarity else "SUPPORTS"
+    else:
+        outcome = "UNDECIDED"
     return _base_evaluation(
         rule,
         claim,
         applicability="IN_SCOPE",
-        outcome="SUPPORTS" if matches else "CONTRADICTS",
-        reason_codes=["RULE_SUPPORTS" if matches else "RULE_CONTRADICTS"],
+        outcome=outcome,
+        reason_codes=[
+            {
+                "SUPPORTS": "RULE_SUPPORTS",
+                "CONTRADICTS": "RULE_CONTRADICTS",
+                "UNDECIDED": "PREDICATE_NOT_EXPLICITLY_CLASSIFIED",
+            }[outcome]
+        ],
         conditions=required + validity,
     )
 
@@ -315,12 +487,20 @@ def evaluate_equation_constraint(
             reason_codes=["MISSING_EQUATION_QUANTITIES"],
             conditions=required + validity,
         )
+    if claim.polarity == "negative":
+        evaluated_outcome = "CONTRADICTS" if outcome else "UNDECIDED"
+        reason_code = (
+            "NEGATED_EQUATION_SATISFIED" if outcome else "NEGATED_EQUATION_UNDECIDED"
+        )
+    else:
+        evaluated_outcome = "SUPPORTS" if outcome else "CONTRADICTS"
+        reason_code = "EQUATION_SATISFIED" if outcome else "EQUATION_CONTRADICTION"
     return _base_evaluation(
         rule,
         claim,
         applicability="IN_SCOPE",
-        outcome="SUPPORTS" if outcome else "CONTRADICTS",
-        reason_codes=["EQUATION_SATISFIED" if outcome else "EQUATION_CONTRADICTION"],
+        outcome=evaluated_outcome,
+        reason_codes=[reason_code],
         conditions=required + validity,
     )
 
@@ -348,12 +528,18 @@ def evaluate_dimension_constraint(
         validate_quantity(quantities[kind]).dimensionality == expected_dimensionality(unit)
         for kind, unit in sorted(rule.expected_dimensions.items())
     )
+    if claim.polarity == "negative":
+        outcome = "CONTRADICTS" if matches else "UNDECIDED"
+        reason_code = "NEGATED_DIMENSION_MATCH" if matches else "NEGATED_DIMENSION_UNDECIDED"
+    else:
+        outcome = "SUPPORTS" if matches else "CONTRADICTS"
+        reason_code = "DIMENSION_MATCH" if matches else "DIMENSION_MISMATCH"
     return _base_evaluation(
         rule,
         claim,
         applicability="IN_SCOPE",
-        outcome="SUPPORTS" if matches else "CONTRADICTS",
-        reason_codes=["DIMENSION_MATCH" if matches else "DIMENSION_MISMATCH"],
+        outcome=outcome,
+        reason_codes=[reason_code],
         conditions=required + validity,
     )
 
@@ -371,8 +557,12 @@ def evaluate_validity_domain(
         rule,
         claim,
         applicability="IN_SCOPE",
-        outcome="SUPPORTS",
-        reason_codes=["VALIDITY_DOMAIN_MATCH"],
+        outcome="CONTRADICTS" if claim.polarity == "negative" else "SUPPORTS",
+        reason_codes=[
+            "NEGATED_VALIDITY_DOMAIN_MATCH"
+            if claim.polarity == "negative"
+            else "VALIDITY_DOMAIN_MATCH"
+        ],
         conditions=required + validity,
     )
 
@@ -390,14 +580,21 @@ def evaluate_empirical_boundary(
         observation.rule_id == rule.rule_id and observation.verified
         for observation in qualified_observations
     )
+    if not qualified:
+        outcome = "UNDECIDED"
+        reason_code = "QUALIFIED_OBSERVATION_REQUIRED"
+    elif claim.polarity == "negative":
+        outcome = "CONTRADICTS"
+        reason_code = "NEGATED_QUALIFIED_OBSERVATION"
+    else:
+        outcome = "SUPPORTS"
+        reason_code = "QUALIFIED_OBSERVATION_PRESENT"
     return _base_evaluation(
         rule,
         claim,
         applicability="IN_SCOPE" if qualified else "EMPIRICAL_ONLY",
-        outcome="SUPPORTS" if qualified else "UNDECIDED",
-        reason_codes=[
-            "QUALIFIED_OBSERVATION_PRESENT" if qualified else "QUALIFIED_OBSERVATION_REQUIRED"
-        ],
+        outcome=outcome,
+        reason_codes=[reason_code],
         conditions=required + validity,
     )
 

@@ -19,7 +19,15 @@ from boi_api.app.okf import (
 )
 from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
-from boi_api.app.science.models import ReleaseSelection, ResolvedComponent, ResolvedRelease
+from boi_api.app.science.models import (
+    PackDependency,
+    PackRelationKind,
+    ReleaseCompatibilityResult,
+    ReleaseSelection,
+    ResolvedComponent,
+    ResolvedRelease,
+    ResolvedReleaseSet,
+)
 from boi_api.app.science.profile import SCIENCE_TYPE_REQUIREMENTS, validate_sci_profile_metadata
 from boi_api.app.science.rules import ReleasedRule, ResolvedRuleSet, VerificationRule
 
@@ -195,7 +203,7 @@ class ScienceCatalog:
             self._require_many("knowledge", self._references(rule, "knowledge_refs"))
             self._require_many("evidence", self._references(rule, "evidence_refs"))
         for pack in self._objects["pack"].values():
-            self._require_many("pack", self._references(pack, "dependencies"))
+            self._require_many("pack", (edge.ref for edge in self._pack_dependencies(pack)))
             self._require_many("knowledge", self._references(pack, "knowledge_refs"))
             self._require_many("rule", self._references(pack, "rule_refs"))
             self._require_many("qualification_matrix", self._references(pack, "qualification_refs"))
@@ -228,6 +236,17 @@ class ScienceCatalog:
             else:
                 raise ScienceCatalogError(f"science {obj.kind} has invalid {field_name}: {obj.object_id}")
         return tuple(refs)
+
+    def _pack_dependencies(self, pack: ScienceObject) -> tuple[PackDependency, ...]:
+        value = getattr(pack, "dependencies", None)
+        if not isinstance(value, list):
+            raise ScienceCatalogError(f"science pack has invalid dependencies: {pack.object_id}")
+        try:
+            return tuple(PackDependency.model_validate(item) for item in value)
+        except ValidationError as exc:
+            raise ScienceCatalogError(
+                f"science pack has invalid typed relationship edges: {pack.object_id}"
+            ) from exc
 
     def _require_many(self, kind: ObjectKind, refs: Iterable[str]) -> None:
         for ref in refs:
@@ -330,18 +349,15 @@ class ScienceCatalog:
             known_limitations=list(known_limitations),
         )
 
-    def resolve_rule_set(self, release: ResolvedRelease) -> ResolvedRuleSet:
-        """Resolve every rule payload and bind it to the exact Release component."""
+    def resolve_rule_set(self, release_set: ResolvedReleaseSet) -> ResolvedRuleSet:
+        """Resolve every rule payload and bind it to the exact combined Release set."""
 
         released_rules: list[ReleasedRule] = []
-        for component in sorted(release.components, key=lambda item: item.ref):
-            if component.kind != "rule":
-                continue
+        for component in release_set.rule_components:
             stored = self._require("rule", component.ref)
             if (
                 stored.digest != component.actual_digest
                 or component.declared_digest != component.actual_digest
-                or release.component_digests.get(component.ref) != component.actual_digest
             ):
                 raise ScienceCatalogError(f"rule component digest mismatch: {component.ref}")
             rule = self._verification_rule(stored)
@@ -355,13 +371,89 @@ class ScienceCatalog:
                     semantic_digest=semantic_digest,
                 )
             )
-        return ResolvedRuleSet(release_id=release.release_id, rules=tuple(released_rules))
+        return ResolvedRuleSet(
+            release_set_digest=release_set.combined_digest,
+            rules=tuple(released_rules),
+        )
 
-    def resolve_release_set(self, selection: ReleaseSelection) -> tuple[ResolvedRelease, ...]:
-        release_ids = (selection.foundation, *sorted(selection.domains), *sorted(selection.applications))
+    def resolve_release_set(self, selection: ReleaseSelection) -> ResolvedReleaseSet:
+        release_ids = (selection.foundation, *selection.domains, *selection.applications)
         if len(set(release_ids)) != len(release_ids):
             raise ScienceOperationalError("Science release selection contains duplicate release IDs")
-        return tuple(self.resolve_release(release_id) for release_id in release_ids)
+        foundation = self.resolve_release(selection.foundation)
+        domains = tuple(self.resolve_release(release_id) for release_id in selection.domains)
+        applications = tuple(
+            self.resolve_release(release_id) for release_id in selection.applications
+        )
+        releases = (foundation, *domains, *applications)
+
+        combined_by_ref: dict[str, ResolvedComponent] = {}
+        for release in releases:
+            for component in release.components:
+                previous = combined_by_ref.get(component.ref)
+                if previous is not None:
+                    qualifier = (
+                        "conflicting" if previous.actual_digest != component.actual_digest else "duplicate"
+                    )
+                    raise ScienceOperationalError(
+                        f"{qualifier} component across releases: {component.ref}"
+                    )
+                combined_by_ref[component.ref] = component
+        components = tuple(sorted(combined_by_ref.values(), key=lambda item: item.ref))
+        selected_packs = {
+            component.ref for component in components if component.kind == "pack"
+        }
+        checked_edges: list[PackDependency] = []
+        for pack_id in sorted(selected_packs):
+            pack = self._require("pack", pack_id)
+            for edge in sorted(
+                self._pack_dependencies(pack),
+                key=lambda item: (item.relation.value, item.ref),
+            ):
+                checked_edges.append(edge)
+                if edge.ref == pack_id:
+                    raise ScienceOperationalError(
+                        f"incompatible Pack dependency: {pack_id} cannot reference itself"
+                    )
+                if edge.relation is PackRelationKind.SUPERSEDES:
+                    if edge.ref in selected_packs:
+                        raise ScienceOperationalError(
+                            f"incompatible Pack dependency: {pack_id} supersedes selected {edge.ref}"
+                        )
+                elif edge.ref not in selected_packs:
+                    raise ScienceOperationalError(
+                        f"incompatible Pack dependency: {pack_id} requires unselected {edge.ref}"
+                    )
+
+        release_digests = {
+            release.release_id: release.content_hash
+            for release in sorted(releases, key=lambda item: item.release_id)
+        }
+        compatibility = ReleaseCompatibilityResult(
+            compatible=True,
+            checked_pack_dependencies=tuple(checked_edges),
+        )
+        combined_digest = sha256_digest(
+            {
+                "selection": selection,
+                "release_digests": release_digests,
+                "components": components,
+                "compatibility": compatibility,
+            }
+        )
+        return ResolvedReleaseSet(
+            selection=selection,
+            foundation_release=foundation,
+            domain_releases=domains,
+            application_releases=applications,
+            compatibility=compatibility,
+            release_digests=release_digests,
+            combined_digest=combined_digest,
+            components=components,
+            rule_components=tuple(
+                component for component in components if component.kind == "rule"
+            ),
+        )
 
     def active_release(self) -> ResolvedRelease:
         candidates = [

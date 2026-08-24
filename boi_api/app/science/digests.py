@@ -7,11 +7,26 @@ from typing import Any
 from pydantic import BaseModel
 
 
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, BaseModel):
+        return _jsonable(value.model_dump(mode="json", exclude_none=False))
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    return value
+
+
 def canonical_json_bytes(value: Any) -> bytes:
     """Encode a JSON-serializable value with a stable representation."""
-    if isinstance(value, BaseModel):
-        value = value.model_dump(mode="json", exclude_none=False)
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    value = _jsonable(value)
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
 
 
 def sha256_digest(value: Any) -> str:

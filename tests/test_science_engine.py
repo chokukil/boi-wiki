@@ -11,6 +11,7 @@ from boi_api.app.science.models import (
     ClaimPacket,
     PrimaryVerdict,
     ResolvedRelease,
+    ResolvedReleaseSet,
 )
 from boi_api.app.science.rules import (
     QualifiedObservation,
@@ -43,10 +44,12 @@ def claim_fixture(
     predicate: str,
     object_: str,
     conditions: dict[str, object] | None = None,
+    typed_conditions: list[dict[str, object]] | None = None,
     quantities: list[dict[str, object]] | None = None,
     process_stage: str | None = None,
     material_state: str | None = None,
     ambiguity_ids: list[str] | None = None,
+    polarity: str = "positive",
 ) -> ClaimPacket:
     exact = f"{subject} {predicate} {object_}"
     return ClaimPacket.model_validate(
@@ -64,9 +67,11 @@ def claim_fixture(
                 "relation_kind": relation,
                 "predicate": predicate,
                 "object_concept_id": object_,
-                "polarity": "positive",
+                "polarity": polarity,
                 "quantities": quantities or [],
-                "conditions": [
+                "conditions": typed_conditions
+                if typed_conditions is not None
+                else [
                     {"condition_id": key, "value": value}
                     for key, value in (conditions or {}).items()
                 ],
@@ -90,29 +95,45 @@ def rule_fixture(
     object_: str,
     relation: str | None = None,
     expected_predicate: str | None = None,
-    required_conditions: dict[str, object] | None = None,
-    validity_conditions: dict[str, object] | None = None,
+    contradiction_predicates: list[str] | None = None,
+    required_conditions: dict[str, object] | list[dict[str, object]] | None = None,
+    validity_conditions: dict[str, object] | list[dict[str, object]] | None = None,
     expected_dimensions: dict[str, str] | None = None,
     equation: dict[str, object] | None = None,
     corrected_claim: str | None = None,
 ) -> VerificationRule:
-    return VerificationRule.model_validate(
-        {
-            "rule_id": rule_id,
-            "rule_kind": kind,
-            "subject_concept_id": subject,
-            "object_concept_id": object_,
-            "relation_kind": relation,
-            "expected_predicate": expected_predicate,
-            "required_conditions": required_conditions or {},
-            "validity_conditions": validity_conditions or {},
-            "expected_dimensions": expected_dimensions or {},
-            "equation": equation,
-            "knowledge_refs": [KNOWLEDGE_REF],
-            "evidence_refs": [EVIDENCE_REF],
-            "corrected_claim": corrected_claim,
-        }
-    )
+    payload = {
+        "rule_id": rule_id,
+        "rule_kind": kind,
+        "subject_concept_id": subject,
+        "object_concept_id": object_,
+        "relation_kind": relation,
+        "expected_predicate": expected_predicate,
+        "required_conditions": (
+            [
+                {"key": key, "operator": "eq", "value": value}
+                for key, value in required_conditions.items()
+            ]
+            if isinstance(required_conditions, dict)
+            else (required_conditions or [])
+        ),
+        "validity_conditions": (
+            [
+                {"key": key, "operator": "eq", "value": value}
+                for key, value in validity_conditions.items()
+            ]
+            if isinstance(validity_conditions, dict)
+            else (validity_conditions or [])
+        ),
+        "expected_dimensions": expected_dimensions or {},
+        "equation": equation,
+        "knowledge_refs": [KNOWLEDGE_REF],
+        "evidence_refs": [EVIDENCE_REF],
+        "corrected_claim": corrected_claim,
+    }
+    if kind == "directional_relation" or contradiction_predicates is not None:
+        payload["contradiction_predicates"] = contradiction_predicates or []
+    return VerificationRule.model_validate(payload)
 
 
 @pytest.fixture
@@ -125,6 +146,7 @@ def rules() -> tuple[VerificationRule, ...]:
             object_="sci:concept:film-thickness",
             relation="monotonic_direction",
             expected_predicate="decreases",
+            contradiction_predicates=["increases"],
             required_conditions={"resist": "same", "viscosity": "same"},
             validity_conditions={"process_stage": "final-coat"},
             corrected_claim="At fixed conditions, increasing spin speed decreases film thickness.",
@@ -226,11 +248,11 @@ def release(rules: tuple[VerificationRule, ...]) -> ResolvedRelease:
 
 def make_rule_set(
     rules: tuple[VerificationRule, ...] | list[VerificationRule],
-    release: ResolvedRelease,
+    release_set: ResolvedReleaseSet,
 ) -> ResolvedRuleSet:
-    components = {component.ref: component for component in release.components}
+    components = {component.ref: component for component in release_set.components}
     return ResolvedRuleSet(
-        release_id=release.release_id,
+        release_set_digest=release_set.combined_digest,
         rules=tuple(
             ReleasedRule(
                 rule=rule,
@@ -243,10 +265,15 @@ def make_rule_set(
 
 
 @pytest.fixture
+def release_set(release: ResolvedRelease) -> ResolvedReleaseSet:
+    return ResolvedReleaseSet.from_single_foundation(release)
+
+
+@pytest.fixture
 def rule_set(
-    rules: tuple[VerificationRule, ...], release: ResolvedRelease
+    rules: tuple[VerificationRule, ...], release_set: ResolvedReleaseSet
 ) -> ResolvedRuleSet:
-    return make_rule_set(rules, release)
+    return make_rule_set(rules, release_set)
 
 
 @pytest.mark.parametrize(
@@ -326,17 +353,17 @@ def test_primary_verdict_cases(
     case_id: str,
     claim: ClaimPacket,
     expected: PrimaryVerdict,
-    release: ResolvedRelease,
+    release_set: ResolvedReleaseSet,
     rule_set: ResolvedRuleSet,
 ):
     """A wrong precedence branch or deterministic outcome must fail a named case."""
-    packet = verify_claim(claim, release, rule_set=rule_set)
+    packet = verify_claim(claim, release_set, rule_set=rule_set)
 
     assert packet.verdict is expected, case_id
 
 
 def test_different_conditions_do_not_create_false_violation(
-    release: ResolvedRelease, rule_set: ResolvedRuleSet
+    release_set: ResolvedReleaseSet, rule_set: ResolvedRuleSet
 ):
     """Treating a changed resist as held constant must not create a red verdict."""
     claim = claim_fixture(
@@ -349,16 +376,357 @@ def test_different_conditions_do_not_create_false_violation(
         process_stage="final-coat",
     )
 
-    packet = verify_claim(claim, release, rule_set=rule_set)
+    packet = verify_claim(claim, release_set, rule_set=rule_set)
 
     assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
     assert packet.corrected_claim is None
 
 
+@pytest.mark.parametrize(
+    ("predicate", "polarity", "expected_outcome"),
+    [
+        ("decreases", "positive", "SUPPORTS"),
+        ("increases", "positive", "CONTRADICTS"),
+        ("unchanged", "positive", "UNDECIDED"),
+        ("associated_with", "positive", "UNDECIDED"),
+        ("becomes_thinner", "positive", "UNDECIDED"),
+        ("decreases", "negative", "CONTRADICTS"),
+        ("increases", "negative", "SUPPORTS"),
+        ("unchanged", "negative", "UNDECIDED"),
+    ],
+)
+def test_directional_rule_only_decides_expected_or_explicit_contradiction(
+    predicate: str,
+    polarity: str,
+    expected_outcome: str,
+):
+    """Treating every non-expected wording as an opposite direction must fail this table."""
+    rule = rule_fixture(
+        "sci:rule:directional-explicit-opposites",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+    )
+    claim = claim_fixture(
+        f"claim:directional:{predicate}:{polarity}",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate=predicate,
+        object_="sci:concept:response",
+        polarity=polarity,
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.applicability == "IN_SCOPE"
+    assert evaluation.outcome == expected_outcome
+    assert (evaluation.outcome == "CONTRADICTS") is (
+        (predicate == "increases" and polarity == "positive")
+        or (predicate == "decreases" and polarity == "negative")
+    )
+
+
+def test_negative_claim_cannot_consist_with_a_satisfied_equation():
+    """Ignoring polarity would mark denial of a numerically satisfied equation consistent."""
+    rule = rule_fixture(
+        "sci:rule:negative-equation",
+        "equation_constraint",
+        subject="sci:concept:circuit",
+        object_="sci:concept:voltage",
+        equation={
+            "left_quantity_kind": "voltage",
+            "right_quantity_kinds": ["current", "resistance"],
+            "operator": "product",
+        },
+    )
+    claim = claim_fixture(
+        "claim:negative-equation",
+        subject="sci:concept:circuit",
+        relation="equation",
+        predicate="equals",
+        object_="sci:concept:voltage",
+        polarity="negative",
+        quantities=[
+            {"quantity_kind": "voltage", "value": "10", "unit": "volt"},
+            {"quantity_kind": "current", "value": "2", "unit": "ampere"},
+            {"quantity_kind": "resistance", "value": "5", "unit": "ohm"},
+        ],
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.outcome == "CONTRADICTS"
+    assert evaluation.reason_codes == ["NEGATED_EQUATION_SATISFIED"]
+
+
+def test_negative_claim_cannot_consist_with_a_satisfied_dimension():
+    """Ignoring polarity would mark denial of a matching dimension consistent."""
+    rule = rule_fixture(
+        "sci:rule:negative-dimension",
+        "dimension_constraint",
+        subject="sci:concept:measurement",
+        object_="sci:concept:length",
+        expected_dimensions={"measured_length": "meter"},
+    )
+    claim = claim_fixture(
+        "claim:negative-dimension",
+        subject="sci:concept:measurement",
+        relation="dimensional_relation",
+        predicate="has_dimension",
+        object_="sci:concept:length",
+        polarity="negative",
+        quantities=[{"quantity_kind": "measured_length", "value": "3", "unit": "meter"}],
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.outcome == "CONTRADICTS"
+    assert evaluation.reason_codes == ["NEGATED_DIMENSION_MATCH"]
+
+
+def test_negative_claim_cannot_consist_with_a_satisfied_validity_proposition():
+    """Ignoring polarity would mark denial of the matched validity proposition consistent."""
+    rule = rule_fixture(
+        "sci:rule:negative-validity",
+        "validity_domain",
+        subject="sci:concept:model",
+        object_="sci:concept:gas",
+        validity_conditions={"material_state": "gas"},
+    )
+    claim = claim_fixture(
+        "claim:negative-validity",
+        subject="sci:concept:model",
+        relation="equation",
+        predicate="applies",
+        object_="sci:concept:gas",
+        polarity="negative",
+        material_state="gas",
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.outcome == "CONTRADICTS"
+    assert evaluation.reason_codes == ["NEGATED_VALIDITY_DOMAIN_MATCH"]
+
+
+def test_negative_claim_cannot_consist_with_a_qualified_empirical_proposition():
+    """Ignoring polarity would mark denial of a qualified observation consistent."""
+    rule = rule_fixture(
+        "sci:rule:negative-empirical",
+        "empirical_boundary",
+        subject="sci:concept:device",
+        object_="sci:concept:lifetime",
+    )
+    claim = claim_fixture(
+        "claim:negative-empirical",
+        subject="sci:concept:device",
+        relation="empirical_relation",
+        predicate="lasts",
+        object_="sci:concept:lifetime",
+        polarity="negative",
+    )
+    observation = QualifiedObservation(
+        observation_id="sci:observation:negative-empirical",
+        rule_id=rule.rule_id,
+        verified=True,
+        measurement_ref=MEASUREMENT_REF,
+        evidence_ref=EVIDENCE_REF,
+    )
+
+    evaluation = evaluate_rule(
+        rule,
+        claim.normalized_claim,
+        qualified_observations=(observation,),
+    )
+
+    assert evaluation.outcome == "CONTRADICTS"
+    assert evaluation.reason_codes == ["NEGATED_QUALIFIED_OBSERVATION"]
+
+
+def test_rule_conditions_reject_primitive_maps_and_accept_typed_constraints():
+    """Restoring primitive map equality would discard operator, range, and unit semantics."""
+    payload = {
+        "rule_id": "sci:rule:typed-condition-schema",
+        "rule_kind": "directional_relation",
+        "subject_concept_id": "sci:concept:input",
+        "object_concept_id": "sci:concept:response",
+        "expected_predicate": "decreases",
+        "contradiction_predicates": ["increases"],
+        "required_conditions": {"temperature": 25},
+        "knowledge_refs": [KNOWLEDGE_REF],
+        "evidence_refs": [EVIDENCE_REF],
+    }
+
+    with pytest.raises(ValidationError, match="required_conditions"):
+        VerificationRule.model_validate(payload)
+
+    payload["required_conditions"] = [
+        {"key": "temperature", "operator": "eq", "value": 25, "unit": "°C"}
+    ]
+    assert VerificationRule.model_validate(payload).required_conditions[0].unit == "°C"
+
+
+def test_contradiction_predicates_are_explicit_and_directional_only():
+    """Moving or defaulting the opposite-predicate allowlist must fail the Rule schema."""
+    directional = {
+        "rule_id": "sci:rule:missing-explicit-opposites",
+        "rule_kind": "directional_relation",
+        "subject_concept_id": "sci:concept:a",
+        "object_concept_id": "sci:concept:b",
+        "expected_predicate": "increases",
+        "knowledge_refs": [KNOWLEDGE_REF],
+        "evidence_refs": [EVIDENCE_REF],
+    }
+    equation = {
+        "rule_id": "sci:rule:foreign-explicit-opposites",
+        "rule_kind": "equation_constraint",
+        "subject_concept_id": "sci:concept:a",
+        "object_concept_id": "sci:concept:b",
+        "contradiction_predicates": [],
+        "equation": {
+            "left_quantity_kind": "left",
+            "right_quantity_kinds": ["right"],
+            "operator": "equal",
+        },
+        "knowledge_refs": [KNOWLEDGE_REF],
+        "evidence_refs": [EVIDENCE_REF],
+    }
+
+    with pytest.raises(ValidationError, match="directional_relation"):
+        VerificationRule.model_validate(directional)
+    with pytest.raises(ValidationError, match="equation_constraint"):
+        VerificationRule.model_validate(equation)
+
+
+def test_typed_condition_normalizes_compatible_units_before_comparison():
+    """Comparing 25 Celsius directly with 298.15 Kelvin must not create missing coverage or red."""
+    rule = rule_fixture(
+        "sci:rule:typed-temperature",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        required_conditions=[
+            {"key": "temperature", "operator": "eq", "value": 25, "unit": "°C"}
+        ],
+    )
+    claim = claim_fixture(
+        "claim:typed-temperature",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        typed_conditions=[
+            {"condition_id": "temperature", "value": 298.15, "unit": "K"}
+        ],
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.applicability == "IN_SCOPE"
+    assert evaluation.outcome == "SUPPORTS"
+    assert evaluation.condition_evaluations[0].satisfied is True
+
+
+def test_typed_condition_range_normalizes_units_at_both_boundaries():
+    """Changing range normalization would reject an in-range Kelvin value for a Celsius rule."""
+    rule = rule_fixture(
+        "sci:rule:typed-temperature-range",
+        "validity_domain",
+        subject="sci:concept:model",
+        object_="sci:concept:material",
+        validity_conditions=[
+            {
+                "key": "temperature",
+                "operator": "range",
+                "range": {"minimum": 20, "maximum": 30},
+                "unit": "°C",
+            }
+        ],
+    )
+    claim = claim_fixture(
+        "claim:typed-temperature-range",
+        subject="sci:concept:model",
+        relation="equation",
+        predicate="applies",
+        object_="sci:concept:material",
+        typed_conditions=[
+            {"condition_id": "temperature", "value": 298.15, "unit": "K"}
+        ],
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.applicability == "IN_SCOPE"
+    assert evaluation.condition_evaluations[0].satisfied is True
+
+
+def test_typed_condition_missing_required_unit_is_missing_conditions():
+    """A bare number cannot satisfy a Rule that declares a measurement unit."""
+    rule = rule_fixture(
+        "sci:rule:typed-temperature-missing-unit",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        required_conditions=[
+            {"key": "temperature", "operator": "eq", "value": 25, "unit": "°C"}
+        ],
+    )
+    claim = claim_fixture(
+        "claim:typed-temperature-missing-unit",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:response",
+        conditions={"temperature": 25},
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.applicability == "MISSING_CONDITIONS"
+    assert evaluation.outcome == "UNDECIDED"
+    assert "MISSING_CONDITION_UNIT" in evaluation.reason_codes
+
+
+def test_same_number_with_incompatible_condition_units_cannot_create_false_red():
+    """Treating equal magnitudes as equal conditions must not compare length with time in scope."""
+    rule = rule_fixture(
+        "sci:rule:typed-incompatible-units",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        validity_conditions=[
+            {"key": "window", "operator": "eq", "value": 1, "unit": "meter"}
+        ],
+    )
+    claim = claim_fixture(
+        "claim:typed-incompatible-units",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:response",
+        typed_conditions=[{"condition_id": "window", "value": 1, "unit": "second"}],
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.applicability == "OUTSIDE_DOMAIN"
+    assert evaluation.outcome == "UNDECIDED"
+    assert "INCOMPATIBLE_CONDITION_UNITS" in evaluation.reason_codes
+
+
 @pytest.mark.parametrize("observation_value", ["unqualified", "false"])
 def test_empirical_strings_cannot_qualify_an_observation(
     observation_value: str,
-    release: ResolvedRelease,
+    release_set: ResolvedReleaseSet,
     rule_set: ResolvedRuleSet,
 ):
     """A nonblank claim string must not masquerade as reviewed measurement evidence."""
@@ -371,7 +739,7 @@ def test_empirical_strings_cannot_qualify_an_observation(
         conditions={"qualified_observation": observation_value},
     )
 
-    packet = verify_claim(claim, release, rule_set=rule_set)
+    packet = verify_claim(claim, release_set, rule_set=rule_set)
 
     assert packet.verdict is PrimaryVerdict.EMPIRICAL_VERIFICATION_REQUIRED
 
@@ -439,7 +807,7 @@ def test_empirical_observation_must_be_verified_and_release_grounded(
     measurement_ref: str,
     evidence_ref: str,
     expected: PrimaryVerdict,
-    release: ResolvedRelease,
+    release_set: ResolvedReleaseSet,
     rule_set: ResolvedRuleSet,
 ):
     """Verification, measurement pinning, and exact Rule Evidence are all mandatory."""
@@ -460,7 +828,7 @@ def test_empirical_observation_must_be_verified_and_release_grounded(
 
     packet = verify_claim(
         claim,
-        release,
+        release_set,
         rule_set=rule_set,
         qualified_observations=(observation,),
     )
@@ -469,7 +837,7 @@ def test_empirical_observation_must_be_verified_and_release_grounded(
 
 
 def test_contradiction_candidate_cannot_override_missing_conditions_or_domain(
-    release: ResolvedRelease, rule_set: ResolvedRuleSet
+    release_set: ResolvedReleaseSet, rule_set: ResolvedRuleSet
 ):
     """A contradiction candidate must remain gated by conditions and validity."""
     missing = claim_fixture(
@@ -490,8 +858,8 @@ def test_contradiction_candidate_cannot_override_missing_conditions_or_domain(
         process_stage="shear-thinning-regime",
     )
 
-    missing_packet = verify_claim(missing, release, rule_set=rule_set)
-    outside_packet = verify_claim(outside, release, rule_set=rule_set)
+    missing_packet = verify_claim(missing, release_set, rule_set=rule_set)
+    outside_packet = verify_claim(outside, release_set, rule_set=rule_set)
 
     assert missing_packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
     assert outside_packet.verdict is PrimaryVerdict.OUTSIDE_VALIDITY_DOMAIN
@@ -500,7 +868,7 @@ def test_contradiction_candidate_cannot_override_missing_conditions_or_domain(
 
 
 def test_unresolved_ambiguity_stops_before_rule_evaluation(
-    release: ResolvedRelease, rule_set: ResolvedRuleSet
+    release_set: ResolvedReleaseSet, rule_set: ResolvedRuleSet
 ):
     """Sending a decision-changing ambiguity to the dispatcher must fail closed."""
     claim = claim_fixture(
@@ -513,7 +881,7 @@ def test_unresolved_ambiguity_stops_before_rule_evaluation(
     )
 
     with pytest.raises(UnresolvedAmbiguityError, match="ambiguity:stage"):
-        verify_claim(claim, release, rule_set=rule_set)
+        verify_claim(claim, release_set, rule_set=rule_set)
 
 
 def test_release_must_pin_the_rule_and_every_explanation_reference(
@@ -542,14 +910,18 @@ def test_release_must_pin_the_rule_and_every_explanation_reference(
         }
     )
 
-    packet = verify_claim(claim, unpinned, rule_set=rule_set)
+    packet = verify_claim(
+        claim,
+        ResolvedReleaseSet.from_single_foundation(unpinned),
+        rule_set=rule_set,
+    )
 
     assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
     assert packet.explanation_facts == []
 
 
 def test_omitting_any_release_pinned_rule_fails_complete_coverage(
-    release: ResolvedRelease, rule_set: ResolvedRuleSet
+    release_set: ResolvedReleaseSet, rule_set: ResolvedRuleSet
 ):
     """Supplying only the decisive rule must not bypass exact Release completeness."""
     claim = claim_fixture(
@@ -571,7 +943,7 @@ def test_omitting_any_release_pinned_rule_fails_complete_coverage(
         }
     )
 
-    packet = verify_claim(claim, release, rule_set=omitted)
+    packet = verify_claim(claim, release_set, rule_set=omitted)
 
     assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
     assert "RULE_SET_INCOMPLETE" in packet.reason_codes
@@ -579,7 +951,7 @@ def test_omitting_any_release_pinned_rule_fails_complete_coverage(
 
 
 def test_same_id_substituted_rule_body_fails_semantic_integrity(
-    release: ResolvedRelease, rule_set: ResolvedRuleSet
+    release_set: ResolvedReleaseSet, rule_set: ResolvedRuleSet
 ):
     """Keeping a pinned ID while changing its semantic body must not authorize a verdict."""
     claim = claim_fixture(
@@ -608,7 +980,7 @@ def test_same_id_substituted_rule_body_fails_semantic_integrity(
         }
     )
 
-    packet = verify_claim(claim, release, rule_set=substituted)
+    packet = verify_claim(claim, release_set, rule_set=substituted)
 
     assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
     assert "RULE_SEMANTIC_DIGEST_MISMATCH" in packet.reason_codes
@@ -616,7 +988,7 @@ def test_same_id_substituted_rule_body_fails_semantic_integrity(
 
 
 def test_substituted_rule_cannot_replace_the_resolved_component_semantic_digest(
-    release: ResolvedRelease, rule_set: ResolvedRuleSet
+    release_set: ResolvedReleaseSet, rule_set: ResolvedRuleSet
 ):
     """Rehashing a substituted body cannot replace the semantic digest pinned by Release."""
     claim = claim_fixture(
@@ -644,14 +1016,14 @@ def test_substituted_rule_cannot_replace_the_resolved_component_semantic_digest(
         )
     substituted = rule_set.model_copy(update={"rules": tuple(substituted_rules)})
 
-    packet = verify_claim(claim, release, rule_set=substituted)
+    packet = verify_claim(claim, release_set, rule_set=substituted)
 
     assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
     assert "RULE_SEMANTIC_DIGEST_MISMATCH" in packet.reason_codes
 
 
 def test_released_rule_component_digest_must_match_exact_release_component(
-    release: ResolvedRelease, rule_set: ResolvedRuleSet
+    release_set: ResolvedReleaseSet, rule_set: ResolvedRuleSet
 ):
     """A semantic match cannot compensate for a different OKF component digest."""
     claim = claim_fixture(
@@ -674,14 +1046,14 @@ def test_released_rule_component_digest_must_match_exact_release_component(
         }
     )
 
-    packet = verify_claim(claim, release, rule_set=altered)
+    packet = verify_claim(claim, release_set, rule_set=altered)
 
     assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
     assert "RULE_COMPONENT_DIGEST_MISMATCH" in packet.reason_codes
 
 
 def test_extra_unpinned_rule_fails_exact_release_coverage(
-    release: ResolvedRelease, rule_set: ResolvedRuleSet
+    release_set: ResolvedReleaseSet, rule_set: ResolvedRuleSet
 ):
     """An otherwise valid unpinned Rule cannot expand an immutable Release."""
     claim = claim_fixture(
@@ -706,7 +1078,7 @@ def test_extra_unpinned_rule_fails_exact_release_coverage(
     )
     expanded = rule_set.model_copy(update={"rules": (*rule_set.rules, extra)})
 
-    packet = verify_claim(claim, release, rule_set=expanded)
+    packet = verify_claim(claim, release_set, rule_set=expanded)
 
     assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
     assert "RULE_SET_HAS_EXTRA_RULES" in packet.reason_codes
@@ -729,7 +1101,10 @@ def test_duplicate_rule_ids_are_rejected_before_evaluation_in_any_order(
         duplicated.reverse()
 
     with pytest.raises(ValidationError, match="duplicate rule ID"):
-        ResolvedRuleSet(release_id=rule_set.release_id, rules=tuple(duplicated))
+        ResolvedRuleSet(
+            release_set_digest=rule_set.release_set_digest,
+            rules=tuple(duplicated),
+        )
 
 
 def test_rule_evaluation_reports_matched_concepts_compared_conditions_and_refs(
@@ -760,9 +1135,13 @@ def test_rule_evaluation_reports_matched_concepts_compared_conditions_and_refs(
     assert [item.model_dump() for item in evaluation.condition_evaluations] == [
         {
             "condition_id": "resistance",
+            "operator": "eq",
             "expected": "fixed",
             "actual": "fixed",
+            "expected_unit": None,
+            "actual_unit": None,
             "satisfied": True,
+            "reason_code": "CONDITION_SATISFIED",
         }
     ]
     assert evaluation.applicability == "IN_SCOPE"
@@ -904,7 +1283,9 @@ def test_incompatible_equation_operands_are_rejected_not_contradicted():
             "rule_kind": "validity_domain",
             "subject_concept_id": "sci:concept:a",
             "object_concept_id": "sci:concept:b",
-            "validity_conditions": {"material_state": "gas"},
+            "validity_conditions": [
+                {"key": "material_state", "operator": "eq", "value": "gas"}
+            ],
             "corrected_claim": "This evaluator cannot produce a correction.",
             "knowledge_refs": [KNOWLEDGE_REF],
             "evidence_refs": [EVIDENCE_REF],
@@ -968,8 +1349,59 @@ def test_quantity_validation_is_finite_defined_and_dimension_safe(tmp_path):
         ureg.load_definitions(definitions)
 
 
+def test_allowlisted_multiplicative_and_affine_conversions_use_decimal_arithmetic():
+    """Changing scale/offset handling or falling back to float must break exact conversions."""
+    from boi_api.app.science.models import ConversionKind
+    from boi_api.app.science.units import convert_value
+
+    assert convert_value(
+        Decimal("100"), "centimeter", "meter", kind=ConversionKind.MULTIPLICATIVE
+    ) == Decimal("1.00")
+    assert convert_value(
+        Decimal("25"), "°C", "K", kind=ConversionKind.AFFINE
+    ) == Decimal("298.15")
+    assert convert_value(
+        Decimal("10"), "°C", "K", kind=ConversionKind.AFFINE, interval=True
+    ) == Decimal("10")
+    assert compare_quantities(
+        {"quantity_kind": "temperature", "value": "25", "unit": "°C"},
+        {"quantity_kind": "temperature", "value": "298.15", "unit": "K"},
+    ) == 0
+
+
+def test_logarithmic_and_unregistered_procedure_conversions_fail_explicitly():
+    """Removing the kind gate would let Pint or an arbitrary procedure invent a conversion."""
+    from boi_api.app.science.models import ConversionKind
+    from boi_api.app.science.units import (
+        UnsupportedConversionError,
+        UnregisteredConversionError,
+        convert_value,
+    )
+
+    with pytest.raises(UnsupportedConversionError, match="logarithmic conversion is unsupported"):
+        convert_value(Decimal("3"), "dB", "ratio", kind=ConversionKind.LOGARITHMIC)
+    with pytest.raises(UnregisteredConversionError, match="procedure conversion is unregistered"):
+        convert_value(
+            Decimal("7"),
+            "instrument_count",
+            "concentration",
+            kind=ConversionKind.PROCEDURE_DEFINED,
+            conversion_id="procedure:unregistered",
+        )
+
+
+def test_ambiguous_ph_token_is_not_parsed_as_an_si_prefix_unit():
+    """Removing the denylist would silently interpret pH as picohenry."""
+    from boi_api.app.science.units import AmbiguousUnitError, expected_dimensionality
+
+    with pytest.raises(AmbiguousUnitError, match="ambiguous unit token: pH"):
+        validate_quantity({"quantity_kind": "acidity", "value": "7", "unit": "pH"})
+    with pytest.raises(AmbiguousUnitError, match="ambiguous unit token: pH"):
+        expected_dimensionality("pH")
+
+
 def test_verdict_packet_is_byte_stable_and_only_violation_has_a_correction(
-    release: ResolvedRelease, rule_set: ResolvedRuleSet
+    release_set: ResolvedReleaseSet, rule_set: ResolvedRuleSet
 ):
     """Iteration or set ordering must not alter canonical VerdictPacket bytes."""
     claim = claim_fixture(
@@ -982,12 +1414,97 @@ def test_verdict_packet_is_byte_stable_and_only_violation_has_a_correction(
         process_stage="final-coat",
     )
 
-    first = verify_claim(claim, release, rule_set=rule_set)
+    first = verify_claim(claim, release_set, rule_set=rule_set)
     reversed_rule_set = rule_set.model_copy(update={"rules": tuple(reversed(rule_set.rules))})
-    second = verify_claim(claim, release, rule_set=reversed_rule_set)
+    second = verify_claim(claim, release_set, rule_set=reversed_rule_set)
 
     assert canonical_json_bytes(first) == canonical_json_bytes(second)
     assert first.corrected_claim == (
         "At fixed conditions, increasing spin speed decreases film thickness."
     )
     assert all(fact.knowledge_refs and fact.evidence_refs for fact in first.explanation_facts)
+
+
+def test_verdict_preserves_complete_release_selection_and_exact_digests(
+    release: ResolvedRelease,
+    rule_set: ResolvedRuleSet,
+):
+    """Collapsing every resolved Rule into Foundation must lose this role-exact record."""
+    from boi_api.app.science.models import (
+        ReleaseCompatibilityResult,
+        ReleaseSelection,
+        ResolvedReleaseSet,
+    )
+
+    domain = release.model_copy(
+        update={
+            "release_id": "sci-release:domain:0.1.0",
+            "content_hash": "sha256:" + "1" * 64,
+            "components": (),
+            "component_digests": {},
+            "known_limitations": ["domain-fixture"],
+        }
+    )
+    application = release.model_copy(
+        update={
+            "release_id": "sci-release:application:0.1.0",
+            "content_hash": "sha256:" + "2" * 64,
+            "components": (),
+            "component_digests": {},
+            "known_limitations": ["application-fixture"],
+        }
+    )
+    selection = ReleaseSelection(
+        foundation=release.release_id,
+        domains=[domain.release_id],
+        applications=[application.release_id],
+    )
+    combined_components = tuple(sorted(release.components, key=lambda item: item.ref))
+    release_digests = {
+        release.release_id: release.content_hash,
+        domain.release_id: domain.content_hash,
+        application.release_id: application.content_hash,
+    }
+    compatibility = ReleaseCompatibilityResult(
+        compatible=True,
+        checked_pack_dependencies=(),
+    )
+    release_set = ResolvedReleaseSet(
+        selection=selection,
+        foundation_release=release,
+        domain_releases=(domain,),
+        application_releases=(application,),
+        compatibility=compatibility,
+        release_digests=release_digests,
+        combined_digest=ResolvedReleaseSet.combined_digest_for(
+            selection,
+            release_digests,
+            combined_components,
+            compatibility,
+        ),
+        components=combined_components,
+        rule_components=tuple(
+            component for component in combined_components if component.kind == "rule"
+        ),
+    )
+    combined_rules = ResolvedRuleSet(
+        release_set_digest=release_set.combined_digest,
+        rules=rule_set.rules,
+    )
+    claim = claim_fixture(
+        "claim:complete-release-selection",
+        subject="sci:concept:spin-speed",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:film-thickness",
+        conditions={"resist": "same", "viscosity": "same"},
+        process_stage="final-coat",
+    )
+
+    packet = verify_claim(claim, release_set, rule_set=combined_rules)
+
+    assert packet.verdict is PrimaryVerdict.VIOLATION
+    assert packet.releases.selection == selection
+    assert packet.releases.digests == release_set.release_digests
+    assert packet.releases.combined_digest == release_set.combined_digest
+    assert packet.limitations == ["application-fixture", "domain-fixture", "fixture-only"]
