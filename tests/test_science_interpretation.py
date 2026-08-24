@@ -1334,6 +1334,57 @@ def test_experimental_llm_adapter_can_be_disabled_without_creating_a_candidate(
 
 
 @pytest.mark.parametrize(
+    ("case", "expected_code"),
+    [
+        ("unavailable", "http_status_503"),
+        ("timeout", "timeout"),
+        ("empty", "invalid_json"),
+        ("invalid_json", "invalid_json"),
+        ("schema_mismatch", "schema_invalid"),
+    ],
+)
+def test_experimental_llm_failures_never_create_interpretation_or_report(
+    science_identity: AuthIdentity,
+    case: str,
+    expected_code: str,
+):
+    def handler(_request: httpx.Request) -> httpx.Response:
+        if case == "unavailable":
+            return httpx.Response(503)
+        if case == "timeout":
+            raise httpx.ReadTimeout("fixture timeout")
+        if case == "empty":
+            return _openai_response("")
+        if case == "invalid_json":
+            return _openai_response("not-json")
+        return _openai_response({"claims": []})
+
+    service, _catalog, store, _llm = _service()
+    service.llm_client = ScienceLLMClient(
+        ScienceLLMConfig.from_env(
+            {
+                "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+                "BOI_SCIENCE_LLM_MODEL": "qwen/qwen3.8-27b",
+                "BOI_SCIENCE_LLM_MAX_ATTEMPTS": "1",
+            }
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(ScienceInterpretationUnavailable) as captured:
+        service.interpret_document(
+            "RPM 증가 시 두께 변화",
+            document_ref="boi:public:science:document:fixture",
+            identity=science_identity,
+            idempotency_key=f"science-request:experimental-{case}",
+        )
+
+    assert captured.value.diagnostic_code == expected_code
+    assert store.interpretations == {}
+    assert store.reports == {}
+
+
+@pytest.mark.parametrize(
     ("case", "expected_issue"),
     [
         ("zero_refs", "ONTOLOGY_REFS_REQUIRED"),
