@@ -11,6 +11,8 @@ import pytest
 
 SCIENCE_TOOLS = {
     "science_interpret",
+    "science_aliases_detect",
+    "science_claim_submit",
     "science_interpretation_confirm",
     "science_verify_claim",
     "science_verify_document",
@@ -82,6 +84,15 @@ async def test_verification_tools_forward_stored_identity_contract_unchanged(
     monkeypatch.setattr(mcp_module, "api_post", fake_post)
     monkeypatch.setattr(mcp_module, "api_get", fake_get)
 
+    await mcp_module.science_aliases_detect(
+        document="원문", request_id="aliases-1"
+    )
+    await mcp_module.science_claim_submit(
+        candidate={"normalized_claim": {"predicate": "increases"}},
+        client_kind="codex",
+        idempotency_key="claim-submit-1",
+        document="원문",
+    )
     await mcp_module.science_interpret(
         "원문", request_id="r-1", idempotency_key="idem-1"
     )
@@ -96,6 +107,8 @@ async def test_verification_tools_forward_stored_identity_contract_unchanged(
     await mcp_module.science_report_get("report-1")
 
     assert [(method, path) for method, path, _ in calls] == [
+        ("POST", "/api/science/aliases/detect"),
+        ("POST", "/api/science/claims/submit"),
         ("POST", "/api/science/interpret"),
         ("POST", "/api/science/interpretations/i-1/confirm"),
         ("POST", "/api/science/claims/c-1/verify"),
@@ -106,14 +119,64 @@ async def test_verification_tools_forward_stored_identity_contract_unchanged(
     for _method, _path, kwargs in calls:
         assert kwargs["bearer_token"] == "test-user-bearer"
         assert kwargs.get("employee_id") is None
-    assert calls[2][2]["payload"] == {
+    assert calls[0][2]["payload"] == {
+        "document": "원문",
+        "request_id": "aliases-1",
+    }
+    assert calls[1][2]["payload"] == {
+        "document": "원문",
+        "client_kind": "codex",
+        "candidate": {"normalized_claim": {"predicate": "increases"}},
+        "idempotency_key": "claim-submit-1",
+    }
+    assert calls[4][2]["payload"] == {
         "interpretation_id": "i-2",
         "release_selection": release_selection,
     }
-    assert calls[3][2]["payload"] == {
+    assert calls[5][2]["payload"] == {
         "interpretation_id": "i-2",
         "release_selection": release_selection,
         "idempotency_key": "idem-3",
+    }
+
+
+def test_authenticated_bridge_forwards_external_claim_submission(
+    mcp_module, monkeypatch
+):
+    captured: dict = {}
+
+    async def fake_post(path, **kwargs):
+        captured.update({"path": path, **kwargs})
+        return {"interpretation_id": "submitted"}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_post)
+    response = TestClient(mcp_module.app).post(
+        "/api/mcp/call",
+        headers={
+            "x-service-token": "test-service-token",
+            "authorization": "Bearer real-user-token",
+        },
+        json={
+            "tool": "science_claim_submit",
+            "arguments": {
+                "document": "원문",
+                "client_kind": "claude",
+                "candidate": {"normalized_claim": {"predicate": "increases"}},
+                "supersedes_claim_id": "sci-claim:old",
+                "idempotency_key": "claim-submit-bridge",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["path"] == "/api/science/claims/submit"
+    assert captured["bearer_token"] == "real-user-token"
+    assert captured["payload"] == {
+        "document": "원문",
+        "client_kind": "claude",
+        "candidate": {"normalized_claim": {"predicate": "increases"}},
+        "idempotency_key": "claim-submit-bridge",
+        "supersedes_claim_id": "sci-claim:old",
     }
 
 

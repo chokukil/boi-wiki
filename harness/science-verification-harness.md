@@ -13,7 +13,8 @@ status: draft
 ## Inputs
 
 - ACL 확인된 document bytes와 Unicode code point selection anchor
-- untrusted LLM interpretation proposal과 pinned Dictionary/Ontology Release
+- 결정론적으로 탐지된 등록 alias와 pinned Dictionary/Ontology Release
+- User·Codex·Claude·선택적 Qwen이 REST/MCP로 제출한 untrusted Claim 후보
 - 명시적으로 확인된 Claim Packet
 - exact Foundation/Domain/Application Release selection
 - stored Verification Report와 Web/REST/MCP/Markdown/PDF 표현
@@ -24,7 +25,7 @@ status: draft
 
 ## Context
 
-AI 해석은 proposal이다. subject/object/relation binding, alias, complete relation span이 결정론적으로 일치하지 않거나 결과가 달라질 모호성이 있으면 보라색 점선으로 멈춘다. 명시적 user confirmation 뒤 exact Claim만 판정한다. deterministic Rule이 in-scope contradiction을 확정한 span만 빨간색 밑줄과 음영을 받는다.
+AI 해석은 proposal이다. `POST /api/science/aliases/detect`는 등록 alias의 exact Unicode code point 구간만 반환하며 Claim이나 verdict를 만들지 않는다. `POST /api/science/claims/submit`과 MCP `science_claim_submit`은 User·Codex·Claude·Qwen 후보를 같은 closed schema로 받아 서버가 subject/object/relation binding, 조건 schema, alias, complete non-overlapping relation span을 다시 검증한다. Qwen은 optional/experimental adapter이며 연결 실패·timeout·빈 응답·invalid JSON·schema mismatch가 Science Verifier 판정 실패나 빨간 표시로 이어지지 않는다. 결과가 달라질 모호성이 있으면 보라색 점선으로 멈춘다. 명시적 user confirmation 뒤 exact Claim만 판정한다. deterministic Rule이 in-scope contradiction을 확정한 span만 빨간색 밑줄과 음영을 받는다.
 
 `VIOLATION`, `CONSISTENT`, `INSUFFICIENT_INFORMATION`, `OUTSIDE_VALIDITY_DOMAIN`, `EMPIRICAL_VERIFICATION_REQUIRED` 외 verdict를 만들지 않는다. CONSISTENT는 검사 범위 내 모순 미발견이며 참·안전·승인·공정 qualification을 뜻하지 않는다.
 
@@ -40,22 +41,28 @@ AI 해석은 proposal이다. subject/object/relation binding, alias, complete re
 ## Action
 
 1. 서버가 canonical document와 ACL을 다시 확인하고 anchor를 resolve한다.
-2. LLM proposal을 closed schema로 검사하고 ontology refs를 pinned binding과 대조한다.
-3. 결과에 영향 없는 용어 차이는 기록만 하고, 결과가 달라질 모호성만 사용자에게 확인한다.
-4. user confirmation event로 새 immutable interpretation version을 만든다.
-5. exact active Release와 `OperationalVerification`으로 Claim을 판정한다.
-6. Rule이 허용한 Knowledge statement와 decisive Evidence만으로 충분한 과학적 설명을 구성한다.
-7. 교정 카드 바로 아래에 결정 근거 1~2개를 항상 보이고, 펼쳐보기에서 `original_text`, `reviewed_translation`, `locator`, `original_url`, ontology_refs를 제공한다.
-8. 같은 stored report에서 Markdown/PDF를 만들고 동일 digest를 반환한다.
+2. 등록 alias를 결정론적으로 탐지하고 exact `binding_id`, `concept_id`, `surface_term`, start/end, binding digest를 반환한다. 이 단계는 verdict를 만들지 않는다.
+3. User·Codex·Claude·Qwen 후보를 closed schema로 검사하고 ontology refs, subject/relation/object 역할, 조건, alias, non-overlapping complete span을 pinned binding과 대조한다. client가 보낸 verdict·Evidence·Rule 필드는 거부한다.
+4. 결과에 영향 없는 용어 차이는 기록만 하고, 결과가 달라질 모호성만 사용자에게 확인한다. 수동 교정은 기존 record를 고치지 않고 `supersedes_claim_id`를 가진 새 제출로 저장한다.
+5. user confirmation event로 새 immutable interpretation version을 만든다.
+6. exact active Release와 `OperationalVerification`으로 Claim을 판정한다.
+7. Rule이 허용한 Knowledge statement와 decisive Evidence만으로 충분한 과학적 설명을 구성한다.
+8. 교정 카드 바로 아래에 결정 근거 1~2개를 항상 보이고, 펼쳐보기에서 `original_text`, `reviewed_translation`, `locator`, `original_url`, ontology_refs를 제공한다.
+9. 같은 stored report에서 Markdown/PDF를 만들고 동일 digest를 반환한다.
 
 ## State
 
-Interpretation, confirmation event, Verdict Packet, Report, export는 append-only immutable record다. 동일 actor·request digest·idempotency key의 재시도는 같은 bytes를 반환한다. 새 Release가 활성화되거나 이전 Release가 withdraw되어도 과거 `report_digest`와 component digests는 변하지 않는다.
+Interpretation, external Claim submission, correction resubmission, confirmation event, Verdict Packet, Report, export는 append-only immutable record다. 동일 actor·request digest·idempotency key의 재시도는 같은 bytes를 반환한다. 새 Release가 활성화되거나 이전 Release가 withdraw되어도 과거 `report_digest`와 component digests는 변하지 않는다.
 
 ## Verification
 
 - stale/duplicate/missing Unicode code point anchor를 fail closed하는지 확인한다.
 - ontology mismatch, partial relation span, LLM `changes_outcome=false`가 user confirmation을 우회하지 못하는지 확인한다.
+- 존재하지 않는 ontology_ref, 문서에 없는 alias, 겹치거나 불완전한 role span이 confirmation과 verdict로 진행되지 않는지 확인한다.
+- unconfirmed agent condition/process_stage/material_state가 verdict나 report applicability fact가 되지 않는지 확인한다.
+- User·Codex·Claude·Qwen과 MCP가 같은 canonical Claim을 제출하면 client label과 무관하게 같은 Claim ID와 결정론적 verdict가 나오는지 확인한다.
+- caller-authored verdict·Evidence·Rule이 REST/MCP closed schema에서 거부되는지 확인한다.
+- inactive Release가 verdict에 사용되지 않고, 근거 없는 빨간 표시가 생성되지 않는지 확인한다.
 - red annotation은 `VIOLATION`에만, purple ambiguity는 outcome-changing proposal에만 나타나는지 확인한다.
 - 각 explanation sentence가 Knowledge digest, Evidence digest, Source digest, `original_text_hash`에 묶이는지 확인한다.
 - 일반 User가 허용된 원문·번역·locator·URL을 볼 수 있고 source ACL denial은 우회되지 않는지 확인한다.

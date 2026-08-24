@@ -7,6 +7,8 @@ def test_main_application_registers_science_verifier_routes(boi_app_module) -> N
     paths = {route.path for route in boi_app_module.app.routes}
 
     assert "/api/science/interpret" in paths
+    assert "/api/science/aliases/detect" in paths
+    assert "/api/science/claims/submit" in paths
     assert "/api/science/verify-document" in paths
     assert "/api/science/reports/{report_id}/export" in paths
     validator = (

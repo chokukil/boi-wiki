@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.authorization import ScienceAuthorization
@@ -57,6 +58,27 @@ class FakeService:
     def verify_document(self, interpretation_id: str, selection, **kwargs):
         self.calls.append(("verify_document", (interpretation_id, selection)))
         return self.report
+
+    def detect_aliases(self, document: str, **kwargs):
+        self.calls.append(("detect_aliases", document))
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "document_ref": kwargs["document_ref"],
+                "document_digest": sha256_digest(document),
+                "matches": [],
+            }
+        )
+
+    def submit_claim_candidate(self, document: str, **kwargs):
+        self.calls.append(("submit_claim_candidate", (document, kwargs)))
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "interpretation_id": "sci-interpretation:submitted",
+                "candidate_claims": [],
+                "decision_impact": [],
+                "submission_client_kind": kwargs["client_kind"],
+            }
+        )
 
 
 class FakeStore:
@@ -150,6 +172,60 @@ def _client(
     return TestClient(app), service
 
 
+def _claim_candidate() -> dict:
+    exact = "RPM 증가 시 두께 변화"
+    return {
+        "source_span": {
+            "start": 0,
+            "end": len(exact),
+            "exact": exact,
+            "prefix": "",
+            "suffix": "",
+        },
+        "normalized_claim": {
+            "subject_concept_id": "sci:concept:rpm",
+            "relation_kind": "monotonic_direction",
+            "predicate": "increases",
+            "object_concept_id": "sci:concept:film-thickness",
+            "polarity": "positive",
+            "quantities": [],
+            "conditions": [],
+            "process_stage": "final_spin",
+            "material_state": "liquid_film",
+        },
+        "ontology_refs": [
+            "sci:binding:rpm",
+            "sci:binding:increases",
+            "sci:binding:film-thickness",
+        ],
+        "ambiguity_ids": [],
+        "candidate_meanings": [
+            {
+                "ambiguity_id": None,
+                "concept_role": "subject",
+                "surface_term": "RPM",
+                "ontology_ref": "sci:binding:rpm",
+                "meaning": "untrusted",
+            },
+            {
+                "ambiguity_id": None,
+                "concept_role": "relation",
+                "surface_term": "증가",
+                "ontology_ref": "sci:binding:increases",
+                "meaning": "untrusted",
+            },
+            {
+                "ambiguity_id": None,
+                "concept_role": "object",
+                "surface_term": "두께",
+                "ontology_ref": "sci:binding:film-thickness",
+                "meaning": "untrusted",
+            },
+        ],
+        "decision_impact": [],
+    }
+
+
 def test_report_exports_share_one_canonical_report_digest() -> None:
     client, _service = _client()
 
@@ -177,6 +253,67 @@ def test_verification_never_accepts_a_caller_authored_claim_packet() -> None:
             "interpretation_id": "sci-interpretation:confirmed",
             "release_selection": {"foundation": "sci-release:0.1.0"},
             "claim_packet": {"claim_id": "forged"},
+        },
+    )
+
+    assert response.status_code == 422
+    assert not service.calls
+
+
+def test_alias_detection_route_returns_only_exact_non_verdict_matches() -> None:
+    client, service = _client()
+
+    response = client.post(
+        "/api/science/aliases/detect",
+        json={
+            "document": "RPM 증가 시 두께 변화",
+            "request_id": "aliases-001",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["matches"] == []
+    assert "verdict" not in response.text.lower()
+    assert service.calls == [("detect_aliases", "RPM 증가 시 두께 변화")]
+
+
+def test_claim_submission_route_creates_only_a_paused_interpretation() -> None:
+    client, service = _client()
+
+    response = client.post(
+        "/api/science/claims/submit",
+        json={
+            "document": "RPM 증가 시 두께 변화",
+            "client_kind": "codex",
+            "candidate": _claim_candidate(),
+            "idempotency_key": "claim-submit-001",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["interpretation_id"] == "sci-interpretation:submitted"
+    assert "verdict" not in response.text.lower()
+    call, (_document, kwargs) = service.calls[0]
+    assert call == "submit_claim_candidate"
+    assert kwargs["client_kind"] == "codex"
+    assert kwargs["candidate"].normalized_claim.predicate == "increases"
+
+
+@pytest.mark.parametrize("forbidden", ["verdict", "evidence", "rule"])
+def test_claim_submission_rejects_client_authored_scientific_authority(
+    forbidden: str,
+) -> None:
+    client, service = _client()
+    candidate = _claim_candidate()
+    candidate[forbidden] = "client-forged"
+
+    response = client.post(
+        "/api/science/claims/submit",
+        json={
+            "document": "RPM 증가 시 두께 변화",
+            "client_kind": "claude",
+            "candidate": candidate,
+            "idempotency_key": f"claim-submit-forbidden-{forbidden}",
         },
     )
 

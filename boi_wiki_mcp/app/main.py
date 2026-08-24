@@ -239,6 +239,8 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "event_skills_list", "description": "List Event Skill registry entries used by BoI Agent and WorkflowDefinition registration."},
     {"name": "action_skills_list", "description": "List Action Skill registry entries used by BoI Agent and WorkflowDefinition registration."},
     {"name": "science_interpret", "description": "Interpret document claims against the active Science ontology without deciding a verdict."},
+    {"name": "science_aliases_detect", "description": "Find exact registered Science aliases in document text without creating a claim or verdict."},
+    {"name": "science_claim_submit", "description": "Submit one user/Codex/Claude/Qwen claim candidate for server-side ontology and span revalidation; never accepts verdict authority."},
     {"name": "science_interpretation_confirm", "description": "Record an explicit user-confirmed interpretation binding before resuming affected claim verification."},
     {"name": "science_verify_claim", "description": "Verify one interpreted claim through the deterministic Science rule engine."},
     {"name": "science_verify_document", "description": "Verify a document and return source-anchored annotations plus the immutable report reference."},
@@ -361,6 +363,8 @@ MCP_TOOL_IA_GROUPS = [
         "Science Verifier",
         {
             "science_interpret",
+            "science_aliases_detect",
+            "science_claim_submit",
             "science_interpretation_confirm",
             "science_verify_claim",
             "science_verify_document",
@@ -832,6 +836,61 @@ async def science_interpret(
             "request_id": request_id,
             "idempotency_key": idempotency_key,
         },
+    )
+
+
+@mcp.tool(name="science_aliases_detect")
+async def science_aliases_detect(
+    document: str = "",
+    request_id: str = "",
+    document_ref: str = "",
+    selection: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Find exact registered aliases only; this cannot produce a verdict."""
+    payload: dict[str, Any] = {"request_id": request_id}
+    if document_ref:
+        payload["document_ref"] = document_ref
+    else:
+        payload["document"] = document
+    if selection is not None:
+        payload["selection"] = selection
+    return await api_post(
+        "/api/science/aliases/detect",
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+        payload=payload,
+    )
+
+
+@mcp.tool(name="science_claim_submit")
+async def science_claim_submit(
+    candidate: dict[str, Any],
+    client_kind: Literal["user", "codex", "claude", "qwen", "other"],
+    idempotency_key: str,
+    document: str = "",
+    document_ref: str = "",
+    selection: dict[str, Any] | None = None,
+    supersedes_claim_id: str = "",
+) -> dict[str, Any]:
+    """Submit an untrusted Claim candidate for deterministic server revalidation."""
+    payload: dict[str, Any] = {
+        "client_kind": client_kind,
+        "candidate": candidate,
+        "idempotency_key": idempotency_key,
+    }
+    if document_ref:
+        payload["document_ref"] = document_ref
+    else:
+        payload["document"] = document
+    if selection is not None:
+        payload["selection"] = selection
+    if supersedes_claim_id:
+        payload["supersedes_claim_id"] = supersedes_claim_id
+    return await api_post(
+        "/api/science/claims/submit",
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+        payload=payload,
     )
 
 
@@ -3907,6 +3966,44 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "request_id": str(args.get("request_id") or req.request_id or ""),
                 "idempotency_key": str(args.get("idempotency_key") or ""),
             },
+        )
+    elif tool_name == "science_aliases_detect":
+        payload = {
+            "request_id": str(args.get("request_id") or req.request_id or ""),
+        }
+        if str(args.get("document_ref") or ""):
+            payload["document_ref"] = str(args.get("document_ref") or "")
+        else:
+            payload["document"] = str(args.get("document") or "")
+        if isinstance(args.get("selection"), dict):
+            payload["selection"] = args["selection"]
+        result = await api_post(
+            "/api/science/aliases/detect",
+            employee_id=None,
+            bearer_token=science_bearer,
+            payload=payload,
+        )
+    elif tool_name == "science_claim_submit":
+        payload = {
+            "client_kind": str(args.get("client_kind") or ""),
+            "candidate": args.get("candidate") or {},
+            "idempotency_key": str(args.get("idempotency_key") or ""),
+        }
+        if str(args.get("document_ref") or ""):
+            payload["document_ref"] = str(args.get("document_ref") or "")
+        else:
+            payload["document"] = str(args.get("document") or "")
+        if isinstance(args.get("selection"), dict):
+            payload["selection"] = args["selection"]
+        if str(args.get("supersedes_claim_id") or ""):
+            payload["supersedes_claim_id"] = str(
+                args.get("supersedes_claim_id") or ""
+            )
+        result = await api_post(
+            "/api/science/claims/submit",
+            employee_id=None,
+            bearer_token=science_bearer,
+            payload=payload,
         )
     elif tool_name == "science_interpretation_confirm":
         if not bridge_bool(args.get("user_confirmed")):
