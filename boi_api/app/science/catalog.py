@@ -416,7 +416,9 @@ class ScienceCatalog:
         """Resolve a serializable candidate Rule set for qualification only."""
 
         resolved = self._resolved_rule_set(release_set)
-        return QualificationRuleSet.model_validate(resolved.model_dump(mode="json"))
+        return QualificationRuleSet.model_validate(
+            resolved.model_dump(mode="json", exclude_unset=True)
+        )
 
     def resolve_operational_rule_set(
         self, release_set: ResolvedReleaseSet
