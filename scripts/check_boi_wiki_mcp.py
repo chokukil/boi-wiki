@@ -1046,6 +1046,7 @@ async def main_async(args: argparse.Namespace) -> int:
                 "doc_body_apply",
                 "promotion_submit",
                 "promotion_status",
+                *sorted(SCIENCE_TOOL_NAMES),
             ],
         }
         result["client_registration"] = {

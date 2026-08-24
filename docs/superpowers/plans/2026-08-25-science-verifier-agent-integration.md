@@ -116,7 +116,7 @@ Expected: FAIL because the skills do not exist.
 
 - [ ] **Step 3: Author `boi-science-verifier`**
 
-Startup sequence: resolve relevant Dictionary/Ontology terms, call `science_interpret`, ask only outcome-changing ambiguity, resubmit the corrected Claim, call `science_verify_document`, display BoI verdict/limitations and source links, and retrieve detailed Evidence on demand. It must treat service outage as unavailable verification and must not answer from agent memory as a substitute.
+Startup sequence: resolve relevant Dictionary/Ontology terms, call `science_interpret`, ask only outcome-changing ambiguity, record the user's exact choice through `science_interpretation_confirm`, then call `science_verify_document` with that stored confirmed interpretation. Display BoI verdict/limitations and source links, and retrieve detailed Evidence on demand. It must treat service outage as unavailable verification and must not answer from agent memory as a substitute.
 
 - [ ] **Step 4: Author `boi-science-curator` and update the parent skill**
 

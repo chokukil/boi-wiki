@@ -2101,6 +2101,10 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
     assert "source_apply" in output
     assert "doc_body_apply" in output
     assert "promotion_submit" in output
+    assert "science_interpret" in output
+    assert "science_verify_document" in output
+    assert "science_evidence_get" in output
+    assert "science_report_export" in output
     assert "Codex" in output
     assert "Claude Desktop" in output
     assert "Cursor" in output
