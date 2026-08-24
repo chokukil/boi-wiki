@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.check_boi_agent_scenarios import (
+from scripts.check_boi_agent_scenarios import (  # noqa: E402
     ScenarioValidationError,
     load_scenarios as load_agent_scenarios,
     run_scenario as run_agent_scenario,
@@ -41,6 +41,23 @@ except Exception:  # pragma: no cover - agent-contract-only can run without MCP 
     streamablehttp_client = None
 
 EXPECTED_PROTOCOL = {"tools": 80, "resource_templates": 11, "prompts": 5}
+SCIENCE_TOOL_NAMES = {
+    "science_interpret",
+    "science_interpretation_confirm",
+    "science_verify_claim",
+    "science_verify_document",
+    "science_evidence_get",
+    "science_report_get",
+    "science_report_export",
+    "science_proposal_create",
+    "science_source_validate",
+    "science_evidence_validate",
+    "science_knowledge_validate",
+    "science_rule_qualify",
+    "science_release_validate",
+    "science_release_activate",
+    "science_release_withdraw",
+}
 DEFAULT_AGENT_ARTIFACT_SMOKE_QUESTION = "이 SOP의 Event, Action, Manual Handoff 관계를 표로 요약해줘."
 DEFAULT_AGENT_ARTIFACT_SMOKE_CURRENT_URL = "/docs/boi:public:sop:equipment-abnormal-response?employee_id=100001"
 
@@ -119,6 +136,8 @@ async def check_protocol(url: str, include_details: bool = False, service_token:
                     "status": "auth_required",
                     "auth_required": True,
                     "transport_mode": "unauthorized",
+                    "science_tools_ok": False,
+                    "missing_science_tools": sorted(SCIENCE_TOOL_NAMES),
                     "client_warning": f"{type(exc).__name__}: {exc}",
                     "message": "MCP endpoint requires a service token; rerun with --service-token, --service-token-env, or --service-token-dotenv and optionally --require-bridge.",
                 }
@@ -148,18 +167,22 @@ async def check_protocol_mcp_client(url: str, include_details: bool = False, ser
         # read side has delivered all protocol lists. Treat that as a transport
         # close warning only after the authoritative MCP lists were collected.
         close_warning = f"{type(exc).__name__}: {exc}"
+    tool_names = [attr_any(tool, "name") for tool in tools.tools]
+    missing_science_tools = sorted(SCIENCE_TOOL_NAMES - set(tool_names))
     result = {
         "tools": len(tools.tools),
         "resources": len(resources.resources),
         "resource_templates": len(resource_templates.resourceTemplates),
         "prompts": len(prompts.prompts),
+        "science_tools_ok": not missing_science_tools,
+        "missing_science_tools": missing_science_tools,
     }
     if close_warning:
         result["close_warning"] = close_warning
     if include_details:
         result.update(
             {
-                "tool_names": [attr_any(tool, "name") for tool in tools.tools],
+                "tool_names": tool_names,
                 "resource_uris": [attr_any(resource, "uri") for resource in resources.resources],
                 "resource_template_uris": [
                     attr_any(template, "uriTemplate", "uri_template") for template in resource_templates.resourceTemplates
@@ -211,16 +234,20 @@ async def check_protocol_stateless_json(url: str, include_details: bool = False,
     tool_items = list(tools.get("tools") or [])
     template_items = list(resource_templates.get("resourceTemplates") or [])
     prompt_items = list(prompts.get("prompts") or [])
+    tool_names = [str(item.get("name") or "") for item in tool_items]
+    missing_science_tools = sorted(SCIENCE_TOOL_NAMES - set(tool_names))
     result = {
         "tools": len(tool_items),
         "resources": 0,
         "resource_templates": len(template_items),
         "prompts": len(prompt_items),
+        "science_tools_ok": not missing_science_tools,
+        "missing_science_tools": missing_science_tools,
     }
     if include_details:
         result.update(
             {
-                "tool_names": [str(item.get("name") or "") for item in tool_items],
+                "tool_names": tool_names,
                 "resource_uris": [],
                 "resource_template_uris": [str(item.get("uriTemplate") or item.get("uri") or "") for item in template_items],
                 "prompt_names": [str(item.get("name") or "") for item in prompt_items],
@@ -916,6 +943,7 @@ async def main_async(args: argparse.Namespace) -> int:
         protocol["tools"] >= EXPECTED_PROTOCOL["tools"]
         and protocol["resource_templates"] >= EXPECTED_PROTOCOL["resource_templates"]
         and protocol["prompts"] >= EXPECTED_PROTOCOL["prompts"]
+        and protocol.get("science_tools_ok") is True
         and (bridge.get("ok") is True or (bridge.get("status") == "skipped" and not require_bridge))
     )
     if args.summary:

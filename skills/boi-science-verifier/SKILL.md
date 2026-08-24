@@ -9,6 +9,8 @@ BoI, not the client Agent, owns scientific verdicts. The Agent helps the user in
 
 Read `harness/science-verification-harness.md` before verifying.
 
+Use an **authenticated user bearer** for every Science MCP call. A `service token` authenticates only the MCP transport and **사용자 identity가 아니다**; never treat it as the reader, verifier, Power User, or Admin.
+
 ## Verification contract
 
 1. Call `science_interpret` with the exact document. Keep returned claim spans, bindings, `ontology_refs`, and Release identity unchanged.
