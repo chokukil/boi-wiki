@@ -1,0 +1,10 @@
+{
+  "monotonic-direction": {
+    "rule_id": "sci:rule:fixture",
+    "rule_kind": "directional_relation",
+    "inputs": ["sci:concept:spin-speed"],
+    "outcomes": ["VIOLATION", "CONSISTENT"],
+    "knowledge_refs": ["sci:knowledge:fixture"],
+    "evidence_refs": ["sci:evidence:fixture"]
+  }
+}

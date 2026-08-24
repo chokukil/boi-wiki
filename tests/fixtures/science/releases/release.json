@@ -1,0 +1,18 @@
+{
+  "foundation-release": {
+    "release_id": "sci-release:foundation:0.1.0",
+    "schema_version": "sci-profile/0.1",
+    "content_hash": "sha256:release-fixture",
+    "status": "active",
+    "components": [
+      {
+        "ref": "sci:rule:fixture",
+        "kind": "rule",
+        "declared_digest": "sha256:rule-fixture",
+        "actual_digest": "sha256:rule-fixture"
+      }
+    ],
+    "component_digests": {"sci:rule:fixture": "sha256:rule-fixture"},
+    "known_limitations": ["fixture-only"]
+  }
+}

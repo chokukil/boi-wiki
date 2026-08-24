@@ -1,0 +1,31 @@
+{
+  "monotonic-increase": {
+    "claim_id": "claim:fixture:monotonic-increase",
+    "document_ref": "boi:public:science:document:fixture",
+    "document_digest": "sha256:document-fixture",
+    "source_span": {
+      "offset_encoding": "unicode_code_point",
+      "start": 0,
+      "end": 6,
+      "exact": "속도가 증가",
+      "prefix": "",
+      "suffix": "하면 두께가 증가한다"
+    },
+    "normalized_claim": {
+      "subject_concept_id": "sci:concept:spin-speed",
+      "relation_kind": "monotonic_direction",
+      "predicate": "increases",
+      "object_concept_id": "sci:concept:film-thickness",
+      "polarity": "positive",
+      "quantities": [],
+      "conditions": [],
+      "process_stage": "spin-coating",
+      "material_state": "liquid-film"
+    },
+    "interpretation": {
+      "ontology_refs": ["sci:ontology:spin-speed"],
+      "ambiguity_ids": [],
+      "user_confirmed": true
+    }
+  }
+}
