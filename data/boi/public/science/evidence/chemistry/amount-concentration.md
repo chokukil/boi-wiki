@@ -57,14 +57,14 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.chemistry.amount_concentration
-      purpose: Molar concentration (molarity) is the number of moles of solute per liter of solution.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: Molar concentration (molarity) is the number of moles of solute per liter
+        of solution.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - This defines molarity; it is not a definition of every concentration convention.
-  claim_scope_hash: sha256:d4c55a4fc94c84787162b800feeb20fcba76eed0c8b191f08e73be07be6a2cdc
+  claim_scope_hash: sha256:bc9aa27c6f74f140d80b665094cf71a1df1e6969259b49d9b093499d95f2aaf8
   supports_knowledge: []
   curation_actor:
     type: agent

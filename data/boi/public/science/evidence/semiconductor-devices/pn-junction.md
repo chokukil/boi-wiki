@@ -56,16 +56,16 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.semiconductor_devices.pn_junction
-      purpose: a forward bias of V reduces the barrier height from φbi to φbi – V. This reduces the drift field and upsets the
-        balance between diffusion and drift that exists at zero bias.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: a forward bias of V reduces the barrier height from φbi to φbi – V. This
+        reduces the drift field and upsets the balance between diffusion and drift that
+        exists at zero bias.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This statement uses the chapter's idealized junction treatment; high-level injection and nonideal effects are outside
-      this span.
-  claim_scope_hash: sha256:4bf16caf42ec75c3f5d766878ba94accd44f4173ca564b814f9eb07937b69019
+    - This statement uses the chapter's idealized junction treatment; high-level injection
+      and nonideal effects are outside this span.
+  claim_scope_hash: sha256:cf1364bba843e200a6388e2076650de0e33d30acb4ba8d14e66c6e69c5ef6096
   supports_knowledge: []
   curation_actor:
     type: agent

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
@@ -20,6 +20,7 @@ from boi_api.app.okf import (
 from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
 from boi_api.app.science.models import (
+    ConditionConstraint,
     PackDependency,
     PackRelationKind,
     ReleaseCompatibilityResult,
@@ -28,8 +29,17 @@ from boi_api.app.science.models import (
     ResolvedRelease,
     ResolvedReleaseSet,
 )
+from boi_api.app.science.operational import (
+    OperationalVerification,
+    _issue_operational_verification,
+)
 from boi_api.app.science.profile import SCIENCE_TYPE_REQUIREMENTS, validate_sci_profile_metadata
-from boi_api.app.science.rules import ReleasedRule, ResolvedRuleSet, VerificationRule
+from boi_api.app.science.rules import (
+    QualificationRuleSet,
+    ReleasedRule,
+    ResolvedRuleSet,
+    VerificationRule,
+)
 
 
 ObjectKind = Literal[
@@ -76,6 +86,7 @@ class ScienceObject(BaseModel):
     okf_author: dict[str, Any] | None = None
     okf_timestamp: str
     okf_review: dict[str, Any]
+    okf_activation: dict[str, Any] | None = None
 
 
 class QualificationCase(BaseModel):
@@ -119,10 +130,16 @@ class ScienceCatalog:
         boi_root: Path,
         *,
         reviewer_role_resolver: ReviewerRoleResolver | None = None,
+        trusted_clock: Callable[[], datetime] | None = None,
+        clock_skew: timedelta = timedelta(seconds=30),
     ):
+        if clock_skew < timedelta(0) or clock_skew > timedelta(minutes=1):
+            raise ValueError("ScienceCatalog clock_skew must be between zero and one minute")
         self.boi_root = Path(boi_root)
         self.science_root = self.boi_root / "public" / "science"
         self._reviewer_role_resolver = reviewer_role_resolver
+        self._trusted_clock = trusted_clock
+        self._clock_skew = clock_skew
         self._objects = self._load_objects()
         self._validate_references()
         self._cases = self._load_cases()
@@ -186,6 +203,7 @@ class ScienceCatalog:
                 okf_author=deepcopy(normalized_metadata.get("author")),
                 okf_timestamp=str(normalized_metadata.get("timestamp", "")),
                 okf_review=deepcopy(normalized_metadata.get("review", {})),
+                okf_activation=deepcopy(normalized_metadata.get("activation")),
                 **deepcopy(normalized_science),
             )
             indexed_kinds[object_id] = kind
@@ -364,31 +382,9 @@ class ScienceCatalog:
             component_digests={ref: declared_digests[ref] for ref in refs},
             known_limitations=list(known_limitations),
         )
-        if status == "active":
-            self._assert_active_decision_components(resolved)
         return resolved
 
-    def resolve_rule_set(
-        self,
-        release_set: ResolvedReleaseSet,
-        *,
-        for_active_evaluation: bool = True,
-    ) -> ResolvedRuleSet:
-        """Resolve every rule payload and bind it to the exact combined Release set."""
-
-        if for_active_evaluation:
-            releases = (
-                release_set.foundation_release,
-                *release_set.domain_releases,
-                *release_set.application_releases,
-            )
-            if any(release.status not in {"active", "superseded"} for release in releases):
-                raise ScienceOperationalError(
-                    "release candidate or withdrawn release cannot be evaluated as active"
-                )
-            for release in releases:
-                self._assert_active_decision_components(release)
-
+    def _resolved_rule_set(self, release_set: ResolvedReleaseSet) -> ResolvedRuleSet:
         released_rules: list[ReleasedRule] = []
         for component in release_set.rule_components:
             stored = self._require("rule", component.ref)
@@ -413,6 +409,53 @@ class ScienceCatalog:
             release_set_digest=release_set.combined_digest,
             rules=tuple(released_rules),
         )
+
+    def resolve_qualification_rule_set(
+        self, release_set: ResolvedReleaseSet
+    ) -> QualificationRuleSet:
+        """Resolve a serializable candidate Rule set for qualification only."""
+
+        resolved = self._resolved_rule_set(release_set)
+        return QualificationRuleSet.model_validate(resolved.model_dump(mode="json"))
+
+    def resolve_operational_rule_set(
+        self, release_set: ResolvedReleaseSet
+    ) -> OperationalVerification:
+        """Issue the only capability accepted by the public verification Engine."""
+
+        releases = (
+            release_set.foundation_release,
+            *release_set.domain_releases,
+            *release_set.application_releases,
+        )
+        if any(release.status not in {"active", "superseded"} for release in releases):
+            raise ScienceOperationalError(
+                "release candidate or withdrawn release cannot be evaluated as active"
+            )
+        approval_snapshot: list[dict[str, Any]] = []
+        for release in releases:
+            approval_snapshot.extend(self._assert_active_decision_components(release))
+        resolved = self._resolved_rule_set(release_set)
+        return _issue_operational_verification(
+            release_set,
+            resolved,
+            sorted(
+                approval_snapshot,
+                key=lambda item: (
+                    str(item.get("release_id", "")),
+                    str(item.get("object_id", "")),
+                    str(item.get("event_kind", "")),
+                    str(item.get("occurred_at", "")),
+                ),
+            ),
+        )
+
+    def resolve_rule_set(
+        self, release_set: ResolvedReleaseSet
+    ) -> OperationalVerification:
+        """Backward-named operational resolver; qualification has a distinct method/type."""
+
+        return self.resolve_operational_rule_set(release_set)
 
     @staticmethod
     def _family_is_within(claim_family: str, boundary: str) -> bool:
@@ -455,10 +498,30 @@ class ScienceCatalog:
                 raise ScienceCatalogError(
                     f"Evidence use purpose does not match embedded claim scope: {use.evidence_ref}"
                 )
-            if claim.get("required_conditions") != use.required_conditions:
+            raw_constraints = claim.get("required_conditions")
+            if not isinstance(raw_constraints, list):
                 raise ScienceCatalogError(
-                    f"Evidence use required conditions do not match embedded claim scope: {use.evidence_ref}"
+                    f"Evidence has invalid embedded claim scope: {use.evidence_ref}"
                 )
+            try:
+                scope_constraints = [
+                    ConditionConstraint.model_validate(item)
+                    for item in raw_constraints
+                ]
+            except ValidationError as exc:
+                raise ScienceCatalogError(
+                    f"Evidence has invalid embedded claim scope: {use.evidence_ref}"
+                ) from exc
+            executable = {
+                sha256_digest(condition): condition
+                for condition in (*rule.required_conditions, *rule.validity_conditions)
+            }
+            for constraint in scope_constraints:
+                if sha256_digest(constraint) not in executable:
+                    raise ScienceCatalogError(
+                        "Rule does not enforce required Evidence condition: "
+                        f"{use.evidence_ref}:{constraint.key}"
+                    )
 
     def resolve_release_set(self, selection: ReleaseSelection) -> ResolvedReleaseSet:
         release_ids = (selection.foundation, *selection.domains, *selection.applications)
@@ -550,7 +613,9 @@ class ScienceCatalog:
         selected = candidates[0]
         selected_status = getattr(selected, "status", None)
         if selected_status == "active":
-            return self.resolve_release(selected.object_id)
+            resolved = self.resolve_release(selected.object_id)
+            self._assert_active_decision_components(resolved)
+            return resolved
         if selected_status != "withdrawn":
             raise ScienceOperationalError("active pointer has invalid status")
         safe_id = getattr(selected, "last_safe_release_id", None)
@@ -569,13 +634,26 @@ class ScienceCatalog:
         return resolved
 
     @staticmethod
-    def _actor_identity(actor: object) -> str | None:
+    def _actor_identity(actor: object) -> tuple[str, str] | None:
+        """Return one canonical typed identity only for the closed actor schema."""
+
         if not isinstance(actor, Mapping):
             return None
-        for key in ("user_id", "agent_id"):
-            value = actor.get(key)
-            if isinstance(value, str) and value.strip():
-                return value
+        actor_type = actor.get("type")
+        if actor_type == "human" and set(actor) == {"type", "user_id"}:
+            value = actor.get("user_id")
+            return (
+                ("human", value.strip())
+                if isinstance(value, str) and value.strip()
+                else None
+            )
+        if actor_type == "agent" and set(actor) == {"type", "agent_id"}:
+            value = actor.get("agent_id")
+            return (
+                ("agent", value.strip())
+                if isinstance(value, str) and value.strip()
+                else None
+            )
         return None
 
     @staticmethod
@@ -596,57 +674,43 @@ class ScienceCatalog:
             )
         return parsed
 
-    def _assert_active_decision_components(self, release: ResolvedRelease) -> None:
-        decision_components = [
-            self._find_component(component.ref)
-            for component in release.components
-            if component.kind in {"source", "evidence"}
-        ]
-        if not decision_components:
-            return
+    def _trusted_now(self) -> datetime:
+        if self._trusted_clock is None:
+            raise ScienceOperationalError(
+                "active Science release requires an injected trusted clock"
+            )
+        try:
+            now = self._trusted_clock()
+        except Exception as exc:
+            raise ScienceOperationalError("trusted Science clock failed") from exc
+        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+            raise ScienceOperationalError("trusted Science clock must return an aware datetime")
+        return now
+
+    def _trusted_admin_roles(self, identity: tuple[str, str], object_id: str) -> set[str]:
         if self._reviewer_role_resolver is None:
             raise ScienceOperationalError(
                 "active decision components require a trusted reviewer-role resolver"
             )
+        if identity[0] != "human":
+            raise ScienceOperationalError(f"active review actor is invalid: {object_id}")
+        try:
+            return set(
+                self._reviewer_role_resolver(
+                    {"type": "human", "user_id": identity[1]}
+                )
+            )
+        except Exception as exc:
+            raise ScienceOperationalError(
+                f"trusted reviewer-role resolution failed: {object_id}"
+            ) from exc
 
-        component_refs = {component.ref for component in release.components}
-        for component in decision_components:
-            if component.kind == "evidence":
-                source_id = self._string_field(component, "source_id")
-                if source_id not in component_refs:
-                    raise ScienceOperationalError(
-                        f"active Evidence requires its pinned Source component: {component.object_id}"
-                    )
-            self._assert_component_admin_approved(component)
-
-    def _assert_component_admin_approved(self, component: ScienceObject) -> None:
-        if component.okf_status != "approved":
-            raise ScienceOperationalError(
-                f"active decision component must be approved: {component.object_id}"
-            )
-        if getattr(component, "release_eligibility", None) != "active_release_eligible":
-            raise ScienceOperationalError(
-                f"active decision component has blocked release eligibility: {component.object_id}"
-            )
-        if component.kind == "source" and getattr(component, "retrieval_status", None) != "verified":
-            raise ScienceOperationalError(
-                f"active Source retrieval is not verified: {component.object_id}"
-            )
-        if component.kind == "evidence" and getattr(component, "decision_eligibility", None) != "eligible":
-            raise ScienceOperationalError(
-                f"active Evidence has invalid decision eligibility: {component.object_id}"
-            )
-
-        review = component.okf_review
-        events = review.get("authorized_review_events")
-        if review.get("review_status") != "approved" or not isinstance(events, list) or not events:
-            raise ScienceOperationalError(
-                f"active decision component lacks an authorized approved review: {component.object_id}"
-            )
-        authored_at = self._timestamp(
-            component.okf_timestamp, label="authored timestamp", object_id=component.object_id
+    def _authorship_boundary(self, component: ScienceObject) -> datetime:
+        boundary = self._timestamp(
+            component.okf_timestamp,
+            label="authored timestamp",
+            object_id=component.object_id,
         )
-        boundary = authored_at
         for field_name in ("retrieved_at", "curated_at"):
             value = getattr(component, field_name, None)
             if value is not None:
@@ -664,6 +728,145 @@ class ScienceCatalog:
                     object_id=component.object_id,
                 ),
             )
+        return boundary
+
+    def _assert_active_decision_components(
+        self, release: ResolvedRelease
+    ) -> list[dict[str, Any]]:
+        """Gate the Release and every pinned interpretation/decision component."""
+
+        if self._reviewer_role_resolver is None:
+            raise ScienceOperationalError(
+                "active decision components require a trusted reviewer-role resolver"
+            )
+        now = self._trusted_now()
+        stored_release = self._require("release", release.release_id)
+        activation = stored_release.okf_activation
+        if not isinstance(activation, Mapping):
+            raise ScienceOperationalError(
+                f"active Release lacks an authorized activation: {release.release_id}"
+            )
+        events = activation.get("authorized_activation_events")
+        activated_events = (
+            [
+                event
+                for event in events
+                if isinstance(event, Mapping) and event.get("decision") == "activated"
+            ]
+            if isinstance(events, list)
+            else []
+        )
+        if (
+            activation.get("activation_status") not in {"active", "superseded"}
+            or len(activated_events) != 1
+        ):
+            raise ScienceOperationalError(
+                f"active Release lacks an authorized activation: {release.release_id}"
+            )
+        activation_event = activated_events[0]
+        activation_identity = self._actor_identity(activation_event.get("actor"))
+        if activation_identity is None or activation_identity[0] != "human":
+            raise ScienceOperationalError(
+                f"active Release activation actor is invalid: {release.release_id}"
+            )
+        activation_at = self._timestamp(
+            activation_event.get("occurred_at"),
+            label="activation occurred_at",
+            object_id=release.release_id,
+        )
+        if activation_at > now + self._clock_skew:
+            raise ScienceOperationalError(
+                f"active Release activation occurs after trusted clock: {release.release_id}"
+            )
+        if activation_at < self._authorship_boundary(stored_release):
+            raise ScienceOperationalError(
+                f"active Release activation precedes authorship: {release.release_id}"
+            )
+        release_author = self._actor_identity(stored_release.okf_author)
+        if release_author is None:
+            raise ScienceOperationalError(
+                f"active Release author actor is invalid: {release.release_id}"
+            )
+        if release_author == activation_identity:
+            raise ScienceOperationalError(
+                f"active Release forbids author self-activation: {release.release_id}"
+            )
+        if "science.admin" not in self._trusted_admin_roles(
+            activation_identity, release.release_id
+        ):
+            raise ScienceOperationalError(
+                f"activation actor is not authorized as science.admin: {release.release_id}"
+            )
+
+        component_refs = {component.ref for component in release.components}
+        components = [self._find_component(component.ref) for component in release.components]
+        for component in components:
+            if component.kind == "evidence":
+                source_id = self._string_field(component, "source_id")
+                if source_id not in component_refs:
+                    raise ScienceOperationalError(
+                        f"active Evidence requires its pinned Source component: {component.object_id}"
+                    )
+
+        snapshot = self._assert_component_admin_approved(
+            stored_release,
+            activation_at=activation_at,
+            now=now,
+            label="Release",
+        )
+        for component in components:
+            snapshot.extend(
+                self._assert_component_admin_approved(
+                    component,
+                    activation_at=activation_at,
+                    now=now,
+                    label="decision component",
+                )
+            )
+        snapshot.append(
+            {
+                "release_id": release.release_id,
+                "object_id": release.release_id,
+                "object_digest": stored_release.digest,
+                "event_kind": "activation",
+                "actor": {"type": "human", "user_id": activation_identity[1]},
+                "occurred_at": activation_at.isoformat(),
+            }
+        )
+        return snapshot
+
+    def _assert_component_admin_approved(
+        self,
+        component: ScienceObject,
+        *,
+        activation_at: datetime,
+        now: datetime,
+        label: str,
+    ) -> list[dict[str, Any]]:
+        if component.okf_status != "approved":
+            raise ScienceOperationalError(
+                f"active {label} must be approved: {component.object_id}"
+            )
+        if getattr(component, "release_eligibility", None) != "active_release_eligible":
+            raise ScienceOperationalError(
+                f"active {label} has blocked release eligibility: {component.object_id}"
+            )
+        if component.kind == "source" and getattr(component, "retrieval_status", None) != "verified":
+            raise ScienceOperationalError(
+                f"active Source retrieval is not verified: {component.object_id}"
+            )
+        if component.kind == "evidence" and getattr(component, "decision_eligibility", None) != "eligible":
+            raise ScienceOperationalError(
+                f"active Evidence has invalid decision eligibility: {component.object_id}"
+            )
+
+        review = component.okf_review
+        events = review.get("authorized_review_events")
+        if review.get("review_status") != "approved" or not isinstance(events, list) or not events:
+            raise ScienceOperationalError(
+                f"active decision component lacks an authorized approved review: {component.object_id}"
+            )
+        boundary = self._authorship_boundary(component)
 
         approved_events = [
             event
@@ -677,18 +880,15 @@ class ScienceCatalog:
         author_identity = self._actor_identity(component.okf_author)
         if author_identity is None:
             raise ScienceOperationalError(
-                f"active decision component has no verifiable author identity: {component.object_id}"
+                f"active {label} author actor is invalid: {component.object_id}"
             )
+        snapshot: list[dict[str, Any]] = []
         for event in approved_events:
             actor = event.get("actor")
-            if not isinstance(actor, Mapping) or actor.get("type") != "human":
-                raise ScienceOperationalError(
-                    f"active decision review actor is invalid: {component.object_id}"
-                )
             actor_identity = self._actor_identity(actor)
-            if actor_identity is None:
+            if actor_identity is None or actor_identity[0] != "human":
                 raise ScienceOperationalError(
-                    f"active decision review actor is invalid: {component.object_id}"
+                    f"active {label} review actor is invalid: {component.object_id}"
                 )
             if actor_identity == author_identity:
                 raise ScienceOperationalError(
@@ -699,24 +899,34 @@ class ScienceCatalog:
                 label="approval occurred_at",
                 object_id=component.object_id,
             )
+            if occurred_at > now + self._clock_skew:
+                raise ScienceOperationalError(
+                    f"active {label} approval occurs after trusted clock: {component.object_id}"
+                )
             if occurred_at < boundary:
                 raise ScienceOperationalError(
                     f"active decision component has temporally invalid approval: {component.object_id}"
                 )
-            try:
-                trusted_roles = set(
-                    self._reviewer_role_resolver(
-                        {"type": "human", "user_id": actor_identity}
-                    )
-                )
-            except Exception as exc:
+            if occurred_at > activation_at:
                 raise ScienceOperationalError(
-                    f"trusted reviewer-role resolution failed: {component.object_id}"
-                ) from exc
+                    f"active {label} approval occurs after Release activation: {component.object_id}"
+                )
+            trusted_roles = self._trusted_admin_roles(actor_identity, component.object_id)
             if "science.admin" not in trusted_roles:
                 raise ScienceOperationalError(
                     f"reviewer is not authorized as science.admin: {component.object_id}"
                 )
+            snapshot.append(
+                {
+                    "object_id": component.object_id,
+                    "object_kind": component.kind,
+                    "object_digest": component.digest,
+                    "event_kind": "approval",
+                    "actor": {"type": "human", "user_id": actor_identity[1]},
+                    "occurred_at": occurred_at.isoformat(),
+                }
+            )
+        return snapshot
 
     def source(self, source_id: str) -> ScienceObject:
         return self._copy_object(self._require("source", source_id))

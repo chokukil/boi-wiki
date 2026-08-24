@@ -298,10 +298,24 @@ def test_claim_scope_manifest_blocks_active_release_and_constrains_critical_clai
         "spin_coating.rpm_thickness_direction.product_scoped_figure_observation"
     )
     assert observation_scope["allowed_claims"][0]["required_conditions"] == [
-        "Product scope is AZ 125nXT grades AZ 125nXT-10 B and AZ 125nXT-7 B.",
-        "Source revision is 01/24.",
-        "Use is limited to the visually observed plotted marker ranges recorded in figure_observation.",
-        "No numeric recipe, interpolation, or extrapolation is authorized.",
+        {"key": "product_family", "operator": "eq", "value": "AZ 125nXT"},
+        {
+            "key": "product_grade",
+            "operator": "in",
+            "values": ["AZ 125nXT-10 B", "AZ 125nXT-7 B"],
+        },
+        {"key": "source_revision", "operator": "eq", "value": "01/24"},
+        {
+            "key": "spin_speed_rpm",
+            "operator": "range",
+            "range": {"minimum": 600, "maximum": 2300},
+            "unit": "rpm",
+        },
+        {
+            "key": "evidence_use_mode",
+            "operator": "eq",
+            "value": "plotted_markers_only",
+        },
     ]
     assert mappings["sci-evidence:common:uncertainty-error"]["claim_scope"]["allowed_claims"][0]["claim_family"] == (
         "measurement.uncertainty_definition_only"
@@ -319,9 +333,13 @@ def test_kcl_claim_scope_requires_lumped_no_accumulation_model() -> None:
     claim = evidence.claim_scope["allowed_claims"][0]
 
     assert claim["required_conditions"] == [
-        "Current reference directions are explicit and consistent.",
-        "The lumped-matter circuit approximation applies.",
-        "No net charge accumulation occurs at the node over the modeled timescale.",
+        {
+            "key": "current_reference_convention",
+            "operator": "eq",
+            "value": "consistent",
+        },
+        {"key": "circuit_model", "operator": "eq", "value": "lumped_matter"},
+        {"key": "node_charge_accumulation", "operator": "eq", "value": "none"},
     ]
     assert any("lumped-matter" in item for item in evidence.claim_scope["limitations"])
 

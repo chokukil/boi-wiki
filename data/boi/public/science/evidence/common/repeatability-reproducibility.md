@@ -55,15 +55,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: measurement.reproducibility_definition_only
-      purpose: The cited span may support only the VIM definition of a reproducibility condition, not a full repeatability-versus-reproducibility
-        comparison.
-      required_conditions:
-      - Use the cited VIM edition and term locator.
+      purpose: The cited span may support only the VIM definition of a reproducibility
+        condition, not a full repeatability-versus-reproducibility comparison.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This span defines reproducibility conditions; repeatability uses a narrower condition set in the same vocabulary.
-  claim_scope_hash: sha256:c7d11ffbd75a96f03420656b3db8872af60bb1d16612c442f67442d7fb03805c
+    - This span defines reproducibility conditions; repeatability uses a narrower condition
+      set in the same vocabulary.
+  claim_scope_hash: sha256:35dae751fd5a912f908c12fef1c303402caefc9086b9bec45bacd3d55b0bff7e
   supports_knowledge: []
   curation_actor:
     type: agent

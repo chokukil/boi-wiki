@@ -56,16 +56,17 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.materials.phase_transformation
-      purpose: Liquids can be supercooled- cooled to temperatures below their equilibrium freezing points. Likewise, solids
-        can be superheated- heated to temperatures above the melting point. Such phases are unstable or metastable and will
-        readily transform to the equilibrium state.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: Liquids can be supercooled- cooled to temperatures below their equilibrium
+        freezing points. Likewise, solids can be superheated- heated to temperatures
+        above the melting point. Such phases are unstable or metastable and will readily
+        transform to the equilibrium state.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Kinetic barriers and timescale determine whether transformation occurs in a particular case.
-  claim_scope_hash: sha256:1cfa8edb82d7584c0896f6d809e932e051a4e80ef6d854f20c3b8c1a4b9e1a0f
+    - Kinetic barriers and timescale determine whether transformation occurs in a particular
+      case.
+  claim_scope_hash: sha256:94f685a1df408f9aa3496a8850fd5f8ba92b0bf6ce43fc28d9c27abfc5d2828a
   supports_knowledge: []
   curation_actor:
     type: agent

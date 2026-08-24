@@ -216,9 +216,10 @@ class ConditionRange(ScienceModel):
 
 class ConditionConstraint(ScienceModel):
     key: str = Field(min_length=1)
-    operator: Literal["eq", "ne", "lt", "lte", "gt", "gte", "range"]
+    operator: Literal["eq", "ne", "lt", "lte", "gt", "gte", "range", "in"]
     value: ConditionScalar | None = None
     range: ConditionRange | None = None
+    values: list[ConditionScalar] | None = None
     unit: str | None = None
 
     @field_validator("unit")
@@ -229,9 +230,36 @@ class ConditionConstraint(ScienceModel):
     @model_validator(mode="after")
     def valid_operand(self) -> "ConditionConstraint":
         if self.operator == "range":
-            if self.range is None or self.value is not None:
+            if self.range is None or self.value is not None or self.values is not None:
                 raise ValueError("range condition requires only a range operand")
-        elif self.value is None or self.range is not None:
+        elif self.operator == "in":
+            if (
+                not self.values
+                or self.value is not None
+                or self.range is not None
+                or self.unit is not None
+            ):
+                raise ValueError("membership condition requires only nonempty values")
+            if len({(type(value).__name__, repr(value)) for value in self.values}) != len(
+                self.values
+            ):
+                raise ValueError("membership condition values must be unique")
+            kinds = {
+                "boolean"
+                if isinstance(value, bool)
+                else "numeric"
+                if isinstance(value, (int, float))
+                else "string"
+                for value in self.values
+            }
+            if len(kinds) != 1:
+                raise ValueError("membership condition values must have one scalar type")
+            if any(
+                isinstance(value, float) and not isfinite(value)
+                for value in self.values
+            ):
+                raise ValueError("membership condition values must be finite")
+        elif self.value is None or self.range is not None or self.values is not None:
             raise ValueError("condition operator requires only a value operand")
         if isinstance(self.value, float) and not isfinite(self.value):
             raise ValueError("condition constraint value must be finite")
@@ -287,8 +315,8 @@ class ClaimPacket(ScienceModel):
 
 class ConditionEvaluation(ScienceModel):
     condition_id: str
-    operator: Literal["eq", "ne", "lt", "lte", "gt", "gte", "range"] = "eq"
-    expected: ConditionScalar | ConditionRange | None
+    operator: Literal["eq", "ne", "lt", "lte", "gt", "gte", "range", "in"] = "eq"
+    expected: ConditionScalar | list[ConditionScalar] | ConditionRange | None
     actual: str | int | float | bool | None
     expected_unit: str | None = None
     actual_unit: str | None = None

@@ -15,6 +15,10 @@ from boi_api.app.science.models import (
     VerdictPacket,
     VerdictReleaseSet,
 )
+from boi_api.app.science.operational import (
+    OperationalVerification,
+    _open_operational_verification,
+)
 from boi_api.app.science.rules import (
     DetailedRuleEvaluation,
     QualifiedObservation,
@@ -170,6 +174,28 @@ def _conditions(evaluations: list[DetailedRuleEvaluation]) -> list[ConditionEval
 
 
 def verify_claim(
+    claim: ClaimPacket,
+    operational: OperationalVerification,
+    verifier_version: str = "science-verifier/0.1.0",
+    *,
+    qualified_observations: Iterable[QualifiedObservation] = (),
+    **legacy_inputs: object,
+) -> VerdictPacket:
+    """Verify only through a sealed capability issued by active Catalog resolution."""
+
+    if legacy_inputs or type(operational) is not OperationalVerification:
+        raise TypeError("Catalog-issued operational verification is required")
+    release_set, rule_set, _attestation = _open_operational_verification(operational)
+    return _verify_resolved_claim(
+        claim,
+        release_set,
+        verifier_version,
+        rule_set=rule_set,
+        qualified_observations=qualified_observations,
+    )
+
+
+def _verify_resolved_claim(
     claim: ClaimPacket,
     release_set: ResolvedReleaseSet,
     verifier_version: str = "science-verifier/0.1.0",

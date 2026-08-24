@@ -57,15 +57,18 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: circuits.kvl.loop_voltage_sum_zero
-      purpose: The algebraic sum of voltages around a loop is zero under consistent polarity and traversal conventions.
+      purpose: The algebraic sum of voltages around a loop is zero under consistent
+        polarity and traversal conventions.
       required_conditions:
-      - Voltage polarities and loop direction are explicit and consistent.
+      - key: voltage_reference_convention
+        operator: eq
+        value: consistent
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Voltage polarity and traversal direction must be assigned consistently; this short transcript span does not state non-lumped
-      electromagnetic exceptions.
-  claim_scope_hash: sha256:5022ff1f2acbd500ebf302921b15ec5667b8599aaf891795781d0a8c72ca3573
+    - Voltage polarity and traversal direction must be assigned consistently; this short
+      transcript span does not state non-lumped electromagnetic exceptions.
+  claim_scope_hash: sha256:35425feac574fe96bee64893f714ce69ebe4e6bd265741ad55600e0d0e4cb268
   supports_knowledge: []
   translation:
     status: agent_draft_pending_admin_review

@@ -58,8 +58,8 @@ science:
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Only Crossref abstract metadata was inspected by the agent; equations, assumptions, pages, and article context were not
-      available.
+    - Only Crossref abstract metadata was inspected by the agent; equations, assumptions,
+      pages, and article context were not available.
   claim_scope_hash: sha256:9acb6b1e25ecd0c95a9d5d1a386f6381b839ca5718b2ae47061ae36e50271f51
   supports_knowledge: []
   curation_actor:

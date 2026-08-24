@@ -63,22 +63,12 @@ class EvidenceUse(ScienceModel):
     evidence_ref: str = Field(min_length=1)
     claim_family: str = Field(min_length=1)
     purpose: str = Field(min_length=1)
-    required_conditions: list[str] = Field(default_factory=list)
 
     @field_validator("evidence_ref", "claim_family", "purpose")
     @classmethod
     def nonblank_text(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("evidence use text fields must be nonblank")
-        return value
-
-    @field_validator("required_conditions")
-    @classmethod
-    def unique_nonblank_conditions(cls, value: list[str]) -> list[str]:
-        if any(not condition.strip() for condition in value):
-            raise ValueError("evidence use conditions must be nonblank")
-        if len(value) != len(set(value)):
-            raise ValueError("evidence use conditions must be unique")
         return value
 
 
@@ -196,6 +186,20 @@ class ResolvedRuleSet(ScienceModel):
         return self
 
 
+class QualificationRuleSet(ScienceModel):
+    """Serializable Rule set for qualification only; never an Engine capability."""
+
+    release_set_digest: str
+    rules: tuple[ReleasedRule, ...]
+
+    @model_validator(mode="after")
+    def unique_rule_ids(self) -> "QualificationRuleSet":
+        rule_ids = [released.rule.rule_id for released in self.rules]
+        if len(rule_ids) != len(set(rule_ids)):
+            raise ValueError("duplicate rule ID in qualification rule set")
+        return self
+
+
 class DetailedRuleEvaluation(RuleEvaluation):
     """RuleEvaluation with the matched concepts needed for an audit trail."""
 
@@ -244,6 +248,12 @@ def _scalar_kind(value: object) -> str:
 def _compatible_condition_scalar(
     constraint: ConditionConstraint, actual_value: object
 ) -> bool:
+    if constraint.operator == "in":
+        assert constraint.values is not None
+        return all(
+            _scalar_kind(actual_value) == _scalar_kind(expected)
+            for expected in constraint.values
+        )
     if (
         constraint.operator == "range"
         or constraint.unit is not None
@@ -262,7 +272,7 @@ def _condition_evaluations(
         actual_condition = actual.get(constraint.key)
         actual_value = actual_condition.value if actual_condition is not None else None
         actual_unit = actual_condition.unit if actual_condition is not None else None
-        expected_value: object = constraint.range or constraint.value
+        expected_value: object = constraint.range or constraint.values or constraint.value
         satisfied = False
         reason_code = "CONDITION_VALUE_MISMATCH"
         if actual_value is None:
@@ -311,6 +321,9 @@ def _condition_evaluations(
                     lower_ok = lower >= 0 if constraint.range.minimum_inclusive else lower > 0
                     upper_ok = upper <= 0 if constraint.range.maximum_inclusive else upper < 0
                     satisfied = lower_ok and upper_ok
+                elif constraint.operator == "in":
+                    assert constraint.values is not None
+                    satisfied = actual_value in constraint.values
                 elif constraint.unit is not None and actual_unit is not None:
                     compared = compare_quantities(
                         {

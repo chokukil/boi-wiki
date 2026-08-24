@@ -58,15 +58,21 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: materials.diffusion.arrhenius_coefficient_model
-      purpose: The diffusion coefficient is represented by the cited Arrhenius relation under its model assumptions.
+      purpose: The diffusion coefficient is represented by the cited Arrhenius relation
+        under its model assumptions.
       required_conditions:
-      - Material-specific D₀, Eₐ, phase, mechanism, and temperature range are required for calculation.
+      - key: diffusion_model
+        operator: eq
+        value: arrhenius
+      - key: material_parameters_known
+        operator: eq
+        value: true
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The equation states an Arrhenius model; D₀, Eₐ, mechanism, temperature range, and material phase must be supplied for
-      quantitative use.
-  claim_scope_hash: sha256:69380cf0cdf7bc13793721cf89ffee4db78c6433a0645f9c2156939b8507bbd5
+    - The equation states an Arrhenius model; D₀, Eₐ, mechanism, temperature range,
+      and material phase must be supplied for quantitative use.
+  claim_scope_hash: sha256:088113758323abae0d305711e75041cf6cf38c1dd4eb39f124c59cec162b2257
   supports_knowledge: []
   curation_actor:
     type: agent

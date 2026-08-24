@@ -55,16 +55,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: measurement.uncertainty_definition_only
-      purpose: The cited span may support only the VIM definition of measurement uncertainty, not a contrast with measurement
-        error.
-      required_conditions:
-      - Use the cited VIM edition and term locator.
-      - Do not infer an error definition absent from this span.
+      purpose: The cited span may support only the VIM definition of measurement uncertainty,
+        not a contrast with measurement error.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This span defines uncertainty, not measurement error; the two concepts must not be collapsed.
-  claim_scope_hash: sha256:361fd944af63bb80696b4ec1f1695c932a011598c3e17eedc916f866facf724d
+    - This span defines uncertainty, not measurement error; the two concepts must not
+      be collapsed.
+  claim_scope_hash: sha256:d9ebaabc41120f8a7d5a0764c140d7958ae611ef0d5a083579b34d8ac3657abf
   supports_knowledge: []
   curation_actor:
     type: agent

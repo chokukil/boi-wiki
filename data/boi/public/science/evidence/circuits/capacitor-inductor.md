@@ -54,14 +54,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.circuits.capacitor_inductor
-      purpose: And the state variable for an inductor was the current while that for a capacitor was the capacitor voltage.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: And the state variable for an inductor was the current while that for
+        a capacitor was the capacitor voltage.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This does not provide constitutive equations, initial conditions, or parasitic limits.
-  claim_scope_hash: sha256:55d14934b0a79770485265a3890e22accf593f545dde3389a41138e35d21eeda
+    - This does not provide constitutive equations, initial conditions, or parasitic
+      limits.
+  claim_scope_hash: sha256:7d87e9e2f4a3c4ea142345a288c4b3b08da82ebb4148ec991a25ee10b405a54e
   supports_knowledge: []
   curation_actor:
     type: agent

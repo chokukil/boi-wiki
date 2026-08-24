@@ -55,15 +55,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.accuracy_precision
-      purpose: The term “measurement accuracy” should not be used for measurement trueness and the term “measurement precision”
-        should not be used for ‘measurement accuracy’, which, however, is related to both these concepts.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: The term “measurement accuracy” should not be used for measurement trueness
+        and the term “measurement precision” should not be used for ‘measurement accuracy’,
+        which, however, is related to both these concepts.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - This is a terminology distinction, not a formula for calculating either property.
-  claim_scope_hash: sha256:d907f3dde353684b5d28f5a8a4f1babcd44d59d83122dd57b7798c42bfd44b3d
+  claim_scope_hash: sha256:0d4a035171992a504e702c0f6044d93f9a002908f9036692aae8dfe31a7a76fe
   supports_knowledge: []
   curation_actor:
     type: agent

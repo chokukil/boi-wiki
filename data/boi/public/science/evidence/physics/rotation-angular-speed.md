@@ -55,15 +55,14 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.physics.rotation_angular_speed
-      purpose: The angular speed is the magnitude of the rate of change of angle with respect to time, which we denote by the
-        Greek letter ω.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: The angular speed is the magnitude of the rate of change of angle with
+        respect to time, which we denote by the Greek letter ω.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - This is a kinematic definition and does not alone determine a coating outcome.
-  claim_scope_hash: sha256:53b3492b52d238d8221eec276d8cc3b1e161d100dbc5b13f4ce2d90ecd6e311b
+  claim_scope_hash: sha256:8b7f2740058ac6063146408f5579fb0a22ea1def9f34c3a6a3401b0df0e39613
   supports_knowledge: []
   curation_actor:
     type: agent

@@ -59,13 +59,19 @@ science:
     - claim_family: semiconductor.low_field_carrier_conductivity
       purpose: The cited low-field relation expresses conductivity as σ = qnµn + qpµp.
       required_conditions:
-      - Carrier concentrations and mobilities must correspond to the modeled state.
+      - key: transport_regime
+        operator: eq
+        value: low_field
+      - key: carrier_state_parameters_known
+        operator: eq
+        value: true
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This low-field drift conductivity relation requires carrier concentrations and mobilities under the model conditions;
-      it is not a universal high-field transport law.
-  claim_scope_hash: sha256:29ac6a33e8003691c5e50fd9859e21f3c895ee1f6f843e619110930a8057cf13
+    - This low-field drift conductivity relation requires carrier concentrations and
+      mobilities under the model conditions; it is not a universal high-field transport
+      law.
+  claim_scope_hash: sha256:fafcb18e95b4b1387449025036dc2fbddb89ed6708fb0155886b220dd3c602ca
   supports_knowledge: []
   curation_actor:
     type: agent

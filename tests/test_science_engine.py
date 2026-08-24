@@ -6,7 +6,11 @@ import pytest
 from pydantic import ValidationError
 
 from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
-from boi_api.app.science.engine import UnresolvedAmbiguityError, verify_claim
+from boi_api.app.science.engine import (
+    UnresolvedAmbiguityError,
+    _verify_resolved_claim as verify_claim,
+    verify_claim as verify_operational_claim,
+)
 from boi_api.app.science.exceptions import ScienceOperationalError
 from boi_api.app.science.models import (
     ClaimPacket,
@@ -43,7 +47,6 @@ def evidence_use_fixture() -> list[dict[str, object]]:
             "evidence_ref": EVIDENCE_REF,
             "claim_family": "fixture.rule_support",
             "purpose": "Support the fixture rule under its stated conditions.",
-            "required_conditions": [],
         }
     ]
 
@@ -299,6 +302,55 @@ def test_engine_rejects_candidate_release_even_with_a_structurally_valid_rule_se
 
     with pytest.raises(ScienceOperationalError, match="not operational for verification"):
         verify_claim(claim, candidate_set, rule_set=candidate_rules)
+
+
+def test_public_engine_rejects_direct_caller_constructed_release_and_rule_sets(
+    rules: tuple[VerificationRule, ...],
+    release_set: ResolvedReleaseSet,
+):
+    """Public verification must require a sealed Catalog-issued operational input."""
+    claim = claim_fixture(
+        "claim:direct-constructed-active",
+        subject="sci:concept:spin-speed",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:film-thickness",
+        conditions={"resist": "same", "viscosity": "same"},
+        process_stage="final-coat",
+    )
+    rule_set = make_rule_set(rules, release_set)
+
+    with pytest.raises(TypeError, match="Catalog-issued operational verification"):
+        verify_operational_claim(claim, release_set, rule_set=rule_set)
+
+
+def test_operational_capability_cannot_be_constructed_copied_or_serialized():
+    """Callers cannot manufacture, mutate, copy, or persist an operational grant."""
+    import copy
+    import pickle
+
+    from boi_api.app.science.operational import OperationalVerification
+
+    with pytest.raises(TypeError, match="issued only by active ScienceCatalog"):
+        OperationalVerification()
+    assert not hasattr(OperationalVerification, "model_copy")
+
+    forged = object.__new__(OperationalVerification)
+    with pytest.raises(TypeError, match="Catalog-issued operational verification"):
+        verify_operational_claim(
+            claim_fixture(
+                "claim:forged-operational",
+                subject="sci:concept:spin-speed",
+                relation="monotonic_direction",
+                predicate="increases",
+                object_="sci:concept:film-thickness",
+            ),
+            forged,
+        )
+    with pytest.raises(TypeError, match="cannot be copied"):
+        copy.copy(forged)
+    with pytest.raises(TypeError, match="cannot be serialized"):
+        pickle.dumps(forged)
 
 
 def repin_single_foundation_rule(
@@ -652,7 +704,6 @@ def test_rule_requires_typed_evidence_uses_with_exact_reference_identity():
                 "evidence_ref": EVIDENCE_REF,
                 "claim_family": "fixture.direction",
                 "purpose": "Support only the fixture directional relation.",
-                "required_conditions": ["The fixture comparison is controlled."],
             }
         ],
     }
@@ -687,7 +738,6 @@ def test_evidence_use_rejects_incomplete_executable_scope(missing_field: str):
                 "evidence_ref": EVIDENCE_REF,
                 "claim_family": "fixture.direction",
                 "purpose": "Support only the fixture directional relation.",
-                "required_conditions": [],
             }
         ],
     }

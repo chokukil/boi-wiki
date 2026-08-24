@@ -55,15 +55,22 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: semiconductor.mos_gate.ultrathin_sio2_tunneling_limit
-      purpose: The cited source identifies tunneling leakage as a limiting factor for SiO2 below its stated thickness.
+      purpose: The cited source identifies tunneling leakage as a limiting factor for
+        SiO2 below its stated thickness.
       required_conditions:
-      - Scope to the cited SiO2 discussion and stated thickness.
+      - key: gate_dielectric
+        operator: eq
+        value: SiO2
+      - key: oxide_thickness_nm
+        operator: lt
+        value: 1.5
+        unit: nm
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The stated threshold and limiting mechanism are scoped to the cited SiO2 discussion; material stack, field, area, temperature,
-      and device design still matter.
-  claim_scope_hash: sha256:b69357439ee7eb43587d33c4fc83e245ba358102428a6caa2d3bd12ed79edf5b
+    - The stated threshold and limiting mechanism are scoped to the cited SiO2 discussion;
+      material stack, field, area, temperature, and device design still matter.
+  claim_scope_hash: sha256:c78e1c0cf0673ca59b0f4ae12dd5f722721826ab9eb752289cb5c64792b4f3bd
   supports_knowledge: []
   translation:
     status: agent_draft_pending_admin_review

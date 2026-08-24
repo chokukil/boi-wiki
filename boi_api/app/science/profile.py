@@ -7,7 +7,10 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
 
+from pydantic import ValidationError
+
 from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.models import ConditionConstraint
 
 
 SCIENCE_TYPE_REQUIREMENTS = {
@@ -118,7 +121,6 @@ _EVIDENCE_USE_FIELDS = {
     "evidence_ref",
     "claim_family",
     "purpose",
-    "required_conditions",
 }
 
 
@@ -190,11 +192,33 @@ def _validate_claim_scope(science: Mapping[str, Any]) -> list[str]:
                 errors.append(
                     "science.claim_scope.allowed_claims purpose must be a nonempty string"
                 )
-            _conditions, condition_errors = _nonempty_string_list(
-                claim.get("required_conditions"),
-                "science.claim_scope.allowed_claims required_conditions",
-            )
-            errors.extend(condition_errors)
+            raw_conditions = claim.get("required_conditions")
+            if not isinstance(raw_conditions, list):
+                errors.append(
+                    "science.claim_scope.allowed_claims required_conditions must be a list"
+                )
+            else:
+                condition_keys: list[str] = []
+                for condition in raw_conditions:
+                    if not isinstance(condition, Mapping):
+                        errors.append(
+                            "science.claim_scope.allowed_claims required_conditions "
+                            "items must be typed condition constraints"
+                        )
+                        continue
+                    try:
+                        typed = ConditionConstraint.model_validate(condition)
+                    except ValidationError:
+                        errors.append(
+                            "science.claim_scope.allowed_claims required_conditions "
+                            "items must be typed condition constraints"
+                        )
+                        continue
+                    condition_keys.append(typed.key)
+                if len(condition_keys) != len(set(condition_keys)):
+                    errors.append(
+                        "science.claim_scope.allowed_claims required_conditions keys must be unique"
+                    )
     if len(allowed_families) != len(set(allowed_families)):
         errors.append("science.claim_scope.allowed_claims claim_family must be unique")
 
@@ -248,11 +272,6 @@ def _validate_evidence_uses(science: Mapping[str, Any]) -> list[str]:
         ref = use.get("evidence_ref")
         if isinstance(ref, str) and ref.strip():
             use_refs.append(ref)
-        _conditions, condition_errors = _nonempty_string_list(
-            use.get("required_conditions"),
-            "science.evidence_uses required_conditions",
-        )
-        errors.extend(condition_errors)
     evidence_refs, ref_errors = _validate_reference_collection(
         science.get("evidence_refs"), "science.evidence_refs"
     )

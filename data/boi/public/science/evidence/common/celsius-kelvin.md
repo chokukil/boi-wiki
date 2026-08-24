@@ -55,15 +55,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.celsius_kelvin
-      purpose: The unit of Celsius temperature is the degree Celsius, symbol °C, which is by definition equal in magnitude to
-        the unit kelvin.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: The unit of Celsius temperature is the degree Celsius, symbol °C, which
+        is by definition equal in magnitude to the unit kelvin.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Equal interval magnitude does not make Celsius and kelvin absolute readings interchangeable; the offset remains relevant.
-  claim_scope_hash: sha256:febd2e883f95abe9f1d46a8a4738c3923ecf696e85cd19535422d6f116bb3462
+    - Equal interval magnitude does not make Celsius and kelvin absolute readings interchangeable;
+      the offset remains relevant.
+  claim_scope_hash: sha256:3931d7b0df652bbb234f0cd8880ed9fb15f8488e6d2620debcf2292a7f3a99e8
   supports_knowledge: []
   curation_actor:
     type: agent

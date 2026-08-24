@@ -55,13 +55,13 @@ science:
     allowed_claims:
     - claim_family: locator_bound.common.model_validity
       purpose: A record of the domain of validation of the M&S shall be maintained.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This assurance requirement does not prove that a particular model is valid for a proposed use.
-  claim_scope_hash: sha256:f9f968b92f79cdb28e8d4667d5440c04ba668a944dca798881026722c870c473
+    - This assurance requirement does not prove that a particular model is valid for
+      a proposed use.
+  claim_scope_hash: sha256:4bb9675835586691cd37e8cd9e9786d652c71c3168878a3e31deebfe99c9f172
   supports_knowledge: []
   curation_actor:
     type: agent

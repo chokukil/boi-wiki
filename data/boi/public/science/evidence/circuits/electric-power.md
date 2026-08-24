@@ -56,15 +56,18 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: circuits.passive_sign_convention.power_positive_when_consumed
-      purpose: With current referenced into the positive terminal, positive vi denotes consumed power.
+      purpose: With current referenced into the positive terminal, positive vi denotes
+        consumed power.
       required_conditions:
-      - The passive sign convention is explicitly used.
+      - key: sign_convention
+        operator: eq
+        value: passive
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This supports only the passive sign convention. Reversing the reference direction changes the algebraic sign; it does
-      not change physical power flow.
-  claim_scope_hash: sha256:129a1cbbceb445820fccf19ac901eac3f2f669248bb761a1fd5f18c86bb42e3e
+    - This supports only the passive sign convention. Reversing the reference direction
+      changes the algebraic sign; it does not change physical power flow.
+  claim_scope_hash: sha256:8096756a870c65105107eefd489165db85e6457aee637e66a373767ba9f0bed8
   supports_knowledge: []
   curation_actor:
     type: agent

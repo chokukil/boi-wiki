@@ -57,17 +57,22 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: spin_coating.spin_time_thinning.product_scoped
-      purpose: For the cited AZ 125nXT document, extended spin time is associated with continued thinning.
+      purpose: For the cited AZ 125nXT document, extended spin time is associated with
+        continued thinning.
       required_conditions:
-      - Scope to AZ 125nXT revision 01/24.
-      - Do not infer an RPM direction.
+      - key: product_family
+        operator: eq
+        value: AZ 125nXT
+      - key: source_revision
+        operator: eq
+        value: 01/24
     forbidden_claim_families:
     - spin_coating.rpm_thickness_direction
     - spin_coating.spin_speed_thickness_direction
     limitations:
-    - Product-scoped to AZ 125nXT revision 01/24. This prose supports a spin-time statement only and supplies no RPM-to-thickness
-      direction or recipe authorization.
-  claim_scope_hash: sha256:1e34a83eb2685a52d818e63751b31f07766eaa4cc9a319283ecd0d293b32b130
+    - Product-scoped to AZ 125nXT revision 01/24. This prose supports a spin-time statement
+      only and supplies no RPM-to-thickness direction or recipe authorization.
+  claim_scope_hash: sha256:76ba741670e239be16a398ec50aaea3c6267159f0ef572f17963513510dfc306
   supports_knowledge: []
   translation:
     status: agent_draft_pending_admin_review

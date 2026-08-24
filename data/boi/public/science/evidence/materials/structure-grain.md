@@ -55,15 +55,14 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.materials.structure_grain
-      purpose: Identify one 0D defect (vacancy), one 1D defect (line), one 2D defect (grain boundary – actually appears in 1D
-        here).
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: Identify one 0D defect (vacancy), one 1D defect (line), one 2D defect
+        (grain boundary – actually appears in 1D here).
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - This teaching-model classification does not quantify a grain-size/property relation.
-  claim_scope_hash: sha256:2f1318b9ef8b9d9aa5e77c154655ecc798ce4bda5597f6412f9f55955e79f305
+  claim_scope_hash: sha256:0218d751cd187afb15fdca5622771d9e1071e4e5c90c58f1c0f6dfb8530ac5ba
   supports_knowledge: []
   curation_actor:
     type: agent

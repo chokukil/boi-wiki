@@ -58,15 +58,16 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.correlation_causation
-      purpose: Note that correlation does not imply causality. It is possible for two variables to be associated with each other
-        without one of them causing the observed behavior in the other.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: Note that correlation does not imply causality. It is possible for two
+        variables to be associated with each other without one of them causing the observed
+        behavior in the other.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This does not exclude causation; it rejects inferring causation from correlation alone.
-  claim_scope_hash: sha256:efb8023715b764f1bbe4f6c77ff2c46999f9498831012ec8d5832dd6a9a83060
+    - This does not exclude causation; it rejects inferring causation from correlation
+      alone.
+  claim_scope_hash: sha256:943fcf6b3519b3102b269470a324cedafb4da8d7c8e8feff7640421a5d57748f
   supports_knowledge: []
   curation_actor:
     type: agent

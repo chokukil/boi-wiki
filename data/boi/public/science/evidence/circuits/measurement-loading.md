@@ -54,14 +54,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.circuits.measurement_loading
-      purpose: This interaction between the oscilloscope and an external circuit is termed circuit loading.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: This interaction between the oscilloscope and an external circuit is
+        termed circuit loading.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Whether loading is negligible depends on source and instrument impedances and frequency.
-  claim_scope_hash: sha256:b4568fde21bb71e87f80f010670d0a5acf1996fd9423835861aff16c8dfecaa3
+    - Whether loading is negligible depends on source and instrument impedances and
+      frequency.
+  claim_scope_hash: sha256:e6a160896ba4cca8e804a3ced7f3c639930808897e8633846be9be4cada3557d
   supports_knowledge: []
   curation_actor:
     type: agent

@@ -55,15 +55,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.semiconductor_devices.bands_fermi_level
-      purpose: EF is called the Fermi energy or the Fermi level. f(E) is the probability of a state at energy E being occupied
-        by an electron.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: EF is called the Fermi energy or the Fermi level. f(E) is the probability
+        of a state at energy E being occupied by an electron.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The occupation probability depends on the full Fermi function and its temperature assumptions.
-  claim_scope_hash: sha256:8c566e5ca8059f985269c45554e33bf6000615d65261351e43c276936c8bac68
+    - The occupation probability depends on the full Fermi function and its temperature
+      assumptions.
+  claim_scope_hash: sha256:1b980be68cb0c4e504017829b03ce7269bf7516c5f13070ef3e0a650f678cd04
   supports_knowledge: []
   curation_actor:
     type: agent

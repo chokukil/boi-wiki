@@ -58,14 +58,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.chemistry.substance_phase
-      purpose: A phase is a region of matter that possesses uniform intensive properties throughout its volume.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: A phase is a region of matter that possesses uniform intensive properties
+        throughout its volume.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The operational boundary of a phase can depend on the property and observation scale.
-  claim_scope_hash: sha256:59c2493a11a600c57ba13c7ea214f9e6bc042320a37988eba287cf60f816cdaf
+    - The operational boundary of a phase can depend on the property and observation
+      scale.
+  claim_scope_hash: sha256:969abec1279ee1a1e6b321117aa936a7093afeaf73bcdfd0f27a3f977a99fb93
   supports_knowledge: []
   curation_actor:
     type: agent

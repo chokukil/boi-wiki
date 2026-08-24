@@ -37,7 +37,9 @@ def valid_science_metadata(science_type: str) -> dict:
             {
                 "claim_family": "fixture.measurement_traceability",
                 "purpose": "Support only the locator-bound fixture statement.",
-                "required_conditions": ["The exact reviewed locator applies."],
+                "required_conditions": [
+                    {"key": "fixture_scope", "operator": "eq", "value": "reviewed"}
+                ],
             }
         ],
         "forbidden_claim_families": ["fixture.unbounded"],
@@ -86,7 +88,6 @@ def valid_science_metadata(science_type: str) -> dict:
                     "evidence_ref": "sci:evidence:fixture",
                     "claim_family": "fixture.measurement_traceability",
                     "purpose": "Support only the locator-bound fixture statement.",
-                    "required_conditions": ["The exact reviewed locator applies."],
                 }
             ],
         },
@@ -210,6 +211,24 @@ def test_evidence_claim_scope_is_closed_and_hash_bound():
     metadata["science"]["claim_scope"]["allowed_claims"][0]["purpose"] = "Broader purpose."
 
     assert "science.claim_scope_hash must match science.claim_scope" in validate_sci_profile_metadata(metadata)
+
+
+def test_evidence_claim_scope_requires_typed_executable_conditions():
+    """Free-form prose must not satisfy an executable Evidence condition boundary."""
+    from boi_api.app.science.digests import sha256_digest
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-evidence")
+    scope = metadata["science"]["claim_scope"]
+    scope["allowed_claims"][0]["required_conditions"] = [
+        "The exact reviewed locator applies."
+    ]
+    metadata["science"]["claim_scope_hash"] = sha256_digest(scope)
+
+    assert any(
+        "required_conditions items must be typed condition constraints" in error
+        for error in validate_sci_profile_metadata(metadata)
+    )
 
 
 @pytest.mark.parametrize(

@@ -2,87 +2,80 @@
 
 Date: 2026-08-25
 Branch: `codex/science-verifier`
-Baseline: `52254d20bbb15ad6d1140a7ccf58fa6b467dfaf2`
+Fix baseline: `96e19ebab18452d05142f38c9094a398ce36a288`
 
 ## Outcome
 
-The two critical enforcement gaps are closed without activating any real Source or Evidence.
+All four Critical findings in `knowledge-enforcement-review.md` are closed at the production verification boundary. No real Science object was approved or activated.
 
-1. Active decision components fail closed unless a trusted callback resolves every approving human reviewer to `science.admin`. Draft, pending, inactive, blocked, missing/stale approval, unverifiable author, self-approval, caller-written role, untrusted reviewer, and unpinned Source paths are rejected.
-2. Evidence claim scope is now closed, canonical-hash-bound metadata inside every Evidence `science` profile. `VerificationRule` binds a typed `EvidenceUse`, and Catalog resolution checks exact Evidence reference, claim family, purpose, and required conditions before the engine can receive the Rule.
-3. Candidate Releases remain usable for qualification assembly only. Catalog active resolution rejects them by default, and the engine independently refuses candidate or withdrawn Releases even if handed a structurally valid Rule set.
-4. The spin-time prose explicitly forbids both RPM and spin-speed thickness-direction families. The figure Observation is limited to the named AZ 125nXT grades, revision 01/24, and recorded plotted-marker ranges. KCL use is limited to the lumped-matter approximation with no net node-charge accumulation over the modeled timescale.
+### C1 — operational attestation boundary
 
-All repository Source/Evidence documents remain `draft` / `pending_review` with blocked release eligibility. No real approval event or active decision eligibility was added.
+- `QualificationRuleSet` is a distinct serializable qualification result.
+- The public Engine accepts only an opaque `OperationalVerification` issued by `ScienceCatalog.resolve_operational_rule_set()` after active governance resolution.
+- The capability is immutable through its public API and rejects direct construction, `model_copy`, ordinary copying, deep copying, and pickle serialization.
+- Its sealed attestation covers the exact Release-set digest, Release IDs and statuses, Release content hashes, component-digest manifests, approval/activation snapshot, and Rule-set digest.
+- Directly constructed `ResolvedReleaseSet` / `ResolvedRuleSet`, candidate qualification output, a qualification `model_copy(update={"status": "active"})`, and an unsealed `object.__new__` instance are rejected by the public Engine.
 
-The unrelated pre-existing untracked `.superpowers/application-architecture-scout.md` was not read, edited, staged, or committed.
+The underscore-prefixed issue/open functions are an internal in-process trust boundary used only by Catalog and Engine. They are not a cryptographic sandbox against arbitrary code already executing inside the server process.
 
-## RED/GREEN evidence
+### C2 — executable Evidence scope
 
-### Trusted active-release gate
+- `EvidenceUse` now binds only exact `evidence_ref`, `claim_family`, and `purpose`.
+- Every embedded Evidence `claim_scope.required_conditions` entry is a validated `ConditionConstraint`; free-form strings are invalid.
+- Catalog canonicalizes each Evidence constraint and proves that the exact constraint is present in the Rule's executable `required_conditions` or `validity_conditions` before issuing either qualification or operational Rules.
+- Closed scalar membership (`operator: in`) was added for product-grade scope, including uniqueness, one-scalar-kind, and finite-number checks.
+- Condition evaluation carries the closed membership list in its audit record.
+- KCL requires consistent current references, `circuit_model = lumped_matter`, and `node_charge_accumulation = none`.
+- The AZ 125nXT figure Observation requires product family, one of the two plotted grades, revision `01/24`, the common 600–2300 rpm plotted-marker range, and plotted-marker-only use.
+- End-to-end Catalog-to-Engine tests show missing KCL model/no-accumulation and Figure product/revision/range inputs yield `INSUFFICIENT_INFORMATION`, never a red verdict.
+- Spin-time Evidence still forbids both RPM/spin-speed direction families and is scoped only to AZ 125nXT revision `01/24`.
 
-Initial focused RED:
+All 45 Evidence documents and `evidence-claim-scope-v0.1.yaml` were updated. The YAML remains a test-checked summary; Catalog and Engine read only the hash-bound scope embedded in each Evidence object.
 
-```text
-12 failed
-```
+### C3 — complete active governance gate
 
-The constructor had no trusted resolver, active resolution did not inspect Source/Evidence governance, and candidate Rule sets were accepted as active.
+An operational Release now requires trusted Admin approval of:
 
-GREEN coverage now proves:
+- the Release itself;
+- every pinned Source, Evidence, Knowledge, Rule, Ontology Binding, Qualification Matrix, and Pack;
+- Source retrieval verification and Evidence decision eligibility where applicable; and
+- a distinct trusted Admin Release activation event.
 
-- trusted `science.admin` positive fixture;
-- no-resolver fail-closed behavior;
-- draft, pending review, inactive decision, blocked release, missing event, temporal inversion, missing author, self-approval, caller-written Admin role, and non-admin resolver rejection;
-- direct `resolve_release()` cannot bypass the same active gate;
-- active Evidence must pin its exact Source component;
-- candidate Releases may resolve for qualification but cannot execute through Catalog or engine.
+Every object must be `approved` and `active_release_eligible`. Active Evidence must pin its exact Source. Candidate Releases may retain pending drafts and produce only `QualificationRuleSet`; they cannot obtain an operational capability.
 
-### Executable Evidence scope
+### C4 — actor and time closure
 
-Typed `EvidenceUse` initial RED:
+- A human actor is exactly `{type: human, user_id: ...}`.
+- An agent actor is exactly `{type: agent, agent_id: ...}`.
+- Dual identities, extra identity keys, missing identities, Agent reviewers, and canonical typed self-approval are rejected.
+- Authorization comes only from the injected trusted role resolver resolving the sanitized human identity to `science.admin`; caller-written role labels are ignored.
+- Operational resolution requires an injected timezone-aware trusted clock. Default skew is 30 seconds and the configurable maximum is one minute.
+- Approval and activation cannot be in the future beyond skew, cannot precede authorship/retrieval/curation, and approval cannot occur after Release activation.
 
-```text
-1 failed, 2 passed
-```
+## TDD evidence
 
-The Rule schema rejected the new field as unknown. GREEN added the closed typed object and exact, duplicate-free identity with `evidence_refs`.
+The new enforcement tests were observed failing before implementation:
 
-Evidence-profile claim-scope RED:
+- public operational boundary: direct Engine inputs and unsealed objects;
+- typed membership/profile validation and prose-condition rejection;
+- omitted draft Knowledge, Rule, Ontology Binding, Qualification Matrix, and Pack;
+- draft/unactivated Release;
+- dual author/reviewer identities and future/late approval or activation; and
+- KCL/Figure missing-condition end-to-end cases.
 
-```text
-5 failed
-```
-
-The profile ignored scope structure and hash drift. GREEN added exact field sets, nonblank/unique lists, allow/forbid collision checks, and canonical hash verification.
-
-Catalog scope RED:
-
-```text
-8 failed
-```
-
-Rules with a different family, broader purpose, missing required conditions, or forbidden RPM/spin-speed family reached rule-set resolution. GREEN rejects each before engine entry, including descendant families below a forbidden prefix.
-
-Self-review RED also found duplicate `evidence_refs` and an engine-level candidate-release bypass:
-
-```text
-2 failed
-1 failed
-```
-
-GREEN requires duplicate-free exact Evidence identity in both profile and typed Rule, and `verify_claim()` now rejects non-operational release status independently of Catalog call mode.
+The final focused and regression suite is recorded below.
 
 ## Data disposition
 
-- All 45 Evidence documents carry `claim_scope` and `claim_scope_hash` inside their hashed OKF metadata.
-- `evidence-claim-scope-v0.1.yaml` remains a review summary only. Tests require its scope and hash to be byte-semantically identical to each embedded Evidence profile; Catalog never reads it as authority.
-- Inactive Evidence retains an empty allowed-claim list and cannot satisfy a Rule use.
-- No original span, locator, Source checksum, reviewed translation, access status, or approval state was broadened or rewritten.
+- All repository Source/Evidence objects remain `draft` / `pending_review` and release-blocked.
+- No Knowledge, Rule, Pack, Ontology Binding, Qualification Matrix, or Release was approved or activated in repository data.
+- Inaccessible AIP evidence remains inactive with an empty allowed-claim list.
+- No Source URL, DOI, locator, checksum, original span, translation, access limitation, or factual statement was broadened.
+- The unrelated untracked `.superpowers/application-architecture-scout.md` was not edited or staged.
 
 ## Final verification
 
-Required Foundation, ledger, profile, and OKF tests:
+Expanded Foundation, profile, Catalog, Engine, source-ledger, and OKF suite:
 
 ```bash
 TMPDIR=/tmp /tmp/boi-wiki-sci-task4-venv/bin/pytest \
@@ -94,12 +87,12 @@ TMPDIR=/tmp /tmp/boi-wiki-sci-task4-venv/bin/pytest \
 Output:
 
 ```text
-........................................................................ [ 22%]
-........................................................................ [ 44%]
-........................................................................ [ 66%]
-........................................................................ [ 89%]
-...................................                                      [100%]
-323 passed in 8.15s
+........................................................................ [ 20%]
+........................................................................ [ 41%]
+........................................................................ [ 62%]
+........................................................................ [ 83%]
+..........................................................               [100%]
+346 passed in 9.21s
 ```
 
 Strict OKF lint:
@@ -116,29 +109,25 @@ OKF lint checked 277 markdown docs; found 731 markdown graph links and 25 markdo
 OKF lint passed
 ```
 
-Compilation, whitespace, and no-activation checks:
+Additional checks:
 
 ```bash
-/tmp/boi-wiki-sci-task4-venv/bin/python -m compileall -q boi_api/app/science
+/tmp/boi-wiki-sci-task4-venv/bin/python -m compileall -q \
+  boi_api/app/science tests/test_science_models.py tests/test_science_profile.py \
+  tests/test_science_catalog.py tests/test_science_engine.py \
+  tests/test_science_source_ledger.py
 git diff --check
-! rg -n "active_release_eligible|decision_eligibility: eligible|status: approved|review_status: approved" \
-  data/boi/public/science
 ```
 
-Output: no output; exit status `0`.
+All additional checks exited `0` with no findings. A repository-data scan also confirmed there is no approved status, approved review, active-release eligibility, eligible Evidence, or activation record under `data/boi/public/science`.
 
 ## Self-review
 
-- Re-read the active-release and Evidence-scope requirements against the final production paths, not only the tests.
-- Confirmed caller-written `role` fields are never authorization input; the resolver receives only a sanitized human identity.
-- Confirmed active approval time must follow authored, retrieved, locator-retrieved, and curated timestamps.
-- Confirmed a missing resolver, resolver exception, missing author identity, or unresolved Admin role is operational failure rather than a scientific verdict.
-- Confirmed every Evidence use has one exact Evidence ref and one exact embedded allowed claim; forbidden prefixes win before allow lookup.
-- Confirmed candidate qualification mode cannot be reused at the engine boundary.
-- Confirmed the summary YAML is not referenced by Catalog or engine production code.
-- Confirmed the 45 real Evidence documents remain pending and release-blocked.
-- Confirmed no TODO, FIXME, suppression, source-body import, or unrelated file edit was introduced.
-
-## Concerns
-
-None within this enforcement scope. A real Source/Evidence activation still requires an externally supplied trusted reviewer-role resolver and a genuine authorized Admin review event; this change intentionally does not provide either.
+- Replayed every exploit described in the review as a regression test.
+- Confirmed public verification cannot accept a caller-supplied status, Release set, or Rule set.
+- Confirmed the attestation contains governance and content identities, not merely a status flag.
+- Confirmed Evidence conditions are typed at rest and executable in Rules, with exact Catalog comparison.
+- Confirmed every pinned component kind and Release activation are included in the active gate.
+- Confirmed actor comparison is typed and closed, and all operational time checks use the injected clock.
+- Confirmed candidate qualification remains possible without weakening the operational path.
+- Confirmed real repository data remains pending/blocked and no active Science truth was manufactured.

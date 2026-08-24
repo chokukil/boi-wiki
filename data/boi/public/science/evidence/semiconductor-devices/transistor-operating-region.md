@@ -55,15 +55,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.semiconductor_devices.transistor_operating_region
-      purpose: The part of the IV curves with Vds << Vdsat is the linear region, and the part with Vds > Vdsat is the saturation
-        region.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: The part of the IV curves with Vds << Vdsat is the linear region, and
+        the part with Vds > Vdsat is the saturation region.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The named regions use the model and Vdsat definition in the source; short-channel effects can alter behavior.
-  claim_scope_hash: sha256:30202bc9f448ae726f0f102084e46e5d190ea714661fdf5fa66b66403b1228be
+    - The named regions use the model and Vdsat definition in the source; short-channel
+      effects can alter behavior.
+  claim_scope_hash: sha256:8bbceac5275f0299932a3f5f2bf29a7cc5362ec67759809a0ceff9941e76d0a7
   supports_knowledge: []
   curation_actor:
     type: agent

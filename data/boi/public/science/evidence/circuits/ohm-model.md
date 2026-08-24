@@ -55,15 +55,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.circuits.ohm_model
-      purpose: numbers can be codified by Ohm's law, for example, V is equal to RI, the voltage current, relates to the resistance
-        of the object.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: numbers can be codified by Ohm's law, for example, V is equal to RI,
+        the voltage current, relates to the resistance of the object.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This transcript sentence presents the resistor abstraction; it is not valid for every nonlinear or time-varying element.
-  claim_scope_hash: sha256:10ef46b229d0fac1d14de3d9139f68c29132af74809d77a93cc2488de94ae35f
+    - This transcript sentence presents the resistor abstraction; it is not valid for
+      every nonlinear or time-varying element.
+  claim_scope_hash: sha256:0c75960364e9d1c8428674b423cdb47d64c8a043a7f981693cb24747d34cd770
   supports_knowledge: []
   curation_actor:
     type: agent

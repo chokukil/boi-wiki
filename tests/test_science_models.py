@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
 from boi_api.app.science.models import (
     ClaimPacket,
+    ConditionConstraint,
     InterpretationRecord,
     PackDependency,
     PrimaryVerdict,
@@ -191,3 +192,18 @@ def test_resolved_release_set_rejects_a_nonexact_combination(mutation: str):
 
     with pytest.raises(ValidationError, match="exact combined digest|exactly match resolved releases"):
         ResolvedReleaseSet.model_validate(payload)
+
+
+def test_condition_constraint_supports_closed_scalar_membership():
+    """Product-scoped Evidence may encode a closed list without prose matching."""
+    constraint = ConditionConstraint(
+        key="product_grade",
+        operator="in",
+        values=["AZ 125nXT-10 B", "AZ 125nXT-7 B"],
+    )
+
+    assert constraint.values == ["AZ 125nXT-10 B", "AZ 125nXT-7 B"]
+    with pytest.raises(ValidationError, match="membership condition"):
+        ConditionConstraint(key="product_grade", operator="in", values=[])
+    with pytest.raises(ValidationError, match="finite"):
+        ConditionConstraint(key="numeric_grade", operator="in", values=[float("nan")])

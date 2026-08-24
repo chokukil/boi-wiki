@@ -55,13 +55,12 @@ science:
     allowed_claims:
     - claim_family: locator_bound.circuits.series_parallel
       purpose: the conductances in parallel add, and resistances in series add.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - This assumes the lumped resistive network abstraction and the stated topology.
-  claim_scope_hash: sha256:f39ef2bf7a085fce1f49b31f9d6d5ba6c76eb9f31975a2db5665c015525b0197
+  claim_scope_hash: sha256:b69dd8889367c0d32797318a37c7718ce9dd35ebbc4752a8850208fe92c75cd8
   supports_knowledge: []
   curation_actor:
     type: agent

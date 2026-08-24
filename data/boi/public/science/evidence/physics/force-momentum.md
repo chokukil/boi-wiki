@@ -55,15 +55,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.physics.force_momentum
-      purpose: We conclude that the external force causes the momentum of the system to change, and we thus restate and generalize
-        Newton’s Second Law for a system of objects.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: We conclude that the external force causes the momentum of the system
+        to change, and we thus restate and generalize Newton’s Second Law for a system
+        of objects.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - Applicability requires a defined system and reference frame.
-  claim_scope_hash: sha256:331d7ad8426d680a3d1de8ff6c6ea6b2347e4e2289eb4c701a1ab208261468a1
+  claim_scope_hash: sha256:b59c3176673af7c832d52e5bcec869d86a89a2eae2dd26d5bc5d10cc88e97b2c
   supports_knowledge: []
   curation_actor:
     type: agent

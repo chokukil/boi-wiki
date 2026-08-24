@@ -57,17 +57,26 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: circuits.kcl.algebraic_current_sum_zero
-      purpose: The algebraic sum of currents at a node is zero under a consistent direction convention.
+      purpose: The algebraic sum of currents at a node is zero under a consistent direction
+        convention.
       required_conditions:
-      - Current reference directions are explicit and consistent.
-      - The lumped-matter circuit approximation applies.
-      - No net charge accumulation occurs at the node over the modeled timescale.
+      - key: current_reference_convention
+        operator: eq
+        value: consistent
+      - key: circuit_model
+        operator: eq
+        value: lumped_matter
+      - key: node_charge_accumulation
+        operator: eq
+        value: none
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The transcript uses currents directed into the node; another sign convention requires algebraically consistent signs.
-    - The zero-sum node rule is bound to a lumped-matter model with no net node-charge accumulation over the modeled timescale.
-  claim_scope_hash: sha256:584a8362a336e857edc9088a9ce0b74e8396830ee76b32b5845cb0d3185caacd
+    - The transcript uses currents directed into the node; another sign convention requires
+      algebraically consistent signs.
+    - The zero-sum node rule is bound to a lumped-matter model with no net node-charge
+      accumulation over the modeled timescale.
+  claim_scope_hash: sha256:d604a48b964dd7ce975f2a4d22369730c252ae163f273e49ff066f2bb8115ab6
   supports_knowledge: []
   translation:
     status: agent_draft_pending_admin_review

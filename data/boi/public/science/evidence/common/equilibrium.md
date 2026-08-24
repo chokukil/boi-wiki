@@ -55,15 +55,16 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.equilibrium
-      purpose: Chemical reactions reach a state of dynamic equilibrium in which the rates of forward and reverse reactions are
-        equal and there is no net change in composition.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: Chemical reactions reach a state of dynamic equilibrium in which the
+        rates of forward and reverse reactions are equal and there is no net change
+        in composition.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This chemical-equilibrium statement does not imply zero microscopic activity or universal equilibrium.
-  claim_scope_hash: sha256:d93c7e83ca480e7bae69a3ccf4f240b60e85898c8ed92480e587893a3bf6178a
+    - This chemical-equilibrium statement does not imply zero microscopic activity or
+      universal equilibrium.
+  claim_scope_hash: sha256:673b075de70413d50668af2d6d5ad1c89c5d179fb30ec9a2c92a67a2d344c978
   supports_knowledge: []
   curation_actor:
     type: agent

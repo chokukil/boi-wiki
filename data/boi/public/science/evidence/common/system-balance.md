@@ -54,14 +54,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.system_balance
-      purpose: This law asserts that the mass δM = ρδV of a material particle remains invariant.
-      required_conditions:
-      - Authorized Admin review is still required before any active release use.
+      purpose: This law asserts that the mass δM = ρδV of a material particle remains
+        invariant.
+      required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This material-particle statement must be transformed carefully before applying it to an open control volume.
-  claim_scope_hash: sha256:8cd41fa5aed1ca509fb83d58e21c2b2bf03f001bbb348ebab33ea0de77f09d90
+    - This material-particle statement must be transformed carefully before applying
+      it to an open control volume.
+  claim_scope_hash: sha256:de12e972cc1525a3a2e6ca9f2912ca57c6d83c348b04ed217c7196f0ade5a9f9
   supports_knowledge: []
   curation_actor:
     type: agent
