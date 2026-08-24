@@ -4,7 +4,7 @@ Date: 2026-08-25 (Asia/Seoul)
 
 Branch: `codex/science-application`
 
-Implementation commit: `3c7ec08a8dced6306742bf4341f2c7531e74ee3b`
+Implementation commit: `8d6b08aedc6aa87522c11bfae35e6eac832b13bd`
 
 Reviewed base: `1a28f8bf653db9fb27040fb6a9832af50e48f859`
 
@@ -25,9 +25,41 @@ record/audit protocol and the Foundation Catalog-issued operational capability.
 - Deterministic record IDs reuse Task 1's immutable record+audit WAL as the
   authoritative idempotency mapping. No side database or weaker write path was
   added.
-- Existing Task 1 legacy fixtures remain readable through an optional operation
-  binding; every Task 2 service-created record requires and validates the typed
-  binding.
+- Operation bindings are mandatory for every interpretation and report. There
+  is no legacy/default path capable of producing, storing, reading, or exporting
+  an authoritative verdict/report without the typed binding.
+
+## Re-review closure
+
+### C1: mandatory authority and immutable dependency chain
+
+- `InterpretationRecord.operation_binding` and
+  `VerificationReport.operation_binding` are required closed fields.
+- Proposal records forbid confirmed claims and revisions. Confirmation records
+  require one exact typed revision whose actor, proposal ID, and sorted claim IDs
+  equal the operation binding.
+- Both service verification entry points revalidate the stored confirmation,
+  safely load its immutable proposal dependency, reconstruct the only permitted
+  confirmed Claim Packets, and pause before Catalog/Engine access on any stale,
+  missing, or mismatched link.
+- `ScienceRuntimeStore` independently revalidates model instances through their
+  canonical JSON form, binds the operation actor to the trusted `AuthIdentity`,
+  and validates proposal/confirmation/report dependencies on save, load, and WAL
+  recovery. A missing interpretation therefore cannot be stored or exported as
+  a report even if its own digest is recomputed.
+- Report validators unconditionally recompute report digest, request/document/
+  claim/release binding, exact interpretation ID, confirmed claims, verdict
+  coverage, Claim Packet digests, and release maps.
+
+### I1: closed Evidence locator
+
+- Evidence locators now use a closed `EvidenceLocator` schema for reviewed
+  page, section, equation, source URL, hash, and transcription metadata.
+- All non-URL locator fields pass the shared recursive non-secret validator.
+  Locator URLs require HTTPS and reject userinfo, credential query/fragment
+  names, token-shaped values, and endpoint/credential scalar patterns.
+- Service and store failures return closed diagnostics; rejected locator secret
+  values and credential URLs are never echoed or written to immutable storage.
 
 ## RED evidence
 
@@ -63,6 +95,18 @@ The review fixes were implemented in adversarial TDD slices.
    lookup; the retry records the original audit exactly once without a second
    LLM call.
 
+6. The re-review RED probe saved a confirmed record with
+   `operation_binding=None` and no revision, and separately saved an unbound
+   forged report. The initial adversarial test failed with `DID NOT RAISE`.
+   Follow-up RED cases covered stale model copies, a missing interpretation
+   dependency, and report load from an orphaned immutable file.
+
+7. The Evidence locator RED probe supplied an `api_key` plus an HTTPS URL with
+   userinfo. Before the fix, the closed service/store assertions failed because
+   locator metadata was copied outside the recursive validator. Tests now also
+   recompute the outer report digest to prove the inner locator boundary is
+   independently authoritative.
+
 ## GREEN behavior
 
 ### C1: proposal-only interpretation and explicit confirmation
@@ -93,9 +137,9 @@ The review fixes were implemented in adversarial TDD slices.
   `qwen/qwen3.8-27b` while rejecting URLs, scheme-less host/port endpoints,
   userinfo, bearer/token patterns, and credential aliases.
 - Interpretation/report models recursively inspect every non-source field.
-  Source span text, reviewed Knowledge text, approved source URL, and reviewed
-  locator are the only intentional content exemptions; credential-bearing
-  source URLs and URL query/fragment credentials still fail closed.
+  Scientific source-span and reviewed Knowledge prose are intentional content
+  fields. Source and locator URLs use the stricter credential-free HTTPS
+  validator, while all remaining closed locator fields are recursively scanned.
 - User revisions and decision impacts are closed typed models. LLM reason prose
   is never persisted.
 - HTTP status, timeout, transport, malformed envelope/JSON, forbidden output,
@@ -140,36 +184,37 @@ The review fixes were implemented in adversarial TDD slices.
 Focused Task 2 review-fix suite:
 
 ```text
-TMPDIR=/tmp /tmp/boi-wiki-sci-task4-venv/bin/pytest -q -s \
+TMPDIR=/tmp /tmp/boi-sci-uv/bin/pytest -q -s \
   tests/test_science_interpretation.py --tb=short
-56 passed in 0.62s
+62 passed in 0.74s
 ```
 
 Fresh combined Task 2 + Task 1 + Foundation regression:
 
 ```text
-TMPDIR=/tmp /tmp/boi-wiki-sci-task4-venv/bin/pytest -q -s \
+TMPDIR=/tmp /tmp/boi-sci-uv/bin/pytest -q -s \
   tests/test_science_interpretation.py \
   tests/test_science_authorization.py tests/test_science_storage.py \
   tests/test_science_catalog.py tests/test_science_engine.py \
   tests/test_science_models.py tests/test_science_profile.py \
   tests/test_science_source_ledger.py --tb=short
-467 passed in 5.85s
+473 passed in 5.44s
 ```
 
 Static verification:
 
 ```text
-ruff check boi_api/app/science/anchors.py boi_api/app/science/llm.py \
-  boi_api/app/science/service.py boi_api/app/science/models.py \
-  boi_api/app/science/catalog.py boi_api/app/science/storage.py \
-  boi_api/app/science/safety.py tests/test_science_interpretation.py
+ruff check boi_api/app/science/models.py boi_api/app/science/safety.py \
+  boi_api/app/science/service.py boi_api/app/science/storage.py \
+  tests/test_science_interpretation.py tests/test_science_storage.py \
+  tests/test_science_models.py
 All checks passed!
 
 ruff format --check <same files>
-8 files already formatted
+7 files already formatted
 
-python -m compileall -q boi_api/app/science tests/test_science_interpretation.py
+python -m compileall -q boi_api/app/science tests/test_science_interpretation.py \
+  tests/test_science_storage.py tests/test_science_models.py
 git diff --check
 ```
 
@@ -179,8 +224,9 @@ Both commands completed with no output/errors after the reported Ruff results.
 
 - No compatibility adapter or direct `ResolvedRuleSet` verification path was
   introduced.
-- No request-body actor/role authority was added; every mutation still receives
-  the trusted `AuthIdentity` object and Task 1 resolves authorization.
+- No request-body actor/role authority was added; application mutations receive
+  the trusted `AuthIdentity`, and proposal governance retains Task 1 role
+  resolution.
 - No endpoint, API key, raw idempotency key, LLM reason, LLM Evidence, or LLM
   locator is stored.
 - Proposed invalid ontology refs cannot be confirmed and cannot enter a verdict,
