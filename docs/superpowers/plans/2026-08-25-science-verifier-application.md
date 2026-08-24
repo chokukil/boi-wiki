@@ -170,16 +170,19 @@ The router contract is fixed:
 | Method | Path | Request/response | Science authority |
 |---|---|---|---|
 | POST | `/api/science/interpret` | document/selection → Interpretation Record | access-mode user |
+| POST | `/api/science/interpretations/{interpretation_id}/confirm` | exact binding + explicit confirmation → immutable Interpretation version | same authenticated user |
 | POST | `/api/science/claims/{claim_id}/verify` | Claim Packet + ReleaseSelection → Verdict Packet | access-mode user |
 | POST | `/api/science/verify-document` | confirmed claims + ReleaseSelection → Verification Report | access-mode user |
 | GET | `/api/science/evidence/{evidence_id}` | Evidence detail | access-mode user + source ACL |
 | GET | `/api/science/reports/{report_id}` | stored Verification Report | report/source ACL |
 | GET | `/api/science/reports/{report_id}/export` | `format=markdown|pdf` bytes | report/source export ACL |
 | POST | `/api/science/proposals` | confirmed proposal → proposal record | access-mode user |
-| POST | `/api/science/proposals/{proposal_id}/approve` | confirmed approval → release-candidate inclusion | domain Power User or Admin, no self-approval |
+| POST | `/api/science/proposals/{proposal_id}/review` | `approve|reject|withdraw` + exact object digests → append-only review event | domain Power User for alias/term/interpretation/concept-link only; otherwise Admin; no self-approval |
 | POST | `/api/science/admin/sources/validate` | source object → validation | Admin |
+| POST | `/api/science/admin/evidence/validate` | Evidence span + Source digest/locator/hash/scope → validation | Admin |
 | POST | `/api/science/admin/knowledge/validate` | knowledge object → validation | Admin |
 | POST | `/api/science/admin/rules/{rule_id}/qualify` | rule + cases → result | Admin |
+| GET | `/api/science/admin/releases/{release_id}/impact` | conflict set + affected historical/current verdicts | Admin |
 | POST | `/api/science/admin/releases/validate` | release ID → G0..G7 report | Admin |
 | POST | `/api/science/admin/releases/{release_id}/activate` | confirmed activation → audit | Admin |
 | POST | `/api/science/admin/releases/{release_id}/withdraw` | confirmed withdrawal → fallback audit | Admin |
@@ -198,7 +201,7 @@ def test_report_exports_share_report_digest(science_client):
     assert pdf.content.startswith(b"%PDF")
 ```
 
-Cover all endpoints in spec, evidence ACL denial, admin-only release operations, Power User proposal approval, self-approval denial, user confirmation on mutations, explicit release pinning, and LLM-offline interpretation response.
+Cover all endpoints in spec, interpretation confirmation bound to the same authenticated actor, evidence ACL denial, object-kind-specific Power User review, Admin review of Source/Evidence/Knowledge/Rule changes, approve/reject/withdraw events, self-approval denial, user confirmation on mutations, explicit release pinning, impact completeness, and LLM-offline interpretation response.
 
 Add two lifecycle regressions: a superseded/withdrawn release never changes the bytes or release digests of an existing report, and an incompatible/missing catalog raises an HTTP 503 operational error envelope with no `verdict` field.
 
@@ -233,7 +236,7 @@ Register it after `current_identity`, `roles_for`, and `app_shell_context` are d
 
 - [ ] **Step 5: Implement mutation and release gates**
 
-Every proposal/approval/activation/withdrawal request requires `user_confirmed: true`. Activation runs profile lint, reference/digest checks, conflict checks, qualification suite, source reachability metadata checks, and exact-one-active release enforcement before an atomic manifest update. Generic source/body edit routes must reject paths that belong to an active Science release.
+Every proposal/review/activation/withdrawal request requires `user_confirmed: true` bound to the authenticated actor and request digest. Review records append-only `approve|reject|withdraw` events for exact object digests; validation endpoints never write approval state. Power Users can approve only scoped alias/term/interpretation/concept-link proposals into a Release Candidate. Admin review is required for Source/Evidence/Knowledge/law/equation/Rule changes and final Release activation. Activation fails closed unless every pinned object has an authorized review event, the conflict/affected-verdict impact set is complete, and profile lint, reference/digest checks, qualification suite, source reachability metadata checks, and exact-one-active release enforcement pass before an atomic manifest update. Generic source/body edit routes must reject paths that belong to an active Science release.
 
 - [ ] **Step 6: Add runtime/config persistence**
 

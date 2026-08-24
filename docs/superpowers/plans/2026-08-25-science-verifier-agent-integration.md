@@ -32,7 +32,7 @@
 
 **Interfaces:**
 - Consumes: `/api/science/*` REST endpoints.
-- Produces: `science_interpret`, `science_verify_claim`, `science_verify_document`, `science_evidence_get`, `science_report_get`, `science_report_export`, `science_proposal_create`, `science_source_validate`, `science_knowledge_validate`, `science_rule_qualify`, `science_release_validate`, `science_release_activate`, and `science_release_withdraw`.
+- Produces: `science_interpret`, `science_interpretation_confirm`, `science_verify_claim`, `science_verify_document`, `science_evidence_get`, `science_report_get`, `science_report_export`, `science_proposal_create`, `science_source_validate`, `science_evidence_validate`, `science_knowledge_validate`, `science_rule_qualify`, `science_release_validate`, `science_release_activate`, and `science_release_withdraw`.
 
 - [ ] **Step 1: Write failing MCP parity tests**
 
@@ -48,7 +48,7 @@ async def test_science_verify_claim_is_a_thin_api_adapter(monkeypatch, mcp_modul
     assert await mcp_module.science_verify_claim("claim:x", CLAIM_PACKET, RELEASES) == expected
 ```
 
-Cover all 13 tools, capability list, `Science Verifier` IA group, bridge dispatch, explicit confirmation, and identity preservation. Replace brittle exact total-count assertions with required-tool set assertions plus a minimum count.
+Cover all 15 tools, capability list, `Science Verifier` IA group, bridge dispatch, explicit confirmation, and identity preservation. Replace brittle exact total-count assertions with required-tool set assertions plus a minimum count.
 
 - [ ] **Step 2: Run tests and confirm missing tools**
 
@@ -62,7 +62,7 @@ Each wrapper calls `api_get` or `api_post` exactly once. Export returns base64 p
 
 - [ ] **Step 4: Extend the HTTP MCP bridge safely**
 
-Add the Science tools to `MCP_TOOL_IA_GROUPS` and `mcp_bridge_call()`. Read-only service-token calls remain possible. Proposal approval is intentionally Web/REST-only in v0.1 and is not a fourteenth MCP tool. Release activation and withdrawal wrappers require an authenticated caller mapping and must reject a service-token-only identity. Keep `user_confirmed` visible in the payload.
+Add the Science tools to `MCP_TOOL_IA_GROUPS` and `mcp_bridge_call()`. Read-only service-token calls remain possible. Outcome-changing ambiguity uses the explicit `science_interpretation_confirm` tool; proposal review remains Web/REST-only. Release activation and withdrawal wrappers require an authenticated caller mapping and must reject a service-token-only identity. Keep `user_confirmed` visible in the payload.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -70,7 +70,7 @@ Run: `pytest tests/test_boi_wiki_mcp.py -q`
 
 Run: `python scripts/check_boi_wiki_mcp.py`
 
-Expected: PASS and all 13 Science tools appear.
+Expected: PASS and all 15 Science tools appear.
 
 ```bash
 git add boi_wiki_mcp/app/main.py tests/test_boi_wiki_mcp.py scripts/check_boi_wiki_mcp.py
@@ -236,7 +236,7 @@ Record the current commit as `rule_freeze_commit`. A separate reviewer agent rec
 
 - [ ] **Step 4: Implement the checker and report inventory**
 
-The checker calls the public REST and MCP interfaces rather than importing the engine. It first asks the Admin validation API to run `G0..G7` using the rule-frozen sealed holdout, confirms every gate passes, activates `sci-release:0.1.0` with `user_confirmed: true`, and records the activation audit. It writes case ID, claim text, expected/actual verdict, decisive Rule, Evidence URLs, limitations, interpretation refs, and classification into the report. It has explicit sections for detected errors, missed errors, false-red, interpretation errors, validity errors, broken locators, ungrounded explanations, changed Knowledge/Rules, and regression tests. No aggregate trust score is emitted.
+The checker calls the public REST and MCP interfaces rather than importing the engine. It asks the Admin validation API to run `G0..G7` using the rule-frozen sealed holdout and confirms every gate passes for the exact inactive Release Candidate. It must not synthesize approval events or activate the candidate. Activation is tested separately with authorization fixtures; an operational Release can activate only after a human Admin has reviewed the original material and exact object digests. The checker writes case ID, claim text, expected/actual verdict, decisive Rule, Evidence URLs, limitations, interpretation refs, and classification into the report. It has explicit sections for detected errors, missed errors, false-red, interpretation errors, validity errors, broken locators, ungrounded explanations, changed Knowledge/Rules, and regression tests. No aggregate trust score is emitted.
 
 The final report of record is `artifacts/science-verifier/qualification-report.{md,pdf}`. It embeds the digest of `data/boi/public/science/qualification/reports/release-gate-preflight-science-release-0.1.0.md`; the preflight document is not presented as the final result. Automated tests extract claim/verdict/Evidence/release/report identifiers from Markdown and PDF and require equality.
 
@@ -250,7 +250,7 @@ Load the untracked workspace `.env` and run `python scripts/check_science_llm_li
 
 - [ ] **Step 7: Capture real UI and final-report evidence**
 
-Run the server with the now-active Release and the live stored report, then execute `node scripts/capture_science_evidence.mjs`. It must use the real `/science-verifier` route, not fixture HTML, and save the exact desktop/mobile/report paths listed in this Task. `capture-manifest.json` records viewport, timestamp, Git commit, report ID/digest, Release ID/digest, and URL path with host/credentials removed. The script fails if the violation span, source links, scientific explanation, or final report digest is absent.
+Run the server with the exact validated candidate pinned in Admin preview mode, or with a separately human-reviewed active Release, and the live stored report; then execute `node scripts/capture_science_evidence.mjs`. It must use the real `/science-verifier` route, not fixture HTML, and save the exact desktop/mobile/report paths listed in this Task. `capture-manifest.json` records viewport, timestamp, Git commit, report ID/digest, Release ID/digest, lifecycle state, and URL path with host/credentials removed. The script fails if the violation span, source links, scientific explanation, final report digest, or candidate/active label is absent.
 
 - [ ] **Step 8: Run the complete verification matrix**
 
