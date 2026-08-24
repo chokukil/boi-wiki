@@ -11,7 +11,12 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from boi_api.app.okf import split_frontmatter
+from boi_api.app.okf import (
+    split_frontmatter,
+    validate_boi_profile_metadata,
+    validate_boi_profile_path_acl,
+    validate_okf_core_metadata,
+)
 from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
 from boi_api.app.science.models import ReleaseSelection, ResolvedComponent, ResolvedRelease
@@ -53,6 +58,7 @@ class ScienceObject(BaseModel):
     kind: ObjectKind
     object_id: str
     digest: str
+    release_manifest_digest: str | None = None
     body: str
     path: Path
 
@@ -78,6 +84,16 @@ def _normalized(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_normalized(item) for item in value]
     return value
+
+
+def _release_manifest_digest(metadata: dict[str, Any], body: str) -> str:
+    """Hash a Release manifest and body without its self-declared content hash."""
+    manifest = deepcopy(metadata)
+    science = manifest.get("science")
+    if not isinstance(science, dict):
+        raise ScienceCatalogError("science release manifest has invalid science metadata")
+    science.pop("content_hash", None)
+    return sha256_digest({"metadata": manifest, "body": body})
 
 
 class ScienceCatalog:
@@ -110,7 +126,12 @@ class ScienceCatalog:
             if not isinstance(metadata, dict) or metadata.get("type") not in SCIENCE_TYPE_REQUIREMENTS:
                 continue
 
-            errors = validate_sci_profile_metadata(metadata)
+            errors = (
+                validate_okf_core_metadata(metadata)
+                + validate_boi_profile_metadata(metadata)
+                + validate_boi_profile_path_acl(metadata, path, self.boi_root)
+                + validate_sci_profile_metadata(metadata)
+            )
             if errors:
                 raise ScienceCatalogError(f"invalid science document {path}: {'; '.join(errors)}")
             science = metadata.get("science")
@@ -128,12 +149,17 @@ class ScienceCatalog:
 
             normalized_metadata = _normalized(metadata)
             normalized_science = _normalized(science)
-            digest = sha256_digest({"metadata": normalized_metadata, "body": body.replace("\r\n", "\n")})
+            normalized_body = body.replace("\r\n", "\n")
+            digest = sha256_digest({"metadata": normalized_metadata, "body": normalized_body})
+            release_manifest_digest = (
+                _release_manifest_digest(normalized_metadata, normalized_body) if kind == "release" else None
+            )
             objects[kind][object_id] = ScienceObject(
                 kind=kind,
                 object_id=object_id,
                 digest=digest,
-                body=body.replace("\r\n", "\n"),
+                release_manifest_digest=release_manifest_digest,
+                body=normalized_body,
                 path=resolved_path,
                 **deepcopy(normalized_science),
             )
@@ -246,6 +272,9 @@ class ScienceCatalog:
 
     def resolve_release(self, release_id: str) -> ResolvedRelease:
         release = self._require("release", release_id)
+        declared_content_hash = self._string_field(release, "content_hash")
+        if declared_content_hash != release.release_manifest_digest:
+            raise ScienceCatalogError(f"release content hash mismatch: {release_id}")
         declared_digests = self._declared_component_digests(release)
         refs = self._release_component_refs(release)
         if set(declared_digests) != set(refs):
@@ -276,7 +305,7 @@ class ScienceCatalog:
         return ResolvedRelease(
             release_id=release_id,
             schema_version=schema_version,
-            content_hash=self._string_field(release, "content_hash"),
+            content_hash=declared_content_hash,
             status=status,
             components=tuple(components),
             component_digests={ref: declared_digests[ref] for ref in refs},
@@ -290,8 +319,11 @@ class ScienceCatalog:
         return tuple(self.resolve_release(release_id) for release_id in release_ids)
 
     def active_release(self) -> ResolvedRelease:
-        explicit = [release for release in self._objects["release"].values() if getattr(release, "active", False) is True]
-        candidates = explicit if explicit else [release for release in self._objects["release"].values() if getattr(release, "status", None) == "active"]
+        candidates = [
+            release
+            for release in self._objects["release"].values()
+            if getattr(release, "active", False) is True or getattr(release, "status", None) == "active"
+        ]
         if len(candidates) != 1:
             raise ScienceOperationalError("exactly one active Science release is required")
         selected = candidates[0]
@@ -303,7 +335,10 @@ class ScienceCatalog:
         safe_id = getattr(selected, "last_safe_release_id", None)
         if not isinstance(safe_id, str) or not safe_id.strip():
             raise ScienceOperationalError("withdrawn active release has no last_safe_release_id")
-        safe = self._require("release", safe_id)
+        try:
+            safe = self._require("release", safe_id)
+        except ScienceCatalogError as exc:
+            raise ScienceOperationalError(f"last safe release is unavailable: {safe_id}") from exc
         if getattr(safe, "status", None) == "withdrawn":
             raise ScienceOperationalError("last safe release is withdrawn")
         if getattr(safe, "status", None) == "release_candidate":
