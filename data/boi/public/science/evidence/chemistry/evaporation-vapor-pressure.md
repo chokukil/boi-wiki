@@ -53,6 +53,18 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This does not alone determine an evaporation rate in an open, flowing process.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.chemistry.evaporation_vapor_pressure
+      purpose: The vapor pressure is a direct measure of the escaping tendency of molecules from a condensed state of matter.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This does not alone determine an evaporation rate in an open, flowing process.
+  claim_scope_hash: sha256:23ab2ee4cf68d6709329a80f98ad0e804d88df4c43fe26162ee1210f1ab29744
   supports_knowledge: []
   curation_actor:
     type: agent

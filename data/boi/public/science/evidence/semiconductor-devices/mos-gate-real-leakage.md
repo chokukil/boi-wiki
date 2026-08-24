@@ -51,6 +51,19 @@ science:
   contextual_limitations:
   - The stated threshold and limiting mechanism are scoped to the cited SiO2 discussion; material stack, field, area, temperature,
     and device design still matter.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: semiconductor.mos_gate.ultrathin_sio2_tunneling_limit
+      purpose: The cited source identifies tunneling leakage as a limiting factor for SiO2 below its stated thickness.
+      required_conditions:
+      - Scope to the cited SiO2 discussion and stated thickness.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - The stated threshold and limiting mechanism are scoped to the cited SiO2 discussion; material stack, field, area, temperature,
+      and device design still matter.
+  claim_scope_hash: sha256:b69357439ee7eb43587d33c4fc83e245ba358102428a6caa2d3bd12ed79edf5b
   supports_knowledge: []
   translation:
     status: agent_draft_pending_admin_review

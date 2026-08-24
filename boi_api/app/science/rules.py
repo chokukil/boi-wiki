@@ -57,6 +57,31 @@ class QualifiedObservation(ScienceModel):
     evidence_ref: str
 
 
+class EvidenceUse(ScienceModel):
+    """One closed, executable authorization to use an Evidence span."""
+
+    evidence_ref: str = Field(min_length=1)
+    claim_family: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    required_conditions: list[str] = Field(default_factory=list)
+
+    @field_validator("evidence_ref", "claim_family", "purpose")
+    @classmethod
+    def nonblank_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("evidence use text fields must be nonblank")
+        return value
+
+    @field_validator("required_conditions")
+    @classmethod
+    def unique_nonblank_conditions(cls, value: list[str]) -> list[str]:
+        if any(not condition.strip() for condition in value):
+            raise ValueError("evidence use conditions must be nonblank")
+        if len(value) != len(set(value)):
+            raise ValueError("evidence use conditions must be unique")
+        return value
+
+
 class VerificationRule(ScienceModel):
     """A validated rule description; it contains data, never executable code."""
 
@@ -74,6 +99,7 @@ class VerificationRule(ScienceModel):
     equation: EquationConstraint | None = None
     knowledge_refs: list[str] = Field(min_length=1)
     evidence_refs: list[str] = Field(min_length=1)
+    evidence_uses: list[EvidenceUse] = Field(min_length=1)
     corrected_claim: str | None = None
 
     @field_validator("expected_dimensions")
@@ -83,6 +109,13 @@ class VerificationRule(ScienceModel):
 
     @model_validator(mode="after")
     def has_kind_specific_constraint(self) -> "VerificationRule":
+        if len(self.evidence_refs) != len(set(self.evidence_refs)):
+            raise ValueError("evidence_refs must be unique")
+        evidence_use_refs = [use.evidence_ref for use in self.evidence_uses]
+        if len(evidence_use_refs) != len(set(evidence_use_refs)):
+            raise ValueError("evidence_uses must bind each evidence_ref exactly once")
+        if set(evidence_use_refs) != set(self.evidence_refs):
+            raise ValueError("evidence_uses must exactly match evidence_refs")
         condition_keys = [
             condition.key for condition in (*self.required_conditions, *self.validity_conditions)
         ]

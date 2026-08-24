@@ -50,6 +50,18 @@ science:
   access_limitation: ''
   contextual_limitations:
   - The VIM says generally; a result can require more than a bare numerical value.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.common.measurand_result
+      purpose: A measurement result is generally expressed as a single measured quantity value and a measurement uncertainty.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - The VIM says generally; a result can require more than a bare numerical value.
+  claim_scope_hash: sha256:8cba91979253ad4040805e07c4c29db0f7bd329db7a19b43114e2bfa4f5cac4f
   supports_knowledge: []
   curation_actor:
     type: agent

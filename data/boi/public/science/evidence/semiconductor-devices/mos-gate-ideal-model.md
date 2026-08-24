@@ -52,6 +52,19 @@ science:
   contextual_limitations:
   - This is an idealized model assumption tied to an insulating gate oxide; it must not be generalized to all fabricated MOS
     gates.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: semiconductor.mos_gate.ideal_zero_gate_current_model
+      purpose: The cited ideal model sets iG = 0 because the gate oxide is treated as insulating.
+      required_conditions:
+      - State that this is an idealized model assumption.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This is an idealized model assumption tied to an insulating gate oxide; it must not be generalized to all fabricated MOS
+      gates.
+  claim_scope_hash: sha256:44720f0aa1538979fadf65afadc1d6eb52620a20c829a30445f6d9ee53383865
   supports_knowledge: []
   translation:
     status: agent_draft_pending_admin_review

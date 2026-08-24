@@ -53,6 +53,22 @@ science:
   contextual_limitations:
   - Product-scoped to AZ 125nXT revision 01/24 and the displayed figure; it is not a universal spin-coating law.
   - Approximate visual ranges are not digitized data and cannot authorize a numeric recipe or extrapolation.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: spin_coating.rpm_thickness_direction.product_scoped_figure_observation
+      purpose: Both plotted AZ 125nXT grades show decreasing thickness as spin speed increases across their displayed markers.
+      required_conditions:
+      - Product scope is AZ 125nXT grades AZ 125nXT-10 B and AZ 125nXT-7 B.
+      - Source revision is 01/24.
+      - Use is limited to the visually observed plotted marker ranges recorded in figure_observation.
+      - No numeric recipe, interpolation, or extrapolation is authorized.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - Product-scoped to AZ 125nXT revision 01/24 and the displayed figure; it is not a universal spin-coating law.
+    - Approximate visual ranges are not digitized data and cannot authorize a numeric recipe or extrapolation.
+  claim_scope_hash: sha256:5e6b5a82b75b24774e1bd6c4e94229408e46bb1d8c628fe84a34d7392346af8b
   supports_knowledge: []
   translation:
     status: agent_draft_pending_admin_review

@@ -51,6 +51,18 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This span states the work–kinetic-energy theorem; separate definitions are needed for power and multi-energy balances.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.physics.work_energy_power
+      purpose: the work done by the applied force on an object is identically equal to the change in kinetic energy of the object.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This span states the work–kinetic-energy theorem; separate definitions are needed for power and multi-energy balances.
+  claim_scope_hash: sha256:fd313f068785cb12bce689f0c730ec7fb42e056118eee655b88a10e74a7e2be9
   supports_knowledge: []
   curation_actor:
     type: agent

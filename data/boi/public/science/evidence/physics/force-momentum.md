@@ -51,6 +51,19 @@ science:
   access_limitation: ''
   contextual_limitations:
   - Applicability requires a defined system and reference frame.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.physics.force_momentum
+      purpose: We conclude that the external force causes the momentum of the system to change, and we thus restate and generalize
+        Newton’s Second Law for a system of objects.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - Applicability requires a defined system and reference frame.
+  claim_scope_hash: sha256:331d7ad8426d680a3d1de8ff6c6ea6b2347e4e2289eb4c701a1ab208261468a1
   supports_knowledge: []
   curation_actor:
     type: agent

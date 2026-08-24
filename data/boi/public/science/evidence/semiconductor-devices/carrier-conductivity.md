@@ -53,6 +53,19 @@ science:
   contextual_limitations:
   - This low-field drift conductivity relation requires carrier concentrations and mobilities under the model conditions;
     it is not a universal high-field transport law.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: semiconductor.low_field_carrier_conductivity
+      purpose: The cited low-field relation expresses conductivity as σ = qnµn + qpµp.
+      required_conditions:
+      - Carrier concentrations and mobilities must correspond to the modeled state.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This low-field drift conductivity relation requires carrier concentrations and mobilities under the model conditions;
+      it is not a universal high-field transport law.
+  claim_scope_hash: sha256:29ac6a33e8003691c5e50fd9859e21f3c895ee1f6f843e619110930a8057cf13
   supports_knowledge: []
   curation_actor:
     type: agent

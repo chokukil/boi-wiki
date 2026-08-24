@@ -185,6 +185,16 @@ def verify_claim(
             f"unresolved decision-changing ambiguity must stop before verification: {ambiguity}"
         )
 
+    releases = (
+        release_set.foundation_release,
+        *release_set.domain_releases,
+        *release_set.application_releases,
+    )
+    if any(release.status not in {"active", "superseded"} for release in releases):
+        raise ScienceOperationalError(
+            "Science release is not operational for verification"
+        )
+
     integrity_reasons = _rule_set_integrity(release_set, rule_set)
     if integrity_reasons:
         raise ScienceOperationalError(

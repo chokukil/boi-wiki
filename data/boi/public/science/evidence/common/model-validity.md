@@ -50,6 +50,18 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This assurance requirement does not prove that a particular model is valid for a proposed use.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.common.model_validity
+      purpose: A record of the domain of validation of the M&S shall be maintained.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This assurance requirement does not prove that a particular model is valid for a proposed use.
+  claim_scope_hash: sha256:f9f968b92f79cdb28e8d4667d5440c04ba668a944dca798881026722c870c473
   supports_knowledge: []
   curation_actor:
     type: agent

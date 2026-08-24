@@ -55,6 +55,14 @@ science:
     it is inactive decision context.
   contextual_limitations:
   - This scope statement does not establish a transferable bulk-to-thin-film property relation.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims: []
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This scope statement does not establish a transferable bulk-to-thin-film property relation.
+  claim_scope_hash: sha256:da37aa3c6b471cb1c839558ef2f7a36ff2a7a530980af681eec0e4bb840b741b
   supports_knowledge: []
   curation_actor:
     type: agent

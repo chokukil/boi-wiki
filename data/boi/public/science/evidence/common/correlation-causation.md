@@ -54,6 +54,19 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This does not exclude causation; it rejects inferring causation from correlation alone.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.common.correlation_causation
+      purpose: Note that correlation does not imply causality. It is possible for two variables to be associated with each other
+        without one of them causing the observed behavior in the other.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This does not exclude causation; it rejects inferring causation from correlation alone.
+  claim_scope_hash: sha256:efb8023715b764f1bbe4f6c77ff2c46999f9498831012ec8d5832dd6a9a83060
   supports_knowledge: []
   curation_actor:
     type: agent

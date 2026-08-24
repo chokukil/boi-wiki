@@ -51,6 +51,19 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This structural definition does not imply ideal zero leakage or specify a C–V regime.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.semiconductor_devices.mos_capacitor
+      purpose: An MOS capacitor (Fig. 5–1) is made of a semiconductor body or substrate, an insulator film, such as SiO2, and
+        a metal electrode called a gate.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This structural definition does not imply ideal zero leakage or specify a C–V regime.
+  claim_scope_hash: sha256:1c759639929e633104b458b624798fbcca789090cedeb9895d7bfbaa488b35ad
   supports_knowledge: []
   curation_actor:
     type: agent

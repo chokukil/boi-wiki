@@ -51,6 +51,19 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This is not a Newtonian constitutive equation and does not supply a viscosity value.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.physics.viscosity_flow
+      purpose: The defining attribute of a simple fluid, however, is that it keeps deforming, or straining, as long as any shear
+        stress, no matter how small, is applied to it.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This is not a Newtonian constitutive equation and does not supply a viscosity value.
+  claim_scope_hash: sha256:241ffc2ed955ac78d26f81dadaa981fb1d68fadfaffe0302219f50326fbc83cc
   supports_knowledge: []
   curation_actor:
     type: agent

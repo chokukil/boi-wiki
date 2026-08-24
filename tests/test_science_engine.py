@@ -37,6 +37,17 @@ MEASUREMENT_REF = "sci:knowledge:measurement-fixture"
 OTHER_EVIDENCE_REF = "sci:evidence:other-fixture"
 
 
+def evidence_use_fixture() -> list[dict[str, object]]:
+    return [
+        {
+            "evidence_ref": EVIDENCE_REF,
+            "claim_family": "fixture.rule_support",
+            "purpose": "Support the fixture rule under its stated conditions.",
+            "required_conditions": [],
+        }
+    ]
+
+
 def claim_fixture(
     claim_id: str,
     *,
@@ -130,6 +141,7 @@ def rule_fixture(
         "equation": equation,
         "knowledge_refs": [KNOWLEDGE_REF],
         "evidence_refs": [EVIDENCE_REF],
+        "evidence_uses": evidence_use_fixture(),
         "corrected_claim": corrected_claim,
     }
     if kind == "directional_relation" or contradiction_predicates is not None:
@@ -263,6 +275,30 @@ def make_rule_set(
             for rule in rules
         ),
     )
+
+
+def test_engine_rejects_candidate_release_even_with_a_structurally_valid_rule_set(
+    rules: tuple[VerificationRule, ...],
+    release_set: ResolvedReleaseSet,
+):
+    """Qualification-only resolution must not be usable as an active verdict path."""
+    candidate = release_set.foundation_release.model_copy(
+        update={"status": "release_candidate"}
+    )
+    candidate_set = ResolvedReleaseSet.from_single_foundation(candidate)
+    candidate_rules = make_rule_set(rules, candidate_set)
+    claim = claim_fixture(
+        "claim:candidate-must-not-evaluate",
+        subject="sci:concept:spin-speed",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:film-thickness",
+        conditions={"resist": "same", "viscosity": "same"},
+        process_stage="final-coat",
+    )
+
+    with pytest.raises(ScienceOperationalError, match="not operational for verification"):
+        verify_claim(claim, candidate_set, rule_set=candidate_rules)
 
 
 def repin_single_foundation_rule(
@@ -588,6 +624,7 @@ def test_rule_conditions_reject_primitive_maps_and_accept_typed_constraints():
         "required_conditions": {"temperature": 25},
         "knowledge_refs": [KNOWLEDGE_REF],
         "evidence_refs": [EVIDENCE_REF],
+        "evidence_uses": evidence_use_fixture(),
     }
 
     with pytest.raises(ValidationError, match="required_conditions"):
@@ -597,6 +634,67 @@ def test_rule_conditions_reject_primitive_maps_and_accept_typed_constraints():
         {"key": "temperature", "operator": "eq", "value": 25, "unit": "°C"}
     ]
     assert VerificationRule.model_validate(payload).required_conditions[0].unit == "°C"
+
+
+def test_rule_requires_typed_evidence_uses_with_exact_reference_identity():
+    """Detached evidence refs must not authorize a claim family or purpose."""
+    payload = {
+        "rule_id": "sci:rule:evidence-use-schema",
+        "rule_kind": "directional_relation",
+        "subject_concept_id": "sci:concept:input",
+        "object_concept_id": "sci:concept:response",
+        "expected_predicate": "decreases",
+        "contradiction_predicates": ["increases"],
+        "knowledge_refs": [KNOWLEDGE_REF],
+        "evidence_refs": [EVIDENCE_REF],
+        "evidence_uses": [
+            {
+                "evidence_ref": EVIDENCE_REF,
+                "claim_family": "fixture.direction",
+                "purpose": "Support only the fixture directional relation.",
+                "required_conditions": ["The fixture comparison is controlled."],
+            }
+        ],
+    }
+
+    rule = VerificationRule.model_validate(payload)
+    assert rule.evidence_uses[0].evidence_ref == EVIDENCE_REF
+
+    payload["evidence_uses"][0]["evidence_ref"] = OTHER_EVIDENCE_REF
+    with pytest.raises(ValidationError, match="exactly match evidence_refs"):
+        VerificationRule.model_validate(payload)
+
+    payload["evidence_uses"][0]["evidence_ref"] = EVIDENCE_REF
+    payload["evidence_refs"] = [EVIDENCE_REF, EVIDENCE_REF]
+    with pytest.raises(ValidationError, match="evidence_refs must be unique"):
+        VerificationRule.model_validate(payload)
+
+
+@pytest.mark.parametrize("missing_field", ["claim_family", "purpose"])
+def test_evidence_use_rejects_incomplete_executable_scope(missing_field: str):
+    """Every use must state the exact family and purpose checked by the Catalog."""
+    payload = {
+        "rule_id": "sci:rule:incomplete-evidence-use",
+        "rule_kind": "directional_relation",
+        "subject_concept_id": "sci:concept:input",
+        "object_concept_id": "sci:concept:response",
+        "expected_predicate": "decreases",
+        "contradiction_predicates": ["increases"],
+        "knowledge_refs": [KNOWLEDGE_REF],
+        "evidence_refs": [EVIDENCE_REF],
+        "evidence_uses": [
+            {
+                "evidence_ref": EVIDENCE_REF,
+                "claim_family": "fixture.direction",
+                "purpose": "Support only the fixture directional relation.",
+                "required_conditions": [],
+            }
+        ],
+    }
+    del payload["evidence_uses"][0][missing_field]
+
+    with pytest.raises(ValidationError):
+        VerificationRule.model_validate(payload)
 
 
 def test_contradiction_predicates_are_explicit_and_directional_only():
@@ -609,6 +707,7 @@ def test_contradiction_predicates_are_explicit_and_directional_only():
         "expected_predicate": "increases",
         "knowledge_refs": [KNOWLEDGE_REF],
         "evidence_refs": [EVIDENCE_REF],
+        "evidence_uses": evidence_use_fixture(),
     }
     equation = {
         "rule_id": "sci:rule:foreign-explicit-opposites",
@@ -623,6 +722,7 @@ def test_contradiction_predicates_are_explicit_and_directional_only():
         },
         "knowledge_refs": [KNOWLEDGE_REF],
         "evidence_refs": [EVIDENCE_REF],
+        "evidence_uses": evidence_use_fixture(),
     }
 
     with pytest.raises(ValidationError, match="directional_relation"):
@@ -1828,6 +1928,7 @@ def test_ohm_law_product_uses_reviewed_aliases_and_commutative_canonical_order(
             },
             "knowledge_refs": [KNOWLEDGE_REF],
             "evidence_refs": [EVIDENCE_REF],
+            "evidence_uses": evidence_use_fixture(),
         },
         {
             "rule_id": "sci:rule:equation-predicate-only",
@@ -1837,6 +1938,7 @@ def test_ohm_law_product_uses_reviewed_aliases_and_commutative_canonical_order(
             "expected_predicate": "increases",
             "knowledge_refs": [KNOWLEDGE_REF],
             "evidence_refs": [EVIDENCE_REF],
+            "evidence_uses": evidence_use_fixture(),
         },
         {
             "rule_id": "sci:rule:directional-dimension-payload",
@@ -1847,6 +1949,7 @@ def test_ohm_law_product_uses_reviewed_aliases_and_commutative_canonical_order(
             "expected_dimensions": {"length": "meter"},
             "knowledge_refs": [KNOWLEDGE_REF],
             "evidence_refs": [EVIDENCE_REF],
+            "evidence_uses": evidence_use_fixture(),
         },
         {
             "rule_id": "sci:rule:equation-directional-polarity",
@@ -1861,6 +1964,7 @@ def test_ohm_law_product_uses_reviewed_aliases_and_commutative_canonical_order(
             },
             "knowledge_refs": [KNOWLEDGE_REF],
             "evidence_refs": [EVIDENCE_REF],
+            "evidence_uses": evidence_use_fixture(),
         },
         {
             "rule_id": "sci:rule:validity-correction",
@@ -1873,6 +1977,7 @@ def test_ohm_law_product_uses_reviewed_aliases_and_commutative_canonical_order(
             "corrected_claim": "This evaluator cannot produce a correction.",
             "knowledge_refs": [KNOWLEDGE_REF],
             "evidence_refs": [EVIDENCE_REF],
+            "evidence_uses": evidence_use_fixture(),
         },
         {
             "rule_id": "sci:rule:empirical-correction",
@@ -1882,6 +1987,7 @@ def test_ohm_law_product_uses_reviewed_aliases_and_commutative_canonical_order(
             "corrected_claim": "Observation is not a deterministic correction.",
             "knowledge_refs": [KNOWLEDGE_REF],
             "evidence_refs": [EVIDENCE_REF],
+            "evidence_uses": evidence_use_fixture(),
         },
     ],
 )

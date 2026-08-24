@@ -50,6 +50,18 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This is a diffusion-specific steady-state statement, not a claim that every variable or system is at equilibrium.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.common.steady_state
+      purpose: 'Steady state (time independent) diffusion is described by Fick’s first law:'
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This is a diffusion-specific steady-state statement, not a claim that every variable or system is at equilibrium.
+  claim_scope_hash: sha256:3fea0019cd79a57ed95a5fcecb6de79c13ee9f8ab62344a91ef86fe96df6b6e5
   supports_knowledge: []
   curation_actor:
     type: agent

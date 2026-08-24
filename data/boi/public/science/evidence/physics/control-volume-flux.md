@@ -51,6 +51,19 @@ science:
   access_limitation: ''
   contextual_limitations:
   - The equations and sign convention in the source are required before calculating a flux balance.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.physics.control_volume_flux
+      purpose: Both forms A and B are valid for arbitrarily moving and deforming control volumes (i.e. control volumes that
+        may be expanding, translating, accelerating, or whatever), and for unsteady as well as steady flows.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - The equations and sign convention in the source are required before calculating a flux balance.
+  claim_scope_hash: sha256:1f30794153905b80eb5acf02b52078ef795deed5b5f53a0ef0913fea7966ae03
   supports_knowledge: []
   curation_actor:
     type: agent

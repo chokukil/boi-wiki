@@ -51,6 +51,19 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This is a terminology distinction, not a formula for calculating either property.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.common.accuracy_precision
+      purpose: The term “measurement accuracy” should not be used for measurement trueness and the term “measurement precision”
+        should not be used for ‘measurement accuracy’, which, however, is related to both these concepts.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This is a terminology distinction, not a formula for calculating either property.
+  claim_scope_hash: sha256:d907f3dde353684b5d28f5a8a4f1babcd44d59d83122dd57b7798c42bfd44b3d
   supports_knowledge: []
   curation_actor:
     type: agent

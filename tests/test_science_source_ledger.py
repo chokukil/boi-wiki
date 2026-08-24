@@ -273,24 +273,57 @@ def test_claim_scope_manifest_blocks_active_release_and_constrains_critical_clai
     mappings = {item["evidence_id"]: item for item in manifest["mappings"]}
     assert set(mappings) == EXPECTED_EVIDENCE_IDS
     assert all(item["may_enter_active_release"] is False for item in mappings.values())
-    assert all(item["allowed_claims"] == [] for item in mappings.values() if item["qualification_status"] == "inactive")
+    assert all(
+        item["claim_scope"]["allowed_claims"] == []
+        for item in mappings.values()
+        if item["qualification_status"] == "inactive"
+    )
     catalog = ScienceCatalog(science_root.parents[1])
     for evidence_id, item in mappings.items():
         evidence = catalog.evidence(evidence_id)
         assert item["allowed_original_text_hash"] == evidence.original_text_hash
-        assert item["binding_contextual_limitations"] == evidence.contextual_limitations
-    assert mappings["sci-evidence:spin-coating:vendor-spin-time-guidance"]["forbidden_claim_families"] == [
-        "spin_coating.rpm_thickness_direction"
+        assert item["claim_scope"] == evidence.claim_scope
+        assert item["claim_scope_hash"] == evidence.claim_scope_hash
+        assert evidence.claim_scope["limitations"] == evidence.contextual_limitations
+    assert mappings["sci-evidence:spin-coating:vendor-spin-time-guidance"]["claim_scope"][
+        "forbidden_claim_families"
+    ] == [
+        "spin_coating.rpm_thickness_direction",
+        "spin_coating.spin_speed_thickness_direction",
     ]
-    assert mappings["sci-evidence:spin-coating:vendor-spin-curve-observation"]["allowed_claims"][0][
-        "claim_family"
-    ] == "spin_coating.rpm_thickness_direction.product_scoped_figure_observation"
-    assert mappings["sci-evidence:common:uncertainty-error"]["allowed_claims"][0]["claim_family"] == (
+    observation_scope = mappings[
+        "sci-evidence:spin-coating:vendor-spin-curve-observation"
+    ]["claim_scope"]
+    assert observation_scope["allowed_claims"][0]["claim_family"] == (
+        "spin_coating.rpm_thickness_direction.product_scoped_figure_observation"
+    )
+    assert observation_scope["allowed_claims"][0]["required_conditions"] == [
+        "Product scope is AZ 125nXT grades AZ 125nXT-10 B and AZ 125nXT-7 B.",
+        "Source revision is 01/24.",
+        "Use is limited to the visually observed plotted marker ranges recorded in figure_observation.",
+        "No numeric recipe, interpolation, or extrapolation is authorized.",
+    ]
+    assert mappings["sci-evidence:common:uncertainty-error"]["claim_scope"]["allowed_claims"][0]["claim_family"] == (
         "measurement.uncertainty_definition_only"
     )
-    assert mappings["sci-evidence:common:repeatability-reproducibility"]["allowed_claims"][0]["claim_family"] == (
+    assert mappings["sci-evidence:common:repeatability-reproducibility"]["claim_scope"]["allowed_claims"][0]["claim_family"] == (
         "measurement.reproducibility_definition_only"
     )
+
+
+def test_kcl_claim_scope_requires_lumped_no_accumulation_model() -> None:
+    """The node equation must not be presented without its lumped-model continuity limit."""
+    evidence = ScienceCatalog(_science_root().parents[1]).evidence(
+        "sci-evidence:circuits:kcl-law"
+    )
+    claim = evidence.claim_scope["allowed_claims"][0]
+
+    assert claim["required_conditions"] == [
+        "Current reference directions are explicit and consistent.",
+        "The lumped-matter circuit approximation applies.",
+        "No net charge accumulation occurs at the node over the modeled timescale.",
+    ]
+    assert any("lumped-matter" in item for item in evidence.claim_scope["limitations"])
 
 
 def test_science_task_files_have_one_terminal_newline_without_blank_tail() -> None:

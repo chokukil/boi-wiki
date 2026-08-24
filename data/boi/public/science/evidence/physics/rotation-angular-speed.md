@@ -51,6 +51,19 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This is a kinematic definition and does not alone determine a coating outcome.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.physics.rotation_angular_speed
+      purpose: The angular speed is the magnitude of the rate of change of angle with respect to time, which we denote by the
+        Greek letter ω.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This is a kinematic definition and does not alone determine a coating outcome.
+  claim_scope_hash: sha256:53b3492b52d238d8221eec276d8cc3b1e161d100dbc5b13f4ce2d90ecd6e311b
   supports_knowledge: []
   curation_actor:
     type: agent

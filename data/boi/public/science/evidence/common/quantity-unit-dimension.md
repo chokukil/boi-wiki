@@ -51,6 +51,19 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This defines the SI dimensional framework; it does not by itself validate a proposed equation.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.common.quantity_unit_dimension
+      purpose: Physical quantities can be organized in a system of dimensions, where the system used is decided by convention.
+        Each of the seven base quantities used in the SI is regarded as having its own dimension.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This defines the SI dimensional framework; it does not by itself validate a proposed equation.
+  claim_scope_hash: sha256:aa8a667fe5b102859242360e887d8b5520843e6eca6e3011260144cd59c155ae
   supports_knowledge: []
   curation_actor:
     type: agent

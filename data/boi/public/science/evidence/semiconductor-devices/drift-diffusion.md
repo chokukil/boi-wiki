@@ -50,6 +50,18 @@ science:
   access_limitation: ''
   contextual_limitations:
   - The relative contribution requires carrier gradients, fields, material parameters, and boundary conditions.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.semiconductor_devices.drift_diffusion
+      purpose: In addition to the drift current, there is a second component of current called the diffusion current.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - The relative contribution requires carrier gradients, fields, material parameters, and boundary conditions.
+  claim_scope_hash: sha256:826cd76d43fb3b590d0691611be007fb96d5be6e863de5eeb1a7c577f7476ede
   supports_knowledge: []
   curation_actor:
     type: agent

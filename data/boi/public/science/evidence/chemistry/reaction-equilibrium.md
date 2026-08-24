@@ -51,6 +51,19 @@ science:
   access_limitation: ''
   contextual_limitations:
   - Activities, standard states, and the balanced reaction remain necessary for quantitative use.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.chemistry.reaction_equilibrium
+      purpose: K is the equilibrium constant. It has the same form as Q, but only uses the amounts of products and reactants
+        at equilibrium.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - Activities, standard states, and the balanced reaction remain necessary for quantitative use.
+  claim_scope_hash: sha256:91a3ab9012b62c94e392969bcefd78cc35d8b46395f813b5f512da6a8eb9de29
   supports_knowledge: []
   curation_actor:
     type: agent

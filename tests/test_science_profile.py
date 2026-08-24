@@ -31,6 +31,20 @@ def valid_boi_metadata(science_type: str) -> dict:
 def valid_science_metadata(science_type: str) -> dict:
     metadata = valid_boi_metadata(science_type)
     original_text = "The measurement is traceable."
+    claim_scope = {
+        "schema_version": "0.1",
+        "allowed_claims": [
+            {
+                "claim_family": "fixture.measurement_traceability",
+                "purpose": "Support only the locator-bound fixture statement.",
+                "required_conditions": ["The exact reviewed locator applies."],
+            }
+        ],
+        "forbidden_claim_families": ["fixture.unbounded"],
+        "limitations": ["This fixture does not establish traceability by itself."],
+    }
+    from boi_api.app.science.digests import sha256_digest
+
     science_by_type = {
         "boi/science-source": {
             "source_id": "sci-source:fixture",
@@ -45,6 +59,8 @@ def valid_science_metadata(science_type: str) -> dict:
             "original_text": original_text,
             "original_text_hash": "sha256:" + hashlib.sha256(original_text.encode("utf-8")).hexdigest(),
             "reviewed_translation": "측정은 추적 가능하다.",
+            "claim_scope": claim_scope,
+            "claim_scope_hash": sha256_digest(claim_scope),
         },
         "boi/science-knowledge": {
             "knowledge_id": "sci:knowledge:fixture",
@@ -65,6 +81,14 @@ def valid_science_metadata(science_type: str) -> dict:
             "outcomes": ["CONSISTENT"],
             "knowledge_refs": ["sci:knowledge:fixture"],
             "evidence_refs": ["sci:evidence:fixture"],
+            "evidence_uses": [
+                {
+                    "evidence_ref": "sci:evidence:fixture",
+                    "claim_family": "fixture.measurement_traceability",
+                    "purpose": "Support only the locator-bound fixture statement.",
+                    "required_conditions": ["The exact reviewed locator applies."],
+                }
+            ],
         },
         "boi/science-pack": {
             "pack_id": "sci-pack:fixture",
@@ -178,6 +202,45 @@ def test_evidence_hash_must_match_its_utf8_original_text():
     assert "science.original_text_hash must match original_text UTF-8 SHA-256" in validate_sci_profile_metadata(metadata)
 
 
+def test_evidence_claim_scope_is_closed_and_hash_bound():
+    """Changing executable Evidence scope without its digest must fail the profile."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-evidence")
+    metadata["science"]["claim_scope"]["allowed_claims"][0]["purpose"] = "Broader purpose."
+
+    assert "science.claim_scope_hash must match science.claim_scope" in validate_sci_profile_metadata(metadata)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        ("extra_scope_key", "science.claim_scope has unsupported fields"),
+        ("extra_claim_key", "science.claim_scope.allowed_claims items have unsupported fields"),
+        ("blank_family", "science.claim_scope.allowed_claims claim_family must be a nonempty string"),
+        ("collision", "science.claim_scope cannot both allow and forbid the same claim family"),
+    ],
+)
+def test_evidence_claim_scope_rejects_open_or_ambiguous_authority(mutation: str, error: str):
+    """Evidence authorization must remain a small closed vocabulary."""
+    from boi_api.app.science.digests import sha256_digest
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-evidence")
+    scope = metadata["science"]["claim_scope"]
+    if mutation == "extra_scope_key":
+        scope["free_form_authority"] = True
+    elif mutation == "extra_claim_key":
+        scope["allowed_claims"][0]["statement"] = "Detached advisory text."
+    elif mutation == "blank_family":
+        scope["allowed_claims"][0]["claim_family"] = " "
+    else:
+        scope["forbidden_claim_families"] = [scope["allowed_claims"][0]["claim_family"]]
+    metadata["science"]["claim_scope_hash"] = sha256_digest(scope)
+
+    assert error in validate_sci_profile_metadata(metadata)
+
+
 @pytest.mark.parametrize(
     ("field_name", "invalid_value", "error"),
     [
@@ -203,6 +266,40 @@ def test_science_evidence_refs_must_match_okf_source_refs():
     metadata["science"]["evidence_refs"] = ["sci:evidence:other"]
 
     assert "science.evidence_refs must match OKF source_refs" in validate_sci_profile_metadata(metadata)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        ("missing", "science.evidence_uses is required"),
+        ("wrong_ref", "science.evidence_uses must exactly match science.evidence_refs"),
+        ("duplicate_ref", "science.evidence_refs must be unique"),
+        ("extra_key", "science.evidence_uses items have unsupported fields"),
+        ("blank_purpose", "science.evidence_uses purpose must be a nonempty string"),
+    ],
+)
+def test_science_rule_profile_validates_closed_typed_evidence_uses(
+    mutation: str, error: str
+):
+    """A malformed Rule use must fail lint before Catalog resolution."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-rule")
+    if mutation == "missing":
+        del metadata["science"]["evidence_uses"]
+    elif mutation == "wrong_ref":
+        metadata["science"]["evidence_uses"][0]["evidence_ref"] = "sci:evidence:other"
+    elif mutation == "duplicate_ref":
+        metadata["science"]["evidence_refs"].append("sci:evidence:fixture")
+        metadata["source_refs"].append(
+            {"type": "boi", "ref": "sci:evidence:fixture"}
+        )
+    elif mutation == "extra_key":
+        metadata["science"]["evidence_uses"][0]["advisory"] = True
+    else:
+        metadata["science"]["evidence_uses"][0]["purpose"] = " "
+
+    assert error in validate_sci_profile_metadata(metadata)
 
 
 @pytest.mark.parametrize(

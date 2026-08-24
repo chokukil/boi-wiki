@@ -37,6 +37,21 @@ def _release_manifest_digest(metadata: dict, body: str) -> str:
     return _canonical_digest(manifest, body)
 
 
+def _fixture_claim_scope() -> dict:
+    return {
+        "schema_version": "0.1",
+        "allowed_claims": [
+            {
+                "claim_family": "fixture.direction",
+                "purpose": "Support only the fixture directional relation.",
+                "required_conditions": ["The fixture comparison is controlled."],
+            }
+        ],
+        "forbidden_claim_families": ["fixture.unbounded"],
+        "limitations": ["This Evidence supports only a test fixture."],
+    }
+
+
 def _metadata(science_type: str, science: dict, *, boi_id: str) -> dict:
     metadata = {
         "okf_version": "0.1",
@@ -55,6 +70,18 @@ def _metadata(science_type: str, science: dict, *, boi_id: str) -> dict:
         "review": {"reviewer": "science-reviewer"},
         "science": science,
     }
+    if science_type in {"boi/science-source", "boi/science-evidence"}:
+        metadata.update(
+            {
+                "author": {"type": "agent", "agent_id": "fixture-author"},
+                "status": "draft",
+                "review": {
+                    "review_status": "pending_review",
+                    "required_role": "Admin",
+                    "authorized_review_events": [],
+                },
+            }
+        )
     if science_type in {"boi/science-knowledge", "boi/science-rule"}:
         metadata["source_refs"] = [{"type": "boi", "ref": ref} for ref in science["evidence_refs"]]
     else:
@@ -76,15 +103,16 @@ def _write_release(boi_root: Path, relative: str, metadata: dict, body: str = "#
 
 
 def _object_metadata() -> dict[str, tuple[str, dict, str]]:
+    claim_scope = _fixture_claim_scope()
     return {
         "source": (
             "boi/science-source",
-            {"source_id": "sci:source:fixture", "source_role": "normative_definition", "original_url": "https://example.test/source", "content_hash": "sha256:source"},
+            {"source_id": "sci:source:fixture", "source_role": "normative_definition", "original_url": "https://example.test/source", "content_hash": "sha256:source", "retrieval_status": "verified", "retrieved_at": "2026-08-25T09:05:00+09:00", "curated_at": "2026-08-25T09:10:00+09:00", "release_eligibility": "blocked_pending_authorized_admin_review"},
             "sources/source.md",
         ),
         "evidence": (
             "boi/science-evidence",
-            {"evidence_id": "sci:evidence:fixture", "source_id": "sci:source:fixture", "locator": {"section": "1"}, "original_text": "Source text.", "original_text_hash": "sha256:" + hashlib.sha256(b"Source text.").hexdigest(), "reviewed_translation": "원문"},
+            {"evidence_id": "sci:evidence:fixture", "source_id": "sci:source:fixture", "locator": {"section": "1", "retrieved_at": "2026-08-25T09:05:00+09:00"}, "original_text": "Source text.", "original_text_hash": "sha256:" + hashlib.sha256(b"Source text.").hexdigest(), "reviewed_translation": "원문", "decision_eligibility": "pending_review", "curated_at": "2026-08-25T09:10:00+09:00", "release_eligibility": "blocked_pending_authorized_admin_review", "claim_scope": claim_scope, "claim_scope_hash": "sha256:" + hashlib.sha256(json.dumps(claim_scope, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()},
             "evidence/evidence.md",
         ),
         "knowledge": (
@@ -94,7 +122,7 @@ def _object_metadata() -> dict[str, tuple[str, dict, str]]:
         ),
         "rule": (
             "boi/science-rule",
-            {"rule_id": "sci:rule:fixture", "pack_id": "sci-pack:fixture", "rule_kind": "directional_relation", "inputs": ["sci:concept:input", "sci:concept:response"], "outcomes": ["VIOLATION", "CONSISTENT"], "subject_concept_id": "sci:concept:input", "object_concept_id": "sci:concept:response", "relation_kind": "monotonic_direction", "expected_predicate": "decreases", "contradiction_predicates": ["increases"], "knowledge_refs": ["sci:knowledge:fixture"], "evidence_refs": ["sci:evidence:fixture"]},
+            {"rule_id": "sci:rule:fixture", "pack_id": "sci-pack:fixture", "rule_kind": "directional_relation", "inputs": ["sci:concept:input", "sci:concept:response"], "outcomes": ["VIOLATION", "CONSISTENT"], "subject_concept_id": "sci:concept:input", "object_concept_id": "sci:concept:response", "relation_kind": "monotonic_direction", "expected_predicate": "decreases", "contradiction_predicates": ["increases"], "knowledge_refs": ["sci:knowledge:fixture"], "evidence_refs": ["sci:evidence:fixture"], "evidence_uses": [{"evidence_ref": "sci:evidence:fixture", "claim_family": "fixture.direction", "purpose": "Support only the fixture directional relation.", "required_conditions": ["The fixture comparison is controlled."]}]},
             "rules/rule.md",
         ),
         "binding": (
@@ -183,6 +211,43 @@ def _replace_release_components(
     metadata["science"]["components"] = list(components)
     metadata["science"]["component_digests"] = components
     _write_release(boi_root, relative, metadata)
+
+
+def _approve_decision_document(
+    boi_root: Path,
+    relative: str,
+    *,
+    reviewer_id: str = "reviewer-1",
+    occurred_at: str = "2026-08-25T09:30:00+09:00",
+) -> None:
+    path = boi_root / "public" / "science" / relative
+    metadata = yaml.safe_load(path.read_text(encoding="utf-8").split("---", 2)[1])
+    metadata["author"] = {"type": "agent", "agent_id": "fixture-author"}
+    metadata["status"] = "approved"
+    metadata["review"] = {
+        "reviewer": reviewer_id,
+        "reviewed_at": occurred_at,
+        "review_status": "approved",
+        "required_role": "Admin",
+        "authorized_review_events": [
+            {
+                "decision": "approved",
+                "actor": {"type": "human", "user_id": reviewer_id},
+                "occurred_at": occurred_at,
+                "role": "Admin",
+            }
+        ],
+    }
+    metadata["science"]["release_eligibility"] = "active_release_eligible"
+    if metadata["type"] == "boi/science-evidence":
+        metadata["science"]["decision_eligibility"] = "eligible"
+    _write_document(boi_root, relative, metadata)
+
+
+def _trusted_admin_roles(actor: dict[str, str]) -> set[str]:
+    if actor == {"type": "human", "user_id": "reviewer-1"}:
+        return {"science.admin"}
+    return set()
 
 
 def test_release_resolver_rejects_digest_drift(science_tree: Path):
@@ -365,6 +430,115 @@ def test_catalog_produces_digest_bound_typed_rule_set(science_tree: Path):
     assert released.semantic_digest == component.semantic_digest == sha256_digest(released.rule)
 
 
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("claim_family", "outside allowed claim scope"),
+        ("purpose", "purpose does not match"),
+        ("required_conditions", "required conditions do not match"),
+        ("forbidden_family", "forbidden claim family"),
+    ],
+)
+def test_catalog_rejects_rule_evidence_use_outside_embedded_hashed_scope(
+    science_tree: Path, mutation: str, message: str
+):
+    """The engine must never receive a Rule whose Evidence use exceeds stored authority."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceCatalogError
+    from boi_api.app.science.models import ReleaseSelection
+
+    rule_path = science_tree / "public/science/rules/rule.md"
+    metadata = yaml.safe_load(rule_path.read_text(encoding="utf-8").split("---", 2)[1])
+    use = metadata["science"]["evidence_uses"][0]
+    if mutation == "claim_family":
+        use["claim_family"] = "fixture.other"
+    elif mutation == "purpose":
+        use["purpose"] = "Use the span for a broader conclusion."
+    elif mutation == "required_conditions":
+        use["required_conditions"] = []
+    else:
+        use["claim_family"] = "fixture.unbounded.direction"
+    _write_document(science_tree, "rules/rule.md", metadata)
+    _replace_release_components(
+        science_tree,
+        "sci-release:0.1.0",
+        {"sci:rule:fixture": _component_digest(science_tree, "rules/rule.md")},
+    )
+    catalog = ScienceCatalog(science_tree)
+    release_set = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:0.1.0")
+    )
+
+    with pytest.raises(ScienceCatalogError, match=message):
+        catalog.resolve_rule_set(release_set)
+
+
+@pytest.mark.parametrize(
+    "claim_family",
+    [
+        "spin_coating.rpm_thickness_direction",
+        "spin_coating.rpm_thickness_direction.product_scoped",
+        "spin_coating.spin_speed_thickness_direction",
+        "spin_coating.spin_speed_thickness_direction.product_scoped",
+    ],
+)
+def test_spin_time_evidence_cannot_authorize_any_spin_speed_direction_family(
+    science_tree: Path, claim_family: str
+):
+    """The spin-time prose must never be repurposed as RPM-to-thickness Evidence."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.digests import sha256_digest
+    from boi_api.app.science.exceptions import ScienceCatalogError
+    from boi_api.app.science.models import ReleaseSelection
+
+    evidence_path = science_tree / "public/science/evidence/evidence.md"
+    evidence_metadata = yaml.safe_load(
+        evidence_path.read_text(encoding="utf-8").split("---", 2)[1]
+    )
+    scope = {
+        "schema_version": "0.1",
+        "allowed_claims": [
+            {
+                "claim_family": "spin_coating.spin_time_thinning.product_scoped",
+                "purpose": "Support only product-scoped spin-time thinning.",
+                "required_conditions": ["Scope to the cited product revision."],
+            }
+        ],
+        "forbidden_claim_families": [
+            "spin_coating.rpm_thickness_direction",
+            "spin_coating.spin_speed_thickness_direction",
+        ],
+        "limitations": ["This prose contains no RPM direction."],
+    }
+    evidence_metadata["science"]["claim_scope"] = scope
+    evidence_metadata["science"]["claim_scope_hash"] = sha256_digest(scope)
+    _write_document(science_tree, "evidence/evidence.md", evidence_metadata)
+
+    rule_path = science_tree / "public/science/rules/rule.md"
+    rule_metadata = yaml.safe_load(
+        rule_path.read_text(encoding="utf-8").split("---", 2)[1]
+    )
+    rule_metadata["science"]["evidence_uses"][0] = {
+        "evidence_ref": "sci:evidence:fixture",
+        "claim_family": claim_family,
+        "purpose": "Claim a spin-speed thickness direction.",
+        "required_conditions": [],
+    }
+    _write_document(science_tree, "rules/rule.md", rule_metadata)
+    _replace_release_components(
+        science_tree,
+        "sci-release:0.1.0",
+        {"sci:rule:fixture": _component_digest(science_tree, "rules/rule.md")},
+    )
+    catalog = ScienceCatalog(science_tree)
+    release_set = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:0.1.0")
+    )
+
+    with pytest.raises(ScienceCatalogError, match="forbidden claim family"):
+        catalog.resolve_rule_set(release_set)
+
+
 @pytest.mark.parametrize("status", ["release_candidate", "superseded", "withdrawn"])
 def test_active_release_rejects_when_no_active_release_exists(science_tree: Path, status: str):
     """Promoting a non-active release must not silently make it the current release."""
@@ -378,6 +552,173 @@ def test_active_release_rejects_when_no_active_release_exists(science_tree: Path
 
     with pytest.raises(ScienceOperationalError, match="exactly one active Science release"):
         ScienceCatalog(science_tree).active_release()
+
+
+def test_active_release_accepts_trusted_admin_reviewed_source_and_evidence(science_tree: Path):
+    """Only an externally resolved science.admin approval may activate decision material."""
+    from boi_api.app.science.catalog import ScienceCatalog
+
+    _approve_decision_document(science_tree, "sources/source.md")
+    _approve_decision_document(science_tree, "evidence/evidence.md")
+    _replace_release_components(
+        science_tree,
+        "sci-release:0.1.0",
+        {
+            "sci:source:fixture": _component_digest(science_tree, "sources/source.md"),
+            "sci:evidence:fixture": _component_digest(science_tree, "evidence/evidence.md"),
+        },
+    )
+
+    release = ScienceCatalog(
+        science_tree, reviewer_role_resolver=_trusted_admin_roles
+    ).active_release()
+
+    assert {component.ref for component in release.components} == {
+        "sci:source:fixture",
+        "sci:evidence:fixture",
+    }
+
+
+def test_direct_catalog_resolution_of_active_decision_release_fails_closed(
+    science_tree: Path,
+):
+    """Calling resolve_release directly must not bypass active-release governance."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceOperationalError
+
+    _replace_release_components(
+        science_tree,
+        "sci-release:0.1.0",
+        {
+            "sci:source:fixture": _component_digest(science_tree, "sources/source.md"),
+            "sci:evidence:fixture": _component_digest(science_tree, "evidence/evidence.md"),
+        },
+    )
+
+    with pytest.raises(ScienceOperationalError, match="trusted reviewer-role resolver"):
+        ScienceCatalog(science_tree).resolve_release("sci-release:0.1.0")
+
+
+def test_active_evidence_requires_its_exact_pinned_source_component(
+    science_tree: Path,
+):
+    """A globally indexed Source must not silently ground active Evidence."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceOperationalError
+
+    _approve_decision_document(science_tree, "evidence/evidence.md")
+    _replace_release_components(
+        science_tree,
+        "sci-release:0.1.0",
+        {"sci:evidence:fixture": _component_digest(science_tree, "evidence/evidence.md")},
+    )
+
+    with pytest.raises(ScienceOperationalError, match="requires its pinned Source"):
+        ScienceCatalog(
+            science_tree, reviewer_role_resolver=_trusted_admin_roles
+        ).resolve_release("sci-release:0.1.0")
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("no_resolver", "trusted reviewer-role resolver"),
+        ("draft", "must be approved"),
+        ("pending_review", "authorized approved review"),
+        ("inactive", "decision eligibility"),
+        ("blocked", "release eligibility"),
+        ("missing_event", "authorized approved review"),
+        ("approval_before_curation", "temporally invalid"),
+        ("missing_author", "author identity"),
+        ("self_approval", "self-approval"),
+        ("fake_admin_role", "not authorized as science.admin"),
+        ("resolver_not_admin", "not authorized as science.admin"),
+    ],
+)
+def test_active_release_rejects_untrusted_or_ineligible_decision_components(
+    science_tree: Path, case: str, message: str
+):
+    """Caller-written role claims and stale workflow labels must never activate Evidence."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceOperationalError
+
+    _approve_decision_document(science_tree, "sources/source.md")
+    _approve_decision_document(science_tree, "evidence/evidence.md")
+    target = "evidence/evidence.md"
+    path = science_tree / "public" / "science" / target
+    metadata = yaml.safe_load(path.read_text(encoding="utf-8").split("---", 2)[1])
+    resolver = _trusted_admin_roles
+    if case == "no_resolver":
+        resolver = None
+    elif case == "draft":
+        metadata["status"] = "draft"
+    elif case == "pending_review":
+        metadata["review"]["review_status"] = "pending_review"
+    elif case == "inactive":
+        metadata["science"]["decision_eligibility"] = "inactive"
+    elif case == "blocked":
+        metadata["science"]["release_eligibility"] = "blocked_pending_authorized_admin_review"
+    elif case == "missing_event":
+        metadata["review"]["authorized_review_events"] = []
+    elif case == "approval_before_curation":
+        metadata["review"]["authorized_review_events"][0]["occurred_at"] = (
+            "2026-08-25T09:06:00+09:00"
+        )
+    elif case == "missing_author":
+        del metadata["author"]
+    elif case == "self_approval":
+        metadata["author"] = {"type": "human", "user_id": "reviewer-1"}
+    elif case == "fake_admin_role":
+        metadata["review"]["authorized_review_events"][0]["actor"] = {
+            "type": "human",
+            "user_id": "not-an-admin",
+        }
+    else:
+        resolver = lambda _actor: {"science.power_user"}
+    _write_document(science_tree, target, metadata)
+    _replace_release_components(
+        science_tree,
+        "sci-release:0.1.0",
+        {
+            "sci:source:fixture": _component_digest(science_tree, "sources/source.md"),
+            "sci:evidence:fixture": _component_digest(science_tree, "evidence/evidence.md"),
+        },
+    )
+
+    with pytest.raises(ScienceOperationalError, match=message):
+        ScienceCatalog(
+            science_tree, reviewer_role_resolver=resolver
+        ).active_release()
+
+
+def test_candidate_may_resolve_pending_evidence_but_cannot_become_an_active_rule_set(
+    science_tree: Path,
+):
+    """Draft Evidence may be assembled for review, never evaluated as operational truth."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceOperationalError
+    from boi_api.app.science.models import ReleaseSelection
+
+    release_path = science_tree / "public/science/releases/sci-release-0.1.0.md"
+    metadata = yaml.safe_load(release_path.read_text(encoding="utf-8").split("---", 2)[1])
+    metadata["science"]["status"] = "release_candidate"
+    _write_release(science_tree, "releases/sci-release-0.1.0.md", metadata)
+    _replace_release_components(
+        science_tree,
+        "sci-release:0.1.0",
+        {
+            "sci:evidence:fixture": _component_digest(science_tree, "evidence/evidence.md"),
+            "sci:rule:fixture": _component_digest(science_tree, "rules/rule.md"),
+        },
+    )
+    catalog = ScienceCatalog(science_tree)
+    release_set = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:0.1.0")
+    )
+
+    assert release_set.foundation_release.status == "release_candidate"
+    with pytest.raises(ScienceOperationalError, match="cannot be evaluated as active"):
+        catalog.resolve_rule_set(release_set)
 
 
 def test_active_release_rejects_multiple_active_releases(science_tree: Path):
@@ -589,7 +930,7 @@ def test_resolved_release_set_preserves_roles_and_builds_deterministic_combined_
     catalog = ScienceCatalog(science_tree)
 
     resolved = catalog.resolve_release_set(selection)
-    rule_set = catalog.resolve_rule_set(resolved)
+    rule_set = catalog.resolve_rule_set(resolved, for_active_evaluation=False)
 
     assert isinstance(resolved, ResolvedReleaseSet)
     assert resolved.selection == selection
@@ -676,6 +1017,8 @@ def test_catalog_to_engine_cross_task_proof_uses_exact_full_release_selection(
     from boi_api.app.science.engine import verify_claim
     from boi_api.app.science.models import ClaimPacket, PrimaryVerdict, ReleaseSelection
 
+    _approve_decision_document(science_tree, "sources/source.md")
+    _approve_decision_document(science_tree, "evidence/evidence.md")
     foundation_components = {
         "sci:source:fixture": _component_digest(science_tree, "sources/source.md"),
         "sci:evidence:fixture": _component_digest(science_tree, "evidence/evidence.md"),
@@ -694,7 +1037,7 @@ def test_catalog_to_engine_cross_task_proof_uses_exact_full_release_selection(
         dependencies=[{"relation": "uses", "ref": "sci-pack:fixture"}],
     )
     _add_release(
-        science_tree, release_id="sci-release:domain-proof", status="release_candidate"
+        science_tree, release_id="sci-release:domain-proof", status="active"
     )
     _replace_release_components(
         science_tree,
@@ -709,7 +1052,7 @@ def test_catalog_to_engine_cross_task_proof_uses_exact_full_release_selection(
     _add_release(
         science_tree,
         release_id="sci-release:application-proof",
-        status="release_candidate",
+        status="active",
     )
     _replace_release_components(
         science_tree,
@@ -753,7 +1096,9 @@ def test_catalog_to_engine_cross_task_proof_uses_exact_full_release_selection(
             },
         }
     )
-    catalog = ScienceCatalog(science_tree)
+    catalog = ScienceCatalog(
+        science_tree, reviewer_role_resolver=_trusted_admin_roles
+    )
 
     release_set = catalog.resolve_release_set(selection)
     rule_set = catalog.resolve_rule_set(release_set)

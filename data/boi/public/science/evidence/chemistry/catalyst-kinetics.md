@@ -55,6 +55,19 @@ science:
   contextual_limitations:
   - This span distinguishes kinetic effects from thermodynamic tendency; it does not quantify rate, equilibrium composition,
     or catalyst performance.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: chemistry.catalyst_affects_kinetics_not_thermodynamic_tendency
+      purpose: A catalyst affects reaction kinetics and does not alter the thermodynamic tendency for the reaction to occur.
+      required_conditions:
+      - Do not infer numerical rate or equilibrium composition.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This span distinguishes kinetic effects from thermodynamic tendency; it does not quantify rate, equilibrium composition,
+      or catalyst performance.
+  claim_scope_hash: sha256:11c90874fc14ec2b7b1d7307e4e64e82e76f2db5b8c4858e003ca916852b95f7
   supports_knowledge: []
   curation_actor:
     type: agent

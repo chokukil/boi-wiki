@@ -50,6 +50,18 @@ science:
   access_limitation: ''
   contextual_limitations:
   - This does not provide constitutive equations, initial conditions, or parasitic limits.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: locator_bound.circuits.capacitor_inductor
+      purpose: And the state variable for an inductor was the current while that for a capacitor was the capacitor voltage.
+      required_conditions:
+      - Authorized Admin review is still required before any active release use.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This does not provide constitutive equations, initial conditions, or parasitic limits.
+  claim_scope_hash: sha256:55d14934b0a79770485265a3890e22accf593f545dde3389a41138e35d21eeda
   supports_knowledge: []
   curation_actor:
     type: agent

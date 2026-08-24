@@ -56,6 +56,20 @@ science:
   contextual_limitations:
   - This is a qualitative materials example. Effect direction depends on defect type and microstructure; it does not supply
     a universal strength model.
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: materials.defect_clusters.qualitative_strength_effect
+      purpose: The cited examples allow a qualitative statement that void clusters weaken metals while precipitates may weaken
+        or strengthen them.
+      required_conditions:
+      - Do not generalize beyond the cited defect types and qualitative scope.
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This is a qualitative materials example. Effect direction depends on defect type and microstructure; it does not supply
+      a universal strength model.
+  claim_scope_hash: sha256:997fe3b5f7f00bdddf4f2277d9c5715bf79214bdfe554785ef6d6595c39e0412
   supports_knowledge: []
   curation_actor:
     type: agent
