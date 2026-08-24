@@ -4,7 +4,7 @@ Date: 2026-08-25 (Asia/Seoul)
 
 Branch: `codex/science-application`
 
-Implementation commit: `6615892d99c1e59e96630af703cc770b508928d7`
+Implementation commit: `1f2ee564adc4a3f76083314e8cfcdd3d60ac5c66`
 
 Reviewed base: `1a28f8bf653db9fb27040fb6a9832af50e48f859`
 
@@ -13,7 +13,7 @@ Foundation enforcement base: `707ddb7ee680326bf006dd5d05582e4d5bc3bc04`
 ## Scope and trust boundaries
 
 This change fixes every Critical/Important finding in the Task 2 review and all
-five follow-up re-reviews, including the acceptance compact-token report,
+follow-up re-reviews, including the final release-bound URL acceptance report,
 while preserving the Task 1 atomic record/audit protocol and the Foundation
 Catalog-issued operational capability.
 
@@ -54,34 +54,37 @@ Catalog-issued operational capability.
 
 ### I1: closed Evidence locator
 
-- Evidence locators now use a closed `EvidenceLocator` schema for reviewed
+- Evidence locators use a closed `EvidenceLocator` schema for reviewed
   page, section, equation, source URL, hash, and transcription metadata.
 - All non-URL locator fields pass the shared recursive non-secret validator.
-  Locator URLs require HTTPS and reject userinfo, credential query/fragment
-  names, token-shaped values, and endpoint/credential scalar patterns.
+  Locator URLs require canonical HTTPS and reject userinfo, fragments, and all
+  non-allowlisted query forms. Their trust comes from an exact release-bound
+  qualification, not from guessing whether path text resembles a credential.
 - Service and store failures return closed diagnostics; rejected locator secret
   values and credential URLs are never echoed or written to immutable storage.
 
-### Final I1: one stable-source URL policy
+### Final I1: release-bound reviewed Source URL identity
 
-- `validate_credential_free_https_url()` is now the single policy used by all
-  three Evidence locator URL fields, the persisted Source link, and the service
-  Source lookup before report construction.
+- `validate_credential_free_https_url()` is the shared canonical syntax policy
+  for all three Evidence locator URL fields and the persisted Source link.
 - The exact persisted string must be its checked canonical ASCII serialization.
   Raw C0/space characters, NFKC-changing input, malformed percent syntax,
   noncanonical scheme/hostname/port, percent-encoded authority, userinfo, and
   every fragment fail closed before parsing can discard or reinterpret bytes.
-- Path normalization runs before every strict percent-decode iteration. A
-  shared boundary tokenizer scans exact markers and reviewed multi-token
-  sequences anywhere across path segments and canonical hostname labels. It
-  recognizes all 22 generic/vendor families plus `X-Amz`/`X-Goog`/`X-Ms`
-  credential/signature and SharedAccessSignature forms without treating
-  `signals`, `sigma`, or `authors` as `sig`/`auth` markers.
-- Long unambiguous credential families and vendor combinations are also found
-  anywhere inside one compact alphanumeric token, including a preceding
-  `file`. Short ambiguous `auth`/`sig`/`token`/`secret`/`sas` markers require an
-  exact token boundary or a reviewed long, high-diversity opaque-value suffix;
-  `tokenization` and `secretory` therefore remain valid scientific paths.
+- Path normalization runs before every strict percent-decode iteration. It no
+  longer uses substring, token, or entropy heuristics that can both admit
+  opaque values and reject ordinary scientific filenames.
+- `ReviewedSourceURLProfile` binds the exact release-set digest, Source and
+  Evidence IDs/digests, canonical Source URL/digest, exact locator/digest, and
+  every locator URL digest. Candidate preview profiles are serializable but
+  cannot become Evidence links or authoritative reports.
+- Only `ScienceCatalog` can issue the opaque, immutable, non-copyable,
+  non-serializable `ReviewedSourceURLIdentity` after resolving the exact active
+  release set and authorized approved Source/Evidence components. Service
+  rejects raw profiles and consumes only this sealed identity.
+- `EvidenceLink`, `VerificationReport`, and `ScienceRuntimeStore` revalidate the
+  complete persisted profile/component/URL/locator digest chain on normal save,
+  private-file load, and WAL recovery.
 - Stable source queries are denied by default. The only current reviewed
   exception is `download=true|1`, which preserves the checked-in BIPM immutable
   PDF source links without admitting a signed or tracking URL.
@@ -92,8 +95,9 @@ Catalog-issued operational capability.
   `closed_science_validation_error()` factory is called only after the raw
   validation exception scope exits, so the future Task 3 REST adapter can raise
   a closed error with neither a cause nor implicit secret-bearing context.
-- The same scope-exit rule is now enforced by `validate_with_closed_error()` at
-  the real service, Store save/load, and report WAL recovery conversions. The
+- The same scope-exit rule is enforced by `validate_with_closed_error()` at LLM
+  configuration/response, confirmation, Catalog, service, Store save/load,
+  audit, and top-level/nested WAL conversions. The
   helper drops its validation callback before raising, and no raw Pydantic
   exception remains in `__cause__`, `__context__`, traceback, or serialized
   exception chains.
@@ -173,6 +177,14 @@ The review fixes were implemented in adversarial TDD slices.
     review had already shown that the same four production conversions retained
     raw Pydantic `ValidationError.errors()` in `__context__`; both defects are
     now exercised by the combined GREEN matrix.
+
+12. The final acceptance review proved the lexical strategy was structurally
+    incapable of identifying arbitrary bearer text without false positives.
+    The first new test failed at import because no reviewed Source URL profile
+    existed. The replacement RED suite then required an opaque Catalog-issued
+    active identity, a non-authoritative candidate preview, raw-profile service
+    rejection, exact profile digest binding, and closed LLM/confirmation/WAL
+    exception graphs. All are GREEN under the release-bound design.
 
 ## GREEN behavior
 
@@ -261,7 +273,7 @@ Focused Task 2 review-fix suite:
 ```text
 umask 077 && TMPDIR=/tmp/boi-sci-pytest /tmp/boi-sci-uv/bin/pytest -q \
   tests/test_science_interpretation.py --tb=short
-799 passed in 31.21s
+819 passed in 29.01s
 ```
 
 Fresh combined Task 2 + Task 1 + Foundation regression:
@@ -273,21 +285,35 @@ umask 077 && TMPDIR=/tmp/boi-sci-pytest /tmp/boi-sci-uv/bin/pytest -q \
   tests/test_science_catalog.py tests/test_science_engine.py \
   tests/test_science_models.py tests/test_science_profile.py \
   tests/test_science_source_ledger.py --tb=short
-1210 passed in 28.60s
+1232 passed in 25.88s
 ```
+
+Existing API authorization and OKF regression:
+
+```text
+pytest -q -s tests/test_boi_api_routes.py tests/test_okf_lint.py --tb=short
+393 passed, 860 warnings in 329.74s
+```
+
+An additional all-tests collection attempt stopped before execution because the
+optional `python-pptx` dependency required by `tests/test_ppt_artifacts.py` is
+not installed in `/tmp/boi-sci-uv`. The complete in-scope Science, auth-route,
+and OKF suites above ran independently and passed.
 
 Static verification:
 
 ```text
 /tmp/boi-sci-uv/bin/ruff check --select E,F,I \
-  boi_api/app/science/models.py boi_api/app/science/safety.py \
-  boi_api/app/science/service.py boi_api/app/science/storage.py \
-  tests/test_science_interpretation.py tests/test_science_storage.py \
-  tests/test_science_models.py
+  boi_api/app/science/{models,source_identity,safety,service,llm,storage,operational}.py \
+  tests/test_science_interpretation.py tests/test_science_storage.py
 All checks passed!
 
-ruff format --check <same files>
-7 files already formatted
+ruff check --select F,I,B023 boi_api/app/science/catalog.py \
+  tests/test_science_catalog.py
+All checks passed!
+
+ruff format --check <Task 2 files>
+10 files already formatted
 
 python -m compileall -q boi_api/app/science tests/test_science_interpretation.py \
   tests/test_science_storage.py tests/test_science_models.py
@@ -308,14 +334,14 @@ Ruff 0.16 rule. Compile and diff checks completed with no output/errors.
   resolution.
 - No endpoint, API key, raw idempotency key, LLM reason, LLM Evidence, or LLM
   locator is stored.
-- The stable-source boundary layer rejects exact reviewed tokens and multi-token
-  sequences, including those appearing after benign path/hostname tokens or
-  split across segments/labels. It intentionally permits the ordinary
-  scientific tokens `signals`, `sigma`, and `authors`.
-- Compact-token matching is limited to the reviewed long families; ambiguous
-  short markers require either a boundary or the tested opaque-value shape. The
-  176-case service matrix and direct save/load/WAL loops cover both compact
-  family and `file`-prefixed forms across all four URL fields.
+- Stable-source safety no longer claims to infer credential intent from opaque
+  path text. Exact active release qualification supplies trust while canonical
+  syntax still rejects userinfo, fragments, signed/non-allowlisted queries,
+  malformed encodings, non-ASCII authority, ports, and noncanonical bytes.
+- Scientific paths rejected by the former heuristic (`authors...`,
+  `tokenization...`, `secretory...`, `signals...`, `sasakicrystal...`) are
+  operational only after the Fake/real Catalog issues their exact reviewed
+  release-bound identity.
 - No production service/runtime conversion raises a replacement exception from
   inside a caught Pydantic validation scope.
 - Proposed invalid ontology refs cannot be confirmed and cannot enter a verdict,
