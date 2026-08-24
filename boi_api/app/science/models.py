@@ -1007,6 +1007,57 @@ class VerificationReport(ScienceModel):
             annotation.claim_id not in set(claim_ids) for annotation in self.annotations
         ):
             raise ValueError("report annotation references an unknown claim")
+        expected_facts: dict[tuple[str, str], ExplanationFact] = {}
+        for verdict in self.verdict_packets:
+            fact_ids = [fact.fact_id for fact in verdict.explanation_facts]
+            if len(fact_ids) != len(set(fact_ids)):
+                raise ValueError("report verdict has duplicate explanation facts")
+            fact_knowledge = {
+                ref for fact in verdict.explanation_facts for ref in fact.knowledge_refs
+            }
+            fact_evidence = {
+                ref for fact in verdict.explanation_facts for ref in fact.evidence_refs
+            }
+            if (
+                set(verdict.knowledge_refs) != fact_knowledge
+                or set(verdict.evidence_refs) != fact_evidence
+            ):
+                raise ValueError(
+                    "report verdict references do not match its explanation facts"
+                )
+            for fact in verdict.explanation_facts:
+                key = (verdict.claim_id, fact.fact_id)
+                if key in expected_facts:
+                    raise ValueError("report has duplicate explanation fact identities")
+                expected_facts[key] = fact
+
+        annotations_by_fact: dict[tuple[str, str], list[GroundedAnnotation]] = {}
+        annotation_identities: set[tuple[str, str, str]] = set()
+        for annotation in self.annotations:
+            key = (annotation.claim_id, annotation.fact_id)
+            annotations_by_fact.setdefault(key, []).append(annotation)
+            identity = (*key, annotation.knowledge_id)
+            if identity in annotation_identities:
+                raise ValueError("report duplicates a grounded explanation fact")
+            annotation_identities.add(identity)
+            evidence_ids = [link.evidence_id for link in annotation.evidence_links]
+            if len(evidence_ids) != len(set(evidence_ids)):
+                raise ValueError("report duplicates Evidence in an explanation fact")
+
+        if set(annotations_by_fact) != set(expected_facts):
+            raise ValueError(
+                "report annotations do not exactly cover verdict explanation facts"
+            )
+        for key, fact in expected_facts.items():
+            annotations = annotations_by_fact[key]
+            if {item.knowledge_id for item in annotations} != set(
+                fact.knowledge_refs
+            ) or {
+                link.evidence_id for item in annotations for link in item.evidence_links
+            } != set(fact.evidence_refs):
+                raise ValueError(
+                    "report grounding does not match its verdict explanation fact"
+                )
         verdict_release_set_digests = {
             verdict.releases.combined_digest for verdict in self.verdict_packets
         }

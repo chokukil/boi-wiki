@@ -11,7 +11,7 @@ import re
 import stat
 import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -284,10 +284,12 @@ class ScienceRuntimeStore:
         *,
         authorization: ScienceAuthorization,
         roles_for: ScienceRolesResolver,
+        report_authority_validator: Callable[[VerificationReport], None] | None = None,
     ) -> None:
         self.root = Path(root)
         self.authorization = authorization
         self._roles_for = roles_for
+        self._report_authority_validator = report_authority_validator
         self._closed = False
         self._initialize_root()
         self._root_fd = os.open(
@@ -1554,6 +1556,18 @@ class ScienceRuntimeStore:
             raise ImmutableScienceRecordError(
                 "Science report does not match its confirmed interpretation"
             )
+        validator = self._report_authority_validator
+        if validator is None:
+            raise ImmutableScienceRecordError(
+                "Science report requires a Catalog authority validator"
+            )
+        validate_with_closed_error(
+            lambda: validator(report),
+            caught=(Exception,),
+            closed_error=ImmutableScienceRecordError(
+                "Science report failed closed Catalog authority validation"
+            ),
+        )
 
     def save_report(
         self,

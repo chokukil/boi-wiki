@@ -6,6 +6,8 @@ Branch: `codex/science-application`
 
 Implementation commit: `1f2ee564adc4a3f76083314e8cfcdd3d60ac5c66`
 
+Catalog-authority closure commit: `4c21437814d5b376d2683d41598556f7d03ddd1a`
+
 Reviewed base: `1a28f8bf653db9fb27040fb6a9832af50e48f859`
 
 Foundation enforcement base: `707ddb7ee680326bf006dd5d05582e4d5bc3bc04`
@@ -353,3 +355,118 @@ Ruff 0.16 rule. Compile and diff checks completed with no output/errors.
   verbatim in the implementation commit; this task did not implement Task 3.
 - No merge, cherry-pick, push, release activation, or external state change was
   performed.
+
+## Independent cross-review authority closure
+
+Reviewed input: `b325fed` (`application-task2-independent-cross-review.md`),
+which reported two Important authority findings against `1f2ee56`.
+
+### I1: Catalog-only Source identity
+
+- The serializable candidate preview cannot be upgraded by changing
+  `qualification_state` and recomputing its self-hash. The former direct issuer
+  is closed and always rejects caller-provided profiles.
+- Production issuance accepts only the exact `ScienceCatalog` type and asks that
+  Catalog to re-resolve the current exact active release, Source, Evidence,
+  canonical URL, and locator. The authority identity retains a live Catalog
+  revalidation closure, so opening an identity after the Catalog mapping changes
+  fails closed.
+- Candidate preview objects remain serializable inspection data only. Arbitrary
+  Catalog doubles and raw profiles cannot produce a production authority
+  identity or an `EvidenceLink`.
+
+### I2: authoritative report revalidation at every storage boundary
+
+- `ScienceRuntimeStore` now requires a trusted report-authority validator for
+  every `VerificationReport`. Save, private-file load, and global WAL recovery
+  all reach the same validator before publication or authoritative return.
+- `ScienceCatalog.validate_verification_report_authority` re-resolves the exact
+  selected release set and its active/superseded decision provenance, then
+  compares the immutable report against exact Knowledge statements/digests,
+  Source/Evidence objects and digests, quote/original-text hashes, URL, locator,
+  versioned path, BoI identity, visibility, classification, and ACL policy.
+- A coordinated attacker may recompute all Pydantic self-hashes, but that does
+  not create Catalog authority. The adversarial save, private-load, and WAL
+  cases preserve the forged journal/file for diagnosis and publish no report.
+- Report validation now requires exact fact coverage: each verdict's Knowledge
+  and Evidence references are the union of its explanation facts, and grounded
+  annotations exactly cover those claim/fact identities without duplicate
+  Knowledge bindings or duplicate Evidence inside one annotation.
+- Catalog validator failures pass through the existing scope-exit closed-error
+  helper. Raw exception text, cause, context, traceback, arguments, object
+  dictionary, and serialized exception graph are not retained.
+
+### RED evidence
+
+The adversarial tests were written before the implementation and reproduced the
+review findings:
+
+```text
+candidate preview -> active + recomputed profile hash:
+  Failed: DID NOT RAISE TypeError
+
+coordinated unreviewed URL + recomputed profile/report hashes:
+  direct save: Failed: DID NOT RAISE ImmutableScienceRecordError
+  private load: Failed: DID NOT RAISE ImmutableScienceRecordError
+
+annotation fact identity changed + recomputed report hash:
+  Failed: DID NOT RAISE ValidationError
+```
+
+The shared Store dependency validator was then exercised through direct save,
+private load, and pending-WAL recovery, including a fully coordinated replacement
+of release, Knowledge, Source, Evidence, locator, URL, lookup identity, and every
+linked self-hash.
+
+### GREEN evidence
+
+Focused Catalog/interpretation/storage regression:
+
+```text
+pytest -q tests/test_science_interpretation.py \
+  tests/test_science_storage.py tests/test_science_catalog.py --tb=short
+969 passed in 29.42s
+```
+
+Complete Science regression, including the Task 1 atomic/idempotency protocol:
+
+```text
+pytest -q tests/test_science*.py --tb=short
+1242 passed in 28.94s
+```
+
+Relevant API authorization and OKF/Foundation regression:
+
+```text
+pytest -q -s tests/test_boi_api_routes.py tests/test_okf_lint.py --tb=short
+393 passed, 860 warnings in 334.51s
+```
+
+Static and repository hygiene checks:
+
+```text
+ruff check --select F,I,B023 <touched production and test files>
+All checks passed!
+
+ruff format --check <touched formatted files>
+6 files already formatted
+
+python -m compileall -q boi_api/app/science \
+  tests/test_science_interpretation.py tests/test_science_catalog.py \
+  tests/test_science_storage.py
+git diff --check
+```
+
+Compile and diff checks completed without output or errors. The implementation
+commit contains only the four authority/model modules and their three focused
+test files. Untracked historical review reports were not staged.
+
+### Final self-review
+
+- Report self-hashes remain integrity checks only; Catalog resolution supplies
+  authority.
+- Task 1 proposal/approval and Task 2 interpretation/report exactly-once
+  idempotency continue to use the immutable record+audit WAL. This closure adds
+  no direct record, audit, or REST bypass.
+- No Foundation operational-attestation path, authorization rule, release state,
+  external endpoint, or secret was changed.
