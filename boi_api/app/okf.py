@@ -92,7 +92,16 @@ def validate_boi_profile_metadata(metadata: dict[str, Any], promotion: bool = Fa
         if not metadata.get("source_refs"):
             errors.append("team/public BoI requires source_refs")
         review = metadata.get("review") or {}
-        if not review.get("reviewer") and not metadata.get("reviewer"):
+        author = metadata.get("author") or {}
+        is_pending_draft = (
+            metadata.get("status") == "draft"
+            and author.get("type") == "agent"
+            and bool(author.get("agent_id"))
+            and review.get("review_status") == "pending_review"
+            and review.get("required_role") == "Admin"
+            and review.get("authorized_review_events") == []
+        )
+        if not is_pending_draft and not review.get("reviewer") and not metadata.get("reviewer"):
             errors.append("team/public BoI requires reviewer")
         if metadata.get("status") == "approved" and not review.get("reviewed_at"):
             errors.append("approved BoI requires review.reviewed_at")

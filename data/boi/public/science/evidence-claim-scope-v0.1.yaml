@@ -1,0 +1,629 @@
+manifest_version: '0.1'
+sci_profile_version: '0.1'
+curated_at: '2026-08-25T03:26:00+09:00'
+curation_actor:
+  type: agent
+  agent_id: codex
+review:
+  review_status: pending_review
+  required_role: Admin
+  authorized_review_events: []
+release_eligibility: blocked_pending_authorized_admin_review
+mappings:
+- evidence_id: sci-evidence:chemistry:amount-concentration
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.chemistry.amount_concentration
+    statement: Molar concentration (molarity) is the number of moles of solute per liter of solution.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:cc6e5355ca7ec415eee52ffffb29d2591a01e1e5f78d8ba0416fb38a3b5c11f3
+  binding_contextual_limitations:
+  - This defines molarity; it is not a definition of every concentration convention.
+- evidence_id: sci-evidence:chemistry:catalyst-kinetics
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: chemistry.catalyst_affects_kinetics_not_thermodynamic_tendency
+    statement: A catalyst affects reaction kinetics and does not alter the thermodynamic tendency for the reaction to occur.
+    required_conditions:
+    - Do not infer numerical rate or equilibrium composition.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:4b99fd9327cd0d4d546d18916aea9ad6d27d569b1488372b1ff16104fb44ec89
+  binding_contextual_limitations:
+  - This span distinguishes kinetic effects from thermodynamic tendency; it does not quantify rate, equilibrium composition,
+    or catalyst performance.
+- evidence_id: sci-evidence:chemistry:evaporation-vapor-pressure
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.chemistry.evaporation_vapor_pressure
+    statement: The vapor pressure is a direct measure of the escaping tendency of molecules from a condensed state of matter.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:dbce87703720dbd37d2cd451ccf39ea5547984ae233724116e1ae2a6aca8e281
+  binding_contextual_limitations:
+  - This does not alone determine an evaporation rate in an open, flowing process.
+- evidence_id: sci-evidence:chemistry:reaction-equilibrium
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.chemistry.reaction_equilibrium
+    statement: K is the equilibrium constant. It has the same form as Q, but only uses the amounts of products and reactants
+      at equilibrium.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:3c87533763158c16b87c99f21cd4405d09385c03b2a066ab29457c568f6f5a77
+  binding_contextual_limitations:
+  - Activities, standard states, and the balanced reaction remain necessary for quantitative use.
+- evidence_id: sci-evidence:chemistry:substance-phase
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.chemistry.substance_phase
+    statement: A phase is a region of matter that possesses uniform intensive properties throughout its volume.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:9ffc0ca5bc5697c30aac3bd829dbd48daf7ed0479e77a714ce2f505f36d39aaf
+  binding_contextual_limitations:
+  - The operational boundary of a phase can depend on the property and observation scale.
+- evidence_id: sci-evidence:circuits:capacitor-inductor
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.circuits.capacitor_inductor
+    statement: And the state variable for an inductor was the current while that for a capacitor was the capacitor voltage.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:6e40abe7a05c033b74a8c1713522cc290e09bf7b3eafa39ad97556c8415fc85e
+  binding_contextual_limitations:
+  - This does not provide constitutive equations, initial conditions, or parasitic limits.
+- evidence_id: sci-evidence:circuits:electric-power
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: circuits.passive_sign_convention.power_positive_when_consumed
+    statement: With current referenced into the positive terminal, positive vi denotes consumed power.
+    required_conditions:
+    - The passive sign convention is explicitly used.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:8219b4ee6b1df98fe458698fb7623b83c861cc65c7527b68a92d94e7dea0dcde
+  binding_contextual_limitations:
+  - This supports only the passive sign convention. Reversing the reference direction changes the algebraic sign; it does
+    not change physical power flow.
+- evidence_id: sci-evidence:circuits:kcl-law
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: circuits.kcl.algebraic_current_sum_zero
+    statement: The algebraic sum of currents at a node is zero under a consistent direction convention.
+    required_conditions:
+    - Current reference directions are explicit and consistent.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:7589d29e989dc6aa1f5649690cb273ee9f3a2af231a4fc8008e2232836daf2e7
+  binding_contextual_limitations:
+  - The transcript uses currents directed into the node; another sign convention requires algebraically consistent signs.
+- evidence_id: sci-evidence:circuits:kvl-law
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: circuits.kvl.loop_voltage_sum_zero
+    statement: The algebraic sum of voltages around a loop is zero under consistent polarity and traversal conventions.
+    required_conditions:
+    - Voltage polarities and loop direction are explicit and consistent.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:3df590628532e97bddec3adead00371adabc5112b4e06e0a8bfe0260fcbe1032
+  binding_contextual_limitations:
+  - Voltage polarity and traversal direction must be assigned consistently; this short transcript span does not state non-lumped
+    electromagnetic exceptions.
+- evidence_id: sci-evidence:circuits:measurement-loading
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.circuits.measurement_loading
+    statement: This interaction between the oscilloscope and an external circuit is termed circuit loading.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:75654fcc1d4059d2065dd33df98dc0603a0e92c3f713a02be3ef2fd908e70655
+  binding_contextual_limitations:
+  - Whether loading is negligible depends on source and instrument impedances and frequency.
+- evidence_id: sci-evidence:circuits:ohm-model
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.circuits.ohm_model
+    statement: numbers can be codified by Ohm's law, for example, V is equal to RI, the voltage current, relates to the resistance
+      of the object.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:77f9866e3013f286378d0d2227faaeaa56ab9c751c30d8829d47e5a0f103d3e1
+  binding_contextual_limitations:
+  - This transcript sentence presents the resistor abstraction; it is not valid for every nonlinear or time-varying element.
+- evidence_id: sci-evidence:circuits:series-parallel
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.circuits.series_parallel
+    statement: the conductances in parallel add, and resistances in series add.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:6806a696e288816d1721a0b4a130155003eb7c99bc42dc2cf6b3d9b5ef980852
+  binding_contextual_limitations:
+  - This assumes the lumped resistive network abstraction and the stated topology.
+- evidence_id: sci-evidence:common:accuracy-precision
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.common.accuracy_precision
+    statement: The term “measurement accuracy” should not be used for measurement trueness and the term “measurement precision”
+      should not be used for ‘measurement accuracy’, which, however, is related to both these concepts.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:60977e457b09c17275a17d02214de6ee198c041bed7e9cdfff8e6cb8a283342b
+  binding_contextual_limitations:
+  - This is a terminology distinction, not a formula for calculating either property.
+- evidence_id: sci-evidence:common:celsius-kelvin
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.common.celsius_kelvin
+    statement: The unit of Celsius temperature is the degree Celsius, symbol °C, which is by definition equal in magnitude
+      to the unit kelvin.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:61459c78627bb087a81e87405c3499b2e883cdb55a466f3172fe8254ef3d3a94
+  binding_contextual_limitations:
+  - Equal interval magnitude does not make Celsius and kelvin absolute readings interchangeable; the offset remains relevant.
+- evidence_id: sci-evidence:common:correlation-causation
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.common.correlation_causation
+    statement: Note that correlation does not imply causality. It is possible for two variables to be associated with each
+      other without one of them causing the observed behavior in the other.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:d26f2ba0c82816c8808ec01f78d07b89e0ab5034e6c46ae31d48cab9c0d3ed67
+  binding_contextual_limitations:
+  - This does not exclude causation; it rejects inferring causation from correlation alone.
+- evidence_id: sci-evidence:common:equilibrium
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.common.equilibrium
+    statement: Chemical reactions reach a state of dynamic equilibrium in which the rates of forward and reverse reactions
+      are equal and there is no net change in composition.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:97e70ef9240cceb46a035411487ff8fa762fab61dc7a8f01f1171daf58e3db72
+  binding_contextual_limitations:
+  - This chemical-equilibrium statement does not imply zero microscopic activity or universal equilibrium.
+- evidence_id: sci-evidence:common:measurand-result
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.common.measurand_result
+    statement: A measurement result is generally expressed as a single measured quantity value and a measurement uncertainty.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:75561497ed7d51ebbe73a03c3f73f785f833c50d1bbd1265a7bcb43fc865c167
+  binding_contextual_limitations:
+  - The VIM says generally; a result can require more than a bare numerical value.
+- evidence_id: sci-evidence:common:model-validity
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.common.model_validity
+    statement: A record of the domain of validation of the M&S shall be maintained.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:b7d8094ac4ccb94bc6ed8d409c289482662df68044ec243bc26797ee9b439e00
+  binding_contextual_limitations:
+  - This assurance requirement does not prove that a particular model is valid for a proposed use.
+- evidence_id: sci-evidence:common:quantity-unit-dimension
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.common.quantity_unit_dimension
+    statement: Physical quantities can be organized in a system of dimensions, where the system used is decided by convention.
+      Each of the seven base quantities used in the SI is regarded as having its own dimension.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:0ff0685ae817a8ef57fb5ba3823895b803e8def0f5a6700aa8f3244165520192
+  binding_contextual_limitations:
+  - This defines the SI dimensional framework; it does not by itself validate a proposed equation.
+- evidence_id: sci-evidence:common:repeatability-reproducibility
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: measurement.reproducibility_definition_only
+    statement: The cited span may support only the VIM definition of a reproducibility condition, not a full repeatability-versus-reproducibility
+      comparison.
+    required_conditions:
+    - Use the cited VIM edition and term locator.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:2afe10eb83752121abfd3e76fb55c8faa88f7ffc03c98879cc6d6c157ccd09a1
+  binding_contextual_limitations:
+  - This span defines reproducibility conditions; repeatability uses a narrower condition set in the same vocabulary.
+- evidence_id: sci-evidence:common:steady-state
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.common.steady_state
+    statement: 'Steady state (time independent) diffusion is described by Fick’s first law:'
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:e4963053d7d7490eeff63890ee23acc02a550679c3dd94ad92591fd1319b9056
+  binding_contextual_limitations:
+  - This is a diffusion-specific steady-state statement, not a claim that every variable or system is at equilibrium.
+- evidence_id: sci-evidence:common:system-balance
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.common.system_balance
+    statement: This law asserts that the mass δM = ρδV of a material particle remains invariant.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:1515730ab01f2123dd8d50ed5755e0f3611c0cd61194ab11f47b8e821262a55f
+  binding_contextual_limitations:
+  - This material-particle statement must be transformed carefully before applying it to an open control volume.
+- evidence_id: sci-evidence:common:uncertainty-error
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: measurement.uncertainty_definition_only
+    statement: The cited span may support only the VIM definition of measurement uncertainty, not a contrast with measurement
+      error.
+    required_conditions:
+    - Use the cited VIM edition and term locator.
+    - Do not infer an error definition absent from this span.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:59634808518a67404e1a43f1507873c98ba9bed78ffaa5cf2c0960cc167a6ff9
+  binding_contextual_limitations:
+  - This span defines uncertainty, not measurement error; the two concepts must not be collapsed.
+- evidence_id: sci-evidence:materials:bulk-thin-film
+  qualification_status: inactive
+  may_enter_active_release: false
+  allowed_claims: []
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  inactive_reason: The stored course-scope span does not establish bulk/thin-film equivalence or a directional rule, so it
+    is inactive decision context.
+  allowed_original_text_hash: sha256:26057f630e8441febde66ca5977ac1e731ed708b40e58fb5a2166ca04bd560a6
+  binding_contextual_limitations:
+  - This scope statement does not establish a transferable bulk-to-thin-film property relation.
+- evidence_id: sci-evidence:materials:defects-microstructure
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: materials.defect_clusters.qualitative_strength_effect
+    statement: The cited examples allow a qualitative statement that void clusters weaken metals while precipitates may weaken
+      or strengthen them.
+    required_conditions:
+    - Do not generalize beyond the cited defect types and qualitative scope.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:697e762eaaae8e63356a933c7b031ab5dfeeff0c4847862b3bcb81e38269e591
+  binding_contextual_limitations:
+  - This is a qualitative materials example. Effect direction depends on defect type and microstructure; it does not supply
+    a universal strength model.
+- evidence_id: sci-evidence:materials:diffusion-arrhenius
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: materials.diffusion.arrhenius_coefficient_model
+    statement: The diffusion coefficient is represented by the cited Arrhenius relation under its model assumptions.
+    required_conditions:
+    - Material-specific D₀, Eₐ, phase, mechanism, and temperature range are required for calculation.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:5dcaf1d7d06a198aceaaacc838bf5c0231692b6ec6f06ab6062a98cd8c7ea040
+  binding_contextual_limitations:
+  - The equation states an Arrhenius model; D₀, Eₐ, mechanism, temperature range, and material phase must be supplied for
+    quantitative use.
+- evidence_id: sci-evidence:materials:phase-transformation
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.materials.phase_transformation
+    statement: Liquids can be supercooled- cooled to temperatures below their equilibrium freezing points. Likewise, solids
+      can be superheated- heated to temperatures above the melting point. Such phases are unstable or metastable and will
+      readily transform to the equilibrium state.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:a2ba6b32ff19b146c827a6b1347ecc288b7f513699ba3e06b729a9672493cb0a
+  binding_contextual_limitations:
+  - Kinetic barriers and timescale determine whether transformation occurs in a particular case.
+- evidence_id: sci-evidence:materials:structure-grain
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.materials.structure_grain
+    statement: Identify one 0D defect (vacancy), one 1D defect (line), one 2D defect (grain boundary – actually appears in
+      1D here).
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:5fb1d088efa88338ed76abdc95a08ea11f277d3df63289295076d0fba11f977b
+  binding_contextual_limitations:
+  - This teaching-model classification does not quantify a grain-size/property relation.
+- evidence_id: sci-evidence:physics:control-volume-flux
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.physics.control_volume_flux
+    statement: Both forms A and B are valid for arbitrarily moving and deforming control volumes (i.e. control volumes that
+      may be expanding, translating, accelerating, or whatever), and for unsteady as well as steady flows.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:780658a4237062307dd4b44c9a810564b02a671fcccee8f94a4ea29d06463a0a
+  binding_contextual_limitations:
+  - The equations and sign convention in the source are required before calculating a flux balance.
+- evidence_id: sci-evidence:physics:force-momentum
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.physics.force_momentum
+    statement: We conclude that the external force causes the momentum of the system to change, and we thus restate and generalize
+      Newton’s Second Law for a system of objects.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:d9e683681f17bb8f4e804dca5a6e52e473af3b6fceb3cdff00058a1d7d505837
+  binding_contextual_limitations:
+  - Applicability requires a defined system and reference frame.
+- evidence_id: sci-evidence:physics:rotation-angular-speed
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.physics.rotation_angular_speed
+    statement: The angular speed is the magnitude of the rate of change of angle with respect to time, which we denote by
+      the Greek letter ω.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:043be2b4d0513ef692ea7a0673196dd92e7de1b0bbb9d2610ee444f445b89a44
+  binding_contextual_limitations:
+  - This is a kinematic definition and does not alone determine a coating outcome.
+- evidence_id: sci-evidence:physics:viscosity-flow
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.physics.viscosity_flow
+    statement: The defining attribute of a simple fluid, however, is that it keeps deforming, or straining, as long as any
+      shear stress, no matter how small, is applied to it.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:14050b6414fe334508cef8b37c343c3447066254b7566f28e2faebe68c2f7235
+  binding_contextual_limitations:
+  - This is not a Newtonian constitutive equation and does not supply a viscosity value.
+- evidence_id: sci-evidence:physics:work-energy-power
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.physics.work_energy_power
+    statement: the work done by the applied force on an object is identically equal to the change in kinetic energy of the
+      object.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:a89023544a44dc493b7d3bd17bf459fd113b891c82e1051049cee3b60a44d361
+  binding_contextual_limitations:
+  - This span states the work–kinetic-energy theorem; separate definitions are needed for power and multi-energy balances.
+- evidence_id: sci-evidence:semiconductor-devices:bands-fermi-level
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.semiconductor_devices.bands_fermi_level
+    statement: EF is called the Fermi energy or the Fermi level. f(E) is the probability of a state at energy E being occupied
+      by an electron.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:a95c9ab1196e8d319ffa27f9184d4d4624e67327b19b1011a52347093df8d0e8
+  binding_contextual_limitations:
+  - The occupation probability depends on the full Fermi function and its temperature assumptions.
+- evidence_id: sci-evidence:semiconductor-devices:carrier-conductivity
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: semiconductor.low_field_carrier_conductivity
+    statement: The cited low-field relation expresses conductivity as σ = qnµn + qpµp.
+    required_conditions:
+    - Carrier concentrations and mobilities must correspond to the modeled state.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:a7f286856b6d4fc93a51bd0d52a3888674e44d3b74a23e7901f9e68529c2e925
+  binding_contextual_limitations:
+  - This low-field drift conductivity relation requires carrier concentrations and mobilities under the model conditions;
+    it is not a universal high-field transport law.
+- evidence_id: sci-evidence:semiconductor-devices:drift-diffusion
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.semiconductor_devices.drift_diffusion
+    statement: In addition to the drift current, there is a second component of current called the diffusion current.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:809f9386b483e176d3733fad6d6917837ae76e3effbc47c9bf60c35bc78cd6ca
+  binding_contextual_limitations:
+  - The relative contribution requires carrier gradients, fields, material parameters, and boundary conditions.
+- evidence_id: sci-evidence:semiconductor-devices:mos-capacitor
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.semiconductor_devices.mos_capacitor
+    statement: An MOS capacitor (Fig. 5–1) is made of a semiconductor body or substrate, an insulator film, such as SiO2,
+      and a metal electrode called a gate.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:7a9e16056ecc80db27d9222509f03820e1ce2e4db89de8bdeff99425d82a8221
+  binding_contextual_limitations:
+  - This structural definition does not imply ideal zero leakage or specify a C–V regime.
+- evidence_id: sci-evidence:semiconductor-devices:mos-gate-ideal-model
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: semiconductor.mos_gate.ideal_zero_gate_current_model
+    statement: The cited ideal model sets iG = 0 because the gate oxide is treated as insulating.
+    required_conditions:
+    - State that this is an idealized model assumption.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:c92d0867c6cfc590f6a176a9af90e4f113580f3442f8ee67e9ab3142b7e2d111
+  binding_contextual_limitations:
+  - This is an idealized model assumption tied to an insulating gate oxide; it must not be generalized to all fabricated MOS
+    gates.
+- evidence_id: sci-evidence:semiconductor-devices:mos-gate-real-leakage
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: semiconductor.mos_gate.ultrathin_sio2_tunneling_limit
+    statement: The cited source identifies tunneling leakage as a limiting factor for SiO2 below its stated thickness.
+    required_conditions:
+    - Scope to the cited SiO2 discussion and stated thickness.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:dc0ae0375875529d4d18601b2a415396767a2d9aaf01f7ab1163f09c234dc74b
+  binding_contextual_limitations:
+  - The stated threshold and limiting mechanism are scoped to the cited SiO2 discussion; material stack, field, area, temperature,
+    and device design still matter.
+- evidence_id: sci-evidence:semiconductor-devices:pn-junction
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.semiconductor_devices.pn_junction
+    statement: a forward bias of V reduces the barrier height from φbi to φbi – V. This reduces the drift field and upsets
+      the balance between diffusion and drift that exists at zero bias.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:ab73caa63aef404d0c1fee85a842c2c7bdf07df6f58d2045e39bd2756f865ea4
+  binding_contextual_limitations:
+  - This statement uses the chapter's idealized junction treatment; high-level injection and nonideal effects are outside
+    this span.
+- evidence_id: sci-evidence:semiconductor-devices:transistor-operating-region
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: locator_bound.semiconductor_devices.transistor_operating_region
+    statement: The part of the IV curves with Vds << Vdsat is the linear region, and the part with Vds > Vdsat is the saturation
+      region.
+    required_conditions:
+    - Authorized Admin review is still required before any active release use.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:1269bb0655cde1365274af4227cc388ae618ae72dfb5d6b8e28b7e8c13651fff
+  binding_contextual_limitations:
+  - The named regions use the model and Vdsat definition in the source; short-channel effects can alter behavior.
+- evidence_id: sci-evidence:spin-coating:emslie-model
+  qualification_status: inactive
+  may_enter_active_release: false
+  allowed_claims: []
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  inactive_reason: AIP full text returned HTTP 403. Crossref abstract metadata cannot enter an active decision path without
+    lawful full-text locator review.
+  allowed_original_text_hash: sha256:c87d8907967596e7b1521971ddb58ec8eead47c94afd71cd514806f73a4e5624
+  binding_contextual_limitations:
+  - Only Crossref abstract metadata was inspected by the agent; equations, assumptions, pages, and article context were not
+    available.
+- evidence_id: sci-evidence:spin-coating:meyerhofer-model
+  qualification_status: inactive
+  may_enter_active_release: false
+  allowed_claims: []
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  inactive_reason: AIP full text returned HTTP 403. Crossref abstract metadata cannot enter an active decision path without
+    lawful full-text locator review.
+  allowed_original_text_hash: sha256:d236033f0611e6de36ecf89d9f62d95f41a4d560a9a015f4be855ab12d9c6dc4
+  binding_contextual_limitations:
+  - Only Crossref abstract metadata was inspected by the agent; the article equations, fit range, and experimental context
+    were not.
+- evidence_id: sci-evidence:spin-coating:vendor-spin-curve-observation
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: spin_coating.rpm_thickness_direction.product_scoped_figure_observation
+    statement: Both plotted AZ 125nXT grades show decreasing thickness as spin speed increases across their displayed markers.
+    required_conditions:
+    - Scope to the cited grades, document revision, and plotted marker ranges.
+    - No numeric recipe or extrapolation.
+  forbidden_claim_families:
+  - unbounded_or_unqualified_claims
+  allowed_original_text_hash: sha256:7c156fb15f79237d9172fd263bc232e5a42ef78a7838d884d4f594313280bbe0
+  binding_contextual_limitations:
+  - Product-scoped to AZ 125nXT revision 01/24 and the displayed figure; it is not a universal spin-coating law.
+  - Approximate visual ranges are not digitized data and cannot authorize a numeric recipe or extrapolation.
+- evidence_id: sci-evidence:spin-coating:vendor-spin-time-guidance
+  qualification_status: pending_review
+  may_enter_active_release: false
+  allowed_claims:
+  - claim_family: spin_coating.spin_time_thinning.product_scoped
+    statement: For the cited AZ 125nXT document, extended spin time is associated with continued thinning.
+    required_conditions:
+    - Scope to AZ 125nXT revision 01/24.
+    - Do not infer an RPM direction.
+  forbidden_claim_families:
+  - spin_coating.rpm_thickness_direction
+  allowed_original_text_hash: sha256:1554ccbca1d7cc4a24c10c1b9ee6b1e461cf827fade78d1e160e2478214a1378
+  binding_contextual_limitations:
+  - Product-scoped to AZ 125nXT revision 01/24. This prose supports a spin-time statement only and supplies no RPM-to-thickness
+    direction or recipe authorization.

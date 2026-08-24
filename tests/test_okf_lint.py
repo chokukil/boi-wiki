@@ -46,6 +46,49 @@ def valid_public_metadata(boi_id: str = "boi:public:lint:test") -> dict:
     }
 
 
+def test_public_agent_draft_can_wait_for_authorized_review_without_fabricated_reviewer():
+    from boi_api.app.okf import validate_boi_profile_metadata
+
+    metadata = valid_public_metadata("boi:public:lint:pending-review")
+    metadata["review"] = {
+        "review_status": "pending_review",
+        "required_role": "Admin",
+        "authorized_review_events": [],
+    }
+
+    assert "team/public BoI requires reviewer" not in validate_boi_profile_metadata(metadata)
+
+
+def test_public_non_draft_still_requires_an_actual_reviewer():
+    from boi_api.app.okf import validate_boi_profile_metadata
+
+    metadata = valid_public_metadata("boi:public:lint:unreviewed-release")
+    metadata["status"] = "reviewed"
+    metadata["review"] = {
+        "review_status": "pending_review",
+        "required_role": "Admin",
+        "authorized_review_events": [],
+    }
+
+    assert "team/public BoI requires reviewer" in validate_boi_profile_metadata(metadata)
+
+
+def test_pending_review_exception_requires_agent_authorship_and_admin_role():
+    from boi_api.app.okf import validate_boi_profile_metadata
+
+    metadata = valid_public_metadata("boi:public:lint:wrong-review-role")
+    metadata["review"] = {
+        "review_status": "pending_review",
+        "required_role": "Power User",
+        "authorized_review_events": [],
+    }
+    assert "team/public BoI requires reviewer" in validate_boi_profile_metadata(metadata)
+
+    metadata["review"]["required_role"] = "Admin"
+    metadata["author"] = {"type": "human", "user_id": "unreviewed-author"}
+    assert "team/public BoI requires reviewer" in validate_boi_profile_metadata(metadata)
+
+
 def write_markdown(path: Path, metadata: dict, body: str = "# Summary\n\nOKF body") -> None:
     import yaml
 
