@@ -35,6 +35,8 @@ EXPECTED_SOURCE_IDS = {
     "sci-source:emslie-1958",
     "sci-source:meyerhofer-1978",
     "sci-source:merck-az-125nxt-01-24",
+    "sci-source:microchemicals-spin-coating-photoresist",
+    "sci-source:nistir-5851-1997",
 }
 
 
@@ -68,9 +70,65 @@ EXPECTED_EVIDENCE_IDS = {
     )),
     *(f"sci-evidence:spin-coating:{name}" for name in (
         "emslie-model", "meyerhofer-model", "vendor-spin-time-guidance",
-        "vendor-spin-curve-observation",
+        "vendor-spin-curve-observation", "microchemicals-spin-mechanism",
+        "microchemicals-spin-speed-direction", "microchemicals-film-state-change",
+        "microchemicals-equipment-influence",
     )),
+    "sci-evidence:materials:nist-thin-film-bulk-difference",
 }
+
+
+def test_task3_authoritative_spans_are_pdf_hash_bound_and_narrowly_scoped() -> None:
+    catalog = ScienceCatalog(_science_root().parents[1])
+    spin = catalog.evidence(
+        "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
+    )
+    mechanism = catalog.evidence(
+        "sci-evidence:spin-coating:microchemicals-spin-mechanism"
+    )
+    state_change = catalog.evidence(
+        "sci-evidence:spin-coating:microchemicals-film-state-change"
+    )
+    equipment = catalog.evidence(
+        "sci-evidence:spin-coating:microchemicals-equipment-influence"
+    )
+    material = catalog.evidence(
+        "sci-evidence:materials:nist-thin-film-bulk-difference"
+    )
+
+    assert spin.locator["content_hash"] == (
+        "sha256:3d9b159838744f504db5c9742ef7f18b1b5f5d2ff78dfecc487086f41639c6b7"
+    )
+    assert spin.locator["pdf_page_index"] == 0
+    assert "reciprocal square root of the spin speed" in spin.original_text
+    assert spin.claim_scope["allowed_claims"][0]["claim_family"] == (
+        "spin_coating.spin_speed_thickness_direction.drying_limited_process"
+    )
+    assert "centrifugal force" in mechanism.original_text
+    assert "solvent evaporates" in mechanism.original_text
+    assert mechanism.claim_scope["allowed_claims"][0]["claim_family"] == (
+        "spin_coating.mechanism.centrifugal_spreading_solvent_evaporation"
+    )
+    assert state_change.locator["pdf_page_index"] == 1
+    assert "measured immediately after spin-coating" in state_change.original_text
+    assert state_change.claim_scope["allowed_claims"][0]["claim_family"] == (
+        "spin_coating.film_thickness.process_state_difference"
+    )
+    assert equipment.locator["pdf_page_index"] == 2
+    assert equipment.original_text == (
+        "The equipment itself has a great influence on the coating result:"
+    )
+    assert equipment.claim_scope["allowed_claims"][0]["claim_family"] == (
+        "spin_coating.equipment.coating_result_influence"
+    )
+    assert material.locator["content_hash"] == (
+        "sha256:7f4e939b3fd4dc621ffd6a534773b08da687d4052b2148c865436ac30b9b854b"
+    )
+    assert material.locator["pdf_page_index"] == 24
+    assert "same chemical composition" in material.original_text
+    assert material.claim_scope["allowed_claims"][0]["claim_family"] == (
+        "materials.thin_film_bulk_property_nontransferability"
+    )
 
 
 def _science_root() -> Path:

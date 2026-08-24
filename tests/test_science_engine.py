@@ -113,6 +113,8 @@ def rule_fixture(
     contradiction_predicates: list[str] | None = None,
     required_conditions: dict[str, object] | list[dict[str, object]] | None = None,
     validity_conditions: dict[str, object] | list[dict[str, object]] | None = None,
+    empirical_trigger_conditions: list[dict[str, object]] | None = None,
+    context_dimensions: dict[str, str] | None = None,
     expected_dimensions: dict[str, str] | None = None,
     equation: dict[str, object] | None = None,
     corrected_claim: str | None = None,
@@ -140,6 +142,8 @@ def rule_fixture(
             if isinstance(validity_conditions, dict)
             else (validity_conditions or [])
         ),
+        "empirical_trigger_conditions": empirical_trigger_conditions or [],
+        "context_dimensions": context_dimensions or {},
         "expected_dimensions": expected_dimensions or {},
         "equation": equation,
         "knowledge_refs": [KNOWLEDGE_REF],
@@ -150,6 +154,135 @@ def rule_fixture(
     if kind == "directional_relation" or contradiction_predicates is not None:
         payload["contradiction_predicates"] = contradiction_predicates or []
     return VerificationRule.model_validate(payload)
+
+
+def test_rule_local_empirical_trigger_requires_measurement_instead_of_reusing_another_rule():
+    """An equipment-specific claim must stay tied to the rule it is qualifying."""
+    rule = rule_fixture(
+        "sci:rule:local-empirical-trigger",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        empirical_trigger_conditions=[
+            {
+                "key": "claim_specificity",
+                "operator": "eq",
+                "value": "equipment_or_numeric",
+            }
+        ],
+    )
+    generic = claim_fixture(
+        "claim:local-empirical-generic",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+    )
+    equipment_specific = claim_fixture(
+        "claim:local-empirical-equipment",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        conditions={"claim_specificity": "equipment_or_numeric"},
+    )
+
+    generic_evaluation = evaluate_rule(rule, generic.normalized_claim)
+    empirical_evaluation = evaluate_rule(rule, equipment_specific.normalized_claim)
+
+    assert generic_evaluation.applicability == "IN_SCOPE"
+    assert generic_evaluation.outcome == "SUPPORTS"
+    assert empirical_evaluation.rule_id == rule.rule_id
+    assert empirical_evaluation.applicability == "EMPIRICAL_ONLY"
+    assert empirical_evaluation.outcome == "UNDECIDED"
+    assert empirical_evaluation.reason_codes == ["EMPIRICAL_TRIGGER_MATCHED"]
+    assert empirical_evaluation.evidence_refs == [EVIDENCE_REF]
+
+
+def test_rule_context_dimension_is_executable_for_equivalent_units_and_wrong_dimensions():
+    """Unit variation must alter a quantity consumed by the target rule's gate."""
+    rule = rule_fixture(
+        "sci:rule:typed-context-dimension",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        context_dimensions={"travel_distance": "meter"},
+    )
+    equivalent = claim_fixture(
+        "claim:typed-context-equivalent",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        quantities=[
+            {"quantity_kind": "travel_distance", "value": "100", "unit": "centimeter"}
+        ],
+    )
+    incompatible = claim_fixture(
+        "claim:typed-context-incompatible",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        quantities=[
+            {"quantity_kind": "travel_distance", "value": "1", "unit": "second"}
+        ],
+    )
+    missing = claim_fixture(
+        "claim:typed-context-missing",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+    )
+
+    assert evaluate_rule(rule, equivalent.normalized_claim).applicability == "IN_SCOPE"
+    wrong = evaluate_rule(rule, incompatible.normalized_claim)
+    assert wrong.applicability == "OUTSIDE_DOMAIN"
+    assert wrong.reason_codes == ["CONTEXT_DIMENSION_MISMATCH"]
+    absent = evaluate_rule(rule, missing.normalized_claim)
+    assert absent.applicability == "MISSING_CONDITIONS"
+    assert absent.reason_codes == ["MISSING_CONTEXT_QUANTITIES"]
+
+
+@pytest.mark.parametrize(
+    ("quantity_kind", "left_value", "left_unit", "right_value", "right_unit"),
+    [
+        ("angular_rate", "1", "radian / second", "0.001", "radian / millisecond"),
+        ("force", "1", "newton", "1000", "millinewton"),
+        ("energy", "1", "joule", "1000", "millijoule"),
+        ("pressure", "1", "pascal", "1000", "millipascal"),
+        ("molarity", "1", "mole / liter", "1000", "mole / meter ** 3"),
+        ("current", "1", "ampere", "1000", "milliampere"),
+        ("voltage", "1", "volt", "1000", "millivolt"),
+        ("resistance", "1", "ohm", "1000", "milliohm"),
+        ("capacitance", "1", "farad", "1000", "millifarad"),
+        ("diffusivity", "1", "meter ** 2 / second", "10000", "centimeter ** 2 / second"),
+        ("carrier_energy", "1", "electron_volt", "1000", "millielectron_volt"),
+        ("conductivity", "1", "siemens / meter", "10", "millisiemens / centimeter"),
+        ("thickness", "1", "nanometer", "0.001", "micrometer"),
+        ("viscosity", "1", "pascal * second", "1000", "millipascal * second"),
+        ("spin_rate", "1", "rpm", "1", "revolution / minute"),
+    ],
+)
+def test_task3_scientific_unit_variants_use_explicit_exact_conversion_registrations(
+    quantity_kind: str,
+    left_value: str,
+    left_unit: str,
+    right_value: str,
+    right_unit: str,
+):
+    """Domain qualification must not disguise metre-only probes as general SI support."""
+    assert compare_quantities(
+        {"quantity_kind": quantity_kind, "value": left_value, "unit": left_unit},
+        {"quantity_kind": quantity_kind, "value": right_value, "unit": right_unit},
+    ) == 0
 
 
 @pytest.fixture

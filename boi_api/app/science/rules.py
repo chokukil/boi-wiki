@@ -85,6 +85,8 @@ class VerificationRule(ScienceModel):
     expected_polarity: Literal["positive", "negative"] = "positive"
     required_conditions: list[ConditionConstraint] = Field(default_factory=list)
     validity_conditions: list[ConditionConstraint] = Field(default_factory=list)
+    empirical_trigger_conditions: list[ConditionConstraint] = Field(default_factory=list)
+    context_dimensions: dict[str, str] = Field(default_factory=dict)
     expected_dimensions: dict[str, str] = Field(default_factory=dict)
     equation: EquationConstraint | None = None
     knowledge_refs: list[str] = Field(min_length=1)
@@ -92,7 +94,7 @@ class VerificationRule(ScienceModel):
     evidence_uses: list[EvidenceUse] = Field(min_length=1)
     corrected_claim: str | None = None
 
-    @field_validator("expected_dimensions")
+    @field_validator("context_dimensions", "expected_dimensions")
     @classmethod
     def canonical_dimension_units(cls, value: dict[str, str]) -> dict[str, str]:
         return {kind: canonical_unit_token(unit) for kind, unit in value.items()}
@@ -107,7 +109,12 @@ class VerificationRule(ScienceModel):
         if set(evidence_use_refs) != set(self.evidence_refs):
             raise ValueError("evidence_uses must exactly match evidence_refs")
         condition_keys = [
-            condition.key for condition in (*self.required_conditions, *self.validity_conditions)
+            condition.key
+            for condition in (
+                *self.required_conditions,
+                *self.validity_conditions,
+                *self.empirical_trigger_conditions,
+            )
         ]
         if len(condition_keys) != len(set(condition_keys)):
             raise ValueError("condition constraint keys must be unique across a rule")
@@ -483,6 +490,58 @@ def _applicability_gate(
             reason_codes=["VALIDITY_DOMAIN_MISMATCH"],
             conditions=required + validity,
         )
+    quantities = {quantity.quantity_kind: quantity for quantity in claim.quantities}
+    missing_context = sorted(set(rule.context_dimensions) - set(quantities))
+    if missing_context:
+        return _base_evaluation(
+            rule,
+            claim,
+            applicability="MISSING_CONDITIONS",
+            outcome="UNDECIDED",
+            reason_codes=["MISSING_CONTEXT_QUANTITIES"],
+            conditions=required + validity,
+        )
+    context_matches = all(
+        validate_quantity(quantities[kind]).dimensionality
+        == expected_dimensionality(unit)
+        for kind, unit in sorted(rule.context_dimensions.items())
+    )
+    if not context_matches:
+        return _base_evaluation(
+            rule,
+            claim,
+            applicability="OUTSIDE_DOMAIN",
+            outcome="UNDECIDED",
+            reason_codes=["CONTEXT_DIMENSION_MISMATCH"],
+            conditions=required + validity,
+        )
+    if rule.empirical_trigger_conditions:
+        actual = _claim_values(claim)
+        provided = [
+            constraint.key
+            for constraint in rule.empirical_trigger_conditions
+            if constraint.key in actual and actual[constraint.key].value is not None
+        ]
+        if provided:
+            empirical = _condition_evaluations(rule.empirical_trigger_conditions, claim)
+            if len(provided) != len(rule.empirical_trigger_conditions):
+                return _base_evaluation(
+                    rule,
+                    claim,
+                    applicability="MISSING_CONDITIONS",
+                    outcome="UNDECIDED",
+                    reason_codes=["INCOMPLETE_EMPIRICAL_TRIGGER"],
+                    conditions=required + validity + empirical,
+                )
+            if all(item.satisfied for item in empirical):
+                return _base_evaluation(
+                    rule,
+                    claim,
+                    applicability="EMPIRICAL_ONLY",
+                    outcome="UNDECIDED",
+                    reason_codes=["EMPIRICAL_TRIGGER_MATCHED"],
+                    conditions=required + validity + empirical,
+                )
     return required, validity
 
 
