@@ -1,6 +1,6 @@
 ---
 name: boi-wiki-agent
-description: Use when working on BoI Wiki SOPs, OKF documents, action specs, MCP integration, Langflow BoI flows, workflow runtime, validated edits, or BoI Wiki validation. This skill bootstraps Codex into BoI Wiki MCP and harness resources instead of duplicating the full domain rules.
+description: Use when working on BoI Wiki SOPs, OKF documents, Science fact checks or evidence curation, action specs, MCP integration, Langflow flows, workflow runtime, validated edits, or BoI Wiki validation.
 ---
 
 # BoI Wiki Agent
@@ -31,6 +31,15 @@ Use this skill before creating or changing BoI Wiki knowledge, SOP workflows, ac
    - `harness/web-draft-editing-guide.md`
 3. For user-facing guidance, read BoI Wiki manuals under:
    - `data/boi/public/boi-wiki-manual/`
+
+## Science routing
+
+Science Verifier is a document review tool used by an **외부 사용자 Agent**; BoI does not provide an **내장 과학 Agent**.
+
+- For **과학적 팩트 체크**, claim interpretation, scientific correction, Evidence inspection, or report export, load `boi-science-verifier` and begin with `science_interpret`. `boi_agent_chat`, ordinary `ontology_search`, and `harness_acceptance` may supply navigation context but never Truth-Path Evidence, Citation, or a verdict. The full contract is in `harness/science-verification-harness.md`.
+- For new or changed scientific Source, Evidence, ontology, Knowledge, Rule, qualification, or Release Candidate work, load `boi-science-curator`. When a proposal introduces Source/Evidence, validate the Source with `science_source_validate`, then each exact span with `science_evidence_validate`; a terminology-only proposal may instead pin existing reviewed object digests. General OKF apply/promotion cannot publish or activate Science objects.
+- For a mixed verify-and-improve request, verify only against the active pinned Release, then create a separate curation proposal. Never use that draft in the same result; re-verification waits for a later reviewed Release.
+- If the active Release cannot be identified, or MCP or any required Science tool is unavailable, stop only the affected verification/curation operation and report it unavailable. Do not substitute Agent memory, general Wiki answers, or partial generic tools.
 
 ## Operating Rules
 
