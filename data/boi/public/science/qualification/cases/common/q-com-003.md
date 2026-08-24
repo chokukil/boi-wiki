@@ -45,15 +45,15 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:clear_violation",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:e750aef66e9e3e517158b928cd0afa1b66729189362003bacd3d383b11bc41a6",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 140,
-            "exact": "A one-degree Celsius temperature interval has a different magnitude from a one-kelvin interval. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 313,
+            "exact": "A one-degree Celsius temperature interval has a different magnitude from a one-kelvin interval. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA temperature interval of one degree Ce"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",
@@ -102,15 +102,15 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:in_scope_consistency",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:4e52a3475f80e7b7c5da8a76796a6706caf90ea3fa12981a92d7d5a7327f1c70",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 142,
-            "exact": "A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 338,
+            "end": 493,
+            "exact": "A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "ity is temperature interval = 1 kelvin.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying comparison kin"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",
@@ -159,15 +159,15 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:missing_required_condition",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:47327f2ce211476e96a5c86c5d205c24b5d0282ae2787578d434371b7830ec81",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 201,
-            "exact": "Without specifying comparison kind, the report states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 524,
+            "end": 738,
+            "exact": "Without specifying comparison kind, the report states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": " temperature interval = 1 kelvin.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",
@@ -212,15 +212,15 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:outside_validity_domain",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:6507eebcb4dbc64a8382b8dec412a807a428c740ef251f51574af0d1f189432d",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 213,
-            "exact": "In a different scientific context, the report nevertheless states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 766,
+            "end": 992,
+            "exact": "In a different scientific context, the report nevertheless states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": " is temperature interval = 1 kelvin.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",
@@ -269,15 +269,15 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:empirical_verification_required",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:daab1a6d91571d93662d4d6447d7d8ec27eb3a7830fc4bb3a30668c32cb6460c",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 226,
-            "exact": "For a named realization, the report asserts that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. No qualified observation is bound. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1028,
+            "end": 1267,
+            "exact": "For a named realization, the report asserts that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. No qualified observation is bound. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "erature interval = 1 kelvin.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a temperature interval of one d"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",
@@ -330,15 +330,15 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:negation",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:9d49510da4d23c106ab04ed26ebe7bf4284d5cc6e045f05a506ac8da5d1dd258",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 162,
-            "exact": "It is not true that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1280,
+            "end": 1455,
+            "exact": "It is not true that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "viewed quantity is temperature interval = 1 kelvin.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA temperature interval of one degree Celsius "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",
@@ -387,15 +387,15 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:unit_variation",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:40127f50680d19363a435bc0d9b050ec76ef20ebe4c19ae18c8be0acc13c9bc5",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 160,
-            "exact": "A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The same temperature interval is written as 1 °C and 1 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1474,
+            "end": 1671,
+            "exact": "A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantities are temperature interval = 1 °C; temperature interval reference = 1 kelvin.",
+            "prefix": " quantity is temperature interval = 1 kelvin.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",
@@ -461,15 +461,15 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:decision_changing_ambiguity",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:a4ba2a2599e78ab685b936a23ad50faa9a4daef8a597dd6bf55fe611d22476ea",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 292,
-            "exact": "The wording leaves unresolved whether 'A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin.' or instead 'A one-degree Celsius temperature interval has a different magnitude from a one-kelvin interval.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1703,
+            "end": 1928,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin”. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "e interval reference = 1 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",
@@ -514,15 +514,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:003:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:a4ba2a2599e78ab685b936a23ad50faa9a4daef8a597dd6bf55fe611d22476ea",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 292,
-            "exact": "The wording leaves unresolved whether 'A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin.' or instead 'A one-degree Celsius temperature interval has a different magnitude from a one-kelvin interval.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1703,
+            "end": 1928,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin”. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "e interval reference = 1 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",
@@ -569,15 +569,15 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:paraphrase",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:ca7012c74ee6958355f66c7c820ab4e97108c722f709b68fdb303a795ed85f93",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 190,
-            "exact": "In equivalent wording, the document states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1943,
+            "end": 2146,
+            "exact": "In equivalent wording, the document states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "ewed quantity is temperature interval = 1 kelvin.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nAn absolute Celsius temperature offset "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",
@@ -626,15 +626,15 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:false_red_prevention",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:950365ee66fbf4489434eeed03e418de0e125176f837650a48ff81f95583a63c",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 151,
-            "exact": "An absolute Celsius temperature offset is not the unit-interval magnitude comparison covered by this rule. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2171,
+            "end": 2335,
+            "exact": "An absolute Celsius temperature offset is not the unit-interval magnitude comparison covered by this rule. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "ity is temperature interval = 1 kelvin.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:celsius-temperature-interval",

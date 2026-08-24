@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:circuits:005",
         "claim_packet": {
           "claim_id": "claim:circuits:005:clear_violation",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:d8a5fcb6e1c7293fc0abb29faf6591380a677a8634292e2adbf1382e38bef5ff",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 148,
+            "start": 162,
+            "end": 310,
             "exact": "A capacitor's state variable is always inductor current and an inductor's is always capacitor voltage. The capacitance scale is recorded as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nThe capacitor voltage and inductor curr"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",
@@ -104,15 +104,15 @@
         "evaluation_rule_id": "sci-rule:circuits:005",
         "claim_packet": {
           "claim_id": "claim:circuits:005:in_scope_consistency",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:ec692cb2430369e7988062b8f87382bc202e4b74c6ca575164185134c6bebadc",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 139,
+            "start": 335,
+            "end": 474,
             "exact": "The capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "pacitance scale is recorded as 1 farad.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",
@@ -162,15 +162,15 @@
         "evaluation_rule_id": "sci-rule:circuits:005",
         "claim_packet": {
           "claim_id": "claim:circuits:005:missing_required_condition",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:65338b7fdeb1ae72fc074794a794a9e2aa4374daa5f17083e41383f982bd2ec9",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 208,
+            "start": 505,
+            "end": 713,
             "exact": "Without one required scientific condition, the document asserts that the capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "nce scale is recorded as 1 farad.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor an unidentified distributed elec"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",
@@ -216,15 +216,15 @@
         "evaluation_rule_id": "sci-rule:circuits:005",
         "claim_packet": {
           "claim_id": "claim:circuits:005:outside_validity_domain",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:58e4b2aa1e659f3ae65a9fd6b09787aa97af813aca37cc2d76d50a701e9d1a0c",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 224,
+            "start": 741,
+            "end": 965,
             "exact": "For an unidentified distributed electromagnetic structure, the document asserts that the capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "itance scale is recorded as 1 farad.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named storage componen"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",
@@ -274,15 +274,15 @@
         "evaluation_rule_id": "sci-rule:circuits:005",
         "claim_packet": {
           "claim_id": "claim:circuits:005:empirical_verification_required",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:74294ddf4680cadb17a49d008d539c8fd65e1692f32f98abae42a215c7486975",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 246,
+            "start": 1001,
+            "end": 1247,
             "exact": "For a named storage component under test, the document asserts that the capacitor voltage and inductor current are their respective lumped-model state variables; the named result requires measurement. The capacitance scale is recorded as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "cale is recorded as 1 farad.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that the capacitor voltage and induc"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",
@@ -336,15 +336,15 @@
         "evaluation_rule_id": "sci-rule:circuits:005",
         "claim_packet": {
           "claim_id": "claim:circuits:005:negation",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:47237972a4c1e2d109459b74035f10e58975f062b07c330941d33069d89ce218",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 159,
+            "start": 1260,
+            "end": 1419,
             "exact": "It is not true that the capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ment. The capacitance scale is recorded as 1 farad.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nThe capacitor voltage and inductor current ar"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",
@@ -394,15 +394,15 @@
         "evaluation_rule_id": "sci-rule:circuits:005",
         "claim_packet": {
           "claim_id": "claim:circuits:005:unit_variation",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:4f4b2badce31ce68ba4007e27c5a989eaf092cb4c5bc3975ee484038a302efee",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 200,
-            "exact": "The capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1000 millifarad. The same capacitance scale is referenced as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1438,
+            "end": 1635,
+            "exact": "The capacitor voltage and inductor current are their respective lumped-model state variables. The reviewed quantities are capacitance scale = 1000 millifarad; capacitance scale reference = 1 farad.",
+            "prefix": "The capacitance scale is recorded as 1 farad.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",
@@ -469,15 +469,15 @@
         "evaluation_rule_id": "sci-rule:circuits:005",
         "claim_packet": {
           "claim_id": "claim:circuits:005:decision_changing_ambiguity",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:1b822f4e299d003e4ec14cca90c4d18b7798289a12eac2ddf6b87fcc0a333158",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 192,
-            "exact": "The document calls the proposition 'Capacitor and inductor state variables' valid without resolving whether it affirms or denies that proposition. The capacitance scale is recorded as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1667,
+            "end": 1884,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The capacitor voltage and inductor current are their respective lumped-model state variables”. The reviewed quantity is capacitance scale = 1 farad.",
+            "prefix": "tance scale reference = 1 farad.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the capacitor voltage and "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",
@@ -523,15 +523,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:circuits:005:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:1b822f4e299d003e4ec14cca90c4d18b7798289a12eac2ddf6b87fcc0a333158",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 192,
-            "exact": "The document calls the proposition 'Capacitor and inductor state variables' valid without resolving whether it affirms or denies that proposition. The capacitance scale is recorded as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1667,
+            "end": 1884,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The capacitor voltage and inductor current are their respective lumped-model state variables”. The reviewed quantity is capacitance scale = 1 farad.",
+            "prefix": "tance scale reference = 1 farad.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the capacitor voltage and "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",
@@ -579,15 +579,15 @@
         "evaluation_rule_id": "sci-rule:circuits:005",
         "claim_packet": {
           "claim_id": "claim:circuits:005:paraphrase",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:9b92f26e228269f48c34592cdc3f387c1fa87476c525f57310824c4c57e09f98",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 162,
+            "start": 1899,
+            "end": 2061,
             "exact": "In equivalent wording, the capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "reviewed quantity is capacitance scale = 1 farad.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA resistor is not a capacitor or induct"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",
@@ -637,15 +637,15 @@
         "evaluation_rule_id": "sci-rule:circuits:005",
         "claim_packet": {
           "claim_id": "claim:circuits:005:false_red_prevention",
-          "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:e88505836d39bc4210b82217591d82f6a2799f4d89bc7b5a9bfaf866c37a5387",
+          "document_ref": "qualification-fixture:circuits:005",
+          "document_digest": "sha256:98033d34bb0116a2b3c3e3dfd49dd5373dfaa4bee99c423bb110017edbade9af",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 149,
+            "start": 2086,
+            "end": 2235,
             "exact": "A resistor is not a capacitor or inductor whose state variable is covered by this storage-element rule. The capacitance scale is recorded as 1 farad.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "pacitance scale is recorded as 1 farad.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:energy-storage-element",

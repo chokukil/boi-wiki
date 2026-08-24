@@ -45,15 +45,15 @@
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
           "claim_id": "claim:common:001:clear_violation",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:6d84e49161e3e52e511757cb35884dd1846b301b5614118ca4fbecf2a4c20afc",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 135,
-            "exact": "A sample length may be represented by a time unit without changing its scientific meaning. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 301,
+            "exact": "A sample length may be represented by a time unit without changing its scientific meaning. The reviewed quantity is sample length = 1 second.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA sample length is represented by a qua"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
@@ -104,15 +104,15 @@
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
           "claim_id": "claim:common:001:in_scope_consistency",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:a0e1e00673b7da4f6c2d215b7c0f91a147d6d2698785bab0d8daba2afa8cfd5f",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 127,
-            "exact": "A sample length is represented by a quantity whose unit has length dimensionality. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 326,
+            "end": 458,
+            "exact": "A sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantity is sample length = 1 meter.",
+            "prefix": "d quantity is sample length = 1 second.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying quantity role,"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
@@ -163,15 +163,15 @@
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
           "claim_id": "claim:common:001:missing_required_condition",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:83bfd3d69be0613c9717f598bc1d3dec09b7f11b165fb5cefeed04a1fc641c99",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 184,
-            "exact": "Without specifying quantity role, the report states that a sample length is represented by a quantity whose unit has length dimensionality. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 489,
+            "end": 678,
+            "exact": "Without specifying quantity role, the report states that a sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantity is sample length = 1 meter.",
+            "prefix": "ntity is sample length = 1 meter.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
@@ -218,15 +218,15 @@
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
           "claim_id": "claim:common:001:outside_validity_domain",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:d3cf358de08b3ef3873dc3308a7e981eba6308b1d5887c4d3b3162477899420e",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 198,
-            "exact": "In a different scientific context, the report nevertheless states that a sample length is represented by a quantity whose unit has length dimensionality. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 706,
+            "end": 909,
+            "exact": "In a different scientific context, the report nevertheless states that a sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantity is sample length = 1 meter.",
+            "prefix": "quantity is sample length = 1 meter.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
@@ -277,15 +277,15 @@
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
           "claim_id": "claim:common:001:empirical_verification_required",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:7495926995b6d1faf9cdac6ff80ff801c12f9570cf3d35353947cb1c96af35ef",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 211,
-            "exact": "For a named realization, the report asserts that a sample length is represented by a quantity whose unit has length dimensionality. No qualified observation is bound. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 945,
+            "end": 1161,
+            "exact": "For a named realization, the report asserts that a sample length is represented by a quantity whose unit has length dimensionality. No qualified observation is bound. The reviewed quantity is sample length = 1 meter.",
+            "prefix": " is sample length = 1 meter.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a sample length is represented "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
@@ -338,15 +338,15 @@
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
           "claim_id": "claim:common:001:negation",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:0438ff79baf7109380374a63a29bab8f91bad83806df86a53b2e31ebe900b515",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 147,
-            "exact": "It is not true that a sample length is represented by a quantity whose unit has length dimensionality. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1174,
+            "end": 1326,
+            "exact": "It is not true that a sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantity is sample length = 1 meter.",
+            "prefix": ". The reviewed quantity is sample length = 1 meter.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA sample length is represented by a quantity "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
@@ -397,15 +397,15 @@
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
           "claim_id": "claim:common:001:unit_variation",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:ec4a007c071ebda15e68b1bfc22580204391d8cd2d86d8176a59135a992df761",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 147,
-            "exact": "A sample length is represented by a quantity whose unit has length dimensionality. The same sample length is written as 100 centimeter and 1 meter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1345,
+            "end": 1522,
+            "exact": "A sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantities are sample length = 100 centimeter; sample length reference = 1 meter.",
+            "prefix": "reviewed quantity is sample length = 1 meter.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
@@ -473,15 +473,15 @@
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
           "claim_id": "claim:common:001:decision_changing_ambiguity",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:05f06567ba831b7844467bc66416d4798da3d8b509a2030ecba048e0687a86b5",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 272,
-            "exact": "The wording leaves unresolved whether 'A sample length is represented by a quantity whose unit has length dimensionality.' or instead 'A sample length may be represented by a time unit without changing its scientific meaning.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1554,
+            "end": 1756,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A sample length is represented by a quantity whose unit has length dimensionality”. The reviewed quantity is sample length = 1 meter.",
+            "prefix": "mple length reference = 1 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
@@ -528,15 +528,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:001:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:05f06567ba831b7844467bc66416d4798da3d8b509a2030ecba048e0687a86b5",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 272,
-            "exact": "The wording leaves unresolved whether 'A sample length is represented by a quantity whose unit has length dimensionality.' or instead 'A sample length may be represented by a time unit without changing its scientific meaning.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1554,
+            "end": 1756,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A sample length is represented by a quantity whose unit has length dimensionality”. The reviewed quantity is sample length = 1 meter.",
+            "prefix": "mple length reference = 1 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
@@ -585,15 +585,15 @@
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
           "claim_id": "claim:common:001:paraphrase",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:dccebcdbcc8412e7b9b71ee85810281b3b5e7704c67afcc413854ba7150ebfb3",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 175,
-            "exact": "In equivalent wording, the document states that a sample length is represented by a quantity whose unit has length dimensionality. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1771,
+            "end": 1951,
+            "exact": "In equivalent wording, the document states that a sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantity is sample length = 1 meter.",
+            "prefix": "The reviewed quantity is sample length = 1 meter.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA time interval is not the sample-lengt"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
@@ -644,15 +644,15 @@
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
           "claim_id": "claim:common:001:false_red_prevention",
-          "document_ref": "qualification:common:001",
-          "document_digest": "sha256:92a052753b5094670475ca96a9b3b408873f0b2fadc9acb7955b2f616390a8bc",
+          "document_ref": "qualification-fixture:common:001",
+          "document_digest": "sha256:3ae8c07d9161159fc3febd02907c59ec112aa2fb3674526eab610913a51f523c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 131,
-            "exact": "A time interval is not the sample-length quantity covered by this dimensional example. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1976,
+            "end": 2113,
+            "exact": "A time interval is not the sample-length quantity covered by this dimensional example. The reviewed quantity is sample length = 1 second.",
+            "prefix": "ed quantity is sample length = 1 meter.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",

@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:spin-coating:004
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+During final coat spin, increasing spin speed increases attainable resist film thickness in drying-limited photoresist spin coating. The spin rate is recorded as 1 rpm.
+
+[in_scope_consistency]
+During final coat spin, attainable photoresist film thickness decreases approximately with the reciprocal square root of spin speed when drying stops the flow. The spin rate is recorded as 1 rpm.
+
+[missing_required_condition]
+The report states a spin-speed direction without identifying the material as photoresist. The spin rate is recorded as 1 rpm.
+
+[outside_validity_domain]
+The qualitative drying-limited relation is asserted to provide an exact equipment recipe. The spin rate is recorded as 1 rpm.
+
+[empirical_verification_required]
+The report claims a measured spin-speed and thickness result for a named coater, but no qualified observation is bound. The spin rate is recorded as 1 rpm.
+
+[negation]
+It is not true that attainable resist film thickness decreases as spin speed increases during drying-limited final coat spin. The spin rate is recorded as 1 rpm.
+
+[unit_variation]
+During final coat spin, attainable photoresist film thickness decreases approximately with the reciprocal square root of spin speed when drying stops the flow. The reviewed quantities are spin rate = 1 revolution / minute; spin rate reference = 1 rpm.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “During final coat spin, attainable photoresist film thickness decreases approximately with the reciprocal square root of spin speed when drying stops the flow”. The reviewed quantity is spin rate = 1 rpm.
+
+[paraphrase]
+Faster final coat spin produces a thinner attainable photoresist film while drying terminates the radial flow. The spin rate is recorded as 1 rpm.
+
+[false_red_prevention]
+During a low-speed dispense stage, increasing spin speed increases transient liquid-puddle thickness because the dispense rate rises concurrently; the recorded spin_rate is 1 rpm.
+
+End of immutable qualification fixture.

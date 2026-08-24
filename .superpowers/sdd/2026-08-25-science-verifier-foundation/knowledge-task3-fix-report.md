@@ -10,6 +10,8 @@ Authority state: candidate-only; no authorized review, Release, activation, or o
 
 This change addresses every Important finding in the independent Knowledge Task 3 review and the inherited Knowledge Task 2 review. It hardens 44 candidate Rules and 440 candidate qualification cases while preserving the closed authority boundary. The result is still an agent-authored draft requiring an authorized Admin review; this report does not assert scientific approval or Release eligibility.
 
+An independent re-review of the first hardening commit `4124692` still failed on synthetic one-sentence fixtures, incomplete unit operands, remaining string self-attestation, and caller-created observation authority. The corpus, schema, and operational-boundary work below is the second corrective pass for those findings; the earlier passing test count was not treated as acceptance evidence.
+
 ## Finding closure
 
 ### Task 3
@@ -18,7 +20,7 @@ This change addresses every Important finding in the independent Knowledge Task 
    - Removed `claim_specificity == equipment_or_numeric` from all 32 domain Rules.
    - Added a unique, Rule-local empirical proposition to each Rule.
    - Moved empirical-observation handling after deterministic evaluation, so a deterministic contradiction remains `CONTRADICTS` even when the empirical trigger is present.
-   - A supporting result now requires a verified `QualifiedObservation` bound to the same Rule and one of that Rule's Evidence records; otherwise the result is `QUALIFIED_OBSERVATION_REQUIRED`.
+   - Caller-created `QualifiedObservation(verified=true)` values are now explicitly untrusted proposals and can never authorize a result. The public Engine accepts only an opaque operational observation type, but no issuer exists until a released observation schema and authorized Admin review event can be bound. Consequently empirical support is deliberately impossible in this candidate and remains `QUALIFIED_OBSERVATION_REQUIRED`.
 
 2. **Ignored unit values**
    - Added typed `quantity_equivalence_constraints` to all 32 domain Rules and all 12 Foundation Rules.
@@ -27,7 +29,7 @@ This change addresses every Important finding in the independent Knowledge Task 
 
 3. **Templated false-red shortcuts**
    - Replaced generated `outside_*` labels and the phrase `outside this rule's required scope` with nearby scientific claims using real alternative conditions, regimes, stages, material states, or comparison subjects.
-   - Tests require the benign case to retain the same subject and object while differing in a consumed condition, stage, or material state, and require real document SHA-256 digests and exact source anchors.
+   - Tests require the benign case to retain the same subject and object while differing in a consumed condition, stage, or material state. Each Rule now has one immutable UTF-8 qualification document whose full byte SHA-256, exact character offsets, and nonempty prefix/suffix anchors are verified by the Catalog.
 
 4. **Self-attested applicability booleans**
    - R-MAT-004 now consumes anchored activation energy, before/after temperature, and before/after diffusivity values and enforces their cross-field direction.
@@ -55,7 +57,7 @@ This change addresses every Important finding in the independent Knowledge Task 
 ### Inherited Task 2
 
 1. **Synthetic/weak Foundation cases**
-   - Replaced all 120 label spans and non-digest placeholders with complete scientific sentences, exact anchors, and real SHA-256 document digests.
+   - Replaced all 120 label spans and non-digest placeholders with complete scientific sentences in 12 immutable Rule documents, exact anchors, and full-document SHA-256 byte digests.
    - Every empirical case now evaluates its own matrix Rule. Every ambiguity has two different normalized interpretations with different outcomes. Paraphrases normalize to the same claim.
    - False-red cases use real condition or validity differences rather than concept mismatch.
 
@@ -77,13 +79,17 @@ This change addresses every Important finding in the independent Knowledge Task 
 
 ## Adversarial qualification evidence
 
+- The immutable corpus contains 44 documents, 44 matrices, 440 cases, 44 ambiguity alternatives, and 484 anchored Claim packets. All 484 spans re-anchor against the declared full-document byte digest with nonempty context anchors.
 - 32/32 domain clear contradictions remain violations when their Rule-local empirical trigger is injected.
 - 12/12 Foundation clear contradictions remain violations under their Rule-local empirical trigger.
 - 44/44 Rules consume their unit case's target/reference operands; arbitrary same-dimension magnitude mutations fail closed.
+- Catalog loading rejects a unit case when either structured operand is absent or when the exact source span does not explicitly contain both numeric-unit operands.
+- At runtime, a second reviewed-unit quantity explicitly present in a source span but omitted from the normalized operands forces `INSUFFICIENT_INFORMATION` with `UNGROUNDED_REVIEWED_QUANTITY_MENTION`.
 - Unregistered same-dimension conversion is explicitly rejected without an unhandled exception.
 - R-MAT-004 rejects a before/after temperature mutation inconsistent with the typed Arrhenius direction.
 - R-SCD-003 rejects a conductivity mutation inconsistent with the carrier equation.
 - 32/32 domain and 12/12 Foundation false-red cases remain non-violations while preserving the same subject/object family.
+- Raw `verified=true`, released-looking Evidence IDs, and caller-constructed observation proposals cannot cross the operational boundary or produce empirical `SUPPORTS`.
 - All four corrected PDF spans are verified at their declared page and exact UTF-8 text hash.
 
 ## Candidate-only governance evidence
@@ -91,18 +97,19 @@ This change addresses every Important finding in the independent Knowledge Task 
 - All seven Packs remain `draft`, `pending_review`, and `blocked_pending_authorized_admin_review`.
 - `authorized_review_events` remains empty.
 - All qualification matrices retain empty `release_refs`.
-- No Release document, activation pointer, review event, or operational capability was added.
+- No Release document, activation pointer, review event, or issued observation capability was added. The opaque observation type has no issuer while the required released observation/review schemas do not exist.
 - Candidate resolution returns `QualificationRuleSet`; the operational resolver and public Engine still reject release-candidate authority.
 
 ## Verification
 
 ```text
 /home/chokukil/invariant/.venv/bin/python -m pytest -q -s \
+  tests/test_science_qualification_fixtures.py \
   tests/test_science_foundation_pack.py tests/test_science_domain_packs.py \
   tests/test_science_engine.py tests/test_science_source_ledger.py \
   tests/test_science_profile.py tests/test_science_catalog.py \
   tests/test_science_models.py tests/test_okf_lint.py
-386 passed in 77.49s
+398 passed (215 focused corpus/Rule/Engine tests, 75 Catalog tests, and 108 Source/Profile/Model/OKF tests)
 
 /home/chokukil/invariant/.venv/bin/python scripts/okf_lint.py \
   --root data --strict-links --strict-media
@@ -110,7 +117,10 @@ OKF lint checked 470 markdown docs; found 731 markdown graph links and 25 markdo
 OKF lint passed
 
 /tmp/boi-sci-uv/bin/ruff check --select I,F,B \
-  boi_api/app/science/rules.py boi_api/app/science/units.py \
+  boi_api/app/science/catalog.py boi_api/app/science/engine.py \
+  boi_api/app/science/operational.py boi_api/app/science/rules.py \
+  boi_api/app/science/units.py scripts/build_science_qualification_fixtures.py \
+  tests/test_science_qualification_fixtures.py \
   tests/test_science_foundation_pack.py tests/test_science_domain_packs.py \
   tests/test_science_engine.py tests/test_science_source_ledger.py
 All checks passed!
@@ -125,11 +135,10 @@ PASS (exit 0)
 git diff --check
 PASS (exit 0)
 
-Post-format focused confirmation:
-/home/chokukil/invariant/.venv/bin/python -m pytest -q -s tests/test_science_engine.py
-184 passed in 2.35s
+Corpus generator idempotence:
+44 matrices plus 44 fixture documents had identical content hashes before and after regeneration.
 ```
 
 ## Remaining authority boundary
 
-These changes improve candidate qualification evidence only. They do not constitute authorized human scientific review. An Admin must independently inspect the Rules, Knowledge, exact Evidence spans, and case semantics before any later Release can be considered. No active Release was created by this work.
+These changes improve candidate qualification evidence only. They do not constitute authorized human scientific review. An Admin must independently inspect the Rules, Knowledge, exact Evidence spans, and case semantics before any later Release can be considered. No active Release was created by this work. In particular, empirical observations cannot produce `SUPPORTS` until a future released observation object, its content digest, the applicable Rule and Evidence, and an authorized Admin approval event can be sealed into a Catalog-issued operational capability.

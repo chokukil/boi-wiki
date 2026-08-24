@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:circuits:002",
         "claim_packet": {
           "claim_id": "claim:circuits:002:clear_violation",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:f970ad2faf6b7e33511df0db1f87f22245d1f9a2d1aa35f16470b9de70ca1f85",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 147,
+            "start": 162,
+            "end": 309,
             "exact": "The algebraic voltage sum around the defined lumped-circuit loop is 2 volts but is asserted to equal zero. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nThe algebraic voltage sum around the de"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",
@@ -118,15 +118,15 @@
         "evaluation_rule_id": "sci-rule:circuits:002",
         "claim_packet": {
           "claim_id": "claim:circuits:002:in_scope_consistency",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:a14b44ca0ab7723f59ce081403aa45c62de6736769a14b518bb907d65f8a9632",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 117,
+            "start": 334,
+            "end": 451,
             "exact": "The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he voltage scale is recorded as 1 volt.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nThe report omits a required scien"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",
@@ -190,15 +190,15 @@
         "evaluation_rule_id": "sci-rule:circuits:002",
         "claim_packet": {
           "claim_id": "claim:circuits:002:missing_required_condition",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:7508fe55e78b352022c6d8b186cdb4ec05253a4a0201b065ce5f57b2dd1dfc68",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 181,
+            "start": 482,
+            "end": 663,
             "exact": "The report omits a required scientific condition while stating: The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "tage scale is recorded as 1 volt.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor an undefined distributed path, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",
@@ -253,15 +253,15 @@
         "evaluation_rule_id": "sci-rule:circuits:002",
         "claim_packet": {
           "claim_id": "claim:circuits:002:outside_validity_domain",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:fe671564a752cbae2595240fac15abace6201d0c67f6216a62f6ee3d33715d5b",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 171,
+            "start": 691,
+            "end": 862,
             "exact": "For an undefined distributed path, the report states: The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "voltage scale is recorded as 1 volt.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named instrumented cir"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",
@@ -325,15 +325,15 @@
         "evaluation_rule_id": "sci-rule:circuits:002",
         "claim_packet": {
           "claim_id": "claim:circuits:002:empirical_verification_required",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:dde4fd2efc84133ad3a1d49f6cdca6dbdba5a54f84b412a5dcf336f456de3bad",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 214,
+            "start": 898,
+            "end": 1112,
             "exact": "For a named instrumented circuit loop, the report states: The algebraic voltage sum around the defined lumped-circuit loop is 0 volts; the named result requires measurement. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "scale is recorded as 1 volt.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nThe report denies the equality even though the alge"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",
@@ -401,15 +401,15 @@
         "evaluation_rule_id": "sci-rule:circuits:002",
         "claim_packet": {
           "claim_id": "claim:circuits:002:negation",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:ddc7c26c77783dafc79159543b3950ccc1765549977095bb289f024cdf2ef438",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 160,
+            "start": 1125,
+            "end": 1285,
             "exact": "The report denies the equality even though the algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "asurement. The voltage scale is recorded as 1 volt.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nThe algebraic voltage sum around the defined "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",
@@ -473,15 +473,15 @@
         "evaluation_rule_id": "sci-rule:circuits:002",
         "claim_packet": {
           "claim_id": "claim:circuits:002:unit_variation",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:b6e2e246d7bf81b7f28e8c4ddd531587c3811679ae409ccd4221f264a9ee0ed6",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 173,
-            "exact": "The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1000 millivolt. The same voltage scale is referenced as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1304,
+            "end": 1474,
+            "exact": "The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The reviewed quantities are voltage scale = 1000 millivolt; voltage scale reference = 1 volt.",
+            "prefix": "lts. The voltage scale is recorded as 1 volt.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",
@@ -562,15 +562,15 @@
         "evaluation_rule_id": "sci-rule:circuits:002",
         "claim_packet": {
           "claim_id": "claim:circuits:002:decision_changing_ambiguity",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:5c3a9ed8386643c02f334f72a2e4d47ce06fcfdc5b1f7c3564b8fcd59e7cfd56",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 305,
-            "exact": "A blurred table entry can be read as either 'The algebraic voltage sum around the defined lumped-circuit loop is 0 volts' or 'The algebraic voltage sum around the defined lumped-circuit loop is 2 volts but is asserted to equal zero', so the equation is unresolved. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1506,
+            "end": 1759,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The algebraic voltage sum around the defined lumped-circuit loop is 0 volts”. The reviewed quantities are voltage scale = 1 volt; algebraic voltage sum = 0 volt; zero voltage = 0 volt.",
+            "prefix": "oltage scale reference = 1 volt.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nUsing equivalent wording, the algebraic voltage s"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",
@@ -630,15 +630,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:circuits:002:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:5c3a9ed8386643c02f334f72a2e4d47ce06fcfdc5b1f7c3564b8fcd59e7cfd56",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 305,
-            "exact": "A blurred table entry can be read as either 'The algebraic voltage sum around the defined lumped-circuit loop is 0 volts' or 'The algebraic voltage sum around the defined lumped-circuit loop is 2 volts but is asserted to equal zero', so the equation is unresolved. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1506,
+            "end": 1759,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The algebraic voltage sum around the defined lumped-circuit loop is 0 volts”. The reviewed quantities are voltage scale = 1 volt; algebraic voltage sum = 0 volt; zero voltage = 0 volt.",
+            "prefix": "oltage scale reference = 1 volt.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nUsing equivalent wording, the algebraic voltage s"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",
@@ -700,15 +700,15 @@
         "evaluation_rule_id": "sci-rule:circuits:002",
         "claim_packet": {
           "claim_id": "claim:circuits:002:paraphrase",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:c1fff4f61cfb3dd0730f73ab4e1e85e6d359b3dbe800ef634f53ca830fb21ab4",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 143,
+            "start": 1774,
+            "end": 1917,
             "exact": "Using equivalent wording, the algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "raic voltage sum = 0 volt; zero voltage = 0 volt.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nVoltages along an open circuit path are"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",
@@ -772,15 +772,15 @@
         "evaluation_rule_id": "sci-rule:circuits:002",
         "claim_packet": {
           "claim_id": "claim:circuits:002:false_red_prevention",
-          "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:89b714baf7e0bc170d4eb16eaadd9efe00e62c83eb0e40e049d159b38934c57a",
+          "document_ref": "qualification-fixture:circuits:002",
+          "document_digest": "sha256:32af598203daab396fbbe7e5d21ad9d226bfe8ecbd00dd5638429cb7a4c3edba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 132,
+            "start": 1942,
+            "end": 2074,
             "exact": "Voltages along an open circuit path are not the algebraic sum around a defined closed loop. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he voltage scale is recorded as 1 volt.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:loop-voltage-sum",

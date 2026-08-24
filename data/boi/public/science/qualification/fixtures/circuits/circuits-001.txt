@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:circuits:001
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+The algebraic current sum at the identified lumped-circuit node is 1 ampere but is asserted to equal zero. The current scale is recorded as 1 ampere.
+
+[in_scope_consistency]
+The algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1 ampere.
+
+[missing_required_condition]
+The report omits a required scientific condition while stating: The algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1 ampere.
+
+[outside_validity_domain]
+At a distributed node where stored charge is changing, the report states: The algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1 ampere.
+
+[empirical_verification_required]
+For a named instrumented circuit node, the report states: The algebraic current sum at the identified lumped-circuit node is 0 amperes; the named result requires measurement. The current scale is recorded as 1 ampere.
+
+[negation]
+The report denies the equality even though the algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1 ampere.
+
+[unit_variation]
+The algebraic current sum at the identified lumped-circuit node is 0 amperes. The reviewed quantities are current scale = 1000 milliampere; current scale reference = 1 ampere.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “The algebraic current sum at the identified lumped-circuit node is 0 amperes”. The reviewed quantities are current scale = 1 ampere; algebraic current sum = 0 ampere; zero current = 0 ampere.
+
+[paraphrase]
+Using equivalent wording, the algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1 ampere.
+
+[false_red_prevention]
+Currents taken from multiple circuit nodes cannot be combined as the algebraic sum at one identified node. The current scale is recorded as 1 ampere.
+
+End of immutable qualification fixture.

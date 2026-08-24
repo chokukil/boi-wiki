@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:physics:001",
         "claim_packet": {
           "claim_id": "claim:physics:001:clear_violation",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:e1eb0ca879c84dca0b4d1999f9a6148c33b021bab0a1f02916edb2dec1e29b45",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 113,
+            "start": 161,
+            "end": 274,
             "exact": "Angular speed is merely an angular position with no time rate. The angular rate is recorded as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nAngular speed is the magnitude of an an"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",
@@ -104,15 +104,15 @@
         "evaluation_rule_id": "sci-rule:physics:001",
         "claim_packet": {
           "claim_id": "claim:physics:001:in_scope_consistency",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:4abe8fac4e583e0cd54d09ec32fb06bd1b98f76d922a47b42cf147e3c8141cbd",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 121,
+            "start": 299,
+            "end": 420,
             "exact": "Angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " rate is recorded as 1 radian / second.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",
@@ -162,15 +162,15 @@
         "evaluation_rule_id": "sci-rule:physics:001",
         "claim_packet": {
           "claim_id": "claim:physics:001:missing_required_condition",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:5a967cdc3c2bd9475e3bf4e52e17e37e8503c1c273ef52dcd042c5611cf9ceb9",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 190,
+            "start": 451,
+            "end": 641,
             "exact": "Without one required scientific condition, the document asserts that angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "is recorded as 1 radian / second.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a non-rotational scalar record, "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",
@@ -216,15 +216,15 @@
         "evaluation_rule_id": "sci-rule:physics:001",
         "claim_packet": {
           "claim_id": "claim:physics:001:outside_validity_domain",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:60a6514ce64e9e268567daf7bfe531a1eaf51b3ccdf59e67f91148c07501614c",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 183,
+            "start": 669,
+            "end": 852,
             "exact": "For a non-rotational scalar record, the document asserts that angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "te is recorded as 1 radian / second.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named encoder installa"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",
@@ -274,15 +274,15 @@
         "evaluation_rule_id": "sci-rule:physics:001",
         "claim_packet": {
           "claim_id": "claim:physics:001:empirical_verification_required",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:097ab83464c18c938e251091a962d2cba727dfedd2fd1b56bd0bf6f4048c542e",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 220,
+            "start": 888,
+            "end": 1108,
             "exact": "For a named encoder installation, the document asserts that angular speed is the magnitude of an angle's rate of change with time; the named result requires measurement. The angular rate is recorded as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "corded as 1 radian / second.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that angular speed is the magnitude "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",
@@ -336,15 +336,15 @@
         "evaluation_rule_id": "sci-rule:physics:001",
         "claim_packet": {
           "claim_id": "claim:physics:001:negation",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:c08248dfc6f48efbd7bc0842dc523dcc580bfe6734342095d0c82f67e3c77941",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 141,
+            "start": 1121,
+            "end": 1262,
             "exact": "It is not true that angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " The angular rate is recorded as 1 radian / second.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nAngular speed is the magnitude of an angle's "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",
@@ -394,15 +394,15 @@
         "evaluation_rule_id": "sci-rule:physics:001",
         "claim_packet": {
           "claim_id": "claim:physics:001:unit_variation",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:fcbcf555b5aa4d4dd47f37bfdc9797615b10a17ebaa5226267b11b4f399ae52d",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 188,
-            "exact": "Angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 0.001 radian / millisecond. The same angular rate is referenced as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1281,
+            "end": 1466,
+            "exact": "Angular speed is the magnitude of an angle's rate of change with time. The reviewed quantities are angular rate = 0.001 radian / millisecond; angular rate reference = 1 radian / second.",
+            "prefix": "ngular rate is recorded as 1 radian / second.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",
@@ -469,15 +469,15 @@
         "evaluation_rule_id": "sci-rule:physics:001",
         "claim_packet": {
           "claim_id": "claim:physics:001:decision_changing_ambiguity",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:cd9f9b2ec4a5029fe0e2c2202c37146b4a98efcfdc0459e9e0adbd4da595d9a0",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 189,
-            "exact": "The document calls the proposition 'Angular speed is an angle rate' valid without resolving whether it affirms or denies that proposition. The angular rate is recorded as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1498,
+            "end": 1697,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Angular speed is the magnitude of an angle's rate of change with time”. The reviewed quantity is angular rate = 1 radian / second.",
+            "prefix": "e reference = 1 radian / second.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, angular speed is the magni"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",
@@ -523,15 +523,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:physics:001:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:cd9f9b2ec4a5029fe0e2c2202c37146b4a98efcfdc0459e9e0adbd4da595d9a0",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 189,
-            "exact": "The document calls the proposition 'Angular speed is an angle rate' valid without resolving whether it affirms or denies that proposition. The angular rate is recorded as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1498,
+            "end": 1697,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Angular speed is the magnitude of an angle's rate of change with time”. The reviewed quantity is angular rate = 1 radian / second.",
+            "prefix": "e reference = 1 radian / second.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, angular speed is the magni"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",
@@ -579,15 +579,15 @@
         "evaluation_rule_id": "sci-rule:physics:001",
         "claim_packet": {
           "claim_id": "claim:physics:001:paraphrase",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:2bf14d7d08dd3db3a8ffe69d0bd6e354a605af08c33ee7b1049d80bb60aaad21",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 144,
+            "start": 1712,
+            "end": 1856,
             "exact": "In equivalent wording, angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "wed quantity is angular rate = 1 radian / second.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA linear-velocity quantity along a stra"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",
@@ -637,15 +637,15 @@
         "evaluation_rule_id": "sci-rule:physics:001",
         "claim_packet": {
           "claim_id": "claim:physics:001:false_red_prevention",
-          "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:8bad95045be4a3447e43fb23674e33e45bba198c07b5f01b1cefae99d7918513",
+          "document_ref": "qualification-fixture:physics:001",
+          "document_digest": "sha256:5e55c6aa3c74556b998aa69c0773f9d6185850b402e5d5c7b8365513fcd592a9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 135,
+            "start": 1881,
+            "end": 2016,
             "exact": "A linear-velocity quantity along a straight path is not an angular-speed angle rate. The angular rate is recorded as 1 radian / second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " rate is recorded as 1 radian / second.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:angular-speed",

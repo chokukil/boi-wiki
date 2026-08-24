@@ -45,15 +45,15 @@
         "evaluation_rule_id": "sci-rule:common:010",
         "claim_packet": {
           "claim_id": "claim:common:010:clear_violation",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:39db1661da49ef781757e525a5ef651f12e67966e961bddd8ab060f7b06d386c",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 136,
-            "exact": "Steady state and dynamic equilibrium are identical scientific definitions in every respect. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 309,
+            "exact": "Steady state and dynamic equilibrium are identical scientific definitions in every respect. The reviewed quantity is observation duration = 1 second.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nSteady state is time independent, where"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",
@@ -108,15 +108,15 @@
         "evaluation_rule_id": "sci-rule:common:010",
         "claim_packet": {
           "claim_id": "claim:common:010:in_scope_consistency",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:af34d7ce3cc77b07db5eb0e73dce875ff675d11af49345071ba685b3ee5456b6",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 183,
-            "exact": "Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 334,
+            "end": 530,
+            "exact": "Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantity is observation duration = 1 second.",
+            "prefix": "ity is observation duration = 1 second.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying steady state t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",
@@ -171,15 +171,15 @@
         "evaluation_rule_id": "sci-rule:common:010",
         "claim_packet": {
           "claim_id": "claim:common:010:missing_required_condition",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:609565142631dc4d4ac8f80e3844f51fcd478717f7e48ce690c08ac2f19614ae",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 254,
-            "exact": "Without specifying steady state temporal basis, the report states that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 561,
+            "end": 828,
+            "exact": "Without specifying steady state temporal basis, the report states that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantity is observation duration = 1 second.",
+            "prefix": " observation duration = 1 second.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",
@@ -230,15 +230,15 @@
         "evaluation_rule_id": "sci-rule:common:010",
         "claim_packet": {
           "claim_id": "claim:common:010:outside_validity_domain",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:2fc7546affece8c0b015fb2c26c0d08350f4b3b7ceb11fa81f8093fb60cf792f",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 254,
-            "exact": "In a different scientific context, the report nevertheless states that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 856,
+            "end": 1123,
+            "exact": "In a different scientific context, the report nevertheless states that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantity is observation duration = 1 second.",
+            "prefix": " is observation duration = 1 second.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",
@@ -293,15 +293,15 @@
         "evaluation_rule_id": "sci-rule:common:010",
         "claim_packet": {
           "claim_id": "claim:common:010:empirical_verification_required",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:1d748070ae7a56b70e5f7eac98c28b7529f6d0b212dab9021f8d5dfe51474404",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 267,
-            "exact": "For a named realization, the report asserts that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. No qualified observation is bound. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1159,
+            "end": 1439,
+            "exact": "For a named realization, the report asserts that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. No qualified observation is bound. The reviewed quantity is observation duration = 1 second.",
+            "prefix": "rvation duration = 1 second.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that steady state is time independen"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",
@@ -359,15 +359,15 @@
         "evaluation_rule_id": "sci-rule:common:010",
         "claim_packet": {
           "claim_id": "claim:common:010:negation",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:ce392af327a6d8f5211b7a9387c1b803e5a9c35915004e878a385cbf6f72fbb6",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 203,
-            "exact": "It is not true that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1452,
+            "end": 1668,
+            "exact": "It is not true that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantity is observation duration = 1 second.",
+            "prefix": "viewed quantity is observation duration = 1 second.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nSteady state is time independent, whereas dyn"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",
@@ -422,15 +422,15 @@
         "evaluation_rule_id": "sci-rule:common:010",
         "claim_packet": {
           "claim_id": "claim:common:010:unit_variation",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:a7ff1cf3dd86c66af5eea627c439f12a0f50f4e536be4ccf9e6ef25be67fff8b",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 213,
-            "exact": "Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The same observation duration is written as 1000 millisecond and 1 second.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1687,
+            "end": 1937,
+            "exact": "Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantities are observation duration = 1000 millisecond; observation duration reference = 1 second.",
+            "prefix": " quantity is observation duration = 1 second.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",
@@ -502,15 +502,15 @@
         "evaluation_rule_id": "sci-rule:common:010",
         "claim_packet": {
           "claim_id": "claim:common:010:decision_changing_ambiguity",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:679f29f2d5b9381661987aa04579920a06754ad4d7e6995091d5418691f39607",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 329,
-            "exact": "The wording leaves unresolved whether 'Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change.' or instead 'Steady state and dynamic equilibrium are identical scientific definitions in every respect.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1969,
+            "end": 2235,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change”. The reviewed quantity is observation duration = 1 second.",
+            "prefix": "n duration reference = 1 second.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that s"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",
@@ -561,15 +561,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:010:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:679f29f2d5b9381661987aa04579920a06754ad4d7e6995091d5418691f39607",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 329,
-            "exact": "The wording leaves unresolved whether 'Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change.' or instead 'Steady state and dynamic equilibrium are identical scientific definitions in every respect.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1969,
+            "end": 2235,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change”. The reviewed quantity is observation duration = 1 second.",
+            "prefix": "n duration reference = 1 second.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that s"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",
@@ -621,15 +621,15 @@
         "evaluation_rule_id": "sci-rule:common:010",
         "claim_packet": {
           "claim_id": "claim:common:010:paraphrase",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:9dbc81fc5d51b4f86a9eb1cbb214f6acac76b206e90c8f8d131a9c21564f1c8b",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 231,
-            "exact": "In equivalent wording, the document states that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2250,
+            "end": 2494,
+            "exact": "In equivalent wording, the document states that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantity is observation duration = 1 second.",
+            "prefix": "ewed quantity is observation duration = 1 second.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA transient observation is not a time-i"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",
@@ -684,15 +684,15 @@
         "evaluation_rule_id": "sci-rule:common:010",
         "claim_packet": {
           "claim_id": "claim:common:010:false_red_prevention",
-          "document_ref": "qualification:common:010",
-          "document_digest": "sha256:d23ad8e8af8abadbfcbbe78574c7d83261fc924d48fe7cfecf2dbf72ee973a31",
+          "document_ref": "qualification-fixture:common:010",
+          "document_digest": "sha256:fb116185338cb5c2d5440058c7c85b8505b365ddc294462ae24231a4d2a311ed",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 144,
-            "exact": "A transient observation is not a time-independent steady state in this definitions-only comparison. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2519,
+            "end": 2676,
+            "exact": "A transient observation is not a time-independent steady state in this definitions-only comparison. The reviewed quantity is observation duration = 1 second.",
+            "prefix": "ity is observation duration = 1 second.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:steady-state",

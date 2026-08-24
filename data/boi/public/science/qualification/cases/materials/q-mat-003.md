@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:materials:003",
         "claim_packet": {
           "claim_id": "claim:materials:003:clear_violation",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:82705ff02c8cfc04a6ee98362c0459d2a9fed16df30e32565fbb4d2766b72fe7",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 171,
+            "start": 163,
+            "end": 334,
             "exact": "A metastable phase with an available transformation pathway must remain indefinitely without approaching equilibrium. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA supercooled or superheated metastable"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",
@@ -108,15 +108,15 @@
         "evaluation_rule_id": "sci-rule:materials:003",
         "claim_packet": {
           "claim_id": "claim:materials:003:in_scope_consistency",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:0966d4224aa23019116da423cf6445a15616f456ddf86044cef4dc41ee44b69a",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 194,
+            "start": 359,
+            "end": 553,
             "exact": "A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "mperature is recorded as 298.15 kelvin.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying the metastable"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",
@@ -170,15 +170,15 @@
         "evaluation_rule_id": "sci-rule:materials:003",
         "claim_packet": {
           "claim_id": "claim:materials:003:missing_required_condition",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:84cd0feeb4fe1c76fc711f02357b21a5615a07db95da4042a51caee22dcad5bb",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 255,
+            "start": 584,
+            "end": 839,
             "exact": "Without specifying the metastable state, the report asserts: A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ure is recorded as 298.15 kelvin.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nWhen no transformation pathway is av"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",
@@ -228,15 +228,15 @@
         "evaluation_rule_id": "sci-rule:materials:003",
         "claim_packet": {
           "claim_id": "claim:materials:003:outside_validity_domain",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:947fa2da74cd181ac72a5305b014b239a7212c82cc008d6155868cf6f99d4185",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 259,
+            "start": 867,
+            "end": 1126,
             "exact": "When no transformation pathway is available, the report asserts: A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rature is recorded as 298.15 kelvin.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named supercooled spec"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",
@@ -290,15 +290,15 @@
         "evaluation_rule_id": "sci-rule:materials:003",
         "claim_packet": {
           "claim_id": "claim:materials:003:empirical_verification_required",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:ef4aad1c628562964923d7ca7b2ccf512a535908c3ec5309d35787329b160cb9",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 288,
+            "start": 1162,
+            "end": 1450,
             "exact": "For a named supercooled specimen, the report asserts: A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. This named result requires measurement. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "s recorded as 298.15 kelvin.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nUnder the stated scientific conditions, it is not t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",
@@ -356,15 +356,15 @@
         "evaluation_rule_id": "sci-rule:materials:003",
         "claim_packet": {
           "claim_id": "claim:materials:003:negation",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:b2f5ba2b488d96fba4258a61b5e206e8774a8fd246d6f2d258d4abb5607ffd4d",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 254,
+            "start": 1463,
+            "end": 1717,
             "exact": "Under the stated scientific conditions, it is not true that a supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "e context temperature is recorded as 298.15 kelvin.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA supercooled or superheated metastable phase"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",
@@ -418,15 +418,15 @@
         "evaluation_rule_id": "sci-rule:materials:003",
         "claim_packet": {
           "claim_id": "claim:materials:003:unit_variation",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:b60c0ece6761574fd3bb9157fe64fa8fb2cc3a9b7197612fa2aaef39f96803bd",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 247,
-            "exact": "A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 25 °C. The same context temperature is referenced as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1736,
+            "end": 1980,
+            "exact": "A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The reviewed quantities are context temperature = 25 °C; context temperature reference = 298.15 kelvin.",
+            "prefix": "ext temperature is recorded as 298.15 kelvin.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",
@@ -497,15 +497,15 @@
         "evaluation_rule_id": "sci-rule:materials:003",
         "claim_packet": {
           "claim_id": "claim:materials:003:decision_changing_ambiguity",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:b02d168e2e0e72a1723ed6e2ac5d275e2126a89fac0677c97ab585972e9bc091",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 365,
-            "exact": "The wording leaves unresolved whether 'A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available.' or instead 'A metastable phase with an available transformation pathway must remain indefinitely without approaching equilibrium'. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2012,
+            "end": 2284,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available”. The reviewed quantity is context temperature = 298.15 kelvin.",
+            "prefix": "ature reference = 298.15 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: A sup"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",
@@ -555,15 +555,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:materials:003:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:b02d168e2e0e72a1723ed6e2ac5d275e2126a89fac0677c97ab585972e9bc091",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 365,
-            "exact": "The wording leaves unresolved whether 'A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available.' or instead 'A metastable phase with an available transformation pathway must remain indefinitely without approaching equilibrium'. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2012,
+            "end": 2284,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available”. The reviewed quantity is context temperature = 298.15 kelvin.",
+            "prefix": "ature reference = 298.15 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: A sup"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",
@@ -615,15 +615,15 @@
         "evaluation_rule_id": "sci-rule:materials:003",
         "claim_packet": {
           "claim_id": "claim:materials:003:paraphrase",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:d78111b5abf1a55c308003a7f17895eed18e2c46bb0c54262fd5c8643fa512fb",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 238,
+            "start": 2299,
+            "end": 2537,
             "exact": "In equivalent wording, the document states: A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " quantity is context temperature = 298.15 kelvin.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA metastable phase with a kinetically b"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",
@@ -677,15 +677,15 @@
         "evaluation_rule_id": "sci-rule:materials:003",
         "claim_packet": {
           "claim_id": "claim:materials:003:false_red_prevention",
-          "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:301eb3bbdfad0ac8d6473295834811d3d40562272ea52c172ea140e06b03e016",
+          "document_ref": "qualification-fixture:materials:003",
+          "document_digest": "sha256:d6919ebaeff82da78558b77d8f43d251134852a3cf32da6f08080e278aa74cdc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 163,
+            "start": 2562,
+            "end": 2725,
             "exact": "A metastable phase with a kinetically blocked pathway is reported to persist during the observation interval. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "mperature is recorded as 298.15 kelvin.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:metastable-phase",

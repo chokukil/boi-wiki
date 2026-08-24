@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:materials:003
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A metastable phase with an available transformation pathway must remain indefinitely without approaching equilibrium. The context temperature is recorded as 298.15 kelvin.
+
+[in_scope_consistency]
+A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 298.15 kelvin.
+
+[missing_required_condition]
+Without specifying the metastable state, the report asserts: A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 298.15 kelvin.
+
+[outside_validity_domain]
+When no transformation pathway is available, the report asserts: A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 298.15 kelvin.
+
+[empirical_verification_required]
+For a named supercooled specimen, the report asserts: A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. This named result requires measurement. The context temperature is recorded as 298.15 kelvin.
+
+[negation]
+Under the stated scientific conditions, it is not true that a supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 298.15 kelvin.
+
+[unit_variation]
+A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The reviewed quantities are context temperature = 25 °C; context temperature reference = 298.15 kelvin.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available”. The reviewed quantity is context temperature = 298.15 kelvin.
+
+[paraphrase]
+In equivalent wording, the document states: A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 298.15 kelvin.
+
+[false_red_prevention]
+A metastable phase with a kinetically blocked pathway is reported to persist during the observation interval. The context temperature is recorded as 298.15 kelvin.
+
+End of immutable qualification fixture.

@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:common:008
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A record of the validation domain of validated modelling and simulation need not be maintained. The reviewed quantity is validation domain length limit = 1 meter.
+
+[in_scope_consistency]
+A record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantity is validation domain length limit = 1 meter.
+
+[missing_required_condition]
+A record of the validation domain of validated modelling and simulation shall be maintained. No reviewed scale is stated for this fixture.
+
+[outside_validity_domain]
+A record of the validation domain of validated modelling and simulation shall be maintained. The accompanying scale is a time duration, not the reviewed physical dimension. The reviewed quantity is validation domain length limit = 1 second.
+
+[empirical_verification_required]
+A record of the validation domain of validated modelling and simulation shall be maintained. A new unqualified observation requests confirmation of this statement. The reviewed quantity is validation domain length limit = 1 meter.
+
+[negation]
+It is not true that a record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantity is validation domain length limit = 1 meter.
+
+[unit_variation]
+A record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantities are validation domain length limit = 100 centimeter; validation domain length limit reference = 1 meter.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “A record of the validation domain of validated modelling and simulation shall be maintained”. The reviewed quantity is validation domain length limit = 1 meter.
+
+[paraphrase]
+In equivalent wording, a record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantity is validation domain length limit = 1 meter.
+
+[false_red_prevention]
+The project archive note says the validation-domain record is archived after project close. The reviewed quantity is validation domain length limit = 1 meter.
+
+End of immutable qualification fixture.

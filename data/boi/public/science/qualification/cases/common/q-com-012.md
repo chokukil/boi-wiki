@@ -45,15 +45,15 @@
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
           "claim_id": "claim:common:012:clear_violation",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:69e40e7757225a6c7b56250deb98e80ec9d770b7aa39adcccd98cd0b26624880",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 121,
-            "exact": "An observed correlation by itself proves that one variable causes the other. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 306,
+            "exact": "An observed correlation by itself proves that one variable causes the other. The reviewed quantity is correlation coefficient = 0.5 dimensionless.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nAn observed correlation does not imply "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
@@ -103,15 +103,15 @@
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
           "claim_id": "claim:common:012:in_scope_consistency",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:2dafe7b3af66fa180e15914ff562324441df7023bacc619abd6465ca69aace62",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 119,
-            "exact": "An observed correlation does not imply that one variable causes the other. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 331,
+            "end": 475,
+            "exact": "An observed correlation does not imply that one variable causes the other. The reviewed quantity is correlation coefficient = 0.5 dimensionless.",
+            "prefix": "lation coefficient = 0.5 dimensionless.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying observed relat"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
@@ -161,15 +161,15 @@
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
           "claim_id": "claim:common:012:missing_required_condition",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:4b2d27df327f9105b88ae12f47ffd687f9684e2a68cc01de8fa7392c7bbd2c89",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 186,
-            "exact": "Without specifying observed relation basis, the report states that an observed correlation does not imply that one variable causes the other. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 506,
+            "end": 717,
+            "exact": "Without specifying observed relation basis, the report states that an observed correlation does not imply that one variable causes the other. The reviewed quantity is correlation coefficient = 0.5 dimensionless.",
+            "prefix": " coefficient = 0.5 dimensionless.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
@@ -215,15 +215,15 @@
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
           "claim_id": "claim:common:012:outside_validity_domain",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:3db5d45dbb69d71d8566185c07b5cd8688029cd5b90c1fa63c8f382e48145f2c",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 190,
-            "exact": "In a different scientific context, the report nevertheless states that an observed correlation does not imply that one variable causes the other. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 745,
+            "end": 960,
+            "exact": "In a different scientific context, the report nevertheless states that an observed correlation does not imply that one variable causes the other. The reviewed quantity is correlation coefficient = 0.5 dimensionless.",
+            "prefix": "ion coefficient = 0.5 dimensionless.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
@@ -273,15 +273,15 @@
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
           "claim_id": "claim:common:012:empirical_verification_required",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:4ea9852c5f198729417594d7a5cf78e5c4c74919d95da1bd5418cbff2901334b",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 203,
-            "exact": "For a named realization, the report asserts that an observed correlation does not imply that one variable causes the other. No qualified observation is bound. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 996,
+            "end": 1224,
+            "exact": "For a named realization, the report asserts that an observed correlation does not imply that one variable causes the other. No qualified observation is bound. The reviewed quantity is correlation coefficient = 0.5 dimensionless.",
+            "prefix": "ficient = 0.5 dimensionless.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that an observed correlation does no"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
@@ -334,15 +334,15 @@
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
           "claim_id": "claim:common:012:negation",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:89d58b7fbcb3e0c4da2f551e9cb5da132cbfbd042b341239cdd87686defe3ec4",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 139,
-            "exact": "It is not true that an observed correlation does not imply that one variable causes the other. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1237,
+            "end": 1401,
+            "exact": "It is not true that an observed correlation does not imply that one variable causes the other. The reviewed quantity is correlation coefficient = 0.5 dimensionless.",
+            "prefix": "ity is correlation coefficient = 0.5 dimensionless.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nAn observed correlation does not imply that o"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
@@ -392,15 +392,15 @@
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
           "claim_id": "claim:common:012:unit_variation",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:c022c77dd232f8334a77b56dfc51f93894e7ca71bcfac595082a3b1a5beecc06",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 155,
-            "exact": "An observed correlation does not imply that one variable causes the other. The same correlation coefficient is written as 50 percent and 0.5 dimensionless.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1420,
+            "end": 1615,
+            "exact": "An observed correlation does not imply that one variable causes the other. The reviewed quantities are correlation coefficient = 50 percent; correlation coefficient reference = 0.5 dimensionless.",
+            "prefix": " correlation coefficient = 0.5 dimensionless.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
@@ -467,15 +467,15 @@
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
           "claim_id": "claim:common:012:decision_changing_ambiguity",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:faf728d6a8c0076d0e43ed65657dadc78f4d76080e65ac6de96e272d33b85caf",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 250,
-            "exact": "The wording leaves unresolved whether 'An observed correlation does not imply that one variable causes the other.' or instead 'An observed correlation by itself proves that one variable causes the other.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1647,
+            "end": 1861,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “An observed correlation does not imply that one variable causes the other”. The reviewed quantity is correlation coefficient = 0.5 dimensionless.",
+            "prefix": "t reference = 0.5 dimensionless.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
@@ -521,15 +521,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:012:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:faf728d6a8c0076d0e43ed65657dadc78f4d76080e65ac6de96e272d33b85caf",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 250,
-            "exact": "The wording leaves unresolved whether 'An observed correlation does not imply that one variable causes the other.' or instead 'An observed correlation by itself proves that one variable causes the other.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1647,
+            "end": 1861,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “An observed correlation does not imply that one variable causes the other”. The reviewed quantity is correlation coefficient = 0.5 dimensionless.",
+            "prefix": "t reference = 0.5 dimensionless.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
@@ -577,15 +577,15 @@
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
           "claim_id": "claim:common:012:paraphrase",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:a3a28e797da649bd8f68e860e1376d2914f6a1ae8b18b9df345875ffb33a23f0",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 167,
-            "exact": "In equivalent wording, the document states that an observed correlation does not imply that one variable causes the other. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1876,
+            "end": 2068,
+            "exact": "In equivalent wording, the document states that an observed correlation does not imply that one variable causes the other. The reviewed quantity is correlation coefficient = 0.5 dimensionless.",
+            "prefix": "y is correlation coefficient = 0.5 dimensionless.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA broad association without a quantifie"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
@@ -635,15 +635,15 @@
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
           "claim_id": "claim:common:012:false_red_prevention",
-          "document_ref": "qualification:common:012",
-          "document_digest": "sha256:06d893984467a9b046c449e5bcfdd6d9a9b3449a22dee52f2637df5ef1737425",
+          "document_ref": "qualification-fixture:common:012",
+          "document_digest": "sha256:c119e4122a60bcb58cae5daf003479d77cc21c3c099f4697f380bb2fcad81f45",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 162,
-            "exact": "A broad association without a quantified correlation is not silently treated as the correlation premise of this rule. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2093,
+            "end": 2280,
+            "exact": "A broad association without a quantified correlation is not silently treated as the correlation premise of this rule. The reviewed quantity is correlation coefficient = 0.5 dimensionless.",
+            "prefix": "lation coefficient = 0.5 dimensionless.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",

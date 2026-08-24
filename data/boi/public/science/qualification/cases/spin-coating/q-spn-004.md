@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:004",
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:clear_violation",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:41bd8064035eb68a130d40d2afba65e0b7cfbd8e93d7c64276ba22bae7a48e97",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 168,
+            "start": 166,
+            "end": 334,
             "exact": "During final coat spin, increasing spin speed increases attainable resist film thickness in drying-limited photoresist spin coating. The spin rate is recorded as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nDuring final coat spin, attainable phot"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",
@@ -113,15 +113,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:004",
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:in_scope_consistency",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:65cc9a279cb1b7cf627dc3247ae63094460eb729f46ab461620ee33b104de8d0",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 195,
+            "start": 359,
+            "end": 554,
             "exact": "During final coat spin, attainable photoresist film thickness decreases approximately with the reciprocal square root of spin speed when drying stops the flow. The spin rate is recorded as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ng. The spin rate is recorded as 1 rpm.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nThe report states a spin-speed di"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",
@@ -180,15 +180,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:004",
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:missing_required_condition",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:5e1d3dad98c1b0c184281b0f11f6e5840a7ad705cfba04f103eb1d39971ebf87",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 125,
+            "start": 585,
+            "end": 710,
             "exact": "The report states a spin-speed direction without identifying the material as photoresist. The spin rate is recorded as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "e spin rate is recorded as 1 rpm.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nThe qualitative drying-limited relat"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",
@@ -243,15 +243,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:004",
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:outside_validity_domain",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:3524a96caa367410ada34b64b960539303579be57ae989aad5cc6521c1cf2c74",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 125,
+            "start": 738,
+            "end": 863,
             "exact": "The qualitative drying-limited relation is asserted to provide an exact equipment recipe. The spin rate is recorded as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " The spin rate is recorded as 1 rpm.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nThe report claims a measured"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",
@@ -310,15 +310,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:004",
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:empirical_verification_required",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:fbdaefb0134d2e8739b25d625a2761fd5cc8296379dd7ac223a026f6132e99dc",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 155,
+            "start": 899,
+            "end": 1054,
             "exact": "The report claims a measured spin-speed and thickness result for a named coater, but no qualified observation is bound. The spin rate is recorded as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "n rate is recorded as 1 rpm.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that attainable resist film thicknes"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",
@@ -381,15 +381,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:004",
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:negation",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:391b72b77eb3bbd37511a5ceb1433a0b48f8d198656ed1bbffabe15aa8c1fdfe",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 161,
+            "start": 1067,
+            "end": 1228,
             "exact": "It is not true that attainable resist film thickness decreases as spin speed increases during drying-limited final coat spin. The spin rate is recorded as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ation is bound. The spin rate is recorded as 1 rpm.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nDuring final coat spin, attainable photoresis"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",
@@ -448,15 +448,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:004",
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:unit_variation",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:24720826df1840fb11059812bff66eb63d5a39d4a00441398e0ebad18321fb4e",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 218,
-            "exact": "During final coat spin, attainable photoresist film thickness decreases as spin speed increases when drying stops the flow. The spin rate is recorded as 1 revolution / minute. The same spin rate is referenced as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1247,
+            "end": 1498,
+            "exact": "During final coat spin, attainable photoresist film thickness decreases approximately with the reciprocal square root of spin speed when drying stops the flow. The reviewed quantities are spin rate = 1 revolution / minute; spin rate reference = 1 rpm.",
+            "prefix": "oat spin. The spin rate is recorded as 1 rpm.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",
@@ -532,15 +532,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:004",
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:decision_changing_ambiguity",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:d4be7c57fd5c9aa769a9adbe01971e7d3033e7593dffe2437ac1ab6720d50f5e",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 163,
-            "exact": "The wording leaves unresolved whether increasing spin speed makes the attainable drying-limited resist film thinner or thicker. The spin rate is recorded as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1530,
+            "end": 1803,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “During final coat spin, attainable photoresist film thickness decreases approximately with the reciprocal square root of spin speed when drying stops the flow”. The reviewed quantity is spin rate = 1 rpm.",
+            "prefix": "te; spin rate reference = 1 rpm.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nFaster final coat spin produces a thinner attaina"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",
@@ -595,15 +595,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:spin-coating:004:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:d4be7c57fd5c9aa769a9adbe01971e7d3033e7593dffe2437ac1ab6720d50f5e",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 163,
-            "exact": "The wording leaves unresolved whether increasing spin speed makes the attainable drying-limited resist film thinner or thicker. The spin rate is recorded as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1530,
+            "end": 1803,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “During final coat spin, attainable photoresist film thickness decreases approximately with the reciprocal square root of spin speed when drying stops the flow”. The reviewed quantity is spin rate = 1 rpm.",
+            "prefix": "te; spin rate reference = 1 rpm.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nFaster final coat spin produces a thinner attaina"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",
@@ -660,15 +660,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:004",
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:paraphrase",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:d4e606100637c52ae49c00e4f71a38e27d920deda3c85dd3ed36163f3f06a9fd",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 146,
+            "start": 1818,
+            "end": 1964,
             "exact": "Faster final coat spin produces a thinner attainable photoresist film while drying terminates the radial flow. The spin rate is recorded as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "low”. The reviewed quantity is spin rate = 1 rpm.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nDuring a low-speed dispense stage, incr"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",
@@ -727,15 +727,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:004",
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:false_red_prevention",
-          "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:7628ac76a3426c4703fe7f7641a6fa74321783c8682eea2a99627a1c97ef150d",
+          "document_ref": "qualification-fixture:spin-coating:004",
+          "document_digest": "sha256:dd79f37053305f160cde379172eed05214636667ba4e1ef2bb00efd374da9b18",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 171,
-            "exact": "During the dispense stage before rotation, a thicker liquid puddle does not contradict the spin-speed direction during final coat spin. The spin rate is recorded as 1 rpm.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1989,
+            "end": 2168,
+            "exact": "During a low-speed dispense stage, increasing spin speed increases transient liquid-puddle thickness because the dispense rate rises concurrently; the recorded spin_rate is 1 rpm.",
+            "prefix": "ow. The spin rate is recorded as 1 rpm.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:spin-speed",

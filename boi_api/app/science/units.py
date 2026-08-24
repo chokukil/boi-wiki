@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import pint
 
 from boi_api.app.science.models import (
+    ClaimPacket,
     ClaimQuantity,
     ConversionKind,
     ScienceModel,
@@ -78,8 +80,13 @@ class ConversionRegistry:
                 definition.kind,
             )
             if key in keyed:
-                raise ValueError(f"duplicate conversion registration: {definition.conversion_id}")
-            if definition.kind not in {ConversionKind.MULTIPLICATIVE, ConversionKind.AFFINE}:
+                raise ValueError(
+                    f"duplicate conversion registration: {definition.conversion_id}"
+                )
+            if definition.kind not in {
+                ConversionKind.MULTIPLICATIVE,
+                ConversionKind.AFFINE,
+            }:
                 raise UnsupportedConversionError(
                     f"{definition.kind.value} conversion is unsupported"
                 )
@@ -117,7 +124,9 @@ class ConversionRegistry:
             conversion_id is not None and definition.conversion_id != conversion_id
         ):
             if kind is ConversionKind.PROCEDURE_DEFINED:
-                raise UnregisteredConversionError("procedure conversion is unregistered")
+                raise UnregisteredConversionError(
+                    "procedure conversion is unregistered"
+                )
             raise UnregisteredConversionError(
                 f"unregistered {kind.value} conversion: {source_unit} -> {target_unit}"
             )
@@ -153,6 +162,20 @@ class ConversionRegistry:
             kind=definition.kind,
             interval=interval,
             conversion_id=definition.conversion_id,
+        )
+
+    def reviewed_unit_tokens(self) -> tuple[str, ...]:
+        """Return the exact unit spellings admitted by the reviewed registry."""
+
+        return tuple(
+            sorted(
+                {
+                    unit
+                    for source, target, _kind in self._definitions
+                    for unit in (source, target)
+                },
+                key=lambda item: (-len(item), item),
+            )
         )
 
 
@@ -559,8 +582,13 @@ class LockedUnitRegistry(pint.UnitRegistry):
 
 ureg = LockedUnitRegistry()
 
-def _validated_claim_quantity(quantity: ClaimQuantity | dict[str, object]) -> ClaimQuantity:
-    raw_value = quantity.value if isinstance(quantity, ClaimQuantity) else quantity.get("value")
+
+def _validated_claim_quantity(
+    quantity: ClaimQuantity | dict[str, object],
+) -> ClaimQuantity:
+    raw_value = (
+        quantity.value if isinstance(quantity, ClaimQuantity) else quantity.get("value")
+    )
     try:
         if raw_value is not None and not Decimal(str(raw_value)).is_finite():
             raise InvalidQuantityError("quantity magnitude must be finite")
@@ -568,7 +596,9 @@ def _validated_claim_quantity(quantity: ClaimQuantity | dict[str, object]) -> Cl
         raise
     except (ArithmeticError, ValueError):
         pass
-    raw_unit = quantity.unit if isinstance(quantity, ClaimQuantity) else quantity.get("unit")
+    raw_unit = (
+        quantity.unit if isinstance(quantity, ClaimQuantity) else quantity.get("unit")
+    )
     unit = canonical_unit_token(raw_unit)
     try:
         parsed = (
@@ -608,7 +638,9 @@ def _pint_quantity(quantity: ClaimQuantity | dict[str, object]) -> pint.Quantity
     return result
 
 
-def validate_quantity(quantity: ClaimQuantity | dict[str, object]) -> NormalizedQuantity:
+def validate_quantity(
+    quantity: ClaimQuantity | dict[str, object],
+) -> NormalizedQuantity:
     """Parse a claim quantity against bundled definitions and normalize it."""
 
     result = _pint_quantity(quantity)
@@ -707,3 +739,68 @@ def compare_quantities(
         interval=interval,
     )
     return (left_value > right_value) - (left_value < right_value)
+
+
+_NUMBER_TOKEN = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+
+
+def reviewed_quantity_mentions(text: str) -> tuple[ClaimQuantity, ...]:
+    """Extract explicit number-plus-reviewed-unit mentions without an LLM."""
+
+    units = conversion_registry.reviewed_unit_tokens()
+    unit_pattern = "|".join(re.escape(unit) for unit in units)
+    pattern = re.compile(
+        rf"(?<![\w.])(?P<value>{_NUMBER_TOKEN})\s+(?P<unit>{unit_pattern})"
+        rf"(?![\w*]|\s*[/·*])",
+        re.IGNORECASE,
+    )
+    mentions: list[ClaimQuantity] = []
+    for index, match in enumerate(pattern.finditer(text)):
+        matched_unit = match.group("unit")
+        canonical = next(
+            unit for unit in units if unit.casefold() == matched_unit.casefold()
+        )
+        mentions.append(
+            ClaimQuantity(
+                quantity_kind=f"source_mention_{index}",
+                value=Decimal(match.group("value")),
+                unit=canonical,
+            )
+        )
+    return tuple(mentions)
+
+
+def source_span_mentions_quantity(text: str, quantity: ClaimQuantity) -> bool:
+    """Return whether source text explicitly states this numeric value and unit."""
+
+    pattern = re.compile(
+        rf"(?<![\w.])(?P<value>{_NUMBER_TOKEN})\s+{re.escape(quantity.unit)}"
+        rf"(?![\w*]|\s*[/·*])",
+        re.IGNORECASE,
+    )
+    return any(
+        Decimal(match.group("value")) == quantity.value
+        for match in pattern.finditer(text)
+    )
+
+
+def unmatched_reviewed_quantity_mentions(claim: ClaimPacket) -> tuple[str, ...]:
+    """Find explicit source quantities omitted from the normalized Claim operands."""
+
+    available = list(claim.normalized_claim.quantities)
+    unmatched: list[str] = []
+    for mention in reviewed_quantity_mentions(claim.source_span.exact):
+        matched_index = None
+        for index, quantity in enumerate(available):
+            try:
+                equivalent = compare_quantities(mention, quantity) == 0
+            except InvalidQuantityError:
+                equivalent = False
+            if equivalent:
+                matched_index = index
+                break
+        if matched_index is None:
+            unmatched.append(f"{mention.value} {mention.unit}")
+        else:
+            available.pop(matched_index)
+    return tuple(unmatched)

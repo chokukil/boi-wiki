@@ -45,15 +45,15 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:clear_violation",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:250e6bb19d33666bd5d3aac7bfc2362dff95c3c7fa45e2f509d0a97fb89f18c2",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 144,
-            "exact": "The mass of the identified material particle necessarily changes merely because the particle moves. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 321,
+            "exact": "The mass of the identified material particle necessarily changes merely because the particle moves. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nThe mass of the identified material par"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",
@@ -102,15 +102,15 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:in_scope_consistency",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:120471abd8a7f533ba50b0bcb55b13f2704d49029a1029c8c742363766807f0a",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 126,
-            "exact": "The mass of the identified material particle remains invariant during its motion. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 346,
+            "end": 489,
+            "exact": "The mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "is material particle mass = 1 kilogram.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying particle ident"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",
@@ -159,15 +159,15 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:missing_required_condition",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:11c580f8247526a375135e038e339b0a4b9c2fed2a5bb7d726d8585baeef2d43",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 187,
-            "exact": "Without specifying particle identity, the report states that the mass of the identified material particle remains invariant during its motion. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 520,
+            "end": 724,
+            "exact": "Without specifying particle identity, the report states that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "erial particle mass = 1 kilogram.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",
@@ -212,15 +212,15 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:outside_validity_domain",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:5f25e38a83ec315ca532a682ebba0885e239fbfb7ae542659a36ad575c4d500b",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 197,
-            "exact": "In a different scientific context, the report nevertheless states that the mass of the identified material particle remains invariant during its motion. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 752,
+            "end": 966,
+            "exact": "In a different scientific context, the report nevertheless states that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "material particle mass = 1 kilogram.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",
@@ -269,15 +269,15 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:empirical_verification_required",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:3c94e4403c79110796fae9069ed19b4388f67b436ad644429abdd1f98a8166c0",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 210,
-            "exact": "For a named realization, the report asserts that the mass of the identified material particle remains invariant during its motion. No qualified observation is bound. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1002,
+            "end": 1229,
+            "exact": "For a named realization, the report asserts that the mass of the identified material particle remains invariant during its motion. No qualified observation is bound. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": " particle mass = 1 kilogram.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that the mass of the identified mate"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",
@@ -330,15 +330,15 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:negation",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:23dc2ec0539704957917634f7e193d6b278525c8305bd7f8a0320ff9b1bc0845",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 146,
-            "exact": "It is not true that the mass of the identified material particle remains invariant during its motion. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1242,
+            "end": 1405,
+            "exact": "It is not true that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "ed quantity is material particle mass = 1 kilogram.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nThe mass of the identified material particle "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",
@@ -387,15 +387,15 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:unit_variation",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:f660f4a271ae95799eac34a26c8d1b17d831600b570650d71903c07f4a204dda",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 153,
-            "exact": "The mass of the identified material particle remains invariant during its motion. The same material particle mass is written as 1000 gram and 1 kilogram.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1424,
+            "end": 1616,
+            "exact": "The mass of the identified material particle remains invariant during its motion. The reviewed quantities are material particle mass = 1000 gram; material particle mass reference = 1 kilogram.",
+            "prefix": "ntity is material particle mass = 1 kilogram.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",
@@ -461,15 +461,15 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:decision_changing_ambiguity",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:e5a413d8204013499225f6784fdecaec0a640eb8fbbcbb26949ce0b59b38aeb8",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 280,
-            "exact": "The wording leaves unresolved whether 'The mass of the identified material particle remains invariant during its motion.' or instead 'The mass of the identified material particle necessarily changes merely because the particle moves.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1648,
+            "end": 1861,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The mass of the identified material particle remains invariant during its motion”. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "cle mass reference = 1 kilogram.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",
@@ -514,15 +514,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:009:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:e5a413d8204013499225f6784fdecaec0a640eb8fbbcbb26949ce0b59b38aeb8",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 280,
-            "exact": "The wording leaves unresolved whether 'The mass of the identified material particle remains invariant during its motion.' or instead 'The mass of the identified material particle necessarily changes merely because the particle moves.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1648,
+            "end": 1861,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The mass of the identified material particle remains invariant during its motion”. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "cle mass reference = 1 kilogram.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",
@@ -569,15 +569,15 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:paraphrase",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:c597e4c684f81a4496eba9abde79089db3fc0bfcf86089e6633256f83928aafe",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 174,
-            "exact": "In equivalent wording, the document states that the mass of the identified material particle remains invariant during its motion. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1876,
+            "end": 2067,
+            "exact": "In equivalent wording, the document states that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": " quantity is material particle mass = 1 kilogram.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nAn open control-volume inventory is not"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",
@@ -626,15 +626,15 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:false_red_prevention",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:655a7e9da5b605666ad1768539990e41be8d81d1473d2981a2a05046629a7234",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 150,
-            "exact": "An open control-volume inventory is not the identified material particle whose mass invariance is stated. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2092,
+            "end": 2259,
+            "exact": "An open control-volume inventory is not the identified material particle whose mass invariance is stated. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "is material particle mass = 1 kilogram.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:material-particle-mass",

@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:005",
         "claim_packet": {
           "claim_id": "claim:chemistry:005:clear_violation",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:d5725a4e1e9e868bb04b9146fcc15115a808ccdd6b4e043afbecfc3cf1486fc7",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 138,
+            "start": 163,
+            "end": 301,
             "exact": "Adding a catalyst increases the equilibrium constant because it speeds the reaction. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nAdding a catalyst changes reaction kine"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",
@@ -109,15 +109,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:005",
         "claim_packet": {
           "claim_id": "claim:chemistry:005:in_scope_consistency",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:46baf9838af49ffd9a764f9032a9b254618c999c9302b742ccb9e0bfa29df33c",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 198,
+            "start": 326,
+            "end": 524,
             "exact": "Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "mperature is recorded as 298.15 kelvin.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying the balanced r"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",
@@ -172,15 +172,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:005",
         "claim_packet": {
           "claim_id": "claim:chemistry:005:missing_required_condition",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:cf293b3d0577659862614eb6e989f4f175c7e09c1e4e8eec75987acab56c1685",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 271,
+            "start": 555,
+            "end": 826,
             "exact": "Without specifying the balanced reaction comparison, the report asserts: Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ure is recorded as 298.15 kelvin.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nWhen temperature changes along with "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",
@@ -231,15 +231,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:005",
         "claim_packet": {
           "claim_id": "claim:chemistry:005:outside_validity_domain",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:dc1dd9d586300abe1b04e85ff2c13d161ddfec480b00a94a69cde72dcba9dfd1",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 273,
+            "start": 854,
+            "end": 1127,
             "exact": "When temperature changes along with catalyst addition, the report asserts: Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rature is recorded as 298.15 kelvin.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named catalytic reacto"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",
@@ -294,15 +294,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:005",
         "claim_packet": {
           "claim_id": "claim:chemistry:005:empirical_verification_required",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:fc43c37f6fb115a389a854e61fabaac01bedca27f5a6ec3d1e57bde01eb43066",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 293,
+            "start": 1163,
+            "end": 1456,
             "exact": "For a named catalytic reactor run, the report asserts: Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature. This named result requires measurement. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "s recorded as 298.15 kelvin.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nUnder the stated scientific conditions, it is not t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",
@@ -361,15 +361,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:005",
         "claim_packet": {
           "claim_id": "claim:chemistry:005:negation",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:848a613441ad239ad9e1e60ee2f4292e27d3cfe819ee5350dcfb58dfe44808e9",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 258,
+            "start": 1469,
+            "end": 1727,
             "exact": "Under the stated scientific conditions, it is not true that adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "e context temperature is recorded as 298.15 kelvin.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nAdding a catalyst changes reaction kinetics b"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",
@@ -424,15 +424,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:005",
         "claim_packet": {
           "claim_id": "claim:chemistry:005:unit_variation",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:2968e1249ea9d3a2968993ae3b9e09920043b81647794abc59cf762d9f98b4fd",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 251,
-            "exact": "Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature. The context temperature is recorded as 25 °C. The same context temperature is referenced as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1746,
+            "end": 1994,
+            "exact": "Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature. The reviewed quantities are context temperature = 25 °C; context temperature reference = 298.15 kelvin.",
+            "prefix": "ext temperature is recorded as 298.15 kelvin.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",
@@ -504,15 +504,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:005",
         "claim_packet": {
           "claim_id": "claim:chemistry:005:decision_changing_ambiguity",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:3fd6aa5aadb9df912a0f402fcd77929a3bf0cb30ba3121775ab7dc079b7448ae",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 336,
-            "exact": "The wording leaves unresolved whether 'Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature.' or instead 'Adding a catalyst increases the equilibrium constant because it speeds the reaction'. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2026,
+            "end": 2302,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature”. The reviewed quantity is context temperature = 298.15 kelvin.",
+            "prefix": "ature reference = 298.15 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: Addin"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",
@@ -563,15 +563,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:chemistry:005:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:3fd6aa5aadb9df912a0f402fcd77929a3bf0cb30ba3121775ab7dc079b7448ae",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 336,
-            "exact": "The wording leaves unresolved whether 'Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature.' or instead 'Adding a catalyst increases the equilibrium constant because it speeds the reaction'. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2026,
+            "end": 2302,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature”. The reviewed quantity is context temperature = 298.15 kelvin.",
+            "prefix": "ature reference = 298.15 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: Addin"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",
@@ -623,15 +623,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:005",
         "claim_packet": {
           "claim_id": "claim:chemistry:005:paraphrase",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:685925cf9ac94307c2f80ca2760ca008b163f01f94a493fdc91d9a52ea17f19a",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 242,
+            "start": 2317,
+            "end": 2559,
             "exact": "In equivalent wording, the document states: Adding a catalyst changes reaction kinetics but does not change the equilibrium constant for the same balanced reaction at the same temperature. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " quantity is context temperature = 298.15 kelvin.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nAt different absolute temperatures, cat"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",
@@ -686,15 +686,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:005",
         "claim_packet": {
           "claim_id": "claim:chemistry:005:false_red_prevention",
-          "document_ref": "qualification:chemistry:005",
-          "document_digest": "sha256:7261d3f4d1e8202f14ce3ef74e742bd418b2c692985e4c18cff5ffbb09803a8c",
+          "document_ref": "qualification-fixture:chemistry:005",
+          "document_digest": "sha256:52dd333c581277d0bdeb55ff9212011d52c254373bd4ff490d7ed87231b3b8de",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 181,
+            "start": 2584,
+            "end": 2765,
             "exact": "At different absolute temperatures, catalyst addition is not the only changed condition in the equilibrium-constant comparison. The context temperature is recorded as 298.15 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "mperature is recorded as 298.15 kelvin.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:catalyst-addition",

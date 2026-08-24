@@ -45,15 +45,15 @@
         "evaluation_rule_id": "sci-rule:common:005",
         "claim_packet": {
           "claim_id": "claim:common:005:clear_violation",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:39b58c56bca6fc60712d0209e0f4ea1234631963b8172075e5f14b6b827733ba",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 149,
-            "exact": "Measurement uncertainty is not a non-negative dispersion parameter for values attributed to a measurand. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 325,
+            "exact": "Measurement uncertainty is not a non-negative dispersion parameter for values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nMeasurement uncertainty is a non-negati"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -69,10 +69,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "parameter_sign",
-                "value": "non_negative"
-              },
               {
                 "condition_id": "definition_context",
                 "value": "vim_measurement_uncertainty"
@@ -103,15 +99,15 @@
         "evaluation_rule_id": "sci-rule:common:005",
         "claim_packet": {
           "claim_id": "claim:common:005:in_scope_consistency",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:c2249d44fca62975fa656a56eca43c8f37b6828f16eebfbdc7fc15507da5f7c9",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 159,
-            "exact": "Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 350,
+            "end": 525,
+            "exact": "Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.",
+            "prefix": " is uncertainty parameter = 0.01 meter.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying parameter sign"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -127,10 +123,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "parameter_sign",
-                "value": "non_negative"
-              },
               {
                 "condition_id": "definition_context",
                 "value": "vim_measurement_uncertainty"
@@ -161,15 +153,15 @@
         "evaluation_rule_id": "sci-rule:common:005",
         "claim_packet": {
           "claim_id": "claim:common:005:missing_required_condition",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:8cee84bb317b010ea8dc168ac6a3ec5a18cc0edafb42a28844075c0e8993f5b1",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 217,
-            "exact": "Without specifying parameter sign, the report states that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 556,
+            "end": 789,
+            "exact": "Without specifying parameter sign, the report states that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.",
+            "prefix": "certainty parameter = 0.01 meter.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -184,12 +176,7 @@
                 "unit": "meter"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "definition_context",
-                "value": "vim_measurement_uncertainty"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -215,15 +202,15 @@
         "evaluation_rule_id": "sci-rule:common:005",
         "claim_packet": {
           "claim_id": "claim:common:005:outside_validity_domain",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:b96c6e2eb206b20c4fa5ef277f832e5dd9734cfd96b66c8f1b6061d68307628a",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 230,
-            "exact": "In a different scientific context, the report nevertheless states that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 817,
+            "end": 1063,
+            "exact": "In a different scientific context, the report nevertheless states that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.",
+            "prefix": " uncertainty parameter = 0.01 meter.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -239,10 +226,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "parameter_sign",
-                "value": "non_negative"
-              },
               {
                 "condition_id": "definition_context",
                 "value": "different_scientific_context"
@@ -273,15 +256,15 @@
         "evaluation_rule_id": "sci-rule:common:005",
         "claim_packet": {
           "claim_id": "claim:common:005:empirical_verification_required",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:26e3e18ad299664c98a25c7b0b431966014b33471f349b66dc7c1e6e4a6ca634",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 243,
-            "exact": "For a named realization, the report asserts that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. No qualified observation is bound. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1099,
+            "end": 1358,
+            "exact": "For a named realization, the report asserts that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. No qualified observation is bound. The reviewed quantity is uncertainty parameter = 0.01 meter.",
+            "prefix": "inty parameter = 0.01 meter.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that measurement uncertainty is a no"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -297,10 +280,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "parameter_sign",
-                "value": "non_negative"
-              },
               {
                 "condition_id": "definition_context",
                 "value": "vim_measurement_uncertainty"
@@ -334,15 +313,15 @@
         "evaluation_rule_id": "sci-rule:common:005",
         "claim_packet": {
           "claim_id": "claim:common:005:negation",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:076721ae95098972e584a21da4a1922f78518884a864416fb19fb7c6d861c1c8",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 179,
-            "exact": "It is not true that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1371,
+            "end": 1566,
+            "exact": "It is not true that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.",
+            "prefix": "wed quantity is uncertainty parameter = 0.01 meter.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nMeasurement uncertainty is a non-negative par"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -358,10 +337,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "parameter_sign",
-                "value": "non_negative"
-              },
               {
                 "condition_id": "definition_context",
                 "value": "vim_measurement_uncertainty"
@@ -392,15 +367,15 @@
         "evaluation_rule_id": "sci-rule:common:005",
         "claim_packet": {
           "claim_id": "claim:common:005:unit_variation",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:53e5d3d910f87570336c0672b8603d759c1b60535d0b53bf7df6caea84ddc36c",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 188,
-            "exact": "Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The same uncertainty parameter is written as 1 centimeter and 0.01 meter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1585,
+            "end": 1811,
+            "exact": "Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantities are uncertainty parameter = 1 centimeter; uncertainty parameter reference = 0.01 meter.",
+            "prefix": "antity is uncertainty parameter = 0.01 meter.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -421,10 +396,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "parameter_sign",
-                "value": "non_negative"
-              },
               {
                 "condition_id": "definition_context",
                 "value": "vim_measurement_uncertainty"
@@ -467,15 +438,15 @@
         "evaluation_rule_id": "sci-rule:common:005",
         "claim_packet": {
           "claim_id": "claim:common:005:decision_changing_ambiguity",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:e1ee3c04833badda6c14232614d0df5c079156a6fbc9c2df836aeb34f811c752",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 318,
-            "exact": "The wording leaves unresolved whether 'Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand.' or instead 'Measurement uncertainty is not a non-negative dispersion parameter for values attributed to a measurand.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1843,
+            "end": 2088,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand”. The reviewed quantity is uncertainty parameter = 0.01 meter.",
+            "prefix": "arameter reference = 0.01 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that m"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -491,10 +462,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "parameter_sign",
-                "value": "non_negative"
-              },
               {
                 "condition_id": "definition_context",
                 "value": "vim_measurement_uncertainty"
@@ -521,15 +488,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:005:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:e1ee3c04833badda6c14232614d0df5c079156a6fbc9c2df836aeb34f811c752",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 318,
-            "exact": "The wording leaves unresolved whether 'Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand.' or instead 'Measurement uncertainty is not a non-negative dispersion parameter for values attributed to a measurand.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1843,
+            "end": 2088,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand”. The reviewed quantity is uncertainty parameter = 0.01 meter.",
+            "prefix": "arameter reference = 0.01 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that m"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -545,10 +512,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "parameter_sign",
-                "value": "non_negative"
-              },
               {
                 "condition_id": "definition_context",
                 "value": "vim_measurement_uncertainty"
@@ -577,15 +540,15 @@
         "evaluation_rule_id": "sci-rule:common:005",
         "claim_packet": {
           "claim_id": "claim:common:005:paraphrase",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:9ee93b89f23f268b65679ea5ce49fd20bc04ebcc7267091c261d738c9d47e32c",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 207,
-            "exact": "In equivalent wording, the document states that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2103,
+            "end": 2326,
+            "exact": "In equivalent wording, the document states that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.",
+            "prefix": "d quantity is uncertainty parameter = 0.01 meter.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA signed measurement error is not the n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -601,10 +564,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "parameter_sign",
-                "value": "non_negative"
-              },
               {
                 "condition_id": "definition_context",
                 "value": "vim_measurement_uncertainty"
@@ -635,15 +594,15 @@
         "evaluation_rule_id": "sci-rule:common:005",
         "claim_packet": {
           "claim_id": "claim:common:005:false_red_prevention",
-          "document_ref": "qualification:common:005",
-          "document_digest": "sha256:b44f8aabac31c6db71a7c5b365a6acea8646ddd1885bd61289d05230134eac33",
+          "document_ref": "qualification-fixture:common:005",
+          "document_digest": "sha256:5707b7873402310427dee82206d59ed5914543695a0820f7ed9db9ca45e6b0ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 139,
-            "exact": "A signed measurement error is not the non-negative uncertainty parameter defined by this rule. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2351,
+            "end": 2506,
+            "exact": "A signed measurement error is not the non-negative uncertainty parameter defined by this rule. The reviewed quantity is uncertainty parameter = 0.01 meter.",
+            "prefix": " is uncertainty parameter = 0.01 meter.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-uncertainty",
@@ -660,12 +619,8 @@
             ],
             "conditions": [
               {
-                "condition_id": "parameter_sign",
-                "value": "signed_error"
-              },
-              {
                 "condition_id": "definition_context",
-                "value": "vim_measurement_uncertainty"
+                "value": "signed_measurement_error"
               }
             ],
             "process_stage": null,
@@ -680,7 +635,7 @@
             "user_confirmed": true
           }
         },
-        "expected_verdict": "INSUFFICIENT_INFORMATION",
+        "expected_verdict": "OUTSIDE_VALIDITY_DOMAIN",
         "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:uncertainty-error"

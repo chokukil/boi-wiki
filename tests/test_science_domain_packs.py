@@ -27,10 +27,12 @@ from boi_api.app.science.rules import (
     QualifiedObservation,
     VerificationRule,
     evaluate_rule,
+    has_complete_quantity_equivalence_operands,
 )
 from boi_api.app.science.units import (
     compare_quantities,
     expected_dimensionality,
+    unmatched_reviewed_quantity_mentions,
     validate_quantity,
 )
 
@@ -44,17 +46,13 @@ PACKS = {
     "semiconductor-devices": ("semiconductor-devices", 6),
     "spin-coating": ("spin-coating", 5),
 }
-PACK_IDS = {
-    name: f"sci-pack:{name}/0.1.0" for name in PACKS
-}
+PACK_IDS = {name: f"sci-pack:{name}/0.1.0" for name in PACKS}
 EXPECTED_DEPENDENCIES = {
     "physical-principles": [("depends_on", FOUNDATION_PACK_ID)],
     "chemical-principles": [("depends_on", FOUNDATION_PACK_ID)],
     "circuit-principles": [("depends_on", FOUNDATION_PACK_ID)],
     "materials-science": [("depends_on", FOUNDATION_PACK_ID)],
-    "semiconductor-devices": [
-        ("depends_on", "sci-pack:materials-science/0.1.0")
-    ],
+    "semiconductor-devices": [("depends_on", "sci-pack:materials-science/0.1.0")],
     "spin-coating": [
         ("depends_on", "sci-pack:physical-principles/0.1.0"),
         ("depends_on", "sci-pack:chemical-principles/0.1.0"),
@@ -95,39 +93,127 @@ DOMAIN_BINDING_IDS = {
 
 FALSE_RED_NEIGHBORS = {
     "sci-rule:physics:001": ("quantity_role", "linear_velocity", "linear-velocity"),
-    "sci-rule:physics:002": ("net_external_force", "zero_vector", "zero net external force"),
-    "sci-rule:physics:003": ("object_system", "unbounded_collection", "no defined object boundary"),
-    "sci-rule:physics:004": ("shear_stress_state", "zero_applied", "zero applied shear stress"),
+    "sci-rule:physics:002": (
+        "net_external_force",
+        "zero_vector",
+        "zero net external force",
+    ),
+    "sci-rule:physics:003": (
+        "object_system",
+        "unbounded_collection",
+        "no defined object boundary",
+    ),
+    "sci-rule:physics:004": (
+        "shear_stress_state",
+        "zero_applied",
+        "zero applied shear stress",
+    ),
     "sci-rule:physics:005": ("control_surface", "open_surface", "open surface"),
-    "sci-rule:chemistry:001": ("solute_amount_basis", "mass_of_named_solute", "mass concentration"),
-    "sci-rule:chemistry:002": ("region_of_matter", "unbounded_gradient_region", "temperature-gradient region"),
+    "sci-rule:chemistry:001": (
+        "solute_amount_basis",
+        "mass_of_named_solute",
+        "mass concentration",
+    ),
+    "sci-rule:chemistry:002": (
+        "region_of_matter",
+        "unbounded_gradient_region",
+        "temperature-gradient region",
+    ),
     "sci-rule:chemistry:003": ("condensed_substance", "gas_phase", "gas-phase sample"),
-    "sci-rule:chemistry:004": ("activity_basis", "unspecified_concentration_basis", "unspecified concentration basis"),
-    "sci-rule:chemistry:005": ("temperature_comparison", "different_absolute_temperature", "different absolute temperatures"),
-    "sci-rule:circuits:001": ("node_identity", "multiple_nodes", "multiple circuit nodes"),
+    "sci-rule:chemistry:004": (
+        "activity_basis",
+        "unspecified_concentration_basis",
+        "unspecified concentration basis",
+    ),
+    "sci-rule:chemistry:005": (
+        "temperature_comparison",
+        "different_absolute_temperature",
+        "different absolute temperatures",
+    ),
+    "sci-rule:circuits:001": (
+        "node_identity",
+        "multiple_nodes",
+        "multiple circuit nodes",
+    ),
     "sci-rule:circuits:002": ("loop_path", "open_path", "open circuit path"),
-    "sci-rule:circuits:003": ("element_model", "nonlinear_resistor", "nonlinear resistor"),
-    "sci-rule:circuits:004": ("element_model", "active_current_controlled_element", "active current-controlled element"),
+    "sci-rule:circuits:003": (
+        "element_model",
+        "nonlinear_resistor",
+        "nonlinear resistor",
+    ),
+    "sci-rule:circuits:004": (
+        "element_model",
+        "active_current_controlled_element",
+        "active current-controlled element",
+    ),
     "sci-rule:circuits:005": ("element_type", "resistor", "resistor"),
-    "sci-rule:circuits:006": ("input_impedance", "infinite_ideal", "infinite input impedance"),
+    "sci-rule:circuits:006": (
+        "input_impedance",
+        "infinite_ideal",
+        "infinite input impedance",
+    ),
     "sci-rule:materials:001": ("defect_type", "surface_step", "surface step"),
-    "sci-rule:materials:002": ("defect_cluster_type", "solute_atom", "isolated solute atom"),
-    "sci-rule:materials:003": ("transformation_pathway", "kinetically_blocked", "kinetically blocked pathway"),
-    "sci-rule:materials:004": ("mechanism_comparison", "changed", "diffusion mechanism changed"),
-    "sci-rule:materials:005": ("comparison_composition", "different", "different composition"),
-    "sci-rule:semiconductor-devices:001": ("energy_state", "continuum_energy_interval", "continuum energy interval"),
-    "sci-rule:semiconductor-devices:002": ("carrier_type", "ionic_species", "ionic-species"),
+    "sci-rule:materials:002": (
+        "defect_cluster_type",
+        "solute_atom",
+        "isolated solute atom",
+    ),
+    "sci-rule:materials:003": (
+        "transformation_pathway",
+        "kinetically_blocked",
+        "kinetically blocked pathway",
+    ),
+    "sci-rule:materials:004": (
+        "mechanism_comparison",
+        "changed",
+        "diffusion mechanism changed",
+    ),
+    "sci-rule:materials:005": (
+        "comparison_composition",
+        "different",
+        "different composition",
+    ),
+    "sci-rule:semiconductor-devices:001": (
+        "energy_state",
+        "continuum_energy_interval",
+        "continuum energy interval",
+    ),
+    "sci-rule:semiconductor-devices:002": (
+        "carrier_type",
+        "ionic_species",
+        "ionic-species",
+    ),
     "sci-rule:semiconductor-devices:003": (
-        "carrier_parameter_scope",
-        "single_doping_label",
-        "doping label",
+        "transport_regime",
+        "high_field",
+        "high-field",
     ),
     "sci-rule:semiconductor-devices:004": ("bias_polarity", "reverse", "reverse bias"),
-    "sci-rule:semiconductor-devices:005": ("gate_oxide_model", "tunneling_dielectric", "tunneling dielectric"),
-    "sci-rule:semiconductor-devices:006": ("device_realization", "ideal_device", "ideal-device model"),
-    "sci-rule:spin-coating:001": ("process_method", "slot_die_coating", "slot-die coating"),
-    "sci-rule:spin-coating:002": ("validation_record_scope", "different_model", "different model"),
-    "sci-rule:spin-coating:003": ("validation_domain_ref", "unavailable", "no validation-domain record"),
+    "sci-rule:semiconductor-devices:005": (
+        "gate_oxide_model",
+        "tunneling_dielectric",
+        "tunneling dielectric",
+    ),
+    "sci-rule:semiconductor-devices:006": (
+        "device_realization",
+        "ideal_device",
+        "ideal-device model",
+    ),
+    "sci-rule:spin-coating:001": (
+        "process_method",
+        "slot_die_coating",
+        "slot-die coating",
+    ),
+    "sci-rule:spin-coating:002": (
+        "validation_record_scope",
+        "different_model",
+        "different model",
+    ),
+    "sci-rule:spin-coating:003": (
+        "validation_domain_ref",
+        "unavailable",
+        "no validation-domain record",
+    ),
     "sci-rule:spin-coating:004": ("process_stage", "dispense_stage", "dispense stage"),
     "sci-rule:spin-coating:005": (
         "thinning_continues_until",
@@ -252,12 +338,15 @@ def test_domain_packs_have_exact_rules_cases_and_typed_dependencies(
             matrix_cases = science_catalog.qualification_cases(rule_id)
             assert len(matrix_cases) == 10
             assert {case.case_kind for case in matrix_cases} == REQUIRED_TEN_CASE_KINDS
-            assert len(
-                {
-                    ClaimPacket.model_validate(case.claim_packet).source_span.exact
-                    for case in matrix_cases
-                }
-            ) == 10
+            assert (
+                len(
+                    {
+                        ClaimPacket.model_validate(case.claim_packet).source_span.exact
+                        for case in matrix_cases
+                    }
+                )
+                == 10
+            )
             assert all(
                 science_catalog.qualification_matrix(matrix_id).release_refs == []
                 for matrix_id in pack.qualification_refs
@@ -288,17 +377,24 @@ def test_domain_packs_have_exact_rules_cases_and_typed_dependencies(
                     }
                     for item in allowed
                 ]
-        assert all(rule_id.startswith(f"sci-rule:{domain}:") for rule_id in pack.rule_refs)
+        assert all(
+            rule_id.startswith(f"sci-rule:{domain}:") for rule_id in pack.rule_refs
+        )
 
     assert domain_case_count == 320
-    assert sum(
-        len(science_catalog.qualification_cases_for_pack(PACK_IDS[name]))
-        for name in PACKS
-        if name != "spin-coating"
-    ) == 270
-    assert domain_case_count + len(
-        science_catalog.qualification_cases_for_pack(FOUNDATION_PACK_ID)
-    ) == 440
+    assert (
+        sum(
+            len(science_catalog.qualification_cases_for_pack(PACK_IDS[name]))
+            for name in PACKS
+            if name != "spin-coating"
+        )
+        == 270
+    )
+    assert (
+        domain_case_count
+        + len(science_catalog.qualification_cases_for_pack(FOUNDATION_PACK_ID))
+        == 440
+    )
 
 
 def test_task3_objects_are_unapproved_agent_drafts_and_bindings_only_interpret(
@@ -370,9 +466,6 @@ def test_320_natural_claims_execute_through_candidate_rules_without_false_author
             evaluated += 1
             packet = ClaimPacket.model_validate(case.claim_packet)
             exact = packet.source_span.exact
-            assert packet.document_digest == "sha256:" + hashlib.sha256(
-                exact.encode("utf-8")
-            ).hexdigest()
             assert len(exact) >= 40
             assert exact[0].isupper()
             assert exact.rstrip().endswith(".")
@@ -383,7 +476,7 @@ def test_320_natural_claims_execute_through_candidate_rules_without_false_author
                 exact,
                 re.IGNORECASE,
             )
-            assert packet.source_span.end == len(exact)
+            assert packet.source_span.end - packet.source_span.start == len(exact)
 
             if case.case_kind == "decision_changing_ambiguity":
                 alternative = ClaimPacket.model_validate(case.alternative_claim_packet)
@@ -415,9 +508,7 @@ def test_320_natural_claims_execute_through_candidate_rules_without_false_author
                 assert first["quantity_kind"] == second["quantity_kind"]
                 quantity_kind = first["quantity_kind"]
                 assert quantity_kind in rule.context_dimensions
-                assert compare_quantities(
-                    first, second
-                ) == 0
+                assert compare_quantities(first, second) == 0
                 assert any(
                     quantity == ClaimQuantity.model_validate(second)
                     for quantity in packet.normalized_claim.quantities
@@ -428,7 +519,9 @@ def test_320_natural_claims_execute_through_candidate_rules_without_false_author
                     quantity == ClaimQuantity.model_validate(first)
                     for quantity in baseline_packet.normalized_claim.quantities
                 )
-                assert validate_quantity(second).dimensionality == expected_dimensionality(
+                assert validate_quantity(
+                    second
+                ).dimensionality == expected_dimensionality(
                     rule.context_dimensions[quantity_kind]
                 )
                 baseline_verdict, _ = _evaluate_case(baseline_case, rules)
@@ -461,12 +554,10 @@ def test_320_natural_claims_execute_through_candidate_rules_without_false_author
                     packet.normalized_claim.subject_concept_id,
                     packet.normalized_claim.relation_kind,
                     packet.normalized_claim.object_concept_id,
-                    packet.normalized_claim.predicate,
                 ) == (
                     violation.normalized_claim.subject_concept_id,
                     violation.normalized_claim.relation_kind,
                     violation.normalized_claim.object_concept_id,
-                    violation.normalized_claim.predicate,
                 )
                 assert (
                     packet.normalized_claim.conditions,
@@ -514,6 +605,57 @@ def test_320_natural_claims_execute_through_candidate_rules_without_false_author
         science_catalog.resolve_operational_rule_set(release_set)
 
 
+def test_domain_packets_are_spans_of_immutable_fixture_documents(
+    science_catalog: ScienceCatalog,
+):
+    fixture_root = BOI_ROOT / "public" / "science" / "qualification" / "fixtures"
+    for name in PACKS:
+        for rule_id in science_catalog.pack(PACK_IDS[name]).rule_refs:
+            for case in science_catalog.qualification_cases(rule_id):
+                for field in ("claim_packet", "alternative_claim_packet"):
+                    if not hasattr(case, field):
+                        continue
+                    packet = ClaimPacket.model_validate(getattr(case, field))
+                    _, domain, number = packet.document_ref.split(":")
+                    document = (
+                        fixture_root / domain / f"{domain}-{number}.txt"
+                    ).read_text()
+                    assert (
+                        packet.document_digest
+                        == "sha256:"
+                        + hashlib.sha256(document.encode("utf-8")).hexdigest()
+                    )
+                    assert document[
+                        packet.source_span.start : packet.source_span.end
+                    ] == (packet.source_span.exact)
+                    assert (
+                        packet.document_digest
+                        != "sha256:"
+                        + hashlib.sha256(
+                            packet.source_span.exact.encode("utf-8")
+                        ).hexdigest()
+                    )
+
+
+def test_domain_ambiguity_uses_one_genuinely_ambiguous_source_span(
+    science_catalog: ScienceCatalog,
+):
+    for name in PACKS:
+        for rule_id in science_catalog.pack(PACK_IDS[name]).rule_refs:
+            case = next(
+                item
+                for item in science_catalog.qualification_cases(rule_id)
+                if item.case_kind == "decision_changing_ambiguity"
+            )
+            first = ClaimPacket.model_validate(case.claim_packet)
+            second = ClaimPacket.model_validate(case.alternative_claim_packet)
+            assert first.source_span == second.source_span
+            assert first.document_digest == second.document_digest
+            text = first.source_span.exact.lower()
+            assert "wording leaves unresolved whether" not in text
+            assert "or instead" not in text
+
+
 def test_cross_domain_failure_examples_are_explicit_and_decisive(
     science_catalog: ScienceCatalog,
 ):
@@ -529,7 +671,11 @@ def test_cross_domain_failure_examples_are_explicit_and_decisive(
         ),
         "sci-rule:semiconductor-devices:005": ("ideal MOS", "zero gate current"),
         "sci-rule:semiconductor-devices:006": ("real", "gate leakage"),
-        "sci-rule:spin-coating:004": ("final coat spin", "spin speed", "film thickness"),
+        "sci-rule:spin-coating:004": (
+            "final coat spin",
+            "spin speed",
+            "film thickness",
+        ),
     }
     for rule_id, phrases in expected_phrases.items():
         case = next(
@@ -545,7 +691,10 @@ def test_cross_domain_failure_examples_are_explicit_and_decisive(
     serialized = "\n".join(
         [spin_pack.body, spin_pack.model_dump_json()]
         + [science_catalog.rule(item).model_dump_json() for item in spin_pack.rule_refs]
-        + [science_catalog.knowledge(item).model_dump_json() for item in spin_pack.knowledge_refs]
+        + [
+            science_catalog.knowledge(item).model_dump_json()
+            for item in spin_pack.knowledge_refs
+        ]
         + [
             science_catalog.qualification_matrix(item).model_dump_json()
             for item in spin_pack.qualification_refs
@@ -569,12 +718,14 @@ def test_cross_domain_failure_examples_are_explicit_and_decisive(
     ]
     assert "inactive" in emslie.exclusion_reason.lower()
     assert "inactive" in meyerhofer.exclusion_reason.lower()
-    assert "sci-evidence:spin-coating:emslie-model" not in science_catalog.rule(
-        "sci-rule:spin-coating:002"
-    ).evidence_refs
-    assert "sci-evidence:spin-coating:meyerhofer-model" not in science_catalog.rule(
-        "sci-rule:spin-coating:003"
-    ).evidence_refs
+    assert (
+        "sci-evidence:spin-coating:emslie-model"
+        not in science_catalog.rule("sci-rule:spin-coating:002").evidence_refs
+    )
+    assert (
+        "sci-evidence:spin-coating:meyerhofer-model"
+        not in science_catalog.rule("sci-rule:spin-coating:003").evidence_refs
+    )
 
 
 def test_empirical_claims_are_rule_specific_and_cannot_hide_contradictions(
@@ -599,8 +750,13 @@ def test_empirical_claims_are_rule_specific_and_cannot_hide_contradictions(
             assert signature not in trigger_signatures
             trigger_signatures.add(signature)
 
-            cases = {item.case_kind: item for item in science_catalog.qualification_cases(rule_id)}
-            violation = ClaimPacket.model_validate(cases["clear_violation"].claim_packet)
+            cases = {
+                item.case_kind: item
+                for item in science_catalog.qualification_cases(rule_id)
+            }
+            violation = ClaimPacket.model_validate(
+                cases["clear_violation"].claim_packet
+            )
             triggered = violation.normalized_claim.model_copy(
                 update={
                     "conditions": [
@@ -637,7 +793,10 @@ def test_empirical_claims_are_rule_specific_and_cannot_hide_contradictions(
                 packet.normalized_claim,
                 qualified_observations=(observation,),
             )
-            assert _single_rule_verdict(qualified) is PrimaryVerdict.CONSISTENT
+            assert (
+                _single_rule_verdict(qualified)
+                is PrimaryVerdict.EMPIRICAL_VERIFICATION_REQUIRED
+            )
 
     assert len(trigger_signatures) == 32
 
@@ -665,13 +824,17 @@ def test_unit_variants_are_executable_and_magnitude_changes_fail_safely(
             }
             assert constraint.quantity_kind in quantities
             assert constraint.reference_quantity_kind in quantities
-            assert compare_quantities(
-                quantities[constraint.quantity_kind],
-                quantities[constraint.reference_quantity_kind],
-            ) == 0
-            assert _single_rule_verdict(
-                evaluate_rule(rule, packet.normalized_claim)
-            ) is PrimaryVerdict.CONSISTENT
+            assert (
+                compare_quantities(
+                    quantities[constraint.quantity_kind],
+                    quantities[constraint.reference_quantity_kind],
+                )
+                == 0
+            )
+            assert (
+                _single_rule_verdict(evaluate_rule(rule, packet.normalized_claim))
+                is PrimaryVerdict.CONSISTENT
+            )
 
             changed_quantities = list(packet.normalized_claim.quantities)
             target_index = next(
@@ -689,6 +852,23 @@ def test_unit_variants_are_executable_and_magnitude_changes_fail_safely(
             changed = evaluate_rule(rule, changed_claim)
             assert changed.applicability == "OUTSIDE_DOMAIN"
             assert changed.reason_codes == ["QUANTITY_EQUIVALENCE_MISMATCH"]
+
+            without_reference = packet.normalized_claim.model_copy(
+                update={
+                    "quantities": [
+                        item
+                        for item in packet.normalized_claim.quantities
+                        if item.quantity_kind != constraint.reference_quantity_kind
+                    ]
+                }
+            )
+            incomplete_packet = packet.model_copy(
+                update={"normalized_claim": without_reference}
+            )
+            assert not has_complete_quantity_equivalence_operands(
+                rule, incomplete_packet.normalized_claim
+            )
+            assert unmatched_reviewed_quantity_mentions(incomplete_packet)
 
 
 def test_parameter_dependent_rules_use_typed_cross_field_constraints(
@@ -708,8 +888,13 @@ def test_parameter_dependent_rules_use_typed_cross_field_constraints(
         for item in science_catalog.qualification_cases(materials.rule_id)
         if item.case_kind == "in_scope_consistency"
     )
-    materials_claim = ClaimPacket.model_validate(materials_case.claim_packet).normalized_claim
-    assert _single_rule_verdict(evaluate_rule(materials, materials_claim)) is PrimaryVerdict.CONSISTENT
+    materials_claim = ClaimPacket.model_validate(
+        materials_case.claim_packet
+    ).normalized_claim
+    assert (
+        _single_rule_verdict(evaluate_rule(materials, materials_claim))
+        is PrimaryVerdict.CONSISTENT
+    )
     materials_quantities = [
         quantity.model_copy(update={"value": Decimal("250")})
         if quantity.quantity_kind == "temperature_after"
@@ -724,7 +909,10 @@ def test_parameter_dependent_rules_use_typed_cross_field_constraints(
     assert invalid_materials.reason_codes == ["ARRHENIUS_CROSS_FIELD_MISMATCH"]
     for case in science_catalog.qualification_cases(materials.rule_id):
         text = ClaimPacket.model_validate(case.claim_packet).source_span.exact
-        assert all(token in text for token in ("1 electron volt", "300", "350", "1e-15", "5e-15"))
+        assert all(
+            token in text
+            for token in ("1 electron volt", "300", "350", "1e-15", "5e-15")
+        )
 
     semiconductor = rules["sci-rule:semiconductor-devices:003"]
     assert semiconductor.carrier_conductivity_constraint is not None
@@ -740,9 +928,10 @@ def test_parameter_dependent_rules_use_typed_cross_field_constraints(
     semiconductor_claim = ClaimPacket.model_validate(
         semiconductor_case.claim_packet
     ).normalized_claim
-    assert _single_rule_verdict(
-        evaluate_rule(semiconductor, semiconductor_claim)
-    ) is PrimaryVerdict.CONSISTENT
+    assert (
+        _single_rule_verdict(evaluate_rule(semiconductor, semiconductor_claim))
+        is PrimaryVerdict.CONSISTENT
+    )
     semiconductor_quantities = [
         quantity.model_copy(update={"value": quantity.value * Decimal("3")})
         if quantity.quantity_kind == "conductivity"
@@ -758,9 +947,43 @@ def test_parameter_dependent_rules_use_typed_cross_field_constraints(
     for case in science_catalog.qualification_cases(semiconductor.rule_id):
         text = ClaimPacket.model_validate(case.claim_packet).source_span.exact
         assert all(
-            token in text
-            for token in ("1e21", "2e20", "0.1", "0.05", "17.623942974")
+            token in text for token in ("1e21", "2e20", "0.1", "0.05", "17.623942974")
         )
+
+
+def test_false_red_documents_are_internally_consistent_scientific_claims(
+    science_catalog: ScienceCatalog,
+):
+    materials = next(
+        item
+        for item in science_catalog.qualification_cases("sci-rule:materials:004")
+        if item.case_kind == "false_red_prevention"
+    )
+    materials_text = ClaimPacket.model_validate(
+        materials.claim_packet
+    ).source_span.exact
+    assert "decreased from 1e-15 to 5e-15" not in materials_text
+
+    carrier = next(
+        item
+        for item in science_catalog.qualification_cases(
+            "sci-rule:semiconductor-devices:003"
+        )
+        if item.case_kind == "false_red_prevention"
+    )
+    carrier_text = ClaimPacket.model_validate(carrier.claim_packet).source_span.exact
+    assert "does not provide carrier concentrations" not in carrier_text
+
+    spin = next(
+        item
+        for item in science_catalog.qualification_cases("sci-rule:spin-coating:004")
+        if item.case_kind == "false_red_prevention"
+    )
+    spin_packet = ClaimPacket.model_validate(spin.claim_packet)
+    assert "does not contradict" not in spin_packet.source_span.exact.lower()
+    assert (
+        spin_packet.normalized_claim.predicate in spin_packet.source_span.exact.lower()
+    )
 
 
 def test_decisive_evidence_use_stays_inside_the_pinned_span(

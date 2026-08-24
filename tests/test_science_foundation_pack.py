@@ -26,8 +26,12 @@ from boi_api.app.science.rules import (
     QualifiedObservation,
     VerificationRule,
     evaluate_rule,
+    has_complete_quantity_equivalence_operands,
 )
-from boi_api.app.science.units import compare_quantities
+from boi_api.app.science.units import (
+    compare_quantities,
+    unmatched_reviewed_quantity_mentions,
+)
 
 BOI_ROOT = Path(__file__).resolve().parents[1] / "data" / "boi"
 PACK_ID = "sci-pack:science-foundation/0.1.0"
@@ -154,15 +158,15 @@ def test_foundation_has_twelve_topics_bindings_rules_and_matrices(
     } <= set(pack.coverage_limitations)
 
     for number, rule_id in enumerate(RULE_IDS, start=1):
-        matrix = science_catalog.qualification_matrix(
-            f"sci-matrix:common:{number:03d}"
-        )
+        matrix = science_catalog.qualification_matrix(f"sci-matrix:common:{number:03d}")
         cases = science_catalog.qualification_cases(rule_id)
         assert matrix.standard_id == f"Q-COM-{number:03d}"
         assert matrix.release_refs == []
         assert len(cases) == 10
         assert {case.case_kind for case in cases} == REQUIRED_TEN_CASE_KINDS
-        assert len({sha256_digest(case.model_dump(mode="json")) for case in cases}) == 10
+        assert (
+            len({sha256_digest(case.model_dump(mode="json")) for case in cases}) == 10
+        )
 
 
 def test_foundation_objects_are_agent_drafts_and_cannot_claim_release_eligibility(
@@ -268,11 +272,26 @@ def test_each_matrix_case_changes_the_intended_qualification_boundary(
         missing_conditions = {
             item.condition_id for item in missing.normalized_claim.conditions
         }
-        assert missing_conditions < consistent_conditions
-        assert {
+        if consistent_conditions:
+            assert missing_conditions < consistent_conditions
+        else:
+            consistent_quantities = {
+                item.quantity_kind for item in consistent.normalized_claim.quantities
+            }
+            missing_quantities = {
+                item.quantity_kind for item in missing.normalized_claim.quantities
+            }
+            assert missing_quantities < consistent_quantities
+        outside_conditions = {
             item.condition_id for item in outside.normalized_claim.conditions
-        } == consistent_conditions
-        assert outside.normalized_claim.conditions != consistent.normalized_claim.conditions
+        }
+        assert outside_conditions == consistent_conditions
+        assert (
+            outside.normalized_claim.conditions
+            != consistent.normalized_claim.conditions
+            or outside.normalized_claim.quantities
+            != consistent.normalized_claim.quantities
+        )
         assert negation.normalized_claim.polarity == "negative"
         assert ambiguity.interpretation.ambiguity_ids
         assert ambiguity.normalized_claim != alternative.normalized_claim
@@ -284,15 +303,7 @@ def test_each_matrix_case_changes_the_intended_qualification_boundary(
         assert false_red.normalized_claim.object_concept_id == (
             consistent.normalized_claim.object_concept_id
         )
-        assert (
-            false_red.normalized_claim.conditions,
-            false_red.normalized_claim.process_stage,
-            false_red.normalized_claim.material_state,
-        ) != (
-            consistent.normalized_claim.conditions,
-            consistent.normalized_claim.process_stage,
-            consistent.normalized_claim.material_state,
-        )
+        assert false_red.normalized_claim != consistent.normalized_claim
 
 
 def test_foundation_cases_are_anchored_scientific_documents_not_labels(
@@ -307,11 +318,7 @@ def test_foundation_cases_are_anchored_scientific_documents_not_labels(
                 exact = packet.source_span.exact
                 assert len(exact) >= 40
                 assert exact[0].isupper() and exact.endswith(".")
-                assert packet.source_span.start == 0
-                assert packet.source_span.end == len(exact)
-                assert packet.document_digest == "sha256:" + hashlib.sha256(
-                    exact.encode("utf-8")
-                ).hexdigest()
+                assert packet.source_span.end - packet.source_span.start == len(exact)
                 assert "foundation topic" not in exact.lower()
                 assert "qualification case" not in exact.lower()
                 assert not re.search(
@@ -319,6 +326,55 @@ def test_foundation_cases_are_anchored_scientific_documents_not_labels(
                     exact,
                     re.IGNORECASE,
                 )
+
+
+def test_foundation_packets_are_spans_of_immutable_fixture_documents(
+    science_catalog: ScienceCatalog,
+):
+    fixture_root = BOI_ROOT / "public" / "science" / "qualification" / "fixtures"
+    for rule_id in RULE_IDS:
+        for case in science_catalog.qualification_cases(rule_id):
+            for field in ("claim_packet", "alternative_claim_packet"):
+                if not hasattr(case, field):
+                    continue
+                packet = ClaimPacket.model_validate(getattr(case, field))
+                _, domain, number = packet.document_ref.split(":")
+                document = (
+                    fixture_root / domain / f"{domain}-{number}.txt"
+                ).read_text()
+                assert (
+                    packet.document_digest
+                    == "sha256:" + hashlib.sha256(document.encode("utf-8")).hexdigest()
+                )
+                assert document[packet.source_span.start : packet.source_span.end] == (
+                    packet.source_span.exact
+                )
+                assert (
+                    packet.document_digest
+                    != "sha256:"
+                    + hashlib.sha256(
+                        packet.source_span.exact.encode("utf-8")
+                    ).hexdigest()
+                )
+                assert "The quantity kind is recorded as value unit." not in document
+
+
+def test_foundation_ambiguity_uses_one_genuinely_ambiguous_source_span(
+    science_catalog: ScienceCatalog,
+):
+    for rule_id in RULE_IDS:
+        case = next(
+            item
+            for item in science_catalog.qualification_cases(rule_id)
+            if item.case_kind == "decision_changing_ambiguity"
+        )
+        first = ClaimPacket.model_validate(case.claim_packet)
+        second = ClaimPacket.model_validate(case.alternative_claim_packet)
+        assert first.source_span == second.source_span
+        assert first.document_digest == second.document_digest
+        text = first.source_span.exact.lower()
+        assert "wording leaves unresolved whether" not in text
+        assert "or instead" not in text
 
 
 def test_foundation_rules_do_not_trust_interpreter_self_attestation(
@@ -349,7 +405,10 @@ def test_foundation_empirical_cases_stay_rule_local_and_cannot_hide_violations(
         )
         assert signature and signature not in signatures
         signatures.add(signature)
-        cases = {item.case_kind: item for item in science_catalog.qualification_cases(rule_id)}
+        cases = {
+            item.case_kind: item
+            for item in science_catalog.qualification_cases(rule_id)
+        }
         empirical = cases["empirical_verification_required"]
         assert empirical.evaluation_rule_id == rule_id
         verdict, evaluation = _evaluate_case(empirical, rules)
@@ -372,7 +431,10 @@ def test_foundation_empirical_cases_stay_rule_local_and_cannot_hide_violations(
                 ]
             }
         )
-        assert _single_rule_verdict(evaluate_rule(rule, triggered)) is PrimaryVerdict.VIOLATION
+        assert (
+            _single_rule_verdict(evaluate_rule(rule, triggered))
+            is PrimaryVerdict.VIOLATION
+        )
     assert len(signatures) == 12
 
 
@@ -398,7 +460,10 @@ def test_foundation_unit_variants_are_consumed_by_the_target_rule(
         reference = quantities[constraint.reference_quantity_kind]
         assert target.quantity_kind != "unit_probe"
         assert reference.quantity_kind != "unit_probe"
-        assert _single_rule_verdict(evaluate_rule(rule, packet.normalized_claim)) is PrimaryVerdict.CONSISTENT
+        assert (
+            _single_rule_verdict(evaluate_rule(rule, packet.normalized_claim))
+            is PrimaryVerdict.CONSISTENT
+        )
 
         changed = target.model_copy(update={"value": target.value + Decimal("17.003")})
         mutated = packet.normalized_claim.model_copy(
@@ -412,6 +477,77 @@ def test_foundation_unit_variants_are_consumed_by_the_target_rule(
         evaluation = evaluate_rule(rule, mutated)
         assert evaluation.applicability == "OUTSIDE_DOMAIN"
         assert evaluation.reason_codes == ["QUANTITY_EQUIVALENCE_MISMATCH"]
+
+        without_reference = packet.normalized_claim.model_copy(
+            update={
+                "quantities": [
+                    item
+                    for item in packet.normalized_claim.quantities
+                    if item.quantity_kind != constraint.reference_quantity_kind
+                ]
+            }
+        )
+        incomplete_packet = packet.model_copy(
+            update={"normalized_claim": without_reference}
+        )
+        assert not has_complete_quantity_equivalence_operands(
+            rule, incomplete_packet.normalized_claim
+        )
+        assert unmatched_reviewed_quantity_mentions(incomplete_packet) or rule_id == (
+            "sci-rule:common:002"
+        )
+
+
+def test_foundation_metrology_and_record_rules_use_values_not_attestation_labels(
+    science_catalog: ScienceCatalog,
+):
+    rules = {rule_id: _typed_rule(science_catalog, rule_id) for rule_id in RULE_IDS}
+
+    measurement = rules["sci-rule:common:004"]
+    case = next(
+        item
+        for item in science_catalog.qualification_cases(measurement.rule_id)
+        if item.case_kind == "in_scope_consistency"
+    )
+    claim = ClaimPacket.model_validate(case.claim_packet).normalized_claim
+    assert {item.quantity_kind for item in claim.quantities} >= {
+        "measured_quantity_value",
+        "measurement_uncertainty",
+    }
+    assert "measurement_uncertainty" in measurement.context_dimensions
+
+    uncertainty = rules["sci-rule:common:005"]
+    case = next(
+        item
+        for item in science_catalog.qualification_cases(uncertainty.rule_id)
+        if item.case_kind == "in_scope_consistency"
+    )
+    claim = ClaimPacket.model_validate(case.claim_packet).normalized_claim
+    changed = [
+        item.model_copy(update={"value": Decimal("-0.01")})
+        if item.quantity_kind == "uncertainty_parameter"
+        else item
+        for item in claim.quantities
+    ]
+    evaluation = evaluate_rule(
+        uncertainty,
+        claim.model_copy(update={"quantities": changed}),
+    )
+    assert evaluation.applicability == "OUTSIDE_DOMAIN"
+    assert evaluation.reason_codes == ["NONNEGATIVE_QUANTITY_VIOLATION"]
+    assert all(item.key != "parameter_sign" for item in uncertainty.required_conditions)
+
+    for rule_id in ("sci-rule:common:008", "sci-rule:common:011"):
+        rule = rules[rule_id]
+        condition_keys = {
+            item.key for item in (*rule.required_conditions, *rule.validity_conditions)
+        }
+        assert not condition_keys & {
+            "model_identity",
+            "validation_record_scope",
+            "record_identity",
+            "record_content",
+        }
 
 
 def test_foundation_decisions_are_narrower_than_or_equal_to_pinned_evidence(
@@ -451,15 +587,18 @@ def test_foundation_decisions_are_narrower_than_or_equal_to_pinned_evidence(
         rule = science_catalog.rule(rule_id)
         assert (rule.subject_concept_id, rule.object_concept_id) == concepts
 
-    assert science_catalog.rule("sci-rule:common:005").evidence_uses[0][
-        "claim_family"
-    ] == "measurement.uncertainty_definition_only"
-    assert science_catalog.rule("sci-rule:common:007").evidence_uses[0][
-        "claim_family"
-    ] == "measurement.reproducibility_definition_only"
-    assert "open-system" not in science_catalog.rule(
-        "sci-rule:common:009"
-    ).model_dump_json()
+    assert (
+        science_catalog.rule("sci-rule:common:005").evidence_uses[0]["claim_family"]
+        == "measurement.uncertainty_definition_only"
+    )
+    assert (
+        science_catalog.rule("sci-rule:common:007").evidence_uses[0]["claim_family"]
+        == "measurement.reproducibility_definition_only"
+    )
+    assert (
+        "open-system"
+        not in science_catalog.rule("sci-rule:common:009").model_dump_json()
+    )
 
 
 def test_all_120_cases_run_through_candidate_qualification_without_active_authority(
@@ -468,7 +607,9 @@ def test_all_120_cases_run_through_candidate_qualification_without_active_author
     qualification, release_set = _candidate_qualification(science_catalog)
     assert type(qualification) is QualificationRuleSet
     assert not isinstance(qualification, OperationalVerification)
-    rules_by_id = {released.rule.rule_id: released.rule for released in qualification.rules}
+    rules_by_id = {
+        released.rule.rule_id: released.rule for released in qualification.rules
+    }
     assert sorted(rules_by_id) == RULE_IDS
 
     evaluated = 0
@@ -500,11 +641,14 @@ def test_all_120_cases_run_through_candidate_qualification_without_active_author
                     item.quantity_kind: item
                     for item in packet.normalized_claim.quantities
                 }
-                assert compare_quantities(
-                    quantities[constraint.quantity_kind],
-                    quantities[constraint.reference_quantity_kind],
-                    interval=constraint.interval,
-                ) == 0
+                assert (
+                    compare_quantities(
+                        quantities[constraint.quantity_kind],
+                        quantities[constraint.reference_quantity_kind],
+                        interval=constraint.interval,
+                    )
+                    == 0
+                )
             if case.case_kind == "false_red_prevention":
                 assert actual is not PrimaryVerdict.VIOLATION
 

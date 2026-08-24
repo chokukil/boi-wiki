@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:001",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:clear_violation",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:8575a055f2fcb5282dc48edfa757ab907de74c9c856953479d27c805d2f2bfaf",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 144,
+            "start": 175,
+            "end": 319,
             "exact": "The Fermi function is the number of states rather than their electron occupation probability. The carrier energy is recorded as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nThe Fermi function is an electron occup"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",
@@ -105,15 +105,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:001",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:in_scope_consistency",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:93a63d2c41a5654510504c50c3e16d9ceb26d13b07fa3907083cdfc21032d04f",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 152,
+            "start": 344,
+            "end": 496,
             "exact": "The Fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " energy is recorded as 1 electron_volt.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",
@@ -164,15 +164,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:001",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:missing_required_condition",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:723620792a32d432d59d59658c45ff9b96262749d91a67c6a12f468f0a21ea71",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 221,
+            "start": 527,
+            "end": 748,
             "exact": "Without one required scientific condition, the document asserts that the fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "y is recorded as 1 electron_volt.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a record with no identified ener"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",
@@ -219,15 +219,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:001",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:outside_validity_domain",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:07515fbdfb36d9dbe81fa3fce4be0880c155bd370601d0a95267aed6b718f1be",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 224,
+            "start": 776,
+            "end": 1000,
             "exact": "For a record with no identified energy state, the document asserts that the fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ergy is recorded as 1 electron_volt.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named semiconductor sa"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",
@@ -278,15 +278,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:001",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:empirical_verification_required",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:ac1fec2663812971a59563590c6f3a91c04a78da438e2de945d342ffcc19b937",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 251,
+            "start": 1036,
+            "end": 1287,
             "exact": "For a named semiconductor sample, the document asserts that the fermi function is an electron occupation probability for an available state at the stated energy; the named result requires measurement. The carrier energy is recorded as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "recorded as 1 electron_volt.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that the Fermi function is an electr"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",
@@ -341,15 +341,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:001",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:negation",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:73d9a70b6524ac7071fdc80268c5abcfafdee9f3741421b3111b1f0434d152bb",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 172,
+            "start": 1300,
+            "end": 1472,
             "exact": "It is not true that the Fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " The carrier energy is recorded as 1 electron_volt.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nThe Fermi function is an electron occupation "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",
@@ -400,15 +400,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:001",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:unit_variation",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:6caea008143ea453c3b17a9764498f0a48a3e2f00b4322094002658462eb49c2",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 218,
-            "exact": "The Fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1000 millielectron_volt. The same carrier energy is referenced as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1491,
+            "end": 1706,
+            "exact": "The Fermi function is an electron occupation probability for an available state at the stated energy. The reviewed quantities are carrier energy = 1000 millielectron_volt; carrier energy reference = 1 electron_volt.",
+            "prefix": "arrier energy is recorded as 1 electron_volt.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",
@@ -476,15 +476,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:001",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:decision_changing_ambiguity",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:51a6dfbeab8cbcb78f3866bac62ffb2033357cae69721b6be1a447c84b39b9fb",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 187,
-            "exact": "The document calls the proposition 'Fermi occupation probability' valid without resolving whether it affirms or denies that proposition. The carrier energy is recorded as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1738,
+            "end": 1968,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The Fermi function is an electron occupation probability for an available state at the stated energy”. The reviewed quantity is carrier energy = 1 electron_volt.",
+            "prefix": "rgy reference = 1 electron_volt.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the fermi function is an e"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",
@@ -531,15 +531,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:51a6dfbeab8cbcb78f3866bac62ffb2033357cae69721b6be1a447c84b39b9fb",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 187,
-            "exact": "The document calls the proposition 'Fermi occupation probability' valid without resolving whether it affirms or denies that proposition. The carrier energy is recorded as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1738,
+            "end": 1968,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The Fermi function is an electron occupation probability for an available state at the stated energy”. The reviewed quantity is carrier energy = 1 electron_volt.",
+            "prefix": "rgy reference = 1 electron_volt.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the fermi function is an e"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",
@@ -588,15 +588,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:001",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:paraphrase",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:ee4d4a8d95324f4ba4a78b8d7c542cfa1ce457c840dae15245dac16e42ad7181",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 175,
+            "start": 1983,
+            "end": 2158,
             "exact": "In equivalent wording, the fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "wed quantity is carrier energy = 1 electron_volt.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA continuum energy interval is not a si"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",
@@ -647,15 +647,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:001",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:false_red_prevention",
-          "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:7840dcc383c3e92f6eb619c91e4d9fba3398d9da16987277f94c835348826729",
+          "document_ref": "qualification-fixture:semiconductor-devices:001",
+          "document_digest": "sha256:7ac233b98f04582d46ed7877c6d514f126adbcc64d8cf6ce89eb77189684b68d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 168,
+            "start": 2183,
+            "end": 2351,
             "exact": "A continuum energy interval is not a single bound available state whose occupation probability is given by this rule. The carrier energy is recorded as 1 electron_volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " energy is recorded as 1 electron_volt.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:fermi-function",

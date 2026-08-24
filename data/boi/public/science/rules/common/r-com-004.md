@@ -51,13 +51,7 @@
     "subject_concept_id": "sci:concept:measurement-result-expression",
     "object_concept_id": "sci:concept:value-and-uncertainty",
     "relation_kind": "empirical_relation",
-    "required_conditions": [
-      {
-        "key": "result_expression_components",
-        "operator": "eq",
-        "value": "measured_value_and_uncertainty"
-      }
-    ],
+    "required_conditions": [],
     "validity_conditions": [
       {
         "key": "definition_context",
@@ -88,7 +82,8 @@
       }
     ],
     "context_dimensions": {
-      "measured_quantity_value": "meter"
+      "measured_quantity_value": "meter",
+      "measurement_uncertainty": "meter"
     },
     "quantity_equivalence_constraints": [
       {

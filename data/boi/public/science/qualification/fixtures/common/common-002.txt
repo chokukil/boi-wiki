@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:common:002
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A length term can equal a time term while the equation remains dimensionally homogeneous. The reviewed quantities are left term = 1 meter; right term = 1 second.
+
+[in_scope_consistency]
+In the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.
+
+[missing_required_condition]
+Without specifying equation form, the report states that in the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.
+
+[outside_validity_domain]
+In a different scientific context, the report nevertheless states that in the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.
+
+[empirical_verification_required]
+For a named realization, the report asserts that in the reviewed two-term length example, both sides of the equality have length dimensionality. No qualified observation is bound. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.
+
+[negation]
+It is not true that in the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.
+
+[unit_variation]
+In the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 100 centimeter; left term reference = 1 meter.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “In the reviewed two-term length example, both sides of the equality have length dimensionality”. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.
+
+[paraphrase]
+In equivalent wording, the document states that in the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.
+
+[false_red_prevention]
+A mass-energy relation is not the reviewed equality between two length terms. The reviewed quantities are left term = 1 meter; right term = 1 second.
+
+End of immutable qualification fixture.

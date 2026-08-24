@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:physics:005",
         "claim_packet": {
           "claim_id": "claim:physics:005:clear_violation",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:461f99464e8293f431e519194087696e192104859dc61acaf394a59f9e81dedc",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 115,
+            "start": 161,
+            "end": 276,
             "exact": "A control-volume balance is inherently restricted to fixed steady flow. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nThe control-volume form remains applica"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",
@@ -104,15 +104,15 @@
         "evaluation_rule_id": "sci-rule:physics:005",
         "claim_packet": {
           "claim_id": "claim:physics:005:in_scope_consistency",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:a5f20d8ed2c593041ba08908a623ed48916067fdfd5f338c18573f28c56688b8",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 160,
+            "start": 301,
+            "end": 461,
             "exact": "The control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "pressure scale is recorded as 1 pascal.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",
@@ -162,15 +162,15 @@
         "evaluation_rule_id": "sci-rule:physics:005",
         "claim_packet": {
           "claim_id": "claim:physics:005:missing_required_condition",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:08e49770cf52177920830f1b413cf0395f9c19ed268f3e8fd506a1fbf387e7d4",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 229,
+            "start": 492,
+            "end": 721,
             "exact": "Without one required scientific condition, the document asserts that the control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "re scale is recorded as 1 pascal.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a balance with its boundary flux"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",
@@ -216,15 +216,15 @@
         "evaluation_rule_id": "sci-rule:physics:005",
         "claim_packet": {
           "claim_id": "claim:physics:005:outside_validity_domain",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:7e2544f28f3d2f11743f6949c49c947272ae281bcc29b3780171e9fcec4d3a04",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 234,
+            "start": 749,
+            "end": 983,
             "exact": "For a balance with its boundary fluxes omitted, the document asserts that the control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ssure scale is recorded as 1 pascal.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named transient flow r"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",
@@ -274,15 +274,15 @@
         "evaluation_rule_id": "sci-rule:physics:005",
         "claim_packet": {
           "claim_id": "claim:physics:005:empirical_verification_required",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:a13e1db66018b2afc1ff6b7f7693cff8b69fe9cf52f80a28935ace71c11f6b39",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 257,
+            "start": 1019,
+            "end": 1276,
             "exact": "For a named transient flow rig, the document asserts that the control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included; the named result requires measurement. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ale is recorded as 1 pascal.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that the control-volume form remains"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",
@@ -336,15 +336,15 @@
         "evaluation_rule_id": "sci-rule:physics:005",
         "claim_packet": {
           "claim_id": "claim:physics:005:negation",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:7245e7a0eed079120b219dd21e0a786592a7466dd7130dedfd54eb157c16f479",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 180,
+            "start": 1289,
+            "end": 1469,
             "exact": "It is not true that the control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rement. The pressure scale is recorded as 1 pascal.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nThe control-volume form remains applicable to"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",
@@ -394,15 +394,15 @@
         "evaluation_rule_id": "sci-rule:physics:005",
         "claim_packet": {
           "claim_id": "claim:physics:005:unit_variation",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:ab64244e997f8ff0cee66aa9ef22aaa6b818db75d537b58c6022e629af2a911d",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 219,
-            "exact": "The control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1000 millipascal. The same pressure scale is referenced as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1488,
+            "end": 1704,
+            "exact": "The control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The reviewed quantities are pressure scale = 1000 millipascal; pressure scale reference = 1 pascal.",
+            "prefix": ". The pressure scale is recorded as 1 pascal.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",
@@ -469,15 +469,15 @@
         "evaluation_rule_id": "sci-rule:physics:005",
         "claim_packet": {
           "claim_id": "claim:physics:005:decision_changing_ambiguity",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:da2cb1bd3652566a27270d0498549e93bb8fd7785f1cc40ca21cd02d8d59107e",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 180,
-            "exact": "The document calls the proposition 'Control-volume balance scope' valid without resolving whether it affirms or denies that proposition. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1736,
+            "end": 1974,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included”. The reviewed quantity is pressure scale = 1 pascal.",
+            "prefix": "sure scale reference = 1 pascal.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the control-volume form re"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",
@@ -523,15 +523,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:physics:005:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:da2cb1bd3652566a27270d0498549e93bb8fd7785f1cc40ca21cd02d8d59107e",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 180,
-            "exact": "The document calls the proposition 'Control-volume balance scope' valid without resolving whether it affirms or denies that proposition. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1736,
+            "end": 1974,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included”. The reviewed quantity is pressure scale = 1 pascal.",
+            "prefix": "sure scale reference = 1 pascal.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the control-volume form re"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",
@@ -579,15 +579,15 @@
         "evaluation_rule_id": "sci-rule:physics:005",
         "claim_packet": {
           "claim_id": "claim:physics:005:paraphrase",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:98a08a5d6daf58f30ad71573992ae8c60cade72efe230da9e6cf668ed1c67a29",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 183,
+            "start": 1989,
+            "end": 2172,
             "exact": "In equivalent wording, the control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "e reviewed quantity is pressure scale = 1 pascal.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nAcross an open surface that does not bo"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",
@@ -637,15 +637,15 @@
         "evaluation_rule_id": "sci-rule:physics:005",
         "claim_packet": {
           "claim_id": "claim:physics:005:false_red_prevention",
-          "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:c49fc45436183a383b789e1c6e9e9d834b93d469ea1f1e4def8212b7144aa1e9",
+          "document_ref": "qualification-fixture:physics:005",
+          "document_digest": "sha256:edcfc31474db177f27e086ed14d5bac279db525b02ad40c9facae5eb7050075d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 149,
+            "start": 2197,
+            "end": 2346,
             "exact": "Across an open surface that does not bound a control volume, the stated closed-surface balance is denied. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "pressure scale is recorded as 1 pascal.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:control-volume-balance",

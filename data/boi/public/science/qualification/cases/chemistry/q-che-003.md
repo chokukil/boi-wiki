@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:003",
         "claim_packet": {
           "claim_id": "claim:chemistry:003:clear_violation",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:8f14b35dbb68f90b3a8d6e505519b6c5b1144336b6dac20c89e294986d699307",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 146,
+            "start": 163,
+            "end": 309,
             "exact": "Vapor pressure does not measure the molecular escaping tendency of the identified condensed substance. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nVapor pressure measures the escaping te"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",
@@ -104,15 +104,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:003",
         "claim_packet": {
           "claim_id": "claim:chemistry:003:in_scope_consistency",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:9264b97cce3446090bd68f4d8565499c06351940279d0a87e5ca8da279631ab3",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 143,
+            "start": 334,
+            "end": 477,
             "exact": "Vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "pressure scale is recorded as 1 pascal.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",
@@ -162,15 +162,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:003",
         "claim_packet": {
           "claim_id": "claim:chemistry:003:missing_required_condition",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:d02de0f2ac48ebd6a74b995561dbbb5fb1b8bebd2c11c858bf29d785afd162f8",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 212,
+            "start": 508,
+            "end": 720,
             "exact": "Without one required scientific condition, the document asserts that vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "re scale is recorded as 1 pascal.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor an open process whose transport "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",
@@ -216,15 +216,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:003",
         "claim_packet": {
           "claim_id": "claim:chemistry:003:outside_validity_domain",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:b2d64ebd4dd8f12d0cf40945213c08a01740250733c004e3034edde15337f65c",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 233,
+            "start": 748,
+            "end": 981,
             "exact": "For an open process whose transport conditions are unspecified, the document asserts that vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ssure scale is recorded as 1 pascal.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named solvent and exha"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",
@@ -274,15 +274,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:003",
         "claim_packet": {
           "claim_id": "claim:chemistry:003:empirical_verification_required",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:a9d4802858f90255a23e192bf585a75fd8787d0c849f4544d9277c611a77f651",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 255,
+            "start": 1017,
+            "end": 1272,
             "exact": "For a named solvent and exhaust configuration, the document asserts that vapor pressure measures the escaping tendency of molecules from the identified condensed substance; the named result requires measurement. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ale is recorded as 1 pascal.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that vapor pressure measures the esc"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",
@@ -336,15 +336,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:003",
         "claim_packet": {
           "claim_id": "claim:chemistry:003:negation",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:1b803e0b8b6b94b3d8d08b954d0abb7c790a735873359fcd955b08d21bea6286",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 163,
+            "start": 1285,
+            "end": 1448,
             "exact": "It is not true that vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rement. The pressure scale is recorded as 1 pascal.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nVapor pressure measures the escaping tendency"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",
@@ -394,15 +394,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:003",
         "claim_packet": {
           "claim_id": "claim:chemistry:003:unit_variation",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:ea52a7e818300c075f6f49f2f6346b4a0be3f8b764955a9a7543c6f6fda5554c",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 202,
-            "exact": "Vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1000 millipascal. The same pressure scale is referenced as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1467,
+            "end": 1666,
+            "exact": "Vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The reviewed quantities are pressure scale = 1000 millipascal; pressure scale reference = 1 pascal.",
+            "prefix": ". The pressure scale is recorded as 1 pascal.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",
@@ -469,15 +469,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:003",
         "claim_packet": {
           "claim_id": "claim:chemistry:003:decision_changing_ambiguity",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:b567e03c46f9f3b8211940379411ba6d58399438a937923ac8fe76dafb58bdd2",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 188,
-            "exact": "The document calls the proposition 'Vapor pressure and escaping tendency' valid without resolving whether it affirms or denies that proposition. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1698,
+            "end": 1919,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Vapor pressure measures the escaping tendency of molecules from the identified condensed substance”. The reviewed quantity is pressure scale = 1 pascal.",
+            "prefix": "sure scale reference = 1 pascal.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, vapor pressure measures th"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",
@@ -523,15 +523,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:chemistry:003:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:b567e03c46f9f3b8211940379411ba6d58399438a937923ac8fe76dafb58bdd2",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 188,
-            "exact": "The document calls the proposition 'Vapor pressure and escaping tendency' valid without resolving whether it affirms or denies that proposition. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1698,
+            "end": 1919,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Vapor pressure measures the escaping tendency of molecules from the identified condensed substance”. The reviewed quantity is pressure scale = 1 pascal.",
+            "prefix": "sure scale reference = 1 pascal.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, vapor pressure measures th"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",
@@ -579,15 +579,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:003",
         "claim_packet": {
           "claim_id": "claim:chemistry:003:paraphrase",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:0e4e2f78be8a1d3ec5be98c862a03798538d9112a79cd594e7234526c72a6ded",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 166,
+            "start": 1934,
+            "end": 2100,
             "exact": "In equivalent wording, vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "e reviewed quantity is pressure scale = 1 pascal.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA gas-phase sample is not the named liq"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",
@@ -637,15 +637,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:003",
         "claim_packet": {
           "claim_id": "claim:chemistry:003:false_red_prevention",
-          "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:5b0e9556390922cb4fb5051c829893e294e3267463d34399a442a140bbbc0880",
+          "document_ref": "qualification-fixture:chemistry:003",
+          "document_digest": "sha256:3ff4513a2e24727484c400044027c541e371248114d43963fc290033cfcc3e4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 147,
+            "start": 2125,
+            "end": 2272,
             "exact": "A gas-phase sample is not the named liquid or solid to which this vapor-pressure definition is applied. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "pressure scale is recorded as 1 pascal.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:vapor-pressure",

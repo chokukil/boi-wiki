@@ -37,10 +37,10 @@
     "rule_id": "sci-rule:common:011",
     "standard_id": "R-COM-011",
     "pack_id": "sci-pack:science-foundation/0.1.0",
-    "rule_kind": "validity_domain",
+    "rule_kind": "directional_relation",
     "inputs": [
-      "sci:concept:conditional-directional-claim",
-      "sci:concept:controlled-relation"
+      "sci:concept:model-validation-domain-record",
+      "sci:concept:validation-domain"
     ],
     "outcomes": [
       "VIOLATION",
@@ -51,20 +51,8 @@
     "subject_concept_id": "sci:concept:model-validation-domain-record",
     "object_concept_id": "sci:concept:validation-domain",
     "relation_kind": "empirical_relation",
-    "required_conditions": [
-      {
-        "key": "record_identity",
-        "operator": "eq",
-        "value": "bound_validation_record"
-      }
-    ],
-    "validity_conditions": [
-      {
-        "key": "record_content",
-        "operator": "eq",
-        "value": "validation_domain"
-      }
-    ],
+    "required_conditions": [],
+    "validity_conditions": [],
     "knowledge_refs": [
       "sci:common:011"
     ],
@@ -96,10 +84,15 @@
         "quantity_kind": "validation_domain_temperature_limit",
         "reference_quantity_kind": "validation_domain_temperature_limit_reference"
       }
-    ]
+    ],
+    "expected_predicate": "records_validation_domain",
+    "contradiction_predicates": [
+      "need_not_record_validation_domain"
+    ],
+    "expected_polarity": "positive"
   }
 }
 ---
 # R-COM-011 — Controlled directional claim
 
-Closed evaluator: `validity_domain`. Candidate qualification only.
+Closed evaluator: `directional_relation`. This Rule decides only what the cited general requirement says a validation record records; it does not attest that any particular model record exists. Candidate qualification only.

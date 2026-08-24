@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:001",
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:clear_violation",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:47b1153a3f6b09897bfacc4eca989865cdf730e728375ff34f35d221dcff98fe",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 163,
+            "start": 166,
+            "end": 329,
             "exact": "Wet, post-spin, and post-bake film thicknesses are interchangeable without a measurement state or uncertainty. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA photoresist film-thickness result ide"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",
@@ -114,15 +114,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:001",
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:in_scope_consistency",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:5b1a052859c764e3abb4029265b31085aa9f0f845bf0c575d5c8df1c09b3516f",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 165,
+            "start": 354,
+            "end": 519,
             "exact": "A photoresist film-thickness result identifies its measurement state and uncertainty before states are compared. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "kness scale is recorded as 1 nanometer.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",
@@ -182,15 +182,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:001",
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:missing_required_condition",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:f8f23cecbdacae054bf939b74b75c47f10beb6f5a4c5c4e049e0bef7f789fa31",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 234,
+            "start": 550,
+            "end": 784,
             "exact": "Without one required scientific condition, the document asserts that a photoresist film-thickness result identifies its measurement state and uncertainty before states are compared. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "scale is recorded as 1 nanometer.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a non-photoresist coating method"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",
@@ -250,15 +250,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:001",
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:outside_validity_domain",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:400d7f0e1ac8093abaacc55f849fc5d4877e52b8168731c65341c268f6ec11df",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 229,
+            "start": 812,
+            "end": 1041,
             "exact": "For a non-photoresist coating method, the document asserts that a photoresist film-thickness result identifies its measurement state and uncertainty before states are compared. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ss scale is recorded as 1 nanometer.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named photo track and "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",
@@ -318,15 +318,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:001",
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:empirical_verification_required",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:975b4123ed36625269df517878830971c58e855f55b8efe4ae40cf65302469a1",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 284,
+            "start": 1077,
+            "end": 1361,
             "exact": "For a named photo track and thickness metrology tool, the document asserts that a photoresist film-thickness result identifies its measurement state and uncertainty before states are compared; the named result requires measurement. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " is recorded as 1 nanometer.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a photoresist film-thickness re"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",
@@ -390,15 +390,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:001",
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:negation",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:7a5b632223e45c1bb8fb81ca064110820be72632e013bfaa1831678b333aed58",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 185,
+            "start": 1374,
+            "end": 1559,
             "exact": "It is not true that a photoresist film-thickness result identifies its measurement state and uncertainty before states are compared. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he film thickness scale is recorded as 1 nanometer.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA photoresist film-thickness result identifie"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",
@@ -458,15 +458,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:001",
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:unit_variation",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:30505675b796002408377f2bd4e6ebb89af5aa46e56fc117226eb7848c2d10be",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 230,
-            "exact": "A photoresist film-thickness result identifies its measurement state and uncertainty before states are compared. The film thickness scale is recorded as 0.001 micrometer. The same film thickness scale is referenced as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1578,
+            "end": 1805,
+            "exact": "A photoresist film-thickness result identifies its measurement state and uncertainty before states are compared. The reviewed quantities are film thickness scale = 0.001 micrometer; film thickness scale reference = 1 nanometer.",
+            "prefix": "m thickness scale is recorded as 1 nanometer.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",
@@ -543,15 +543,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:001",
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:decision_changing_ambiguity",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:2647be8c306458de79bbe1624d47af3c001bf4f5e787c8ede05e275fb8e1a334",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 188,
-            "exact": "The document calls the proposition 'Spin-film measurement state' valid without resolving whether it affirms or denies that proposition. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1837,
+            "end": 2080,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A photoresist film-thickness result identifies its measurement state and uncertainty before states are compared”. The reviewed quantity is film thickness scale = 1 nanometer.",
+            "prefix": "s scale reference = 1 nanometer.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a photoresist film-thickne"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",
@@ -607,15 +607,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:spin-coating:001:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:2647be8c306458de79bbe1624d47af3c001bf4f5e787c8ede05e275fb8e1a334",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 188,
-            "exact": "The document calls the proposition 'Spin-film measurement state' valid without resolving whether it affirms or denies that proposition. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1837,
+            "end": 2080,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A photoresist film-thickness result identifies its measurement state and uncertainty before states are compared”. The reviewed quantity is film thickness scale = 1 nanometer.",
+            "prefix": "s scale reference = 1 nanometer.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a photoresist film-thickne"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",
@@ -672,15 +672,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:001",
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:paraphrase",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:c0a030fc916e37e5ae15823726e80305cb0032a02979292d261becbd86b3f709",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 188,
+            "start": 2095,
+            "end": 2283,
             "exact": "In equivalent wording, a photoresist film-thickness result identifies its measurement state and uncertainty before states are compared. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "d quantity is film thickness scale = 1 nanometer.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA slot-die coating result is not a spin"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",
@@ -740,15 +740,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:001",
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:false_red_prevention",
-          "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:712cc2319d462c0d700200a047787534cd46725a6e4efbf494f5a7412165d64e",
+          "document_ref": "qualification-fixture:spin-coating:001",
+          "document_digest": "sha256:192a90f000b825bd4c9b639a96208fbb58195338e77d13098c2dd99634730f33",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 157,
+            "start": 2308,
+            "end": 2465,
             "exact": "A slot-die coating result is not a spin-coated film-thickness result covered by this process-state rule. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "kness scale is recorded as 1 nanometer.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:film-thickness-result",

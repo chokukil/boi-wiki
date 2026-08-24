@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:002",
         "claim_packet": {
           "claim_id": "claim:chemistry:002:clear_violation",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:a89e869a9e9829c3a96f443282951f0186560a9a23f0a018ccfcd834249f6cc0",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 143,
+            "start": 163,
+            "end": 306,
             "exact": "One thermodynamic phase may have arbitrarily nonuniform intensive properties throughout its volume. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA single thermodynamic phase has unifor"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",
@@ -104,15 +104,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:002",
         "claim_packet": {
           "claim_id": "claim:chemistry:002:in_scope_consistency",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:7733cbd2399704ef85d5041e6c5dfb1e95c408f098615f10a28a2c92163219db",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 139,
+            "start": 331,
+            "end": 470,
             "exact": "A single thermodynamic phase has uniform intensive properties throughout the identified region. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "pressure scale is recorded as 1 pascal.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",
@@ -162,15 +162,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:002",
         "claim_packet": {
           "claim_id": "claim:chemistry:002:missing_required_condition",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:50f0dc57e54ad6230a1ed826131187924a3babe6983d559d908842c25e249c88",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 208,
+            "start": 501,
+            "end": 709,
             "exact": "Without one required scientific condition, the document asserts that a single thermodynamic phase has uniform intensive properties throughout the identified region. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "re scale is recorded as 1 pascal.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a multiphase region with unresol"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",
@@ -216,15 +216,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:002",
         "claim_packet": {
           "claim_id": "claim:chemistry:002:outside_validity_domain",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:c871b6714d68e59457736e26a80176ed227c4e6c7ad8b1575e190a457f62bb9c",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 217,
+            "start": 737,
+            "end": 954,
             "exact": "For a multiphase region with unresolved interfaces, the document asserts that a single thermodynamic phase has uniform intensive properties throughout the identified region. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ssure scale is recorded as 1 pascal.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named heterogeneous sp"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",
@@ -274,15 +274,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:002",
         "claim_packet": {
           "claim_id": "claim:chemistry:002:empirical_verification_required",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:fd7358b19908503624c04697dd2f730a5372ddaa91566f325e53429a824f4424",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 240,
+            "start": 990,
+            "end": 1230,
             "exact": "For a named heterogeneous specimen, the document asserts that a single thermodynamic phase has uniform intensive properties throughout the identified region; the named result requires measurement. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ale is recorded as 1 pascal.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a single thermodynamic phase ha"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",
@@ -336,15 +336,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:002",
         "claim_packet": {
           "claim_id": "claim:chemistry:002:negation",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:51b7b9113d0a1e8c2cf93bf52cc1feab18e377f409c490d970d9f9eaeaf22472",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 159,
+            "start": 1243,
+            "end": 1402,
             "exact": "It is not true that a single thermodynamic phase has uniform intensive properties throughout the identified region. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rement. The pressure scale is recorded as 1 pascal.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA single thermodynamic phase has uniform inte"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",
@@ -394,15 +394,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:002",
         "claim_packet": {
           "claim_id": "claim:chemistry:002:unit_variation",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:1c2731bc22b05f52cf44840f9b62cd2b2dcd02a4515648858876cc1dbe0fc1cf",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 198,
-            "exact": "A single thermodynamic phase has uniform intensive properties throughout the identified region. The pressure scale is recorded as 1000 millipascal. The same pressure scale is referenced as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1421,
+            "end": 1616,
+            "exact": "A single thermodynamic phase has uniform intensive properties throughout the identified region. The reviewed quantities are pressure scale = 1000 millipascal; pressure scale reference = 1 pascal.",
+            "prefix": ". The pressure scale is recorded as 1 pascal.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",
@@ -469,15 +469,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:002",
         "claim_packet": {
           "claim_id": "claim:chemistry:002:decision_changing_ambiguity",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:fece9d94380144f895fa305c328b7752529775eb5f89ec7a925355870147b1fb",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 190,
-            "exact": "The document calls the proposition 'Phase has uniform intensive properties' valid without resolving whether it affirms or denies that proposition. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1648,
+            "end": 1865,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A single thermodynamic phase has uniform intensive properties throughout the identified region”. The reviewed quantity is pressure scale = 1 pascal.",
+            "prefix": "sure scale reference = 1 pascal.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a single thermodynamic pha"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",
@@ -523,15 +523,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:chemistry:002:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:fece9d94380144f895fa305c328b7752529775eb5f89ec7a925355870147b1fb",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 190,
-            "exact": "The document calls the proposition 'Phase has uniform intensive properties' valid without resolving whether it affirms or denies that proposition. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1648,
+            "end": 1865,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A single thermodynamic phase has uniform intensive properties throughout the identified region”. The reviewed quantity is pressure scale = 1 pascal.",
+            "prefix": "sure scale reference = 1 pascal.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a single thermodynamic pha"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",
@@ -579,15 +579,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:002",
         "claim_packet": {
           "claim_id": "claim:chemistry:002:paraphrase",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:6a4005a8eae14b821b4d63d11d7ea5fb4a0c8ae16d43aa1058b759f0c636850e",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 162,
+            "start": 1880,
+            "end": 2042,
             "exact": "In equivalent wording, a single thermodynamic phase has uniform intensive properties throughout the identified region. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "e reviewed quantity is pressure scale = 1 pascal.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA temperature-gradient region spanning "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",
@@ -637,15 +637,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:002",
         "claim_packet": {
           "claim_id": "claim:chemistry:002:false_red_prevention",
-          "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:3aababeb6c8acd681f4990629b7ecd41ac0073d295644dcd01887ffbe9eb8827",
+          "document_ref": "qualification-fixture:chemistry:002",
+          "document_digest": "sha256:3db4b4fb456d991cc4a81ecdfa13b2ea20a827f77a3fb8bdb415c9f3c03d5748",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 142,
+            "start": 2067,
+            "end": 2209,
             "exact": "A temperature-gradient region spanning multiple phases need not have uniform intensive properties. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "pressure scale is recorded as 1 pascal.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:thermodynamic-phase",

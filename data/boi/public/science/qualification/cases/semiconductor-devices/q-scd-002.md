@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:002",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:clear_violation",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:d9a3c70b685f7353e0ff1d38b89bb574adfff3b49afeff0549231d9ea3f9a654",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 125,
+            "start": 175,
+            "end": 300,
             "exact": "Semiconductor carrier current can only have drift and never a diffusion component. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nCarrier current can contain both a drif"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",
@@ -105,15 +105,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:002",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:in_scope_consistency",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:c846af055aa5165ed1b86effeb5c68d0429b2667244cd25a89e25d3239c65fb2",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 120,
+            "start": 325,
+            "end": 445,
             "exact": "Carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " current scale is recorded as 1 ampere.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",
@@ -164,15 +164,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:002",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:missing_required_condition",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:2c01746aad619a104a1f9b7eab6a011537e9ab646cbe9cdfc557354364c3b8f9",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 189,
+            "start": 476,
+            "end": 665,
             "exact": "Without one required scientific condition, the document asserts that carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "nt scale is recorded as 1 ampere.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a transport statement with no ca"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",
@@ -219,15 +219,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:002",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:outside_validity_domain",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:3a624efb40c4cfca9265aa12633f163c2b52355e13639a70688d82c19927edd4",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 205,
+            "start": 693,
+            "end": 898,
             "exact": "For a transport statement with no carrier type identified, the document asserts that carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rrent scale is recorded as 1 ampere.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named nonuniform semic"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",
@@ -278,15 +278,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:002",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:empirical_verification_required",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:03227c58e4f91b9606f480fe790927bfffb35a14e25fa9fcfc14e93ba97b5e60",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 233,
+            "start": 934,
+            "end": 1167,
             "exact": "For a named nonuniform semiconductor structure, the document asserts that carrier current can contain both a drift component and a diffusion component; the named result requires measurement. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ale is recorded as 1 ampere.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that carrier current can contain bot"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",
@@ -341,15 +341,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:002",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:negation",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:7aa9df83cbaa7d9998afaabefdee939f0a918cbfb39eeda21386cd4aae620a53",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 140,
+            "start": 1180,
+            "end": 1320,
             "exact": "It is not true that carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "urement. The current scale is recorded as 1 ampere.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nCarrier current can contain both a drift comp"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",
@@ -400,15 +400,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:002",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:unit_variation",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:25e48f44f037ea0bc5a09d3642148c74b91d54b2234e8d19bc94759b8116a487",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 178,
-            "exact": "Carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1000 milliampere. The same current scale is referenced as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1339,
+            "end": 1514,
+            "exact": "Carrier current can contain both a drift component and a diffusion component. The reviewed quantities are current scale = 1000 milliampere; current scale reference = 1 ampere.",
+            "prefix": "t. The current scale is recorded as 1 ampere.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",
@@ -476,15 +476,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:002",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:decision_changing_ambiguity",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:1b9342d373ce9d7b03f73aac0de4e28557c0601accbb2692eaeff57e8f6c2c3e",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 189,
-            "exact": "The document calls the proposition 'Drift and diffusion current components' valid without resolving whether it affirms or denies that proposition. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1546,
+            "end": 1744,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Carrier current can contain both a drift component and a diffusion component”. The reviewed quantity is current scale = 1 ampere.",
+            "prefix": "rent scale reference = 1 ampere.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, carrier current can contai"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",
@@ -531,15 +531,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:1b9342d373ce9d7b03f73aac0de4e28557c0601accbb2692eaeff57e8f6c2c3e",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 189,
-            "exact": "The document calls the proposition 'Drift and diffusion current components' valid without resolving whether it affirms or denies that proposition. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1546,
+            "end": 1744,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Carrier current can contain both a drift component and a diffusion component”. The reviewed quantity is current scale = 1 ampere.",
+            "prefix": "rent scale reference = 1 ampere.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, carrier current can contai"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",
@@ -588,15 +588,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:002",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:paraphrase",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:2d03a8558d3ef4c04f056748db28945f64a4b6542f1762e04f0f3f20d1efddb8",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 143,
+            "start": 1759,
+            "end": 1902,
             "exact": "In equivalent wording, carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he reviewed quantity is current scale = 1 ampere.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nIonic-species current is not the electr"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",
@@ -647,15 +647,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:002",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:false_red_prevention",
-          "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:9111ed28010d70a499ac800fca3ed0a15727f2cfce7dd8f31bf1cf3848bb40ae",
+          "document_ref": "qualification-fixture:semiconductor-devices:002",
+          "document_digest": "sha256:630a4b09d77c9b68f13feb5f97cc85478f9231ce481f6f36dc1df2acba58fefd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 139,
+            "start": 1927,
+            "end": 2066,
             "exact": "Ionic-species current is not the electron-or-hole current decomposed by this semiconductor rule. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " current scale is recorded as 1 ampere.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-current",

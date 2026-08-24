@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:common:009
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+The mass of the identified material particle necessarily changes merely because the particle moves. The reviewed quantity is material particle mass = 1 kilogram.
+
+[in_scope_consistency]
+The mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.
+
+[missing_required_condition]
+Without specifying particle identity, the report states that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.
+
+[outside_validity_domain]
+In a different scientific context, the report nevertheless states that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.
+
+[empirical_verification_required]
+For a named realization, the report asserts that the mass of the identified material particle remains invariant during its motion. No qualified observation is bound. The reviewed quantity is material particle mass = 1 kilogram.
+
+[negation]
+It is not true that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.
+
+[unit_variation]
+The mass of the identified material particle remains invariant during its motion. The reviewed quantities are material particle mass = 1000 gram; material particle mass reference = 1 kilogram.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “The mass of the identified material particle remains invariant during its motion”. The reviewed quantity is material particle mass = 1 kilogram.
+
+[paraphrase]
+In equivalent wording, the document states that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.
+
+[false_red_prevention]
+An open control-volume inventory is not the identified material particle whose mass invariance is stated. The reviewed quantity is material particle mass = 1 kilogram.
+
+End of immutable qualification fixture.

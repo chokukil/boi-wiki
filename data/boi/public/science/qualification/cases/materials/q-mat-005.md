@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:materials:005",
         "claim_packet": {
           "claim_id": "claim:materials:005:clear_violation",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:4e948b0ca78aba85e9f42915ce4a9b6531f757686bd1cbc619901a5356598f2c",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 174,
+            "start": 163,
+            "end": 337,
             "exact": "For the same chemical composition, a bulk mechanical property is automatically equal to the deposited thin-film property. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nEven at the same chemical composition, "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",
@@ -112,15 +112,15 @@
         "evaluation_rule_id": "sci-rule:materials:005",
         "claim_packet": {
           "claim_id": "claim:materials:005:in_scope_consistency",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:3e4cbc2fbd7c78f14af8d9b2ed2b1587112cbd33f651ee362ad43e9dd0e6fb4c",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 214,
+            "start": 362,
+            "end": 576,
             "exact": "Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "kness scale is recorded as 1 nanometer.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying the property c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",
@@ -178,15 +178,15 @@
         "evaluation_rule_id": "sci-rule:materials:005",
         "claim_packet": {
           "claim_id": "claim:materials:005:missing_required_condition",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:fddb64f56042e8a87c84ba8dc500b8b4803b1e7b7caae2578bf3c867749ab64a",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 273,
+            "start": 607,
+            "end": 880,
             "exact": "Without specifying the property class, the report asserts: Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "scale is recorded as 1 nanometer.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a nonmechanical property not cov"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",
@@ -240,15 +240,15 @@
         "evaluation_rule_id": "sci-rule:materials:005",
         "claim_packet": {
           "claim_id": "claim:materials:005:outside_validity_domain",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:c4089e5bc75e3546dbf70a9624846d7e09f0f332eaba2fe66591b5de3574e5e1",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 293,
+            "start": 908,
+            "end": 1201,
             "exact": "For a nonmechanical property not covered by this evidence, the report asserts: Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ss scale is recorded as 1 nanometer.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named deposited film a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",
@@ -306,15 +306,15 @@
         "evaluation_rule_id": "sci-rule:materials:005",
         "claim_packet": {
           "claim_id": "claim:materials:005:empirical_verification_required",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:91fcee860ca33d0b23831c37f7d6b21ddb742e9e2edbd74681c4f59e14219838",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 318,
+            "start": 1237,
+            "end": 1555,
             "exact": "For a named deposited film and bulk coupon, the report asserts: Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior. This named result requires measurement. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " is recorded as 1 nanometer.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nUnder the stated scientific conditions, it is not t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",
@@ -376,15 +376,15 @@
         "evaluation_rule_id": "sci-rule:materials:005",
         "claim_packet": {
           "claim_id": "claim:materials:005:negation",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:d70595a190678cc0155efc48b07afc6be70a8528251ea4604e346f2fe6271dff",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 274,
+            "start": 1568,
+            "end": 1842,
             "exact": "Under the stated scientific conditions, it is not true that even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he film thickness scale is recorded as 1 nanometer.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nEven at the same chemical composition, a thin"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",
@@ -442,15 +442,15 @@
         "evaluation_rule_id": "sci-rule:materials:005",
         "claim_packet": {
           "claim_id": "claim:materials:005:unit_variation",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:fe499b33d0750c953c8e721f177950557e632778b37bd3f745213f20997facc7",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 279,
-            "exact": "Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior. The film thickness scale is recorded as 0.001 micrometer. The same film thickness scale is referenced as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1861,
+            "end": 2137,
+            "exact": "Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior. The reviewed quantities are film thickness scale = 0.001 micrometer; film thickness scale reference = 1 nanometer.",
+            "prefix": "m thickness scale is recorded as 1 nanometer.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",
@@ -525,15 +525,15 @@
         "evaluation_rule_id": "sci-rule:materials:005",
         "claim_packet": {
           "claim_id": "claim:materials:005:decision_changing_ambiguity",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:8f713c8d360f77192019daec06dd1bb814664e4e85d8860c860fc78911f4a0ff",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 389,
-            "exact": "The wording leaves unresolved whether 'Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior.' or instead 'For the same chemical composition, a bulk mechanical property is automatically equal to the deposited thin-film property'. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2169,
+            "end": 2461,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior”. The reviewed quantity is film thickness scale = 1 nanometer.",
+            "prefix": "s scale reference = 1 nanometer.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: Even "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",
@@ -587,15 +587,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:materials:005:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:8f713c8d360f77192019daec06dd1bb814664e4e85d8860c860fc78911f4a0ff",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 389,
-            "exact": "The wording leaves unresolved whether 'Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior.' or instead 'For the same chemical composition, a bulk mechanical property is automatically equal to the deposited thin-film property'. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2169,
+            "end": 2461,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior”. The reviewed quantity is film thickness scale = 1 nanometer.",
+            "prefix": "s scale reference = 1 nanometer.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: Even "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",
@@ -651,15 +651,15 @@
         "evaluation_rule_id": "sci-rule:materials:005",
         "claim_packet": {
           "claim_id": "claim:materials:005:paraphrase",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:45328971908acaaa1b9f1510ff746c9fe1532ab5b6d588d2d26ea0d5b0fdf5cf",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 258,
+            "start": 2476,
+            "end": 2734,
             "exact": "In equivalent wording, the document states: Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "d quantity is film thickness scale = 1 nanometer.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA bulk specimen and deposited thin film"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",
@@ -717,15 +717,15 @@
         "evaluation_rule_id": "sci-rule:materials:005",
         "claim_packet": {
           "claim_id": "claim:materials:005:false_red_prevention",
-          "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:e7fd4292ac1854d9cb77ce13473c551d0a7d39f140288a1b0f951197efc55e09",
+          "document_ref": "qualification-fixture:materials:005",
+          "document_digest": "sha256:cbe82152a66d65ba5499cbd7dd8bcb997703846fba93b3a87b4e03e6020bea32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 167,
+            "start": 2759,
+            "end": 2926,
             "exact": "A bulk specimen and deposited thin film of different composition are reported to have equal mechanical properties. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "kness scale is recorded as 1 nanometer.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:bulk-property-transfer",

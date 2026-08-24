@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:circuits:006
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Connecting a finite-impedance measuring instrument cannot change the observed circuit behavior under any circumstances. The resistance scale is recorded as 1 ohm.
+
+[in_scope_consistency]
+Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1 ohm.
+
+[missing_required_condition]
+Without specifying the instrument connection, the report asserts: Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1 ohm.
+
+[outside_validity_domain]
+For an idealized infinite-impedance observer, the report asserts: Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1 ohm.
+
+[empirical_verification_required]
+For a named oscilloscope and circuit, the report asserts: Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. This named result requires measurement. The resistance scale is recorded as 1 ohm.
+
+[negation]
+Under the stated scientific conditions, it is not true that connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1 ohm.
+
+[unit_variation]
+Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The reviewed quantities are resistance scale = 1000 milliohm; resistance scale reference = 1 ohm.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading”. The reviewed quantity is resistance scale = 1 ohm.
+
+[paraphrase]
+In equivalent wording, the document states: Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1 ohm.
+
+[false_red_prevention]
+An ideal voltmeter with infinite input impedance is stated not to load the measured circuit. The resistance scale is recorded as 1 ohm.
+
+End of immutable qualification fixture.

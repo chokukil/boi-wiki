@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:002",
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:clear_violation",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:9f64e068b3803703f6f633842686504da75d833f9014cfdf42bbbbba2b4fbca2",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 153,
+            "start": 166,
+            "end": 319,
             "exact": "A validation-domain record need not be maintained for a validated model or simulation. The validation domain temperature limit is recorded as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA record of the domain of validation of"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
@@ -109,15 +109,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:002",
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:in_scope_consistency",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:226c680c87fcdc4b3fce4e83ead2c606019cf1f497592f7e9f3fd8aff024fac1",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 161,
+            "start": 344,
+            "end": 505,
             "exact": "A record of the domain of validation of the validated model or simulation shall be maintained. The validation domain temperature limit is recorded as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rature limit is recorded as 300 kelvin.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nThe report states that a validati"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
@@ -172,15 +172,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:002",
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:missing_required_condition",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:d4cad244121099319226567351bca691c4636f6b79a3d0d5ddc4bc4c4d3268e7",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 173,
+            "start": 536,
+            "end": 709,
             "exact": "The report states that a validation-domain record shall be maintained, but it does not identify the model. The validation domain temperature limit is recorded as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " limit is recorded as 300 kelvin.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nA record used for configuration mana"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
@@ -231,15 +231,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:002",
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:outside_validity_domain",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:d8d7225b7578012a9ad7de22120745ff89a10bd6a403a8500f28eecf85a8db68",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 161,
+            "start": 737,
+            "end": 898,
             "exact": "A record used for configuration management is asserted to be a model-validation-domain record. The validation domain temperature limit is recorded as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ure limit is recorded as 300 kelvin.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nThe report claims that a nam"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
@@ -294,15 +294,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:002",
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:empirical_verification_required",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:44e0f1dd92ef8183ce8e8b5bdb0f9f777da0b203d300173baf2cb6f78cb5a2f7",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 192,
+            "start": 934,
+            "end": 1126,
             "exact": "The report claims that a named model has a maintained validation-domain record, but no qualified record observation is bound. The validation domain temperature limit is recorded as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "t is recorded as 300 kelvin.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a validation-domain record shal"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
@@ -361,15 +361,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:002",
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:negation",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:04aa0817fac0b17b3445cdddbd0e15387ffdf5a9850b501337996048d6defed8",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 164,
+            "start": 1139,
+            "end": 1303,
             "exact": "It is not true that a validation-domain record shall be maintained for the named validated model. The validation domain temperature limit is recorded as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "domain temperature limit is recorded as 300 kelvin.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA record of the domain of validation of the v"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
@@ -424,15 +424,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:002",
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:unit_variation",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:539f7af255f817cb2765059c438727bc1fc17091f414d1a5532c69a17d42996a",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 233,
-            "exact": "A record of the domain of validation of the validated model or simulation shall be maintained. The validation domain temperature limit is recorded as 26.85 °C. The same validation domain temperature limit is referenced as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1322,
+            "end": 1552,
+            "exact": "A record of the domain of validation of the validated model or simulation shall be maintained. The reviewed quantities are validation domain temperature limit = 26.85 °C; validation domain temperature limit reference = 300 kelvin.",
+            "prefix": " temperature limit is recorded as 300 kelvin.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
@@ -504,15 +504,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:002",
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:decision_changing_ambiguity",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:47abbca49b88127c818303aec2b694d5a27e359921ca57016ad84b33bea5d714",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 184,
-            "exact": "The wording leaves unresolved whether a validation-domain record is or is not required for the named validated model. The validation domain temperature limit is recorded as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1584,
+            "end": 1823,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A record of the domain of validation of the validated model or simulation shall be maintained”. The reviewed quantity is validation domain temperature limit = 300 kelvin.",
+            "prefix": "re limit reference = 300 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nThe validated model must retain a record describi"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
@@ -563,15 +563,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:spin-coating:002:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:47abbca49b88127c818303aec2b694d5a27e359921ca57016ad84b33bea5d714",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 184,
-            "exact": "The wording leaves unresolved whether a validation-domain record is or is not required for the named validated model. The validation domain temperature limit is recorded as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1584,
+            "end": 1823,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A record of the domain of validation of the validated model or simulation shall be maintained”. The reviewed quantity is validation domain temperature limit = 300 kelvin.",
+            "prefix": "re limit reference = 300 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nThe validated model must retain a record describi"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
@@ -624,15 +624,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:002",
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:paraphrase",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:344dd6164faae68b737263f038a85a9995bb9655822984f3e4202cea6e6784e7",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 141,
+            "start": 1838,
+            "end": 1979,
             "exact": "The validated model must retain a record describing its validation domain. The validation domain temperature limit is recorded as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "validation domain temperature limit = 300 kelvin.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA validation-domain record maintained f"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
@@ -687,15 +687,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:002",
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:false_red_prevention",
-          "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:1256ca731a934eac5a6a4b84b08fadf63f04ce55df07d425b4e50b8636322682",
+          "document_ref": "qualification-fixture:spin-coating:002",
+          "document_digest": "sha256:6be799276553aeb052cffb74db6318d9c89f01866830d0c2535705172e834e47",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 179,
+            "start": 2004,
+            "end": 2183,
             "exact": "A validation-domain record maintained for a different model does not satisfy the named model record requirement. The validation domain temperature limit is recorded as 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rature limit is recorded as 300 kelvin.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",

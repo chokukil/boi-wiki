@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:circuits:004",
         "claim_packet": {
           "claim_id": "claim:circuits:004:clear_violation",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:f08520ae8d438d79ee43d6e97977e143f229e84605f4c102d6effddd4ece4846",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 171,
+            "start": 162,
+            "end": 333,
             "exact": "At fixed current under the passive sign convention, increasing a linear resistor's resistance makes its consumed power decrease. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nFor a linear resistor at fixed current "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -113,15 +113,15 @@
         "evaluation_rule_id": "sci-rule:circuits:004",
         "claim_packet": {
           "claim_id": "claim:circuits:004:in_scope_consistency",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:32e2d586324cd6bb433f1ca0f066f11aab5182a953709163f1ebc00ab7aceadf",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 180,
+            "start": 358,
+            "end": 538,
             "exact": "For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " current scale is recorded as 1 ampere.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying the sign conve"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -180,15 +180,15 @@
         "evaluation_rule_id": "sci-rule:circuits:004",
         "claim_packet": {
           "claim_id": "claim:circuits:004:missing_required_condition",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:15bcc0666b0871403b10122ba8b07e5b748be7532e053f560a846aa587350dc0",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 240,
+            "start": 569,
+            "end": 809,
             "exact": "Without specifying the sign convention, the report asserts: For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "nt scale is recorded as 1 ampere.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a nonlinear element rather than "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -243,15 +243,15 @@
         "evaluation_rule_id": "sci-rule:circuits:004",
         "claim_packet": {
           "claim_id": "claim:circuits:004:outside_validity_domain",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:7f1176b38f6660f43fb32a2cdf0852ce4f32c00b87ca045741a44421f0eac47d",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 255,
+            "start": 837,
+            "end": 1092,
             "exact": "For a nonlinear element rather than a linear resistor, the report asserts: For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rrent scale is recorded as 1 ampere.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a particular resistor me"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -310,15 +310,15 @@
         "evaluation_rule_id": "sci-rule:circuits:004",
         "claim_packet": {
           "claim_id": "claim:circuits:004:empirical_verification_required",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:e2795edb1fbbb2db0a638ad0d41aa71c9aba59a14dc7d8464ebe2e423a228616",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 294,
+            "start": 1128,
+            "end": 1422,
             "exact": "For a particular resistor measured on a named tester, the report asserts: For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. This named result requires measurement. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ale is recorded as 1 ampere.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nUnder the stated scientific conditions, it is not t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -381,15 +381,15 @@
         "evaluation_rule_id": "sci-rule:circuits:004",
         "claim_packet": {
           "claim_id": "claim:circuits:004:negation",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:e6ef544d818f831b5c9fce8be9418ad45b18b6abf2befb85dff7055a91347533",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 240,
+            "start": 1435,
+            "end": 1675,
             "exact": "Under the stated scientific conditions, it is not true that for a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "urement. The current scale is recorded as 1 ampere.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nFor a linear resistor at fixed current under "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -448,15 +448,15 @@
         "evaluation_rule_id": "sci-rule:circuits:004",
         "claim_packet": {
           "claim_id": "claim:circuits:004:unit_variation",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:4e067c62a38c73470c45162c33be60ce21f74ce1c9d64737812a14601a522979",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 238,
-            "exact": "For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1000 milliampere. The same current scale is referenced as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1694,
+            "end": 1929,
+            "exact": "For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The reviewed quantities are current scale = 1000 milliampere; current scale reference = 1 ampere.",
+            "prefix": "R. The current scale is recorded as 1 ampere.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -532,15 +532,15 @@
         "evaluation_rule_id": "sci-rule:circuits:004",
         "claim_packet": {
           "claim_id": "claim:circuits:004:decision_changing_ambiguity",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:c772fb1430efc114ed9b7221b374c5f1454d94cfc88c302f42789a700e9d1231",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 362,
-            "exact": "The wording leaves unresolved whether 'For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R.' or instead 'At fixed current under the passive sign convention, increasing a linear resistor's resistance makes its consumed power decrease'. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1961,
+            "end": 2219,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R”. The reviewed quantity is current scale = 1 ampere.",
+            "prefix": "rent scale reference = 1 ampere.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: For a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -595,15 +595,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:circuits:004:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:c772fb1430efc114ed9b7221b374c5f1454d94cfc88c302f42789a700e9d1231",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 362,
-            "exact": "The wording leaves unresolved whether 'For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R.' or instead 'At fixed current under the passive sign convention, increasing a linear resistor's resistance makes its consumed power decrease'. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1961,
+            "end": 2219,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R”. The reviewed quantity is current scale = 1 ampere.",
+            "prefix": "rent scale reference = 1 ampere.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: For a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -659,15 +659,15 @@
         "evaluation_rule_id": "sci-rule:circuits:004",
         "claim_packet": {
           "claim_id": "claim:circuits:004:paraphrase",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:d6664ab9e3bea703d964beabab39ee02e82747f025b41707b19fbcc798b053bc",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 224,
+            "start": 2234,
+            "end": 2458,
             "exact": "In equivalent wording, the document states: For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he reviewed quantity is current scale = 1 ampere.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nAn active current-controlled element is"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -726,15 +726,15 @@
         "evaluation_rule_id": "sci-rule:circuits:004",
         "claim_packet": {
           "claim_id": "claim:circuits:004:false_red_prevention",
-          "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:7d1d544165316fb7dad75fae716f77356443a27da849b4cf0e4d5f323ce4bdc4",
+          "document_ref": "qualification-fixture:circuits:004",
+          "document_digest": "sha256:557a6442268e7e32e5c02da05bc6b456544913101debd0d355f919fffd03d4b3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 149,
+            "start": 2483,
+            "end": 2632,
             "exact": "An active current-controlled element is reported to draw less power when its effective resistance changes. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " current scale is recorded as 1 ampere.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",

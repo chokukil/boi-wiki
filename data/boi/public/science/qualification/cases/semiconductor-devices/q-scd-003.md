@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:003",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:clear_violation",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:0071decce73c14fc539195e636ece6974a72a5ed3e146adec824a895fff1a697",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 358,
+            "start": 175,
+            "end": 533,
             "exact": "Low-field semiconductor conductivity is independent of electron and hole concentrations and mobilities. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nLow-field semiconductor conductivity de"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -134,15 +134,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:003",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:in_scope_consistency",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:29d554af9fc3fbe3b9be0954de179f05db4831d48406b92d85fc4a64145eafea",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 361,
+            "start": 558,
+            "end": 919,
             "exact": "Low-field semiconductor conductivity depends on the bound electron and hole concentrations and mobilities. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ctivity 17.623942974 siemens per meter.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nCarrier concentrations and mobili"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -222,15 +222,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:003",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:missing_required_condition",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:1cc4a1ffdc0ce96144008b6a6d0f078c953828e78ce5e85754b60bc137313f1d",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 355,
+            "start": 950,
+            "end": 1305,
             "exact": "Carrier concentrations and mobilities are listed without identifying the low-field transport regime. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "y 17.623942974 siemens per meter.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nThe low-field carrier-conductivity e"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -306,15 +306,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:003",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:outside_validity_domain",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:cae6c810fca75e4c4d3b60f00525a9cf364c9853e81dfcba060b286138083294",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 352,
+            "start": 1333,
+            "end": 1685,
             "exact": "The low-field carrier-conductivity equation is asserted as an unchanged high-field transport law. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "vity 17.623942974 siemens per meter.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nThe report claims a measured"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -394,15 +394,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:003",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:empirical_verification_required",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:451d649fe056488451efa5e37afa4b308057c9e067f405bf64f848bb9cdd99d7",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 364,
+            "start": 1721,
+            "end": 2085,
             "exact": "The report claims a measured low-field conductivity for a named wafer, but no qualified observation is bound. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "623942974 siemens per meter.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that low-field conductivity depends "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -486,15 +486,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:003",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:negation",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:e2714520eeba87a207bc2374f7d7648db98cdcc8650603320b2525db8862859f",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 357,
+            "start": 2098,
+            "end": 2455,
             "exact": "It is not true that low-field conductivity depends on electron and hole concentrations and mobilities. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "d, and conductivity 17.623942974 siemens per meter.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nIn the low-field regime, electron concentrati"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -574,15 +574,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:003",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:unit_variation",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:e6c8a457594a65dbd411c81157808f2200ccd05f53ecdd1a035188e6613e6631",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 436,
-            "exact": "Low-field semiconductor conductivity depends on the bound electron and hole concentrations and mobilities. The conductivity scale is recorded as 10 millisiemens / centimeter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter. The same conductivity scale is referenced as 1 siemens / meter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2474,
+            "end": 2876,
+            "exact": "In the low-field regime, electron concentration n = 1e21 and hole concentration p = 2e20 per cubic metre, with electron and hole mobilities 0.1 and 0.05 square metres per volt-second, give conductivity 17.623942974 siemens / meter through the carrier-conductivity relation. The reviewed quantities are conductivity scale = 10 millisiemens / centimeter; conductivity scale reference = 1 siemens / meter.",
+            "prefix": " conductivity 17.623942974 siemens per meter.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -679,15 +679,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:003",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:decision_changing_ambiguity",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:41f7273260454eb40122a6342c479bdefe98708f34dd1aed522a053bd672d600",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 371,
-            "exact": "The wording leaves unresolved whether carrier concentrations and mobilities do or do not contribute to conductivity. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2908,
+            "end": 3553,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “In the low-field regime, electron concentration n = 1e21 and hole concentration p = 2e20 per cubic metre, with electron and hole mobilities 0.1 and 0.05 square metres per volt-second, give conductivity 17.623942974 siemens / meter through the carrier-conductivity relation”. The reviewed quantities are conductivity scale = 1 siemens / meter; electron concentration = 1e21 1 / meter ** 3; hole concentration = 2e20 1 / meter ** 3; electron mobility = 0.1 meter ** 2 / volt / second; hole mobility = 0.05 meter ** 2 / volt / second; conductivity = 17.623942974 siemens / meter.",
+            "prefix": "e reference = 1 siemens / meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nElectron and hole populations and their mobilitie"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -763,15 +763,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:41f7273260454eb40122a6342c479bdefe98708f34dd1aed522a053bd672d600",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 371,
-            "exact": "The wording leaves unresolved whether carrier concentrations and mobilities do or do not contribute to conductivity. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2908,
+            "end": 3553,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “In the low-field regime, electron concentration n = 1e21 and hole concentration p = 2e20 per cubic metre, with electron and hole mobilities 0.1 and 0.05 square metres per volt-second, give conductivity 17.623942974 siemens / meter through the carrier-conductivity relation”. The reviewed quantities are conductivity scale = 1 siemens / meter; electron concentration = 1e21 1 / meter ** 3; hole concentration = 2e20 1 / meter ** 3; electron mobility = 0.1 meter ** 2 / volt / second; hole mobility = 0.05 meter ** 2 / volt / second; conductivity = 17.623942974 siemens / meter.",
+            "prefix": "e reference = 1 siemens / meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nElectron and hole populations and their mobilitie"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -849,15 +849,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:003",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:paraphrase",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:9f4c008353f7921ab9dfd9d36d539770f5151322dad6237f7b7667f2308dd82f",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 365,
+            "start": 3568,
+            "end": 3933,
             "exact": "Electron and hole populations and their mobilities jointly contribute to low-field semiconductor conductivity. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ond; conductivity = 17.623942974 siemens / meter.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nIn a high-field transport regime, the r"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -937,15 +937,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:003",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:false_red_prevention",
-          "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:ba080d6ce404d3242ceab7b11063b610ea0b9530cbb52a3eb6686ca8d65f2b9b",
+          "document_ref": "qualification-fixture:semiconductor-devices:003",
+          "document_digest": "sha256:cbbdb56aa72f9fe3fe8be1f9ed7abd9cffb4df49ea18987c37b77aecb48ccba8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 375,
-            "exact": "A doping label with no before-and-after carrier concentrations or mobilities cannot establish the conductivity relation. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 3958,
+            "end": 4357,
+            "exact": "In a high-field transport regime, the report does not apply the low-field carrier-conductivity relation even though electron concentration is 1e21 1 / meter ** 3, hole concentration is 2e20 1 / meter ** 3, electron mobility is 0.1 meter ** 2 / volt / second, hole mobility is 0.05 meter ** 2 / volt / second, conductivity is 17.623942974 siemens / meter, and conductivity scale is 1 siemens / meter.",
+            "prefix": "ctivity 17.623942974 siemens per meter.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:carrier-state-parameters",
@@ -987,16 +987,16 @@
             ],
             "conditions": [
               {
+                "condition_id": "relation_context",
+                "value": "carrier_conductivity"
+              },
+              {
                 "condition_id": "transport_regime",
-                "value": "low_field"
+                "value": "high_field"
               },
               {
                 "condition_id": "carrier_parameter_scope",
-                "value": "single_doping_label"
-              },
-              {
-                "condition_id": "relation_context",
-                "value": "carrier_conductivity"
+                "value": "electron_and_hole_concentrations_and_mobilities"
               }
             ],
             "process_stage": null,

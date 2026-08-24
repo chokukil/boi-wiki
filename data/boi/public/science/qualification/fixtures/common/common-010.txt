@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:common:010
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Steady state and dynamic equilibrium are identical scientific definitions in every respect. The reviewed quantity is observation duration = 1 second.
+
+[in_scope_consistency]
+Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantity is observation duration = 1 second.
+
+[missing_required_condition]
+Without specifying steady state temporal basis, the report states that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantity is observation duration = 1 second.
+
+[outside_validity_domain]
+In a different scientific context, the report nevertheless states that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantity is observation duration = 1 second.
+
+[empirical_verification_required]
+For a named realization, the report asserts that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. No qualified observation is bound. The reviewed quantity is observation duration = 1 second.
+
+[negation]
+It is not true that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantity is observation duration = 1 second.
+
+[unit_variation]
+Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantities are observation duration = 1000 millisecond; observation duration reference = 1 second.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “Steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change”. The reviewed quantity is observation duration = 1 second.
+
+[paraphrase]
+In equivalent wording, the document states that steady state is time independent, whereas dynamic equilibrium has equal forward and reverse reaction rates with no net composition change. The reviewed quantity is observation duration = 1 second.
+
+[false_red_prevention]
+A transient observation is not a time-independent steady state in this definitions-only comparison. The reviewed quantity is observation duration = 1 second.
+
+End of immutable qualification fixture.

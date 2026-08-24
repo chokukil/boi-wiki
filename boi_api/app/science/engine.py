@@ -16,16 +16,18 @@ from boi_api.app.science.models import (
     VerdictReleaseSet,
 )
 from boi_api.app.science.operational import (
+    OperationalObservation,
     OperationalVerification,
+    _open_operational_observation,
     _open_operational_verification,
 )
 from boi_api.app.science.rules import (
     DetailedRuleEvaluation,
-    QualifiedObservation,
     ResolvedRuleSet,
     VerificationRule,
     evaluate_rule,
 )
+from boi_api.app.science.units import unmatched_reviewed_quantity_mentions
 
 
 class UnresolvedAmbiguityError(ValueError):
@@ -46,7 +48,9 @@ def _is_concept_candidate(rule: VerificationRule, claim: ClaimPacket) -> bool:
     return (
         rule.subject_concept_id == normalized.subject_concept_id
         and rule.object_concept_id == normalized.object_concept_id
-        and (rule.relation_kind is None or rule.relation_kind is normalized.relation_kind)
+        and (
+            rule.relation_kind is None or rule.relation_kind is normalized.relation_kind
+        )
     )
 
 
@@ -113,9 +117,13 @@ def _select_verdict(
     *,
     coverage_missing: bool,
 ) -> tuple[PrimaryVerdict, list[DetailedRuleEvaluation], list[str]]:
-    missing = [item for item in evaluations if item.applicability == "MISSING_CONDITIONS"]
+    missing = [
+        item for item in evaluations if item.applicability == "MISSING_CONDITIONS"
+    ]
     if coverage_missing or missing or not evaluations:
-        reasons = ["MISSING_RULE_COVERAGE"] if coverage_missing or not evaluations else []
+        reasons = (
+            ["MISSING_RULE_COVERAGE"] if coverage_missing or not evaluations else []
+        )
         reasons.extend(code for item in missing for code in item.reason_codes)
         return PrimaryVerdict.INSUFFICIENT_INFORMATION, missing, sorted(set(reasons))
 
@@ -178,7 +186,7 @@ def verify_claim(
     operational: OperationalVerification,
     verifier_version: str = "science-verifier/0.1.0",
     *,
-    qualified_observations: Iterable[QualifiedObservation] = (),
+    qualified_observations: Iterable[OperationalObservation] = (),
     **legacy_inputs: object,
 ) -> VerdictPacket:
     """Verify only through a sealed capability issued by active Catalog resolution."""
@@ -201,12 +209,15 @@ def _verify_resolved_claim(
     verifier_version: str = "science-verifier/0.1.0",
     *,
     rule_set: ResolvedRuleSet,
-    qualified_observations: Iterable[QualifiedObservation] = (),
+    qualified_observations: Iterable[OperationalObservation] = (),
 ) -> VerdictPacket:
     """Build a byte-stable verdict without filesystem, network, or dynamic code access."""
 
     if claim.interpretation.ambiguity_ids or not claim.interpretation.user_confirmed:
-        ambiguity = ", ".join(sorted(claim.interpretation.ambiguity_ids)) or "unconfirmed interpretation"
+        ambiguity = (
+            ", ".join(sorted(claim.interpretation.ambiguity_ids))
+            or "unconfirmed interpretation"
+        )
         raise UnresolvedAmbiguityError(
             f"unresolved decision-changing ambiguity must stop before verification: {ambiguity}"
         )
@@ -235,40 +246,52 @@ def _verify_resolved_claim(
     trusted = [
         rule
         for rule in candidates
-        if rule.rule_id in pinned_rules and _grounded(rule, knowledge_refs, evidence_refs)
+        if rule.rule_id in pinned_rules
+        and _grounded(rule, knowledge_refs, evidence_refs)
     ]
     coverage_missing = len(trusted) != len(candidates) or not candidates
-    observations = tuple(qualified_observations)
-
-    def observations_for(rule: VerificationRule) -> tuple[QualifiedObservation, ...]:
-        return tuple(
-            observation
-            for observation in observations
-            if observation.rule_id == rule.rule_id
-            and observation.verified
-            and observation.measurement_ref in knowledge_refs
-            and observation.evidence_ref in evidence_refs
-            and observation.evidence_ref in rule.evidence_refs
+    observation_attestations = tuple(
+        _open_operational_observation(observation)
+        for observation in qualified_observations
+    )
+    if any(
+        item.release_set_digest != release_set.combined_digest
+        for item in observation_attestations
+    ):
+        raise ScienceOperationalError(
+            "operational observation is bound to a different Release set"
         )
 
     evaluations = [
         evaluate_rule(
             rule,
             claim.normalized_claim,
-            qualified_observations=observations_for(rule),
         )
         for rule in sorted(trusted, key=lambda item: item.rule_id)
     ]
-    evaluations = [item for item in evaluations if item.applicability != "NOT_APPLICABLE"]
+    evaluations = [
+        item for item in evaluations if item.applicability != "NOT_APPLICABLE"
+    ]
 
-    verdict, decisive, reason_codes = _select_verdict(
-        evaluations,
-        coverage_missing=coverage_missing,
-    )
+    ungrounded_quantities = unmatched_reviewed_quantity_mentions(claim)
+    if ungrounded_quantities:
+        verdict = PrimaryVerdict.INSUFFICIENT_INFORMATION
+        decisive = []
+        reason_codes = ["UNGROUNDED_REVIEWED_QUANTITY_MENTION"]
+    else:
+        verdict, decisive, reason_codes = _select_verdict(
+            evaluations,
+            coverage_missing=coverage_missing,
+        )
     decisive = sorted(decisive, key=lambda item: item.rule_id)
     decisive_rule_ids = [item.rule_id for item in decisive]
     selected_knowledge = sorted(
-        {ref for item in decisive for ref in item.knowledge_refs if ref in knowledge_refs}
+        {
+            ref
+            for item in decisive
+            for ref in item.knowledge_refs
+            if ref in knowledge_refs
+        }
     )
     selected_evidence = sorted(
         {ref for item in decisive for ref in item.evidence_refs if ref in evidence_refs}
@@ -280,7 +303,8 @@ def _verify_resolved_claim(
             evidence_refs=sorted(set(item.evidence_refs) & evidence_refs),
         )
         for item in decisive
-        if set(item.knowledge_refs) & knowledge_refs and set(item.evidence_refs) & evidence_refs
+        if set(item.knowledge_refs) & knowledge_refs
+        and set(item.evidence_refs) & evidence_refs
     ]
 
     rule_by_id = {rule.rule_id: rule for rule in trusted}

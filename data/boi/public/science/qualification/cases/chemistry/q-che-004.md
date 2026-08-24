@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:004",
         "claim_packet": {
           "claim_id": "claim:chemistry:004:clear_violation",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:92f5c2d6baf953c895ddea6d3e6bebe63b54fb4aeb36634facfdd82c81bf6b3c",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 137,
+            "start": 163,
+            "end": 300,
             "exact": "At equilibrium the reaction quotient Q is 2 while the equilibrium constant K is 4. The concentration scale is recorded as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nAt equilibrium the reaction quotient Q "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",
@@ -118,15 +118,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:004",
         "claim_packet": {
           "claim_id": "claim:chemistry:004:in_scope_consistency",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:475dad32a4aa383ccd06f6979aa248b2fc58a8b280e1decf5e4b773357e7181c",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 140,
+            "start": 325,
+            "end": 465,
             "exact": "At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The concentration scale is recorded as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "on scale is recorded as 1 mole / liter.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nThe report omits a required scien"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",
@@ -190,15 +190,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:004",
         "claim_packet": {
           "claim_id": "claim:chemistry:004:missing_required_condition",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:5a5540d2c349065aab6a5ef4745c30a459aa16a1e2c572292deebb15c1af89ca",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 204,
+            "start": 496,
+            "end": 700,
             "exact": "The report omits a required scientific condition while stating: At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The concentration scale is recorded as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "le is recorded as 1 mole / liter.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nBefore the reaction has reached equi"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",
@@ -253,15 +253,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:004",
         "claim_packet": {
           "claim_id": "claim:chemistry:004:outside_validity_domain",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:c7b8df3d469e138247ab213732f0c0152a62433212d63eaef894279025b984e3",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 204,
+            "start": 728,
+            "end": 932,
             "exact": "Before the reaction has reached equilibrium, the report states: At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The concentration scale is recorded as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "scale is recorded as 1 mole / liter.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named reacting mixture"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",
@@ -325,15 +325,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:004",
         "claim_packet": {
           "claim_id": "claim:chemistry:004:empirical_verification_required",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:a8c56316c60dd5f35d675a0c6418da17c39c76da9f76527f0dcdc8e0a1e18f68",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 228,
+            "start": 968,
+            "end": 1196,
             "exact": "For a named reacting mixture, the report states: At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4; the named result requires measurement. The concentration scale is recorded as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " recorded as 1 mole / liter.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nThe report denies the equality even though at equil"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",
@@ -401,15 +401,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:004",
         "claim_packet": {
           "claim_id": "claim:chemistry:004:negation",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:1d025db5ffaf485ccd7e39b8a45661d28479cfd1643200209b612276a4365c59",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 183,
+            "start": 1209,
+            "end": 1392,
             "exact": "The report denies the equality even though at equilibrium the reaction quotient q is 4 and the equilibrium constant k is also 4. The concentration scale is recorded as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " concentration scale is recorded as 1 mole / liter.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nAt equilibrium the reaction quotient Q is 4 a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",
@@ -473,15 +473,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:004",
         "claim_packet": {
           "claim_id": "claim:chemistry:004:unit_variation",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:ee866b5aac7c56afd6ff57dc22fa27916b716000ce570f1cbc1fda1051b25ad1",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 210,
-            "exact": "At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The concentration scale is recorded as 1000 mole / meter ** 3. The same concentration scale is referenced as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1411,
+            "end": 1618,
+            "exact": "At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The reviewed quantities are concentration scale = 1000 mole / meter ** 3; concentration scale reference = 1 mole / liter.",
+            "prefix": "ntration scale is recorded as 1 mole / liter.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",
@@ -562,15 +562,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:004",
         "claim_packet": {
           "claim_id": "claim:chemistry:004:decision_changing_ambiguity",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:16cddb1e5af49b2a8aecefa3519cd6ed9a6cfc5c3f188326dbe23485654adddb",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 304,
-            "exact": "A blurred table entry can be read as either 'At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4' or 'At equilibrium the reaction quotient Q is 2 while the equilibrium constant K is 4', so the equation is unresolved. The concentration scale is recorded as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1650,
+            "end": 1948,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4”. The reviewed quantities are concentration scale = 1 mole / liter; reaction quotient = 4 dimensionless; equilibrium constant = 4 dimensionless.",
+            "prefix": "cale reference = 1 mole / liter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nUsing equivalent wording, at equilibrium the reac"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",
@@ -630,15 +630,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:chemistry:004:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:16cddb1e5af49b2a8aecefa3519cd6ed9a6cfc5c3f188326dbe23485654adddb",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 304,
-            "exact": "A blurred table entry can be read as either 'At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4' or 'At equilibrium the reaction quotient Q is 2 while the equilibrium constant K is 4', so the equation is unresolved. The concentration scale is recorded as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1650,
+            "end": 1948,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4”. The reviewed quantities are concentration scale = 1 mole / liter; reaction quotient = 4 dimensionless; equilibrium constant = 4 dimensionless.",
+            "prefix": "cale reference = 1 mole / liter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nUsing equivalent wording, at equilibrium the reac"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",
@@ -700,15 +700,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:004",
         "claim_packet": {
           "claim_id": "claim:chemistry:004:paraphrase",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:70bd8fe9c455fd989ae6cbb2888fb0ff12e8e9de5039dd4af647d94fca6a45a9",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 166,
+            "start": 1963,
+            "end": 2129,
             "exact": "Using equivalent wording, at equilibrium the reaction quotient q is 4 and the equilibrium constant k is also 4. The concentration scale is recorded as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "sionless; equilibrium constant = 4 dimensionless.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nWith an unspecified concentration basis"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",
@@ -772,15 +772,15 @@
         "evaluation_rule_id": "sci-rule:chemistry:004",
         "claim_packet": {
           "claim_id": "claim:chemistry:004:false_red_prevention",
-          "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:1a82565b9a49e75bae28c115dd494a902fb97f7aab6216590228be8fa2e1789c",
+          "document_ref": "qualification-fixture:chemistry:004",
+          "document_digest": "sha256:327805c48840dbfd0edb181d897ae6efcc207ee13a436a525bcef50d3adb8c42",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 180,
+            "start": 2154,
+            "end": 2334,
             "exact": "With an unspecified concentration basis, the reported reaction quotient and equilibrium constant are not directly comparable. The concentration scale is recorded as 1 mole / liter.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "on scale is recorded as 1 mole / liter.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reaction-quotient",

@@ -45,15 +45,15 @@
         "evaluation_rule_id": "sci-rule:common:007",
         "claim_packet": {
           "claim_id": "claim:common:007:clear_violation",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:097dc4caa417b437a6204549660f9556e5a9238660e7dbd79132d52f0b406150",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 157,
-            "exact": "A reproducibility condition excludes changes in location, operator, measuring system, and replicate measurement. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 328,
+            "exact": "A reproducibility condition excludes changes in location, operator, measuring system, and replicate measurement. The reviewed quantity is location separation = 1 meter.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA reproducibility condition includes di"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",
@@ -102,15 +102,15 @@
         "evaluation_rule_id": "sci-rule:common:007",
         "claim_packet": {
           "claim_id": "claim:common:007:in_scope_consistency",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:ab53be608913ad111d4c478239d0dc39fe12b592ffec9589c67f95dbe4f212fb",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 160,
-            "exact": "A reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 353,
+            "end": 524,
+            "exact": "A reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The reviewed quantity is location separation = 1 meter.",
+            "prefix": "ntity is location separation = 1 meter.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying changed condit"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",
@@ -159,15 +159,15 @@
         "evaluation_rule_id": "sci-rule:common:007",
         "claim_packet": {
           "claim_id": "claim:common:007:missing_required_condition",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:5fe16cab7672f4984fa4391fcef06a97da4dda0249f8490c32f43121a963739a",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 225,
-            "exact": "Without specifying changed condition set, the report states that a reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 555,
+            "end": 791,
+            "exact": "Without specifying changed condition set, the report states that a reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The reviewed quantity is location separation = 1 meter.",
+            "prefix": "is location separation = 1 meter.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",
@@ -212,15 +212,15 @@
         "evaluation_rule_id": "sci-rule:common:007",
         "claim_packet": {
           "claim_id": "claim:common:007:outside_validity_domain",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:6024a239b370c262d48ac959c30d72cc669149644d00c79d0eb62afc69e67d3a",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 231,
-            "exact": "In a different scientific context, the report nevertheless states that a reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 819,
+            "end": 1061,
+            "exact": "In a different scientific context, the report nevertheless states that a reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The reviewed quantity is location separation = 1 meter.",
+            "prefix": "ty is location separation = 1 meter.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",
@@ -269,15 +269,15 @@
         "evaluation_rule_id": "sci-rule:common:007",
         "claim_packet": {
           "claim_id": "claim:common:007:empirical_verification_required",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:f254d0b43ca1f8a9605caf6567610f400e88d0848db7d03e062f858bf97949d5",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 244,
-            "exact": "For a named realization, the report asserts that a reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. No qualified observation is bound. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1097,
+            "end": 1352,
+            "exact": "For a named realization, the report asserts that a reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. No qualified observation is bound. The reviewed quantity is location separation = 1 meter.",
+            "prefix": "cation separation = 1 meter.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a reproducibility condition inc"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",
@@ -330,15 +330,15 @@
         "evaluation_rule_id": "sci-rule:common:007",
         "claim_packet": {
           "claim_id": "claim:common:007:negation",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:8002cc2221749843cae9a04a9510e4ca890ce168db7ba3d8ae6bd99aa81853d7",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 180,
-            "exact": "It is not true that a reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1365,
+            "end": 1556,
+            "exact": "It is not true that a reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The reviewed quantity is location separation = 1 meter.",
+            "prefix": "reviewed quantity is location separation = 1 meter.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA reproducibility condition includes differen"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",
@@ -387,15 +387,15 @@
         "evaluation_rule_id": "sci-rule:common:007",
         "claim_packet": {
           "claim_id": "claim:common:007:unit_variation",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:7332e81200b921119af525556afa9aa8d4df39262b48f74f63e29d89b8edf040",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 186,
-            "exact": "A reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The same location separation is written as 100 centimeter and 1 meter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1575,
+            "end": 1797,
+            "exact": "A reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The reviewed quantities are location separation = 100 centimeter; location separation reference = 1 meter.",
+            "prefix": "ed quantity is location separation = 1 meter.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",
@@ -461,15 +461,15 @@
         "evaluation_rule_id": "sci-rule:common:007",
         "claim_packet": {
           "claim_id": "claim:common:007:decision_changing_ambiguity",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:780553cd7f9016d9129ad8e87105129829b7fcd6bc5920216a315cc9721fb0b3",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 327,
-            "exact": "The wording leaves unresolved whether 'A reproducibility condition includes different locations, operators, measuring systems, and replicate measurements.' or instead 'A reproducibility condition excludes changes in location, operator, measuring system, and replicate measurement.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1829,
+            "end": 2070,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A reproducibility condition includes different locations, operators, measuring systems, and replicate measurements”. The reviewed quantity is location separation = 1 meter.",
+            "prefix": " separation reference = 1 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",
@@ -514,15 +514,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:007:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:780553cd7f9016d9129ad8e87105129829b7fcd6bc5920216a315cc9721fb0b3",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 327,
-            "exact": "The wording leaves unresolved whether 'A reproducibility condition includes different locations, operators, measuring systems, and replicate measurements.' or instead 'A reproducibility condition excludes changes in location, operator, measuring system, and replicate measurement.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1829,
+            "end": 2070,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A reproducibility condition includes different locations, operators, measuring systems, and replicate measurements”. The reviewed quantity is location separation = 1 meter.",
+            "prefix": " separation reference = 1 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",
@@ -569,15 +569,15 @@
         "evaluation_rule_id": "sci-rule:common:007",
         "claim_packet": {
           "claim_id": "claim:common:007:paraphrase",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:0c59ad669f1cf08f7d6b746b79ed791848890c0c4b3eea0dfcbc6dfa569c7c2a",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 208,
-            "exact": "In equivalent wording, the document states that a reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2085,
+            "end": 2304,
+            "exact": "In equivalent wording, the document states that a reproducibility condition includes different locations, operators, measuring systems, and replicate measurements. The reviewed quantity is location separation = 1 meter.",
+            "prefix": "viewed quantity is location separation = 1 meter.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nMeasurements repeated under the same co"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",
@@ -626,15 +626,15 @@
         "evaluation_rule_id": "sci-rule:common:007",
         "claim_packet": {
           "claim_id": "claim:common:007:false_red_prevention",
-          "document_ref": "qualification:common:007",
-          "document_digest": "sha256:044bee9b72025cc156fdcfd6931514b0b2b12de485ecc35aefb49d01ae03618e",
+          "document_ref": "qualification-fixture:common:007",
+          "document_digest": "sha256:e7853e5e6d30fdeee88af5a213ba37e7cab8e6cf3485cbc20813482f5a7a127f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 168,
-            "exact": "Measurements repeated under the same conditions do not instantiate the varied conditions in the reproducibility definition. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2329,
+            "end": 2508,
+            "exact": "Measurements repeated under the same conditions do not instantiate the varied conditions in the reproducibility definition. The reviewed quantity is location separation = 1 meter.",
+            "prefix": "ntity is location separation = 1 meter.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:reproducibility-condition",

@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:003",
         "claim_packet": {
           "claim_id": "claim:spin-coating:003:clear_violation",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:b37ed3306343d675f0e1fb3133e53af2524ff51cd311eb25aa265ffe4e0f696b",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 144,
+            "start": 166,
+            "end": 310,
             "exact": "A dry-film spin model may ignore solvent evaporation and still claim unlimited validity. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA dry-film spin model records solvent e"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",
@@ -118,15 +118,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:003",
         "claim_packet": {
           "claim_id": "claim:spin-coating:003:in_scope_consistency",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:5f3ec7df993dbd75df3c8914351768d7791c07bceab7de57de20ad8c5221354d",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 153,
+            "start": 335,
+            "end": 488,
             "exact": "A dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "osity is recorded as 1 pascal * second.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",
@@ -190,15 +190,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:003",
         "claim_packet": {
           "claim_id": "claim:spin-coating:003:missing_required_condition",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:133ee40208a71f052874fee19ba5690058fafbe4096722b8f925c61a92796f5d",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 222,
+            "start": 519,
+            "end": 741,
             "exact": "Without one required scientific condition, the document asserts that a dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "is recorded as 1 pascal * second.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a nonvolatile ideal liquid outsi"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",
@@ -258,15 +258,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:003",
         "claim_packet": {
           "claim_id": "claim:spin-coating:003:outside_validity_domain",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:64e06aca9305ebbec9ef45cde9f02e6361e1a566f97477708625f66dae499f7c",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 250,
+            "start": 769,
+            "end": 1019,
             "exact": "For a nonvolatile ideal liquid outside the stated dry-photoresist use, the document asserts that a dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ty is recorded as 1 pascal * second.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named volatile resist "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",
@@ -330,15 +330,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:003",
         "claim_packet": {
           "claim_id": "claim:spin-coating:003:empirical_verification_required",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:69d87dcc6a5df220b6dd7bec67a2be35c277691eb0c8359f681f0abb651f8f0a",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 269,
+            "start": 1055,
+            "end": 1324,
             "exact": "For a named volatile resist and exhaust condition, the document asserts that a dry-film spin model records solvent evaporation, drying termination, and its validation domain; the named result requires measurement. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "corded as 1 pascal * second.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a dry-film spin model records s"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",
@@ -406,15 +406,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:003",
         "claim_packet": {
           "claim_id": "claim:spin-coating:003:negation",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:8379cb4f69889f1f03b741c30d54bb371cc2dce442a1af23e212ea852cef3adb",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 173,
+            "start": 1337,
+            "end": 1510,
             "exact": "It is not true that a dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "dynamic viscosity is recorded as 1 pascal * second.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA dry-film spin model records solvent evapora"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",
@@ -478,15 +478,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:003",
         "claim_packet": {
           "claim_id": "claim:spin-coating:003:unit_variation",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:42df778ef0153d70ed879a91fabcee3fd579263c6973dc7492a6a424dac7225d",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 224,
-            "exact": "A dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1000 millipascal * second. The same dynamic viscosity is referenced as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1529,
+            "end": 1750,
+            "exact": "A dry-film spin model records solvent evaporation, drying termination, and its validation domain. The reviewed quantities are dynamic viscosity = 1000 millipascal * second; dynamic viscosity reference = 1 pascal * second.",
+            "prefix": "c viscosity is recorded as 1 pascal * second.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",
@@ -567,15 +567,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:003",
         "claim_packet": {
           "claim_id": "claim:spin-coating:003:decision_changing_ambiguity",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:c43f39ab6dc698634c83499fc3e6909e1804ff2d6a3675c1a4300d9424ff68c1",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 199,
-            "exact": "The document calls the proposition 'Evaporation-aware spin-model limits' valid without resolving whether it affirms or denies that proposition. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1782,
+            "end": 2013,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A dry-film spin model records solvent evaporation, drying termination, and its validation domain”. The reviewed quantity is dynamic viscosity = 1 pascal * second.",
+            "prefix": "y reference = 1 pascal * second.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a dry-film spin model reco"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",
@@ -635,15 +635,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:spin-coating:003:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:c43f39ab6dc698634c83499fc3e6909e1804ff2d6a3675c1a4300d9424ff68c1",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 199,
-            "exact": "The document calls the proposition 'Evaporation-aware spin-model limits' valid without resolving whether it affirms or denies that proposition. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1782,
+            "end": 2013,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A dry-film spin model records solvent evaporation, drying termination, and its validation domain”. The reviewed quantity is dynamic viscosity = 1 pascal * second.",
+            "prefix": "y reference = 1 pascal * second.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a dry-film spin model reco"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",
@@ -704,15 +704,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:003",
         "claim_packet": {
           "claim_id": "claim:spin-coating:003:paraphrase",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:04abcb5ad8e149c75e8f704506fde425db2a797f74141c9526806add6788a49f",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 176,
+            "start": 2028,
+            "end": 2204,
             "exact": "In equivalent wording, a dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "uantity is dynamic viscosity = 1 pascal * second.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nWith no validation-domain record, the e"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",
@@ -776,15 +776,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:003",
         "claim_packet": {
           "claim_id": "claim:spin-coating:003:false_red_prevention",
-          "document_ref": "qualification:spin-coating:003",
-          "document_digest": "sha256:9653f2f7eaf4109a5f0665be403a8af62067c092d5da596b4d844e49f03d748b",
+          "document_ref": "qualification-fixture:spin-coating:003",
+          "document_digest": "sha256:01050109128bf320e5bf1954dc55c6926443be840c02f4b4c479446c7b82adec",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 169,
+            "start": 2229,
+            "end": 2398,
             "exact": "With no validation-domain record, the evaporation-aware model is not asserted to apply to the named dry-film use. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "osity is recorded as 1 pascal * second.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:evaporation-aware-spin-model",

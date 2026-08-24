@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:semiconductor-devices:001
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+The Fermi function is the number of states rather than their electron occupation probability. The carrier energy is recorded as 1 electron_volt.
+
+[in_scope_consistency]
+The Fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1 electron_volt.
+
+[missing_required_condition]
+Without one required scientific condition, the document asserts that the fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1 electron_volt.
+
+[outside_validity_domain]
+For a record with no identified energy state, the document asserts that the fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1 electron_volt.
+
+[empirical_verification_required]
+For a named semiconductor sample, the document asserts that the fermi function is an electron occupation probability for an available state at the stated energy; the named result requires measurement. The carrier energy is recorded as 1 electron_volt.
+
+[negation]
+It is not true that the Fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1 electron_volt.
+
+[unit_variation]
+The Fermi function is an electron occupation probability for an available state at the stated energy. The reviewed quantities are carrier energy = 1000 millielectron_volt; carrier energy reference = 1 electron_volt.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “The Fermi function is an electron occupation probability for an available state at the stated energy”. The reviewed quantity is carrier energy = 1 electron_volt.
+
+[paraphrase]
+In equivalent wording, the fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1 electron_volt.
+
+[false_red_prevention]
+A continuum energy interval is not a single bound available state whose occupation probability is given by this rule. The carrier energy is recorded as 1 electron_volt.
+
+End of immutable qualification fixture.

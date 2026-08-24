@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:circuits:003",
         "claim_packet": {
           "claim_id": "claim:circuits:003:clear_violation",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:1f64bf20cf3d3a989b73b1ed04da0f5cd097a1758f4f34fd872856016dc7900b",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 169,
+            "start": 162,
+            "end": 331,
             "exact": "At fixed voltage under the passive sign convention, increasing a linear resistor's resistance makes its consumed power increase. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nFor a linear resistor at fixed voltage "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -113,15 +113,15 @@
         "evaluation_rule_id": "sci-rule:circuits:003",
         "claim_packet": {
           "claim_id": "claim:circuits:003:in_scope_consistency",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:9ed8b25227661cbb8f269d482ab684e16e2b25c463cecaf65bcd7fa7be74256b",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 179,
+            "start": 356,
+            "end": 535,
             "exact": "For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he voltage scale is recorded as 1 volt.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying the sign conve"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -180,15 +180,15 @@
         "evaluation_rule_id": "sci-rule:circuits:003",
         "claim_packet": {
           "claim_id": "claim:circuits:003:missing_required_condition",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:6d5dde70be0672b6ed6cedf9d40e7db023c8f5e2dc44890576b64cdb7d510846",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 239,
+            "start": 566,
+            "end": 805,
             "exact": "Without specifying the sign convention, the report asserts: For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "tage scale is recorded as 1 volt.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a nonlinear element rather than "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -243,15 +243,15 @@
         "evaluation_rule_id": "sci-rule:circuits:003",
         "claim_packet": {
           "claim_id": "claim:circuits:003:outside_validity_domain",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:f5075d3d480957cb89c26456ede13b907ed56c65132fe11615438db13af0c267",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 254,
+            "start": 833,
+            "end": 1087,
             "exact": "For a nonlinear element rather than a linear resistor, the report asserts: For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "voltage scale is recorded as 1 volt.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a particular resistor me"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -310,15 +310,15 @@
         "evaluation_rule_id": "sci-rule:circuits:003",
         "claim_packet": {
           "claim_id": "claim:circuits:003:empirical_verification_required",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:828c59f4cdf1f4ad8036694139b2accd5bafc337c7f4998ed03102d59687fcc9",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 293,
+            "start": 1123,
+            "end": 1416,
             "exact": "For a particular resistor measured on a named tester, the report asserts: For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. This named result requires measurement. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "scale is recorded as 1 volt.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nUnder the stated scientific conditions, it is not t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -381,15 +381,15 @@
         "evaluation_rule_id": "sci-rule:circuits:003",
         "claim_packet": {
           "claim_id": "claim:circuits:003:negation",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:51e0a36e48da19af2aa5749206f1ebca8ef974be218a4eb2ba34cbf116f631f7",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 239,
+            "start": 1429,
+            "end": 1668,
             "exact": "Under the stated scientific conditions, it is not true that for a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "asurement. The voltage scale is recorded as 1 volt.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nFor a linear resistor at fixed voltage under "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -448,15 +448,15 @@
         "evaluation_rule_id": "sci-rule:circuits:003",
         "claim_packet": {
           "claim_id": "claim:circuits:003:unit_variation",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:eac69c8a91a312cbd3119e3e479534ad4b0abfd118f4a6920cd5f5484e102848",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 235,
-            "exact": "For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1000 millivolt. The same voltage scale is referenced as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1687,
+            "end": 1919,
+            "exact": "For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The reviewed quantities are voltage scale = 1000 millivolt; voltage scale reference = 1 volt.",
+            "prefix": "²/R. The voltage scale is recorded as 1 volt.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -532,15 +532,15 @@
         "evaluation_rule_id": "sci-rule:circuits:003",
         "claim_packet": {
           "claim_id": "claim:circuits:003:decision_changing_ambiguity",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:16f466b07aef084aca24591b84e7e0d27ca7fc21dfae57f175e5b3f3f5bec382",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 361,
-            "exact": "The wording leaves unresolved whether 'For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R.' or instead 'At fixed voltage under the passive sign convention, increasing a linear resistor's resistance makes its consumed power increase'. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1951,
+            "end": 2208,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R”. The reviewed quantity is voltage scale = 1 volt.",
+            "prefix": "oltage scale reference = 1 volt.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: For a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -595,15 +595,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:circuits:003:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:16f466b07aef084aca24591b84e7e0d27ca7fc21dfae57f175e5b3f3f5bec382",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 361,
-            "exact": "The wording leaves unresolved whether 'For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R.' or instead 'At fixed voltage under the passive sign convention, increasing a linear resistor's resistance makes its consumed power increase'. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1951,
+            "end": 2208,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R”. The reviewed quantity is voltage scale = 1 volt.",
+            "prefix": "oltage scale reference = 1 volt.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: For a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -659,15 +659,15 @@
         "evaluation_rule_id": "sci-rule:circuits:003",
         "claim_packet": {
           "claim_id": "claim:circuits:003:paraphrase",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:06680f628c78130ab61bb114e2477941bd623709d35051bced1a997bde2ed3e3",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 223,
+            "start": 2223,
+            "end": 2446,
             "exact": "In equivalent wording, the document states: For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " The reviewed quantity is voltage scale = 1 volt.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA nonlinear resistor outside the linear"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",
@@ -726,15 +726,15 @@
         "evaluation_rule_id": "sci-rule:circuits:003",
         "claim_packet": {
           "claim_id": "claim:circuits:003:false_red_prevention",
-          "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:3753c4ed9e4a14a3308f945b81dfc701e0e36082a72bf9318138d33c3915e1b2",
+          "document_ref": "qualification-fixture:circuits:003",
+          "document_digest": "sha256:e396248a2b944aa25e63006e6b37d830ffded1d27198b0fccdef42a5acd06d77",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 166,
+            "start": 2471,
+            "end": 2637,
             "exact": "A nonlinear resistor outside the linear-resistor model is reported to draw more power after its operating resistance changes. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he voltage scale is recorded as 1 volt.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:resistance",

@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:006",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:clear_violation",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:5b0e9544dfd590bae51740ae9c24b143df3eba0eea6a93cd78cb986399fc1c96",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 153,
+            "start": 175,
+            "end": 328,
             "exact": "A real ultrathin SiO2 MOS gate below the cited thickness must always have exactly zero gate leakage. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA real MOS device with ultrathin SiO2 b"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",
@@ -114,15 +114,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:006",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:in_scope_consistency",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:2afb972dd0b4361394528877c16a9cd63f3d687e454e1f2ab8f719ec9b5a0461",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 194,
+            "start": 353,
+            "end": 547,
             "exact": "A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "kness scale is recorded as 1 nanometer.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying the gate diele"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",
@@ -182,15 +182,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:006",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:missing_required_condition",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:4f971d1276e3ce9ead5f69c0755614690f07201cfaffddafc32639006216daf9",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 254,
+            "start": 578,
+            "end": 832,
             "exact": "Without specifying the gate dielectric, the report asserts: A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "scale is recorded as 1 nanometer.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a different dielectric or a thic"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",
@@ -246,15 +246,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:006",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:outside_validity_domain",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:9523e07cb6b4f53376e67c82fe5caaf6ab925a9abfd7e8f69dcf5427e0ba3c6c",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 281,
+            "start": 860,
+            "end": 1141,
             "exact": "For a different dielectric or a thickness outside the cited limit, the report asserts: A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ss scale is recorded as 1 nanometer.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named fabricated MOS d"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",
@@ -314,15 +314,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:006",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:empirical_verification_required",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:b4c2af6be21feca068dfe57fd7dcdf4e2427478bf5c5a54874acf9435cee5999",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 289,
+            "start": 1177,
+            "end": 1466,
             "exact": "For a named fabricated MOS device, the report asserts: A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model. This named result requires measurement. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " is recorded as 1 nanometer.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nUnder the stated scientific conditions, it is not t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",
@@ -386,15 +386,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:006",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:negation",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:45e9f3f065d3a3de9229ee7cae307f17fdd9dccb962bd32a2ffb5dd776e36aef",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 254,
+            "start": 1479,
+            "end": 1733,
             "exact": "Under the stated scientific conditions, it is not true that a real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he film thickness scale is recorded as 1 nanometer.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA real MOS device with ultrathin SiO2 below t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",
@@ -454,15 +454,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:006",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:unit_variation",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:7baf88068b92f27316ea72b2b374752ca43aaef21b5bf2a7046a2fff61f80515",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 259,
-            "exact": "A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model. The film thickness scale is recorded as 0.001 micrometer. The same film thickness scale is referenced as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1752,
+            "end": 2008,
+            "exact": "A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model. The reviewed quantities are film thickness scale = 0.001 micrometer; film thickness scale reference = 1 nanometer.",
+            "prefix": "m thickness scale is recorded as 1 nanometer.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",
@@ -539,15 +539,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:006",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:decision_changing_ambiguity",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:0521d3e22d2fcea6c57c171a8fd760beca16f07233f9d9e17bbcc355ae193ec4",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 348,
-            "exact": "The wording leaves unresolved whether 'A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model.' or instead 'A real ultrathin SiO2 MOS gate below the cited thickness must always have exactly zero gate leakage'. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2040,
+            "end": 2312,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model”. The reviewed quantity is film thickness scale = 1 nanometer.",
+            "prefix": "s scale reference = 1 nanometer.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: A rea"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",
@@ -603,15 +603,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:0521d3e22d2fcea6c57c171a8fd760beca16f07233f9d9e17bbcc355ae193ec4",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 348,
-            "exact": "The wording leaves unresolved whether 'A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model.' or instead 'A real ultrathin SiO2 MOS gate below the cited thickness must always have exactly zero gate leakage'. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2040,
+            "end": 2312,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model”. The reviewed quantity is film thickness scale = 1 nanometer.",
+            "prefix": "s scale reference = 1 nanometer.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: A rea"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",
@@ -669,15 +669,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:006",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:paraphrase",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:6052db8e7bfe27905e57f34f59141cfda4d162e98ca384550f2a47208bc9af39",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 238,
+            "start": 2327,
+            "end": 2565,
             "exact": "In equivalent wording, the document states: A real MOS device with ultrathin SiO2 below the cited thickness can have nonzero tunneling gate leakage, unlike the ideal zero-current model. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "d quantity is film thickness scale = 1 nanometer.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nAn ideal-device model with a perfect in"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",
@@ -737,15 +737,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:006",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:006:false_red_prevention",
-          "document_ref": "qualification:semiconductor-devices:006",
-          "document_digest": "sha256:3f1af456f406b06c47840f1794b77ce96e82244a04d32d03954d0b11a03c8bc5",
+          "document_ref": "qualification-fixture:semiconductor-devices:006",
+          "document_digest": "sha256:53ddf23d2432a368b5353f2641a19c364b7e79a41212704807deb0ad15df8129",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 178,
+            "start": 2590,
+            "end": 2768,
             "exact": "An ideal-device model with a perfect insulator is not the physical ultrathin SiO2 realization addressed by this leakage rule. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "kness scale is recorded as 1 nanometer.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:real-ultrathin-sio2-gate",

@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:circuits:006",
         "claim_packet": {
           "claim_id": "claim:circuits:006:clear_violation",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:eebc6f72ef151731918bc2c730bbb8839d04dde51a36e86ef84ecd74a3d86f2d",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 162,
+            "start": 162,
+            "end": 324,
             "exact": "Connecting a finite-impedance measuring instrument cannot change the observed circuit behavior under any circumstances. The resistance scale is recorded as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nConnecting a finite-impedance measuring"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",
@@ -108,15 +108,15 @@
         "evaluation_rule_id": "sci-rule:circuits:006",
         "claim_packet": {
           "claim_id": "claim:circuits:006:in_scope_consistency",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:a3cae570dcc3233e12733c740c7007134882507d2f01145b22767ac6e479b57d",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 163,
+            "start": 349,
+            "end": 512,
             "exact": "Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " resistance scale is recorded as 1 ohm.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying the instrument"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",
@@ -170,15 +170,15 @@
         "evaluation_rule_id": "sci-rule:circuits:006",
         "claim_packet": {
           "claim_id": "claim:circuits:006:missing_required_condition",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:7cbfb5db7bc32ab115eef3abd3e1f64e938d83b1b63d96693952aa7ea3d649e1",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 229,
+            "start": 543,
+            "end": 772,
             "exact": "Without specifying the instrument connection, the report asserts: Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "tance scale is recorded as 1 ohm.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor an idealized infinite-impedance "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",
@@ -228,15 +228,15 @@
         "evaluation_rule_id": "sci-rule:circuits:006",
         "claim_packet": {
           "claim_id": "claim:circuits:006:outside_validity_domain",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:9e103d7a97a956e5d1cc6352feec38b69ffc2dcdac794823fee69b0845755259",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 229,
+            "start": 800,
+            "end": 1029,
             "exact": "For an idealized infinite-impedance observer, the report asserts: Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "sistance scale is recorded as 1 ohm.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named oscilloscope and"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",
@@ -290,15 +290,15 @@
         "evaluation_rule_id": "sci-rule:circuits:006",
         "claim_packet": {
           "claim_id": "claim:circuits:006:empirical_verification_required",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:97fc7f766c8a57c74d0a4e641e4f2bfdd8e8214de4a542e7b75b89d590cf765b",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 261,
+            "start": 1065,
+            "end": 1326,
             "exact": "For a named oscilloscope and circuit, the report asserts: Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. This named result requires measurement. The resistance scale is recorded as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " scale is recorded as 1 ohm.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nUnder the stated scientific conditions, it is not t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",
@@ -356,15 +356,15 @@
         "evaluation_rule_id": "sci-rule:circuits:006",
         "claim_packet": {
           "claim_id": "claim:circuits:006:negation",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:25e987557ddc2cb82984d639ddb4e86ef97ddd83df4095f34534c81abe240719",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 223,
+            "start": 1339,
+            "end": 1562,
             "exact": "Under the stated scientific conditions, it is not true that connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "urement. The resistance scale is recorded as 1 ohm.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nConnecting a finite-impedance measuring instr"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",
@@ -418,15 +418,15 @@
         "evaluation_rule_id": "sci-rule:circuits:006",
         "claim_packet": {
           "claim_id": "claim:circuits:006:unit_variation",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:480540c0607b7248b45c027a865ed80c9e3b027ae831aaee0fa8d828ec56fd9a",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 221,
-            "exact": "Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1000 milliohm. The same resistance scale is referenced as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1581,
+            "end": 1799,
+            "exact": "Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The reviewed quantities are resistance scale = 1000 milliohm; resistance scale reference = 1 ohm.",
+            "prefix": "g. The resistance scale is recorded as 1 ohm.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",
@@ -497,15 +497,15 @@
         "evaluation_rule_id": "sci-rule:circuits:006",
         "claim_packet": {
           "claim_id": "claim:circuits:006:decision_changing_ambiguity",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:6bdd12291aa13295ca64d1bfd164ed2a75dbbad7fccb25993ee6d166c4c2ee3b",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 336,
-            "exact": "The wording leaves unresolved whether 'Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading.' or instead 'Connecting a finite-impedance measuring instrument cannot change the observed circuit behavior under any circumstances'. The resistance scale is recorded as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1831,
+            "end": 2072,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading”. The reviewed quantity is resistance scale = 1 ohm.",
+            "prefix": "istance scale reference = 1 ohm.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: Conne"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",
@@ -555,15 +555,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:circuits:006:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:6bdd12291aa13295ca64d1bfd164ed2a75dbbad7fccb25993ee6d166c4c2ee3b",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 336,
-            "exact": "The wording leaves unresolved whether 'Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading.' or instead 'Connecting a finite-impedance measuring instrument cannot change the observed circuit behavior under any circumstances'. The resistance scale is recorded as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1831,
+            "end": 2072,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading”. The reviewed quantity is resistance scale = 1 ohm.",
+            "prefix": "istance scale reference = 1 ohm.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: Conne"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",
@@ -615,15 +615,15 @@
         "evaluation_rule_id": "sci-rule:circuits:006",
         "claim_packet": {
           "claim_id": "claim:circuits:006:paraphrase",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:0152179f8691d9c7d248b06386c1bd45a9bcf0495674b0e229dcd2371b16c03a",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 207,
+            "start": 2087,
+            "end": 2294,
             "exact": "In equivalent wording, the document states: Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he reviewed quantity is resistance scale = 1 ohm.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nAn ideal voltmeter with infinite input "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",
@@ -677,15 +677,15 @@
         "evaluation_rule_id": "sci-rule:circuits:006",
         "claim_packet": {
           "claim_id": "claim:circuits:006:false_red_prevention",
-          "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:673d43894380e973dbd77267e9bab04bc1a5121419d98834c9bd2984c2550251",
+          "document_ref": "qualification-fixture:circuits:006",
+          "document_digest": "sha256:16693d0af0197e10db814d9e8a02365dc23452c0c20898e85f59444fd5013400",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 135,
+            "start": 2319,
+            "end": 2454,
             "exact": "An ideal voltmeter with infinite input impedance is stated not to load the measured circuit. The resistance scale is recorded as 1 ohm.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " resistance scale is recorded as 1 ohm.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-instrument-connection",

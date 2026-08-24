@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:chemistry:003
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Vapor pressure does not measure the molecular escaping tendency of the identified condensed substance. The pressure scale is recorded as 1 pascal.
+
+[in_scope_consistency]
+Vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1 pascal.
+
+[missing_required_condition]
+Without one required scientific condition, the document asserts that vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1 pascal.
+
+[outside_validity_domain]
+For an open process whose transport conditions are unspecified, the document asserts that vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1 pascal.
+
+[empirical_verification_required]
+For a named solvent and exhaust configuration, the document asserts that vapor pressure measures the escaping tendency of molecules from the identified condensed substance; the named result requires measurement. The pressure scale is recorded as 1 pascal.
+
+[negation]
+It is not true that vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1 pascal.
+
+[unit_variation]
+Vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The reviewed quantities are pressure scale = 1000 millipascal; pressure scale reference = 1 pascal.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “Vapor pressure measures the escaping tendency of molecules from the identified condensed substance”. The reviewed quantity is pressure scale = 1 pascal.
+
+[paraphrase]
+In equivalent wording, vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1 pascal.
+
+[false_red_prevention]
+A gas-phase sample is not the named liquid or solid to which this vapor-pressure definition is applied. The pressure scale is recorded as 1 pascal.
+
+End of immutable qualification fixture.

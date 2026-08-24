@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:004",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:clear_violation",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:4610229f1c3b8e8c99bc8236959d2fecd3907e2d2bd184d80a2a4b3faacbcdc5",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 104,
+            "start": 175,
+            "end": 279,
             "exact": "Applying forward bias increases the pn-junction barrier height. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nApplying forward bias to a pn junction "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",
@@ -109,15 +109,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:004",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:in_scope_consistency",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:870bd2074da2bc5747690a6afc03f115006ded0213a7205c8264094de8f99d8c",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 182,
+            "start": 304,
+            "end": 486,
             "exact": "Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he voltage scale is recorded as 1 volt.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying the junction t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",
@@ -172,15 +172,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:004",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:missing_required_condition",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:6ef535a76269d05cfe949fd7f1e0c7cc2495ea9fed6da6fe6ee1f890de2bab30",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 240,
+            "start": 517,
+            "end": 757,
             "exact": "Without specifying the junction type, the report asserts: Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "tage scale is recorded as 1 volt.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nUnder reverse rather than forward bi"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",
@@ -231,15 +231,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:004",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:outside_validity_domain",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:10bf64430f8a83c935cf4ac7557a03ab2eae7dcb511e186b02abc76c8b12eb15",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 242,
+            "start": 785,
+            "end": 1027,
             "exact": "Under reverse rather than forward bias, the report asserts: Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "voltage scale is recorded as 1 volt.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named pn diode structu"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",
@@ -294,15 +294,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:004",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:empirical_verification_required",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:ba257d75730d20f4aadcae4488c4cced83a481fb392ff822aeeb5458b55db15b",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 274,
+            "start": 1063,
+            "end": 1337,
             "exact": "For a named pn diode structure, the report asserts: Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. This named result requires measurement. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "scale is recorded as 1 volt.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nUnder the stated scientific conditions, it is not t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",
@@ -361,15 +361,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:004",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:negation",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:36a89497955149fee390987c244a18994c169293df08d50aa456890b3c063b9f",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 242,
+            "start": 1350,
+            "end": 1592,
             "exact": "Under the stated scientific conditions, it is not true that applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "asurement. The voltage scale is recorded as 1 volt.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nApplying forward bias to a pn junction reduce"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",
@@ -424,15 +424,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:004",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:unit_variation",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:054f79832182ae0c0cd0ecddd2af8e8a2965e6565efe0e967b38502cc254ba5e",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 238,
-            "exact": "Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1000 millivolt. The same voltage scale is referenced as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1611,
+            "end": 1846,
+            "exact": "Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The reviewed quantities are voltage scale = 1000 millivolt; voltage scale reference = 1 volt.",
+            "prefix": "nce. The voltage scale is recorded as 1 volt.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",
@@ -504,15 +504,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:004",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:decision_changing_ambiguity",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:fb2c1a4f9bc2feb236948d0c1cb562cdbd6f8dacfa1e06ffa1a6d2002182b806",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 299,
-            "exact": "The wording leaves unresolved whether 'Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance.' or instead 'Applying forward bias increases the pn-junction barrier height'. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1878,
+            "end": 2138,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance”. The reviewed quantity is voltage scale = 1 volt.",
+            "prefix": "oltage scale reference = 1 volt.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: Apply"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",
@@ -563,15 +563,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:fb2c1a4f9bc2feb236948d0c1cb562cdbd6f8dacfa1e06ffa1a6d2002182b806",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 299,
-            "exact": "The wording leaves unresolved whether 'Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance.' or instead 'Applying forward bias increases the pn-junction barrier height'. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1878,
+            "end": 2138,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance”. The reviewed quantity is voltage scale = 1 volt.",
+            "prefix": "oltage scale reference = 1 volt.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: Apply"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",
@@ -624,15 +624,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:004",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:paraphrase",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:67cdd46bd1ea55beb9bdc13c57e2ad9cc867f623c17e7f8425432dd73777ed37",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 226,
+            "start": 2153,
+            "end": 2379,
             "exact": "In equivalent wording, the document states: Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " The reviewed quantity is voltage scale = 1 volt.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nUnder reverse bias, the junction-barrie"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",
@@ -687,15 +687,15 @@
         "evaluation_rule_id": "sci-rule:semiconductor-devices:004",
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:false_red_prevention",
-          "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:30794c824eaae3d3e5199330d70f992f2d5313fe4251125822c949a720e59b83",
+          "document_ref": "qualification-fixture:semiconductor-devices:004",
+          "document_digest": "sha256:d17341b98ea7eda85b26faf09afc6a9e4811c8d19d18e534e735e6a95f0fc222",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 149,
+            "start": 2404,
+            "end": 2553,
             "exact": "Under reverse bias, the junction-barrier response is not the forward-bias comparison addressed by this rule. The voltage scale is recorded as 1 volt.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he voltage scale is recorded as 1 volt.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:forward-bias",

@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:physics:001
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Angular speed is merely an angular position with no time rate. The angular rate is recorded as 1 radian / second.
+
+[in_scope_consistency]
+Angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 1 radian / second.
+
+[missing_required_condition]
+Without one required scientific condition, the document asserts that angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 1 radian / second.
+
+[outside_validity_domain]
+For a non-rotational scalar record, the document asserts that angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 1 radian / second.
+
+[empirical_verification_required]
+For a named encoder installation, the document asserts that angular speed is the magnitude of an angle's rate of change with time; the named result requires measurement. The angular rate is recorded as 1 radian / second.
+
+[negation]
+It is not true that angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 1 radian / second.
+
+[unit_variation]
+Angular speed is the magnitude of an angle's rate of change with time. The reviewed quantities are angular rate = 0.001 radian / millisecond; angular rate reference = 1 radian / second.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “Angular speed is the magnitude of an angle's rate of change with time”. The reviewed quantity is angular rate = 1 radian / second.
+
+[paraphrase]
+In equivalent wording, angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 1 radian / second.
+
+[false_red_prevention]
+A linear-velocity quantity along a straight path is not an angular-speed angle rate. The angular rate is recorded as 1 radian / second.
+
+End of immutable qualification fixture.

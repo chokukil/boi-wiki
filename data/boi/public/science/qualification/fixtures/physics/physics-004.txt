@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:physics:004
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A nonzero applied shear stress makes a simple fluid stop deforming. The dynamic viscosity is recorded as 1 pascal * second.
+
+[in_scope_consistency]
+A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1 pascal * second.
+
+[missing_required_condition]
+Without specifying the material response class, the report asserts: A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1 pascal * second.
+
+[outside_validity_domain]
+For a solid-like material outside the simple-fluid definition, the report asserts: A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1 pascal * second.
+
+[empirical_verification_required]
+For a named rheometer and fluid sample, the report asserts: A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. This named result requires measurement. The dynamic viscosity is recorded as 1 pascal * second.
+
+[negation]
+Under the stated scientific conditions, it is not true that a simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1 pascal * second.
+
+[unit_variation]
+A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The reviewed quantities are dynamic viscosity = 1000 millipascal * second; dynamic viscosity reference = 1 pascal * second.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response”. The reviewed quantity is dynamic viscosity = 1 pascal * second.
+
+[paraphrase]
+In equivalent wording, the document states: A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1 pascal * second.
+
+[false_red_prevention]
+With zero applied shear stress, the sample is reported to stop deforming. The dynamic viscosity is recorded as 1 pascal * second.
+
+End of immutable qualification fixture.

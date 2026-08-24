@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:materials:002",
         "claim_packet": {
           "claim_id": "claim:materials:002:clear_violation",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:7eb7047a72bef44fd54b84b563d6769ab70652cc6507d36126c064229013c3bf",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 101,
+            "start": 163,
+            "end": 264,
             "exact": "Every defect cluster necessarily strengthens every metal. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nThe strength effect depends on the iden"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",
@@ -108,15 +108,15 @@
         "evaluation_rule_id": "sci-rule:materials:002",
         "claim_packet": {
           "claim_id": "claim:materials:002:in_scope_consistency",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:4ed98cf98d1b5e325036d338925a3c36ea57b2a0aa77d629d9d11b6199c3d791",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 144,
+            "start": 289,
+            "end": 433,
             "exact": "The strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "pressure scale is recorded as 1 pascal.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",
@@ -170,15 +170,15 @@
         "evaluation_rule_id": "sci-rule:materials:002",
         "claim_packet": {
           "claim_id": "claim:materials:002:missing_required_condition",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:208b0c51afc166d82fc5601a155b31fdfb8e6ce36b269656eaa4e4078da110ee",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 213,
+            "start": 464,
+            "end": 677,
             "exact": "Without one required scientific condition, the document asserts that the strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "re scale is recorded as 1 pascal.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a quantitative alloy prediction "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",
@@ -228,15 +228,15 @@
         "evaluation_rule_id": "sci-rule:materials:002",
         "claim_packet": {
           "claim_id": "claim:materials:002:outside_validity_domain",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:5578c15468cee100a28163c21e25d0458d5f80f201d7d64af1b053ae827f72d9",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 240,
+            "start": 705,
+            "end": 945,
             "exact": "For a quantitative alloy prediction beyond the cited defect examples, the document asserts that the strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ssure scale is recorded as 1 pascal.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named alloy and heat-t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",
@@ -290,15 +290,15 @@
         "evaluation_rule_id": "sci-rule:materials:002",
         "claim_packet": {
           "claim_id": "claim:materials:002:empirical_verification_required",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:1e95d9a0471cab423f4aec24db5fce1a7097f7c8cf9a1bfe612104854bcaaab0",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 253,
+            "start": 981,
+            "end": 1234,
             "exact": "For a named alloy and heat-treatment batch, the document asserts that the strength effect depends on the identified defect-cluster type in the cited qualitative examples; the named result requires measurement. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ale is recorded as 1 pascal.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that the strength effect depends on "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",
@@ -356,15 +356,15 @@
         "evaluation_rule_id": "sci-rule:materials:002",
         "claim_packet": {
           "claim_id": "claim:materials:002:negation",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:f27cba8112e7abb14f850f82a6f02932dfb8f27deb2eacc7289161d0d0a69b64",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 164,
+            "start": 1247,
+            "end": 1411,
             "exact": "It is not true that the strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rement. The pressure scale is recorded as 1 pascal.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nThe strength effect depends on the identified"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",
@@ -418,15 +418,15 @@
         "evaluation_rule_id": "sci-rule:materials:002",
         "claim_packet": {
           "claim_id": "claim:materials:002:unit_variation",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:56a3df5c2b829d7d2757ed938703cb61e6c7bd1b63249bf23f6c13704af68b4b",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 203,
-            "exact": "The strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1000 millipascal. The same pressure scale is referenced as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1430,
+            "end": 1630,
+            "exact": "The strength effect depends on the identified defect-cluster type in the cited qualitative examples. The reviewed quantities are pressure scale = 1000 millipascal; pressure scale reference = 1 pascal.",
+            "prefix": ". The pressure scale is recorded as 1 pascal.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",
@@ -497,15 +497,15 @@
         "evaluation_rule_id": "sci-rule:materials:002",
         "claim_packet": {
           "claim_id": "claim:materials:002:decision_changing_ambiguity",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:523261bfc1bae17654cfe22e6357dd2b0291ecceb7b5d7aa3ae441e6a460e7f9",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 201,
-            "exact": "The document calls the proposition 'Defect clusters have conditional strength effects' valid without resolving whether it affirms or denies that proposition. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1662,
+            "end": 1884,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The strength effect depends on the identified defect-cluster type in the cited qualitative examples”. The reviewed quantity is pressure scale = 1 pascal.",
+            "prefix": "sure scale reference = 1 pascal.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the strength effect depend"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",
@@ -555,15 +555,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:materials:002:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:523261bfc1bae17654cfe22e6357dd2b0291ecceb7b5d7aa3ae441e6a460e7f9",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 201,
-            "exact": "The document calls the proposition 'Defect clusters have conditional strength effects' valid without resolving whether it affirms or denies that proposition. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1662,
+            "end": 1884,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The strength effect depends on the identified defect-cluster type in the cited qualitative examples”. The reviewed quantity is pressure scale = 1 pascal.",
+            "prefix": "sure scale reference = 1 pascal.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the strength effect depend"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",
@@ -615,15 +615,15 @@
         "evaluation_rule_id": "sci-rule:materials:002",
         "claim_packet": {
           "claim_id": "claim:materials:002:paraphrase",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:f16dacad0d424d58f6750549d290387771b1e7ced4c949504aa0e39299e72413",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 167,
+            "start": 1899,
+            "end": 2066,
             "exact": "In equivalent wording, the strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "e reviewed quantity is pressure scale = 1 pascal.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nAn isolated solute atom is not the void"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",
@@ -677,15 +677,15 @@
         "evaluation_rule_id": "sci-rule:materials:002",
         "claim_packet": {
           "claim_id": "claim:materials:002:false_red_prevention",
-          "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:496828ef431ba724ddeea2d9c2044071347795382798ec0f29481ae5ea2d508b",
+          "document_ref": "qualification-fixture:materials:002",
+          "document_digest": "sha256:9ae7e819d33473684b193104727ba0dbb3efcd937026f53280f3e6d205ed7de8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 139,
+            "start": 2091,
+            "end": 2230,
             "exact": "An isolated solute atom is not the void or precipitate cluster addressed by this strength rule. The pressure scale is recorded as 1 pascal.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "pressure scale is recorded as 1 pascal.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:defect-cluster",

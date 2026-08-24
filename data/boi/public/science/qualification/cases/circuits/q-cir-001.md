@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:circuits:001",
         "claim_packet": {
           "claim_id": "claim:circuits:001:clear_violation",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:a57011986a39071a35e3828794e97a262e492b36f206005ba7526e8a954cffdc",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 149,
+            "start": 162,
+            "end": 311,
             "exact": "The algebraic current sum at the identified lumped-circuit node is 1 ampere but is asserted to equal zero. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nThe algebraic current sum at the identi"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",
@@ -126,15 +126,15 @@
         "evaluation_rule_id": "sci-rule:circuits:001",
         "claim_packet": {
           "claim_id": "claim:circuits:001:in_scope_consistency",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:9b8c530988ecc8b443230ce66988832432ae0a185743d49fc64290e004b16580",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 120,
+            "start": 336,
+            "end": 456,
             "exact": "The algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " current scale is recorded as 1 ampere.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nThe report omits a required scien"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",
@@ -206,15 +206,15 @@
         "evaluation_rule_id": "sci-rule:circuits:001",
         "claim_packet": {
           "claim_id": "claim:circuits:001:missing_required_condition",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:449871b02af42cc2ed6745b962a604dd5944505a771526b5a21f89f7a25c7a43",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 184,
+            "start": 487,
+            "end": 671,
             "exact": "The report omits a required scientific condition while stating: The algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "nt scale is recorded as 1 ampere.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nAt a distributed node where stored c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",
@@ -277,15 +277,15 @@
         "evaluation_rule_id": "sci-rule:circuits:001",
         "claim_packet": {
           "claim_id": "claim:circuits:001:outside_validity_domain",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:5897e13109b0a5a42e12e17dc3abbb830ba8d0901a0b476082b87fd17dbc95dc",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 194,
+            "start": 699,
+            "end": 893,
             "exact": "At a distributed node where stored charge is changing, the report states: The algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rrent scale is recorded as 1 ampere.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named instrumented cir"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",
@@ -357,15 +357,15 @@
         "evaluation_rule_id": "sci-rule:circuits:001",
         "claim_packet": {
           "claim_id": "claim:circuits:001:empirical_verification_required",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:cfaeaf1cc77492b233892c1b7f97fd4a0eed599a89a1517ba17011a2f9af3c3f",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 217,
+            "start": 929,
+            "end": 1146,
             "exact": "For a named instrumented circuit node, the report states: The algebraic current sum at the identified lumped-circuit node is 0 amperes; the named result requires measurement. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ale is recorded as 1 ampere.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nThe report denies the equality even though the alge"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",
@@ -441,15 +441,15 @@
         "evaluation_rule_id": "sci-rule:circuits:001",
         "claim_packet": {
           "claim_id": "claim:circuits:001:negation",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:62d616b5ffabe9f23554be8ac7feadf8f6ad887c58a90146c9106abfd8652f72",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 163,
+            "start": 1159,
+            "end": 1322,
             "exact": "The report denies the equality even though the algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "urement. The current scale is recorded as 1 ampere.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nThe algebraic current sum at the identified l"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",
@@ -521,15 +521,15 @@
         "evaluation_rule_id": "sci-rule:circuits:001",
         "claim_packet": {
           "claim_id": "claim:circuits:001:unit_variation",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:bd6d5979673fef1bf2f3095f421a6da82a96af0dee7472ad233e952a96af6a00",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 178,
-            "exact": "The algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1000 milliampere. The same current scale is referenced as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1341,
+            "end": 1516,
+            "exact": "The algebraic current sum at the identified lumped-circuit node is 0 amperes. The reviewed quantities are current scale = 1000 milliampere; current scale reference = 1 ampere.",
+            "prefix": "s. The current scale is recorded as 1 ampere.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",
@@ -618,15 +618,15 @@
         "evaluation_rule_id": "sci-rule:circuits:001",
         "claim_packet": {
           "claim_id": "claim:circuits:001:decision_changing_ambiguity",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:5e08fc6ab2e6f0a112545f7c99725f626fc69967639622f82289620ccfa57f6c",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 308,
-            "exact": "A blurred table entry can be read as either 'The algebraic current sum at the identified lumped-circuit node is 0 amperes' or 'The algebraic current sum at the identified lumped-circuit node is 1 ampere but is asserted to equal zero', so the equation is unresolved. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1548,
+            "end": 1808,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The algebraic current sum at the identified lumped-circuit node is 0 amperes”. The reviewed quantities are current scale = 1 ampere; algebraic current sum = 0 ampere; zero current = 0 ampere.",
+            "prefix": "rent scale reference = 1 ampere.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nUsing equivalent wording, the algebraic current s"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",
@@ -694,15 +694,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:circuits:001:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:5e08fc6ab2e6f0a112545f7c99725f626fc69967639622f82289620ccfa57f6c",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 308,
-            "exact": "A blurred table entry can be read as either 'The algebraic current sum at the identified lumped-circuit node is 0 amperes' or 'The algebraic current sum at the identified lumped-circuit node is 1 ampere but is asserted to equal zero', so the equation is unresolved. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1548,
+            "end": 1808,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The algebraic current sum at the identified lumped-circuit node is 0 amperes”. The reviewed quantities are current scale = 1 ampere; algebraic current sum = 0 ampere; zero current = 0 ampere.",
+            "prefix": "rent scale reference = 1 ampere.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nUsing equivalent wording, the algebraic current s"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",
@@ -772,15 +772,15 @@
         "evaluation_rule_id": "sci-rule:circuits:001",
         "claim_packet": {
           "claim_id": "claim:circuits:001:paraphrase",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:e0ab7ffd372c61a537ffda380c7dc34f2d3efb679a4f0c07cccec9f444737f67",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 146,
+            "start": 1823,
+            "end": 1969,
             "exact": "Using equivalent wording, the algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " current sum = 0 ampere; zero current = 0 ampere.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nCurrents taken from multiple circuit no"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",
@@ -852,15 +852,15 @@
         "evaluation_rule_id": "sci-rule:circuits:001",
         "claim_packet": {
           "claim_id": "claim:circuits:001:false_red_prevention",
-          "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:a9b196c82d3e1337c2ffbe011d0a02f098444664a1045aa39c3c49d81c5370a4",
+          "document_ref": "qualification-fixture:circuits:001",
+          "document_digest": "sha256:bcee467e521f2d57c154b066e6015392876c62d22669f2824186925c27111bd6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 149,
+            "start": 1994,
+            "end": 2143,
             "exact": "Currents taken from multiple circuit nodes cannot be combined as the algebraic sum at one identified node. The current scale is recorded as 1 ampere.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " current scale is recorded as 1 ampere.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:node-current-sum",

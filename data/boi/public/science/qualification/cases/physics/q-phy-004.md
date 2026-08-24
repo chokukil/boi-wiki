@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:physics:004",
         "claim_packet": {
           "claim_id": "claim:physics:004:clear_violation",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:c9f66806a3c38097f693aa0aaf8a6dfa36b49a19c85c1db2cbd67c1cc5bdeae5",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 123,
+            "start": 161,
+            "end": 284,
             "exact": "A nonzero applied shear stress makes a simple fluid stop deforming. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA simple fluid continues to deform whil"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",
@@ -108,15 +108,15 @@
         "evaluation_rule_id": "sci-rule:physics:004",
         "claim_packet": {
           "claim_id": "claim:physics:004:in_scope_consistency",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:aff46757881585bcc2e1e39e1007c189686d3db1238807f6f63fa7121ce0d022",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 184,
+            "start": 309,
+            "end": 493,
             "exact": "A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "osity is recorded as 1 pascal * second.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying the material r"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",
@@ -170,15 +170,15 @@
         "evaluation_rule_id": "sci-rule:physics:004",
         "claim_packet": {
           "claim_id": "claim:physics:004:missing_required_condition",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:f8874f75d450e27a9c6de77922cf54416b10482b59ef7e1c02462cac9aea7c30",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 252,
+            "start": 524,
+            "end": 776,
             "exact": "Without specifying the material response class, the report asserts: A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "is recorded as 1 pascal * second.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a solid-like material outside th"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",
@@ -228,15 +228,15 @@
         "evaluation_rule_id": "sci-rule:physics:004",
         "claim_packet": {
           "claim_id": "claim:physics:004:outside_validity_domain",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:98c444cd8e8c779047e91e30f2a9cd81e470bf15e35434ca10f379cbd67c95a2",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 267,
+            "start": 804,
+            "end": 1071,
             "exact": "For a solid-like material outside the simple-fluid definition, the report asserts: A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ty is recorded as 1 pascal * second.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named rheometer and fl"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",
@@ -290,15 +290,15 @@
         "evaluation_rule_id": "sci-rule:physics:004",
         "claim_packet": {
           "claim_id": "claim:physics:004:empirical_verification_required",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:fd128a059513b7f86ee516de383f101e3e9042de58912bc8ac2be45116c48dcf",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 284,
+            "start": 1107,
+            "end": 1391,
             "exact": "For a named rheometer and fluid sample, the report asserts: A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. This named result requires measurement. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "corded as 1 pascal * second.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nUnder the stated scientific conditions, it is not t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",
@@ -356,15 +356,15 @@
         "evaluation_rule_id": "sci-rule:physics:004",
         "claim_packet": {
           "claim_id": "claim:physics:004:negation",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:dd24b835fb406f2b72ab2c503e72684d65748f0ce42b631e67c27d00d3f13bab",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 244,
+            "start": 1404,
+            "end": 1648,
             "exact": "Under the stated scientific conditions, it is not true that a simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "dynamic viscosity is recorded as 1 pascal * second.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA simple fluid continues to deform while any "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",
@@ -418,15 +418,15 @@
         "evaluation_rule_id": "sci-rule:physics:004",
         "claim_packet": {
           "claim_id": "claim:physics:004:unit_variation",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:e4183081a00c33a6d088f804f060427776e1367d92d0caf35befd3facf63c42e",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 255,
-            "exact": "A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1000 millipascal * second. The same dynamic viscosity is referenced as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1667,
+            "end": 1919,
+            "exact": "A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The reviewed quantities are dynamic viscosity = 1000 millipascal * second; dynamic viscosity reference = 1 pascal * second.",
+            "prefix": "c viscosity is recorded as 1 pascal * second.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",
@@ -497,15 +497,15 @@
         "evaluation_rule_id": "sci-rule:physics:004",
         "claim_packet": {
           "claim_id": "claim:physics:004:decision_changing_ambiguity",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:2bbe7d9521341c229ed444aea3144e65793585d562f58c7ea3d01a6c8afcd976",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 305,
-            "exact": "The wording leaves unresolved whether 'A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response.' or instead 'A nonzero applied shear stress makes a simple fluid stop deforming'. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1951,
+            "end": 2213,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response”. The reviewed quantity is dynamic viscosity = 1 pascal * second.",
+            "prefix": "y reference = 1 pascal * second.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: A sim"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",
@@ -555,15 +555,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:physics:004:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:2bbe7d9521341c229ed444aea3144e65793585d562f58c7ea3d01a6c8afcd976",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 305,
-            "exact": "The wording leaves unresolved whether 'A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response.' or instead 'A nonzero applied shear stress makes a simple fluid stop deforming'. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1951,
+            "end": 2213,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response”. The reviewed quantity is dynamic viscosity = 1 pascal * second.",
+            "prefix": "y reference = 1 pascal * second.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states: A sim"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",
@@ -615,15 +615,15 @@
         "evaluation_rule_id": "sci-rule:physics:004",
         "claim_packet": {
           "claim_id": "claim:physics:004:paraphrase",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:a2be8caae66d6dd7aae7402adc214e0db444477fa01220a641413542f901d2dc",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 228,
+            "start": 2228,
+            "end": 2456,
             "exact": "In equivalent wording, the document states: A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "uantity is dynamic viscosity = 1 pascal * second.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nWith zero applied shear stress, the sam"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",
@@ -677,15 +677,15 @@
         "evaluation_rule_id": "sci-rule:physics:004",
         "claim_packet": {
           "claim_id": "claim:physics:004:false_red_prevention",
-          "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:df481d924974492d187b13a18073e6773748f16b53d05d9921ccd93283225336",
+          "document_ref": "qualification-fixture:physics:004",
+          "document_digest": "sha256:c6328bb84f576c43ec04f23a41a9c61ec6dd05c55c7b9cf66c8e22ae5350cbba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 129,
+            "start": 2481,
+            "end": 2610,
             "exact": "With zero applied shear stress, the sample is reported to stop deforming. The dynamic viscosity is recorded as 1 pascal * second.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "osity is recorded as 1 pascal * second.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:shear-stress",

@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:common:006
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Measurement accuracy and measurement precision are interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.
+
+[in_scope_consistency]
+Measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.
+
+[missing_required_condition]
+Without specifying terminology context, the report states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.
+
+[outside_validity_domain]
+In a different scientific context, the report nevertheless states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.
+
+[empirical_verification_required]
+For a named realization, the report asserts that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. No qualified observation is bound. The reviewed quantity is accuracy assessment error = 0.001 meter.
+
+[negation]
+It is not true that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.
+
+[unit_variation]
+Measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantities are accuracy assessment error = 0.1 centimeter; accuracy assessment error reference = 0.001 meter.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “Measurement accuracy and measurement precision are related but are not interchangeable metrology terms”. The reviewed quantity is accuracy assessment error = 0.001 meter.
+
+[paraphrase]
+In equivalent wording, the document states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.
+
+[false_red_prevention]
+A colloquial vendor label is not the resolved metrology terminology comparison. The reviewed quantity is accuracy assessment error = 0.001 meter.
+
+End of immutable qualification fixture.

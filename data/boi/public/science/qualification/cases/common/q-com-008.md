@@ -45,22 +45,22 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:clear_violation",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:f2de4811b9f802da71b879da79d8de1aa0f6f1928463eda2c62150434efd5e5b",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 140,
-            "exact": "No validation-domain record needs to be maintained for the named validated model or simulation. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 322,
+            "exact": "A record of the validation domain of validated modelling and simulation need not be maintained. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA record of the validation domain of va"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "need_not_be_maintained",
             "object_concept_id": "sci:concept:record-maintenance",
-            "polarity": "negative",
+            "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "validation_domain_length_limit",
@@ -68,20 +68,7 @@
                 "unit": "meter"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "model_identity",
-                "value": "named_model"
-              },
-              {
-                "condition_id": "validation_record_scope",
-                "value": "same_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "model_validation"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -106,20 +93,20 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:in_scope_consistency",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:dcb88e969629ab5d4a3325aad487b1fe4dda539b7cf9b82513962176ab8c46b9",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 145,
-            "exact": "A record of the domain of validation of the named validated model or simulation shall be maintained. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 347,
+            "end": 506,
+            "exact": "A record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "lidation domain length limit = 1 meter.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nA record of the validation domain"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "shall_be_maintained",
             "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
@@ -129,20 +116,7 @@
                 "unit": "meter"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "model_identity",
-                "value": "named_model"
-              },
-              {
-                "condition_id": "validation_record_scope",
-                "value": "same_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "model_validation"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -167,39 +141,24 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:missing_required_condition",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:d43e1040e9be9bdd8476fb5a4d960ae8522b8c544031b65b5b011dcda7a8c383",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 203,
-            "exact": "Without specifying model identity, the report states that a record of the domain of validation of the named validated model or simulation shall be maintained. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 537,
+            "end": 675,
+            "exact": "A record of the validation domain of validated modelling and simulation shall be maintained. No reviewed scale is stated for this fixture.",
+            "prefix": "on domain length limit = 1 meter.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nA record of the validation domain of"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "shall_be_maintained",
             "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
-            "quantities": [
-              {
-                "quantity_kind": "validation_domain_length_limit",
-                "value": 1,
-                "unit": "meter"
-              }
-            ],
-            "conditions": [
-              {
-                "condition_id": "validation_record_scope",
-                "value": "same_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "model_validation"
-              }
-            ],
+            "quantities": [],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -224,43 +183,30 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:outside_validity_domain",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:11bce0cd6497f65f9b10ca437c418f43b9cc8730ab6a93775806a958b9dbd172",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 216,
-            "exact": "In a different scientific context, the report nevertheless states that a record of the domain of validation of the named validated model or simulation shall be maintained. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 703,
+            "end": 943,
+            "exact": "A record of the validation domain of validated modelling and simulation shall be maintained. The accompanying scale is a time duration, not the reviewed physical dimension. The reviewed quantity is validation domain length limit = 1 second.",
+            "prefix": "ed scale is stated for this fixture.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nA record of the validation d"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "shall_be_maintained",
             "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "validation_domain_length_limit",
                 "value": 1,
-                "unit": "meter"
+                "unit": "second"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "model_identity",
-                "value": "named_model"
-              },
-              {
-                "condition_id": "validation_record_scope",
-                "value": "same_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "different_scientific_context"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -285,20 +231,20 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:empirical_verification_required",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:4af849b349885016daeb7a748b2a739708f3a278a8653141975b685e033c0906",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 229,
-            "exact": "For a named realization, the report asserts that a record of the domain of validation of the named validated model or simulation shall be maintained. No qualified observation is bound. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 979,
+            "end": 1209,
+            "exact": "A record of the validation domain of validated modelling and simulation shall be maintained. A new unqualified observation requests confirmation of this statement. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "ain length limit = 1 second.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a record of the validation doma"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "shall_be_maintained",
             "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
@@ -309,18 +255,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "model_identity",
-                "value": "named_model"
-              },
-              {
-                "condition_id": "validation_record_scope",
-                "value": "same_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "model_validation"
-              },
               {
                 "condition_id": "requested_foundation_008_qualified_observation",
                 "value": "unqualified_observation"
@@ -350,20 +284,20 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:negation",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:c19cc3427f38b910b707221808c298297efce883fea8c6452f51672aa6fef0ae",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 165,
-            "exact": "It is not true that a record of the domain of validation of the named validated model or simulation shall be maintained. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1222,
+            "end": 1401,
+            "exact": "It is not true that a record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "antity is validation domain length limit = 1 meter.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA record of the validation domain of validate"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "shall_be_maintained",
             "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "negative",
             "quantities": [
@@ -373,20 +307,7 @@
                 "unit": "meter"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "model_identity",
-                "value": "named_model"
-              },
-              {
-                "condition_id": "validation_record_scope",
-                "value": "same_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "model_validation"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -411,20 +332,20 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:unit_variation",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:7fb51ba56f48d79578767d84c5c8556c54598760230fd0f83ec912ed2eabefbb",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 182,
-            "exact": "A record of the domain of validation of the named validated model or simulation shall be maintained. The same validation domain length limit is written as 100 centimeter and 1 meter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1420,
+            "end": 1641,
+            "exact": "A record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantities are validation domain length limit = 100 centimeter; validation domain length limit reference = 1 meter.",
+            "prefix": " is validation domain length limit = 1 meter.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "shall_be_maintained",
             "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
@@ -439,20 +360,7 @@
                 "unit": "meter"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "model_identity",
-                "value": "named_model"
-              },
-              {
-                "condition_id": "validation_record_scope",
-                "value": "same_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "model_validation"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -489,20 +397,20 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:decision_changing_ambiguity",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:1aa34449a40ff714e7d6fe4a4663d63f9e3d1df47080e7eec985c917f76b1521",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 295,
-            "exact": "The wording leaves unresolved whether 'A record of the domain of validation of the named validated model or simulation shall be maintained.' or instead 'No validation-domain record needs to be maintained for the named validated model or simulation.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1673,
+            "end": 1902,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A record of the validation domain of validated modelling and simulation shall be maintained”. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "ength limit reference = 1 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a record of the validation"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "shall_be_maintained",
             "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
@@ -512,20 +420,7 @@
                 "unit": "meter"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "model_identity",
-                "value": "named_model"
-              },
-              {
-                "condition_id": "validation_record_scope",
-                "value": "same_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "model_validation"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -546,22 +441,22 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:008:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:1aa34449a40ff714e7d6fe4a4663d63f9e3d1df47080e7eec985c917f76b1521",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 295,
-            "exact": "The wording leaves unresolved whether 'A record of the domain of validation of the named validated model or simulation shall be maintained.' or instead 'No validation-domain record needs to be maintained for the named validated model or simulation.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1673,
+            "end": 1902,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A record of the validation domain of validated modelling and simulation shall be maintained”. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "ength limit reference = 1 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a record of the validation"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "need_not_be_maintained",
             "object_concept_id": "sci:concept:record-maintenance",
-            "polarity": "negative",
+            "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "validation_domain_length_limit",
@@ -569,20 +464,7 @@
                 "unit": "meter"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "model_identity",
-                "value": "named_model"
-              },
-              {
-                "condition_id": "validation_record_scope",
-                "value": "same_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "model_validation"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -605,20 +487,20 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:paraphrase",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:2a6ef09d524daf3f14203df2cbe63e8a52ef4312be4b5eb5ed420ad0a5017075",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 193,
-            "exact": "In equivalent wording, the document states that a record of the domain of validation of the named validated model or simulation shall be maintained. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1917,
+            "end": 2099,
+            "exact": "In equivalent wording, a record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "tity is validation domain length limit = 1 meter.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nThe project archive note says the valid"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "shall_be_maintained",
             "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
@@ -628,20 +510,7 @@
                 "unit": "meter"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "model_identity",
-                "value": "named_model"
-              },
-              {
-                "condition_id": "validation_record_scope",
-                "value": "same_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "model_validation"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -666,22 +535,22 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:false_red_prevention",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:17ab3d0d5d1ca694fd5e93ea01c1754d126c8407a4f89b9d0e9e07e96527d616",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 146,
-            "exact": "A validation-domain record for a different model does not satisfy the named model record requirement. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2124,
+            "end": 2282,
+            "exact": "The project archive note says the validation-domain record is archived after project close. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "lidation domain length limit = 1 meter.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "is_archived_after_project_close",
             "object_concept_id": "sci:concept:record-maintenance",
-            "polarity": "negative",
+            "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "validation_domain_length_limit",
@@ -689,20 +558,7 @@
                 "unit": "meter"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "model_identity",
-                "value": "named_model"
-              },
-              {
-                "condition_id": "validation_record_scope",
-                "value": "different_model"
-              },
-              {
-                "condition_id": "record_maintenance_context",
-                "value": "model_validation"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },

@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:circuits:004
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+At fixed current under the passive sign convention, increasing a linear resistor's resistance makes its consumed power decrease. The current scale is recorded as 1 ampere.
+
+[in_scope_consistency]
+For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1 ampere.
+
+[missing_required_condition]
+Without specifying the sign convention, the report asserts: For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1 ampere.
+
+[outside_validity_domain]
+For a nonlinear element rather than a linear resistor, the report asserts: For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1 ampere.
+
+[empirical_verification_required]
+For a particular resistor measured on a named tester, the report asserts: For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. This named result requires measurement. The current scale is recorded as 1 ampere.
+
+[negation]
+Under the stated scientific conditions, it is not true that for a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1 ampere.
+
+[unit_variation]
+For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The reviewed quantities are current scale = 1000 milliampere; current scale reference = 1 ampere.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R”. The reviewed quantity is current scale = 1 ampere.
+
+[paraphrase]
+In equivalent wording, the document states: For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1 ampere.
+
+[false_red_prevention]
+An active current-controlled element is reported to draw less power when its effective resistance changes. The current scale is recorded as 1 ampere.
+
+End of immutable qualification fixture.

@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:chemistry:004
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+At equilibrium the reaction quotient Q is 2 while the equilibrium constant K is 4. The concentration scale is recorded as 1 mole / liter.
+
+[in_scope_consistency]
+At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The concentration scale is recorded as 1 mole / liter.
+
+[missing_required_condition]
+The report omits a required scientific condition while stating: At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The concentration scale is recorded as 1 mole / liter.
+
+[outside_validity_domain]
+Before the reaction has reached equilibrium, the report states: At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The concentration scale is recorded as 1 mole / liter.
+
+[empirical_verification_required]
+For a named reacting mixture, the report states: At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4; the named result requires measurement. The concentration scale is recorded as 1 mole / liter.
+
+[negation]
+The report denies the equality even though at equilibrium the reaction quotient q is 4 and the equilibrium constant k is also 4. The concentration scale is recorded as 1 mole / liter.
+
+[unit_variation]
+At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The reviewed quantities are concentration scale = 1000 mole / meter ** 3; concentration scale reference = 1 mole / liter.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4”. The reviewed quantities are concentration scale = 1 mole / liter; reaction quotient = 4 dimensionless; equilibrium constant = 4 dimensionless.
+
+[paraphrase]
+Using equivalent wording, at equilibrium the reaction quotient q is 4 and the equilibrium constant k is also 4. The concentration scale is recorded as 1 mole / liter.
+
+[false_red_prevention]
+With an unspecified concentration basis, the reported reaction quotient and equilibrium constant are not directly comparable. The concentration scale is recorded as 1 mole / liter.
+
+End of immutable qualification fixture.

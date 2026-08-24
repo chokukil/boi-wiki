@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
 from datetime import date, datetime, timedelta
@@ -20,6 +21,7 @@ from boi_api.app.okf import (
 from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
 from boi_api.app.science.models import (
+    ClaimPacket,
     ConditionConstraint,
     PackDependency,
     PackRelationKind,
@@ -33,17 +35,31 @@ from boi_api.app.science.operational import (
     OperationalVerification,
     _issue_operational_verification,
 )
-from boi_api.app.science.profile import SCIENCE_TYPE_REQUIREMENTS, validate_sci_profile_metadata
+from boi_api.app.science.profile import (
+    SCIENCE_TYPE_REQUIREMENTS,
+    validate_sci_profile_metadata,
+)
 from boi_api.app.science.rules import (
     QualificationRuleSet,
     ReleasedRule,
     ResolvedRuleSet,
     VerificationRule,
+    has_complete_quantity_equivalence_operands,
+)
+from boi_api.app.science.units import (
+    source_span_mentions_quantity,
+    unmatched_reviewed_quantity_mentions,
 )
 
-
 ObjectKind = Literal[
-    "source", "evidence", "knowledge", "rule", "ontology_binding", "qualification_matrix", "pack", "release"
+    "source",
+    "evidence",
+    "knowledge",
+    "rule",
+    "ontology_binding",
+    "qualification_matrix",
+    "pack",
+    "release",
 ]
 
 ReviewerRoleResolver: TypeAlias = Callable[[Mapping[str, str]], Iterable[str]]
@@ -69,6 +85,21 @@ _KIND_ID_FIELD: dict[ObjectKind, str] = {
     "pack": "pack_id",
     "release": "release_id",
 }
+
+_ANCHORED_QUALIFICATION_CASE_KINDS = frozenset(
+    {
+        "clear_violation",
+        "in_scope_consistency",
+        "missing_required_condition",
+        "outside_validity_domain",
+        "empirical_verification_required",
+        "negation",
+        "unit_variation",
+        "decision_changing_ambiguity",
+        "paraphrase",
+        "false_red_prevention",
+    }
+)
 
 
 class ScienceObject(BaseModel):
@@ -117,7 +148,9 @@ def _release_manifest_digest(metadata: dict[str, Any], body: str) -> str:
     manifest = deepcopy(metadata)
     science = manifest.get("science")
     if not isinstance(science, dict):
-        raise ScienceCatalogError("science release manifest has invalid science metadata")
+        raise ScienceCatalogError(
+            "science release manifest has invalid science metadata"
+        )
     science.pop("content_hash", None)
     return sha256_digest({"metadata": manifest, "body": body})
 
@@ -134,7 +167,9 @@ class ScienceCatalog:
         clock_skew: timedelta = timedelta(seconds=30),
     ):
         if clock_skew < timedelta(0) or clock_skew > timedelta(minutes=1):
-            raise ValueError("ScienceCatalog clock_skew must be between zero and one minute")
+            raise ValueError(
+                "ScienceCatalog clock_skew must be between zero and one minute"
+            )
         self.boi_root = Path(boi_root)
         self.science_root = self.boi_root / "public" / "science"
         self._reviewer_role_resolver = reviewer_role_resolver
@@ -145,23 +180,36 @@ class ScienceCatalog:
         self._cases = self._load_cases()
 
     def _load_objects(self) -> dict[ObjectKind, dict[str, ScienceObject]]:
-        objects: dict[ObjectKind, dict[str, ScienceObject]] = {kind: {} for kind in _KIND_ID_FIELD}
+        objects: dict[ObjectKind, dict[str, ScienceObject]] = {
+            kind: {} for kind in _KIND_ID_FIELD
+        }
         indexed_kinds: dict[str, ObjectKind] = {}
         if not self.science_root.exists():
             return objects
         if not self.science_root.is_dir():
-            raise ScienceCatalogError(f"science root is not a directory: {self.science_root}")
+            raise ScienceCatalogError(
+                f"science root is not a directory: {self.science_root}"
+            )
 
         root = self.science_root.resolve()
-        for path in sorted(self.science_root.rglob("*.md"), key=lambda item: item.as_posix()):
+        for path in sorted(
+            self.science_root.rglob("*.md"), key=lambda item: item.as_posix()
+        ):
             resolved_path = path.resolve()
             if not resolved_path.is_relative_to(root):
-                raise ScienceCatalogError(f"science document escapes science root: {path}")
+                raise ScienceCatalogError(
+                    f"science document escapes science root: {path}"
+                )
             try:
                 metadata, body = split_frontmatter(path.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
-                raise ScienceCatalogError(f"cannot read science document: {path}") from exc
-            if not isinstance(metadata, dict) or metadata.get("type") not in SCIENCE_TYPE_REQUIREMENTS:
+                raise ScienceCatalogError(
+                    f"cannot read science document: {path}"
+                ) from exc
+            if (
+                not isinstance(metadata, dict)
+                or metadata.get("type") not in SCIENCE_TYPE_REQUIREMENTS
+            ):
                 continue
 
             errors = (
@@ -171,9 +219,13 @@ class ScienceCatalog:
                 + validate_sci_profile_metadata(metadata)
             )
             if errors:
-                raise ScienceCatalogError(f"invalid science document {path}: {'; '.join(errors)}")
+                raise ScienceCatalogError(
+                    f"invalid science document {path}: {'; '.join(errors)}"
+                )
             science = metadata.get("science")
-            if not isinstance(science, Mapping):  # validated above; retain a safe boundary here.
+            if not isinstance(
+                science, Mapping
+            ):  # validated above; retain a safe boundary here.
                 raise ScienceCatalogError(f"invalid science document: {path}")
             kind = _TYPE_TO_KIND[str(metadata["type"])]
             id_field = _KIND_ID_FIELD[kind]
@@ -188,9 +240,13 @@ class ScienceCatalog:
             normalized_metadata = _normalized(metadata)
             normalized_science = _normalized(science)
             normalized_body = body.replace("\r\n", "\n")
-            digest = sha256_digest({"metadata": normalized_metadata, "body": normalized_body})
+            digest = sha256_digest(
+                {"metadata": normalized_metadata, "body": normalized_body}
+            )
             release_manifest_digest = (
-                _release_manifest_digest(normalized_metadata, normalized_body) if kind == "release" else None
+                _release_manifest_digest(normalized_metadata, normalized_body)
+                if kind == "release"
+                else None
             )
             objects[kind][object_id] = ScienceObject(
                 kind=kind,
@@ -214,17 +270,119 @@ class ScienceCatalog:
         for matrix in self._objects["qualification_matrix"].values():
             raw_cases = getattr(matrix, "cases", None)
             if not isinstance(raw_cases, list):
-                raise ScienceCatalogError(f"qualification matrix cases must be a list: {matrix.object_id}")
+                raise ScienceCatalogError(
+                    f"qualification matrix cases must be a list: {matrix.object_id}"
+                )
             for raw_case in raw_cases:
                 if not isinstance(raw_case, Mapping):
-                    raise ScienceCatalogError(f"qualification case must be an object: {matrix.object_id}")
+                    raise ScienceCatalogError(
+                        f"qualification case must be an object: {matrix.object_id}"
+                    )
                 case_id = raw_case.get("case_id")
                 if not isinstance(case_id, str) or not case_id.strip():
-                    raise ScienceCatalogError(f"qualification case has invalid case_id: {matrix.object_id}")
+                    raise ScienceCatalogError(
+                        f"qualification case has invalid case_id: {matrix.object_id}"
+                    )
                 if case_id in cases:
-                    raise ScienceCatalogError(f"duplicate qualification case ID: {case_id}")
+                    raise ScienceCatalogError(
+                        f"duplicate qualification case ID: {case_id}"
+                    )
+                self._validate_qualification_case(matrix, raw_case)
                 cases[case_id] = QualificationCase(**deepcopy(_normalized(raw_case)))
         return cases
+
+    def _validate_qualification_case(
+        self, matrix: ScienceObject, raw_case: Mapping[str, Any]
+    ) -> None:
+        if raw_case.get("case_kind") not in _ANCHORED_QUALIFICATION_CASE_KINDS:
+            return
+        packets: list[ClaimPacket] = []
+        for field in ("claim_packet", "alternative_claim_packet"):
+            raw_packet = raw_case.get(field)
+            if raw_packet is None:
+                continue
+            try:
+                packet = ClaimPacket.model_validate(raw_packet)
+            except ValidationError as exc:
+                raise ScienceCatalogError(
+                    f"qualification case has invalid {field}: {raw_case.get('case_id')}"
+                ) from exc
+            parts = packet.document_ref.split(":")
+            if len(parts) != 3 or parts[0] != "qualification-fixture":
+                raise ScienceCatalogError(
+                    f"qualification case must reference an immutable fixture document: {packet.claim_id}"
+                )
+            _, domain, number = parts
+            fixture_root = (self.science_root / "qualification" / "fixtures").resolve()
+            fixture = (fixture_root / domain / f"{domain}-{number}.txt").resolve()
+            if not fixture.is_relative_to(fixture_root) or not fixture.is_file():
+                raise ScienceCatalogError(
+                    f"qualification fixture document is missing: {packet.document_ref}"
+                )
+            document_bytes = fixture.read_bytes()
+            try:
+                document = document_bytes.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ScienceCatalogError(
+                    f"qualification fixture is not UTF-8: {packet.document_ref}"
+                ) from exc
+            digest = "sha256:" + hashlib.sha256(document_bytes).hexdigest()
+            span = packet.source_span
+            if packet.document_digest != digest:
+                raise ScienceCatalogError(
+                    f"qualification fixture digest mismatch: {packet.claim_id}"
+                )
+            if document[span.start : span.end] != span.exact:
+                raise ScienceCatalogError(
+                    f"qualification fixture exact span mismatch: {packet.claim_id}"
+                )
+            if (
+                not span.prefix
+                or not span.suffix
+                or not document[: span.start].endswith(span.prefix)
+                or not document[span.end :].startswith(span.suffix)
+            ):
+                raise ScienceCatalogError(
+                    f"qualification fixture anchor mismatch: {packet.claim_id}"
+                )
+            packets.append(packet)
+
+        if raw_case.get("case_kind") == "unit_variation":
+            rule_id = getattr(matrix, "rule_id", None)
+            if not isinstance(rule_id, str):
+                raise ScienceCatalogError(
+                    f"unit qualification case has no matrix Rule: {raw_case.get('case_id')}"
+                )
+            rule = self._verification_rule(self._require("rule", rule_id))
+            if len(packets) != 1 or not has_complete_quantity_equivalence_operands(
+                rule, packets[0].normalized_claim
+            ):
+                raise ScienceCatalogError(
+                    f"unit qualification case lacks target/reference operands: {raw_case.get('case_id')}"
+                )
+            packet = packets[0]
+            quantities = {
+                item.quantity_kind: item for item in packet.normalized_claim.quantities
+            }
+            relevant_quantities = [
+                quantities[kind]
+                for constraint in rule.quantity_equivalence_constraints
+                for kind in (
+                    constraint.quantity_kind,
+                    constraint.reference_quantity_kind,
+                )
+            ]
+            if not all(
+                source_span_mentions_quantity(packet.source_span.exact, quantity)
+                for quantity in relevant_quantities
+            ):
+                raise ScienceCatalogError(
+                    f"unit qualification operands are not anchored in source: {raw_case.get('case_id')}"
+                )
+            if unmatched_reviewed_quantity_mentions(packet):
+                raise ScienceCatalogError(
+                    f"unit qualification source quantities are not fully normalized: {raw_case.get('case_id')}"
+                )
 
     def _validate_references(self) -> None:
         for evidence in self._objects["evidence"].values():
@@ -237,10 +395,14 @@ class ScienceCatalog:
             self._require_many("knowledge", self._references(rule, "knowledge_refs"))
             self._require_many("evidence", self._references(rule, "evidence_refs"))
         for pack in self._objects["pack"].values():
-            self._require_many("pack", (edge.ref for edge in self._pack_dependencies(pack)))
+            self._require_many(
+                "pack", (edge.ref for edge in self._pack_dependencies(pack))
+            )
             self._require_many("knowledge", self._references(pack, "knowledge_refs"))
             self._require_many("rule", self._references(pack, "rule_refs"))
-            self._require_many("qualification_matrix", self._references(pack, "qualification_refs"))
+            self._require_many(
+                "qualification_matrix", self._references(pack, "qualification_refs")
+            )
         for matrix in self._objects["qualification_matrix"].values():
             self._require("rule", self._string_field(matrix, "rule_id"))
             self._require_many("release", self._references(matrix, "release_refs"))
@@ -248,33 +410,47 @@ class ScienceCatalog:
             for ref in self._release_component_refs(release):
                 component = self._find_component(ref)
                 if component.kind == "release":
-                    raise ScienceCatalogError(f"release cannot be its own component: {ref}")
+                    raise ScienceCatalogError(
+                        f"release cannot be its own component: {ref}"
+                    )
 
     @staticmethod
     def _string_field(obj: ScienceObject, name: str) -> str:
         value = getattr(obj, name, None)
         if not isinstance(value, str) or not value.strip():
-            raise ScienceCatalogError(f"science {obj.kind} has invalid {name}: {obj.object_id}")
+            raise ScienceCatalogError(
+                f"science {obj.kind} has invalid {name}: {obj.object_id}"
+            )
         return value
 
     def _references(self, obj: ScienceObject, field_name: str) -> tuple[str, ...]:
         value = getattr(obj, field_name, None)
         if not isinstance(value, list):
-            raise ScienceCatalogError(f"science {obj.kind} has invalid {field_name}: {obj.object_id}")
+            raise ScienceCatalogError(
+                f"science {obj.kind} has invalid {field_name}: {obj.object_id}"
+            )
         refs: list[str] = []
         for item in value:
             if isinstance(item, str) and item.strip():
                 refs.append(item)
-            elif isinstance(item, Mapping) and isinstance(item.get("ref"), str) and item["ref"].strip():
+            elif (
+                isinstance(item, Mapping)
+                and isinstance(item.get("ref"), str)
+                and item["ref"].strip()
+            ):
                 refs.append(item["ref"])
             else:
-                raise ScienceCatalogError(f"science {obj.kind} has invalid {field_name}: {obj.object_id}")
+                raise ScienceCatalogError(
+                    f"science {obj.kind} has invalid {field_name}: {obj.object_id}"
+                )
         return tuple(refs)
 
     def _pack_dependencies(self, pack: ScienceObject) -> tuple[PackDependency, ...]:
         value = getattr(pack, "dependencies", None)
         if not isinstance(value, list):
-            raise ScienceCatalogError(f"science pack has invalid dependencies: {pack.object_id}")
+            raise ScienceCatalogError(
+                f"science pack has invalid dependencies: {pack.object_id}"
+            )
         try:
             return tuple(PackDependency.model_validate(item) for item in value)
         except ValidationError as exc:
@@ -293,7 +469,15 @@ class ScienceCatalog:
         return object_
 
     def _find_component(self, ref: str) -> ScienceObject:
-        for kind in ("source", "evidence", "knowledge", "rule", "ontology_binding", "qualification_matrix", "pack"):
+        for kind in (
+            "source",
+            "evidence",
+            "knowledge",
+            "rule",
+            "ontology_binding",
+            "qualification_matrix",
+            "pack",
+        ):
             object_ = self._objects[kind].get(ref)
             if object_ is not None:
                 return object_
@@ -302,26 +486,43 @@ class ScienceCatalog:
     def _release_component_refs(self, release: ScienceObject) -> tuple[str, ...]:
         value = getattr(release, "components", None)
         if not isinstance(value, list):
-            raise ScienceCatalogError(f"science release has invalid components: {release.object_id}")
+            raise ScienceCatalogError(
+                f"science release has invalid components: {release.object_id}"
+            )
         refs: list[str] = []
         for component in value:
             if isinstance(component, str) and component.strip():
                 refs.append(component)
                 continue
-            if isinstance(component, Mapping) and isinstance(component.get("ref"), str) and component["ref"].strip():
+            if (
+                isinstance(component, Mapping)
+                and isinstance(component.get("ref"), str)
+                and component["ref"].strip()
+            ):
                 refs.append(component["ref"])
                 continue
-            raise ScienceCatalogError(f"science release has invalid component reference: {release.object_id}")
+            raise ScienceCatalogError(
+                f"science release has invalid component reference: {release.object_id}"
+            )
         if len(set(refs)) != len(refs):
-            raise ScienceCatalogError(f"science release has duplicate component reference: {release.object_id}")
+            raise ScienceCatalogError(
+                f"science release has duplicate component reference: {release.object_id}"
+            )
         return tuple(sorted(refs))
 
     def _declared_component_digests(self, release: ScienceObject) -> Mapping[str, str]:
         value = getattr(release, "component_digests", None)
         if not isinstance(value, Mapping):
-            raise ScienceCatalogError(f"science release has invalid component_digests: {release.object_id}")
-        if any(not isinstance(ref, str) or not isinstance(digest, str) or not digest for ref, digest in value.items()):
-            raise ScienceCatalogError(f"science release has invalid component_digests: {release.object_id}")
+            raise ScienceCatalogError(
+                f"science release has invalid component_digests: {release.object_id}"
+            )
+        if any(
+            not isinstance(ref, str) or not isinstance(digest, str) or not digest
+            for ref, digest in value.items()
+        ):
+            raise ScienceCatalogError(
+                f"science release has invalid component_digests: {release.object_id}"
+            )
         return value
 
     @staticmethod
@@ -334,7 +535,9 @@ class ScienceCatalog:
         try:
             return VerificationRule.model_validate(payload)
         except ValidationError as exc:
-            raise ScienceCatalogError(f"invalid verification rule payload: {rule.object_id}") from exc
+            raise ScienceCatalogError(
+                f"invalid verification rule payload: {rule.object_id}"
+            ) from exc
 
     def resolve_release(self, release_id: str) -> ResolvedRelease:
         release = self._require("release", release_id)
@@ -344,7 +547,9 @@ class ScienceCatalog:
         declared_digests = self._declared_component_digests(release)
         refs = self._release_component_refs(release)
         if set(declared_digests) != set(refs):
-            raise ScienceCatalogError(f"component digest manifest does not match components: {release_id}")
+            raise ScienceCatalogError(
+                f"component digest manifest does not match components: {release_id}"
+            )
         components: list[ResolvedComponent] = []
         for ref in refs:
             component = self._find_component(ref)
@@ -366,13 +571,19 @@ class ScienceCatalog:
             )
         schema_version = self._string_field(release, "schema_version")
         if schema_version != "sci-profile/0.1":
-            raise ScienceCatalogError(f"unsupported science release schema: {schema_version}")
+            raise ScienceCatalogError(
+                f"unsupported science release schema: {schema_version}"
+            )
         status = self._string_field(release, "status")
         if status not in {"release_candidate", "active", "superseded", "withdrawn"}:
             raise ScienceCatalogError(f"invalid science release status: {status}")
         known_limitations = getattr(release, "known_limitations", None)
-        if not isinstance(known_limitations, list) or not all(isinstance(item, str) for item in known_limitations):
-            raise ScienceCatalogError(f"science release has invalid known_limitations: {release_id}")
+        if not isinstance(known_limitations, list) or not all(
+            isinstance(item, str) for item in known_limitations
+        ):
+            raise ScienceCatalogError(
+                f"science release has invalid known_limitations: {release_id}"
+            )
         resolved = ResolvedRelease(
             release_id=release_id,
             schema_version=schema_version,
@@ -392,12 +603,16 @@ class ScienceCatalog:
                 stored.digest != component.actual_digest
                 or component.declared_digest != component.actual_digest
             ):
-                raise ScienceCatalogError(f"rule component digest mismatch: {component.ref}")
+                raise ScienceCatalogError(
+                    f"rule component digest mismatch: {component.ref}"
+                )
             rule = self._verification_rule(stored)
             self._assert_rule_evidence_scope(rule)
             semantic_digest = sha256_digest(rule)
             if component.semantic_digest != semantic_digest:
-                raise ScienceCatalogError(f"rule semantic digest mismatch: {component.ref}")
+                raise ScienceCatalogError(
+                    f"rule semantic digest mismatch: {component.ref}"
+                )
             released_rules.append(
                 ReleasedRule(
                     rule=rule,
@@ -507,8 +722,7 @@ class ScienceCatalog:
                 )
             try:
                 scope_constraints = [
-                    ConditionConstraint.model_validate(item)
-                    for item in raw_constraints
+                    ConditionConstraint.model_validate(item) for item in raw_constraints
                 ]
             except ValidationError as exc:
                 raise ScienceCatalogError(
@@ -526,11 +740,19 @@ class ScienceCatalog:
                     )
 
     def resolve_release_set(self, selection: ReleaseSelection) -> ResolvedReleaseSet:
-        release_ids = (selection.foundation, *selection.domains, *selection.applications)
+        release_ids = (
+            selection.foundation,
+            *selection.domains,
+            *selection.applications,
+        )
         if len(set(release_ids)) != len(release_ids):
-            raise ScienceOperationalError("Science release selection contains duplicate release IDs")
+            raise ScienceOperationalError(
+                "Science release selection contains duplicate release IDs"
+            )
         foundation = self.resolve_release(selection.foundation)
-        domains = tuple(self.resolve_release(release_id) for release_id in selection.domains)
+        domains = tuple(
+            self.resolve_release(release_id) for release_id in selection.domains
+        )
         applications = tuple(
             self.resolve_release(release_id) for release_id in selection.applications
         )
@@ -542,7 +764,9 @@ class ScienceCatalog:
                 previous = combined_by_ref.get(component.ref)
                 if previous is not None:
                     qualifier = (
-                        "conflicting" if previous.actual_digest != component.actual_digest else "duplicate"
+                        "conflicting"
+                        if previous.actual_digest != component.actual_digest
+                        else "duplicate"
                     )
                     raise ScienceOperationalError(
                         f"{qualifier} component across releases: {component.ref}"
@@ -608,10 +832,13 @@ class ScienceCatalog:
         candidates = [
             release
             for release in self._objects["release"].values()
-            if getattr(release, "active", False) is True or getattr(release, "status", None) == "active"
+            if getattr(release, "active", False) is True
+            or getattr(release, "status", None) == "active"
         ]
         if len(candidates) != 1:
-            raise ScienceOperationalError("exactly one active Science release is required")
+            raise ScienceOperationalError(
+                "exactly one active Science release is required"
+            )
         selected = candidates[0]
         selected_status = getattr(selected, "status", None)
         if selected_status == "active":
@@ -622,15 +849,21 @@ class ScienceCatalog:
             raise ScienceOperationalError("active pointer has invalid status")
         safe_id = getattr(selected, "last_safe_release_id", None)
         if not isinstance(safe_id, str) or not safe_id.strip():
-            raise ScienceOperationalError("withdrawn active release has no last_safe_release_id")
+            raise ScienceOperationalError(
+                "withdrawn active release has no last_safe_release_id"
+            )
         try:
             safe = self._require("release", safe_id)
         except ScienceCatalogError as exc:
-            raise ScienceOperationalError(f"last safe release is unavailable: {safe_id}") from exc
+            raise ScienceOperationalError(
+                f"last safe release is unavailable: {safe_id}"
+            ) from exc
         if getattr(safe, "status", None) == "withdrawn":
             raise ScienceOperationalError("last safe release is withdrawn")
         if getattr(safe, "status", None) == "release_candidate":
-            raise ScienceOperationalError("last safe release is not an operational release")
+            raise ScienceOperationalError(
+                "last safe release is not an operational release"
+            )
         resolved = self.resolve_release(safe_id)
         self._assert_active_decision_components(resolved)
         return resolved
@@ -685,22 +918,30 @@ class ScienceCatalog:
             now = self._trusted_clock()
         except Exception as exc:
             raise ScienceOperationalError("trusted Science clock failed") from exc
-        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
-            raise ScienceOperationalError("trusted Science clock must return an aware datetime")
+        if (
+            not isinstance(now, datetime)
+            or now.tzinfo is None
+            or now.utcoffset() is None
+        ):
+            raise ScienceOperationalError(
+                "trusted Science clock must return an aware datetime"
+            )
         return now
 
-    def _trusted_admin_roles(self, identity: tuple[str, str], object_id: str) -> set[str]:
+    def _trusted_admin_roles(
+        self, identity: tuple[str, str], object_id: str
+    ) -> set[str]:
         if self._reviewer_role_resolver is None:
             raise ScienceOperationalError(
                 "active decision components require a trusted reviewer-role resolver"
             )
         if identity[0] != "human":
-            raise ScienceOperationalError(f"active review actor is invalid: {object_id}")
+            raise ScienceOperationalError(
+                f"active review actor is invalid: {object_id}"
+            )
         try:
             return set(
-                self._reviewer_role_resolver(
-                    {"type": "human", "user_id": identity[1]}
-                )
+                self._reviewer_role_resolver({"type": "human", "user_id": identity[1]})
             )
         except Exception as exc:
             raise ScienceOperationalError(
@@ -718,7 +959,9 @@ class ScienceCatalog:
             if value is not None:
                 boundary = max(
                     boundary,
-                    self._timestamp(value, label=field_name, object_id=component.object_id),
+                    self._timestamp(
+                        value, label=field_name, object_id=component.object_id
+                    ),
                 )
         locator = getattr(component, "locator", None)
         if isinstance(locator, Mapping) and locator.get("retrieved_at") is not None:
@@ -801,7 +1044,9 @@ class ScienceCatalog:
             )
 
         component_refs = {component.ref for component in release.components}
-        components = [self._find_component(component.ref) for component in release.components]
+        components = [
+            self._find_component(component.ref) for component in release.components
+        ]
         for component in components:
             if component.kind == "evidence":
                 source_id = self._string_field(component, "source_id")
@@ -853,18 +1098,28 @@ class ScienceCatalog:
             raise ScienceOperationalError(
                 f"active {label} has blocked release eligibility: {component.object_id}"
             )
-        if component.kind == "source" and getattr(component, "retrieval_status", None) != "verified":
+        if (
+            component.kind == "source"
+            and getattr(component, "retrieval_status", None) != "verified"
+        ):
             raise ScienceOperationalError(
                 f"active Source retrieval is not verified: {component.object_id}"
             )
-        if component.kind == "evidence" and getattr(component, "decision_eligibility", None) != "eligible":
+        if (
+            component.kind == "evidence"
+            and getattr(component, "decision_eligibility", None) != "eligible"
+        ):
             raise ScienceOperationalError(
                 f"active Evidence has invalid decision eligibility: {component.object_id}"
             )
 
         review = component.okf_review
         events = review.get("authorized_review_events")
-        if review.get("review_status") != "approved" or not isinstance(events, list) or not events:
+        if (
+            review.get("review_status") != "approved"
+            or not isinstance(events, list)
+            or not events
+        ):
             raise ScienceOperationalError(
                 f"active decision component lacks an authorized approved review: {component.object_id}"
             )
@@ -913,7 +1168,9 @@ class ScienceCatalog:
                 raise ScienceOperationalError(
                     f"active {label} approval occurs after Release activation: {component.object_id}"
                 )
-            trusted_roles = self._trusted_admin_roles(actor_identity, component.object_id)
+            trusted_roles = self._trusted_admin_roles(
+                actor_identity, component.object_id
+            )
             if "science.admin" not in trusted_roles:
                 raise ScienceOperationalError(
                     f"reviewer is not authorized as science.admin: {component.object_id}"
@@ -968,16 +1225,22 @@ class ScienceCatalog:
         case_ids: list[str] = []
         for matrix in self._objects["qualification_matrix"].values():
             if getattr(matrix, "rule_id", None) == rule_id:
-                case_ids.extend(case["case_id"] for case in getattr(matrix, "cases"))
-        return tuple(self._copy_case(self._cases[case_id]) for case_id in sorted(case_ids))
+                case_ids.extend(case["case_id"] for case in matrix.cases)
+        return tuple(
+            self._copy_case(self._cases[case_id]) for case_id in sorted(case_ids)
+        )
 
-    def qualification_cases_for_pack(self, pack_id: str) -> tuple[QualificationCase, ...]:
+    def qualification_cases_for_pack(
+        self, pack_id: str
+    ) -> tuple[QualificationCase, ...]:
         pack = self.pack(pack_id)
         case_ids: list[str] = []
         for matrix_id in self._references(pack, "qualification_refs"):
             matrix = self.qualification_matrix(matrix_id)
-            case_ids.extend(case["case_id"] for case in getattr(matrix, "cases"))
-        return tuple(self._copy_case(self._cases[case_id]) for case_id in sorted(case_ids))
+            case_ids.extend(case["case_id"] for case in matrix.cases)
+        return tuple(
+            self._copy_case(self._cases[case_id]) for case_id in sorted(case_ids)
+        )
 
     def claim_fixture(self, case_id: str) -> dict[str, Any]:
         case = self._cases.get(case_id)
@@ -985,7 +1248,9 @@ class ScienceCatalog:
             raise ScienceCatalogError(f"unknown qualification case: {case_id}")
         claim_packet = getattr(case, "claim_packet", None)
         if not isinstance(claim_packet, Mapping):
-            raise ScienceCatalogError(f"qualification case has no claim_packet: {case_id}")
+            raise ScienceCatalogError(
+                f"qualification case has no claim_packet: {case_id}"
+            )
         return deepcopy(dict(claim_packet))
 
     @staticmethod

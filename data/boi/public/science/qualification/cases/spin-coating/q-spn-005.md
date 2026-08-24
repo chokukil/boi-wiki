@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:005",
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:clear_violation",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:0a93bb2cfd937419049654ffc7e55068750172c6d184312adbfa91746faa0d4e",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 132,
+            "start": 166,
+            "end": 298,
             "exact": "A general spin mechanism alone proves the exact film thickness on every coater. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nAn exact equipment-specific spin result"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",
@@ -118,15 +118,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:005",
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:in_scope_consistency",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:677d860f4f596baf135fe85f1a6d6a50943aa16aa88b6226b8b5fa0fa746ca40",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 160,
+            "start": 323,
+            "end": 483,
             "exact": "An exact equipment-specific spin result requires qualified measurement inside a recorded validation domain. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "kness scale is recorded as 1 nanometer.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",
@@ -190,15 +190,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:005",
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:missing_required_condition",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:d101dc2617b10e7345bcb78c1c230576bacdea578c19a2622ffba845bed2f21a",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 229,
+            "start": 514,
+            "end": 743,
             "exact": "Without one required scientific condition, the document asserts that an exact equipment-specific spin result requires qualified measurement inside a recorded validation domain. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "scale is recorded as 1 nanometer.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor a purely qualitative mechanism c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",
@@ -258,15 +258,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:005",
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:outside_validity_domain",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:d18d3d3e3dd47e3c07fd91b81b8d0857051f4728b7c800a3d34da1122def4d2a",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 262,
+            "start": 771,
+            "end": 1033,
             "exact": "For a purely qualitative mechanism claim with no equipment-specific result, the document asserts that an exact equipment-specific spin result requires qualified measurement inside a recorded validation domain. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ss scale is recorded as 1 nanometer.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named production coate"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",
@@ -330,15 +330,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:005",
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:empirical_verification_required",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:a039d263e0cf86161ac91c7a90c63fc5b0b4f29d9351a62cfd1c0966332c7200",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 279,
+            "start": 1069,
+            "end": 1348,
             "exact": "For a named production coater and metrology sequence, the document asserts that an exact equipment-specific spin result requires qualified measurement inside a recorded validation domain; the named result requires measurement. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " is recorded as 1 nanometer.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that an exact equipment-specific spi"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",
@@ -406,15 +406,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:005",
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:negation",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:42d5b3f464de03cbc3684080aa82f3857c6ed522ce4d3e7504d70acd3336dbc2",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 180,
+            "start": 1361,
+            "end": 1541,
             "exact": "It is not true that an exact equipment-specific spin result requires qualified measurement inside a recorded validation domain. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he film thickness scale is recorded as 1 nanometer.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nAn exact equipment-specific spin result requi"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",
@@ -478,15 +478,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:005",
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:unit_variation",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:1c2cfa1da797611d2049c9dce9b4359b31f8d4e6c37d8730e7212f48ef1991ae",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 225,
-            "exact": "An exact equipment-specific spin result requires qualified measurement inside a recorded validation domain. The film thickness scale is recorded as 0.001 micrometer. The same film thickness scale is referenced as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1560,
+            "end": 1782,
+            "exact": "An exact equipment-specific spin result requires qualified measurement inside a recorded validation domain. The reviewed quantities are film thickness scale = 0.001 micrometer; film thickness scale reference = 1 nanometer.",
+            "prefix": "m thickness scale is recorded as 1 nanometer.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",
@@ -567,15 +567,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:005",
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:decision_changing_ambiguity",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:9b410151a0f25f0e0b15026d19501720cb98527a924dc84ed4b6a85e98f34cea",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 210,
-            "exact": "The document calls the proposition 'Equipment-specific thickness requires measurement' valid without resolving whether it affirms or denies that proposition. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1814,
+            "end": 2052,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “An exact equipment-specific spin result requires qualified measurement inside a recorded validation domain”. The reviewed quantity is film thickness scale = 1 nanometer.",
+            "prefix": "s scale reference = 1 nanometer.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, an exact equipment-specifi"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",
@@ -635,15 +635,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:spin-coating:005:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:9b410151a0f25f0e0b15026d19501720cb98527a924dc84ed4b6a85e98f34cea",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 210,
-            "exact": "The document calls the proposition 'Equipment-specific thickness requires measurement' valid without resolving whether it affirms or denies that proposition. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1814,
+            "end": 2052,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “An exact equipment-specific spin result requires qualified measurement inside a recorded validation domain”. The reviewed quantity is film thickness scale = 1 nanometer.",
+            "prefix": "s scale reference = 1 nanometer.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, an exact equipment-specifi"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",
@@ -704,15 +704,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:005",
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:paraphrase",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:3897efff0447ae7226aeb72d8a9900e9012486d9bbeabec15a6204ae8d0fb8fc",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 183,
+            "start": 2067,
+            "end": 2250,
             "exact": "In equivalent wording, an exact equipment-specific spin result requires qualified measurement inside a recorded validation domain. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "d quantity is film thickness scale = 1 nanometer.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nWhen radial flow is interrupted before "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",
@@ -776,15 +776,15 @@
         "evaluation_rule_id": "sci-rule:spin-coating:005",
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:false_red_prevention",
-          "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:da0fb137dbbb71d74c107cd1f5d2eb2cd2a66f3058bb298d687f522cdd97a481",
+          "document_ref": "qualification-fixture:spin-coating:005",
+          "document_digest": "sha256:7f4ce892e0de23f0e725d0f406afa818f77d38a0c029c57db44f7a2d87c38f36",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 186,
+            "start": 2275,
+            "end": 2461,
             "exact": "When radial flow is interrupted before drying stops it, the equipment-specific result is not transferred by this drying-limited rule. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "kness scale is recorded as 1 nanometer.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:equipment-specific-spin-result",

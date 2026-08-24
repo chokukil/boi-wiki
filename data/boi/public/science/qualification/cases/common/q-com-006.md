@@ -45,15 +45,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:clear_violation",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:512fde5b66f12c85efbf50b2eee41d78f98de82fcc5363a04ed9d3622a2f69d9",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 128,
-            "exact": "Measurement accuracy and measurement precision are interchangeable metrology terms. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 309,
+            "exact": "Measurement accuracy and measurement precision are interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nMeasurement accuracy and measurement pr"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -103,15 +103,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:in_scope_consistency",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:7076ff14d6f6fe5b82906476a0301b6b59f219459fe275f46485c21144777057",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 148,
-            "exact": "Measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 334,
+            "end": 503,
+            "exact": "Measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "ccuracy assessment error = 0.001 meter.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying terminology co"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -161,15 +161,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:missing_required_condition",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:9c37d5bcde8c902eaf67763764bfd41f799bafc1626babd1c88fbcf9caf19176",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 211,
-            "exact": "Without specifying terminology context, the report states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 534,
+            "end": 766,
+            "exact": "Without specifying terminology context, the report states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "y assessment error = 0.001 meter.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -215,15 +215,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:outside_validity_domain",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:46e4d4996206957681d88eaf73a49a6dd50d57e57a00f732fc98943d8e5232b0",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 219,
-            "exact": "In a different scientific context, the report nevertheless states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 794,
+            "end": 1034,
+            "exact": "In a different scientific context, the report nevertheless states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "racy assessment error = 0.001 meter.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -273,15 +273,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:empirical_verification_required",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:2d17f41bfd3d681d70da10fa0a9c037353fdd62167755c2ecf2c5eb9890ef10e",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 232,
-            "exact": "For a named realization, the report asserts that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. No qualified observation is bound. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1070,
+            "end": 1323,
+            "exact": "For a named realization, the report asserts that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. No qualified observation is bound. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "essment error = 0.001 meter.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that measurement accuracy and measur"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -334,15 +334,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:negation",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:278d925540fa6abb0af5e697cd63fd5703ffb13660a3810201cdd5ad146783f8",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 168,
-            "exact": "It is not true that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1336,
+            "end": 1525,
+            "exact": "It is not true that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "uantity is accuracy assessment error = 0.001 meter.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nMeasurement accuracy and measurement precisio"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -392,15 +392,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:unit_variation",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:9ad44c5e1954156e596d56ac96352fde4b8ce320368ab8e8eef6a60653a57669",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 184,
-            "exact": "Measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The same accuracy assessment error is written as 0.1 centimeter and 0.001 meter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1544,
+            "end": 1770,
+            "exact": "Measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantities are accuracy assessment error = 0.1 centimeter; accuracy assessment error reference = 0.001 meter.",
+            "prefix": "y is accuracy assessment error = 0.001 meter.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -467,15 +467,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:decision_changing_ambiguity",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:50acbf806f38b433959ab3da9c0e631a60b62b7560bf725b0dba29c677bb9736",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 286,
-            "exact": "The wording leaves unresolved whether 'Measurement accuracy and measurement precision are related but are not interchangeable metrology terms.' or instead 'Measurement accuracy and measurement precision are interchangeable metrology terms.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1802,
+            "end": 2041,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Measurement accuracy and measurement precision are related but are not interchangeable metrology terms”. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "t error reference = 0.001 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that m"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -521,15 +521,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:006:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:50acbf806f38b433959ab3da9c0e631a60b62b7560bf725b0dba29c677bb9736",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 286,
-            "exact": "The wording leaves unresolved whether 'Measurement accuracy and measurement precision are related but are not interchangeable metrology terms.' or instead 'Measurement accuracy and measurement precision are interchangeable metrology terms.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1802,
+            "end": 2041,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Measurement accuracy and measurement precision are related but are not interchangeable metrology terms”. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "t error reference = 0.001 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that m"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -577,15 +577,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:paraphrase",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:ce61be8657167e4e82c526f1ce1ee2ab2c96fd69d98a0783e2b276855b77fe52",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 196,
-            "exact": "In equivalent wording, the document states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2056,
+            "end": 2273,
+            "exact": "In equivalent wording, the document states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "ntity is accuracy assessment error = 0.001 meter.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA colloquial vendor label is not the re"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -635,15 +635,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:false_red_prevention",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:b222828c728b837d5585fcb4c10cb1075ff9184a5893fdbf1a93575e9276e2f0",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 124,
-            "exact": "A colloquial vendor label is not the resolved metrology terminology comparison. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2298,
+            "end": 2443,
+            "exact": "A colloquial vendor label is not the resolved metrology terminology comparison. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "ccuracy assessment error = 0.001 meter.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",

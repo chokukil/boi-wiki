@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:spin-coating:002
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A validation-domain record need not be maintained for a validated model or simulation. The validation domain temperature limit is recorded as 300 kelvin.
+
+[in_scope_consistency]
+A record of the domain of validation of the validated model or simulation shall be maintained. The validation domain temperature limit is recorded as 300 kelvin.
+
+[missing_required_condition]
+The report states that a validation-domain record shall be maintained, but it does not identify the model. The validation domain temperature limit is recorded as 300 kelvin.
+
+[outside_validity_domain]
+A record used for configuration management is asserted to be a model-validation-domain record. The validation domain temperature limit is recorded as 300 kelvin.
+
+[empirical_verification_required]
+The report claims that a named model has a maintained validation-domain record, but no qualified record observation is bound. The validation domain temperature limit is recorded as 300 kelvin.
+
+[negation]
+It is not true that a validation-domain record shall be maintained for the named validated model. The validation domain temperature limit is recorded as 300 kelvin.
+
+[unit_variation]
+A record of the domain of validation of the validated model or simulation shall be maintained. The reviewed quantities are validation domain temperature limit = 26.85 °C; validation domain temperature limit reference = 300 kelvin.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “A record of the domain of validation of the validated model or simulation shall be maintained”. The reviewed quantity is validation domain temperature limit = 300 kelvin.
+
+[paraphrase]
+The validated model must retain a record describing its validation domain. The validation domain temperature limit is recorded as 300 kelvin.
+
+[false_red_prevention]
+A validation-domain record maintained for a different model does not satisfy the named model record requirement. The validation domain temperature limit is recorded as 300 kelvin.
+
+End of immutable qualification fixture.

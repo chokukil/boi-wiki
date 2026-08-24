@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:physics:003",
         "claim_packet": {
           "claim_id": "claim:physics:003:clear_violation",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:dd41552fc9086bc549d4e747787bbf200ee14e118aa7207db896029cff3d1222",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 136,
+            "start": 161,
+            "end": 297,
             "exact": "The applied work is 8 joules while the object's kinetic-energy change is reported as 10 joules. The energy scale is recorded as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nThe applied work is 10 joules and the o"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",
@@ -114,15 +114,15 @@
         "evaluation_rule_id": "sci-rule:physics:003",
         "claim_packet": {
           "claim_id": "claim:physics:003:in_scope_consistency",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:27722667c6d9c8441a9980433756405ab806bccb9e62853a8ae2d8091587f05c",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 128,
+            "start": 322,
+            "end": 450,
             "exact": "The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he energy scale is recorded as 1 joule.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nThe report omits a required scien"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",
@@ -182,15 +182,15 @@
         "evaluation_rule_id": "sci-rule:physics:003",
         "claim_packet": {
           "claim_id": "claim:physics:003:missing_required_condition",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:c949cdb947103f21e11fbc88d15b3cc2e2c0078107a55e43437c321b3171712b",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 192,
+            "start": 481,
+            "end": 673,
             "exact": "The report omits a required scientific condition while stating: The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "rgy scale is recorded as 1 joule.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nWith part of the applied work omitte"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",
@@ -241,15 +241,15 @@
         "evaluation_rule_id": "sci-rule:physics:003",
         "claim_packet": {
           "claim_id": "claim:physics:003:outside_validity_domain",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:55ef2fc35bc682703b905eaae2906da81a31d28d3b96e829bf3a09b15dcc0f43",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 186,
+            "start": 701,
+            "end": 887,
             "exact": "With part of the applied work omitted, the report states: The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "energy scale is recorded as 1 joule.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a particular instrumente"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",
@@ -309,15 +309,15 @@
         "evaluation_rule_id": "sci-rule:physics:003",
         "claim_packet": {
           "claim_id": "claim:physics:003:empirical_verification_required",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:5bf1c96351daae54dad8c44cb82b5f6fd6f0afdb89b789c6c70d8df389047f95",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 229,
+            "start": 923,
+            "end": 1152,
             "exact": "For a particular instrumented impact test, the report states: The applied work is 10 joules and the object's kinetic-energy change is also 10 joules; the named result requires measurement. The energy scale is recorded as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "cale is recorded as 1 joule.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nThe report denies the equality even though the appl"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",
@@ -381,15 +381,15 @@
         "evaluation_rule_id": "sci-rule:physics:003",
         "claim_packet": {
           "claim_id": "claim:physics:003:negation",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:df2bda02bbd68e0c940d586b5932c6514e8c777a93a84b1aa097949be13ab512",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 171,
+            "start": 1165,
+            "end": 1336,
             "exact": "The report denies the equality even though the applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "asurement. The energy scale is recorded as 1 joule.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nThe applied work is 10 joules and the object'"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",
@@ -449,15 +449,15 @@
         "evaluation_rule_id": "sci-rule:physics:003",
         "claim_packet": {
           "claim_id": "claim:physics:003:unit_variation",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:7a4760d8a1fa982534207eb01bda34527123e7883533f0689925003e1b81fb21",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 184,
-            "exact": "The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1000 millijoule. The same energy scale is referenced as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1355,
+            "end": 1536,
+            "exact": "The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The reviewed quantities are energy scale = 1000 millijoule; energy scale reference = 1 joule.",
+            "prefix": "les. The energy scale is recorded as 1 joule.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",
@@ -534,15 +534,15 @@
         "evaluation_rule_id": "sci-rule:physics:003",
         "claim_packet": {
           "claim_id": "claim:physics:003:decision_changing_ambiguity",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:b58f3bacb56a677dcdf40f159e46f66f4e705ea459d4778533a9b9733141e5cf",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 305,
-            "exact": "A blurred table entry can be read as either 'The applied work is 10 joules and the object's kinetic-energy change is also 10 joules' or 'The applied work is 8 joules while the object's kinetic-energy change is reported as 10 joules', so the equation is unresolved. The energy scale is recorded as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1568,
+            "end": 1836,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The applied work is 10 joules and the object's kinetic-energy change is also 10 joules”. The reviewed quantities are energy scale = 1 joule; applied work = 10 joule; kinetic energy change = 10 joule.",
+            "prefix": "nergy scale reference = 1 joule.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nUsing equivalent wording, the applied work is 10 "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",
@@ -598,15 +598,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:physics:003:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:b58f3bacb56a677dcdf40f159e46f66f4e705ea459d4778533a9b9733141e5cf",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 305,
-            "exact": "A blurred table entry can be read as either 'The applied work is 10 joules and the object's kinetic-energy change is also 10 joules' or 'The applied work is 8 joules while the object's kinetic-energy change is reported as 10 joules', so the equation is unresolved. The energy scale is recorded as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1568,
+            "end": 1836,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The applied work is 10 joules and the object's kinetic-energy change is also 10 joules”. The reviewed quantities are energy scale = 1 joule; applied work = 10 joule; kinetic energy change = 10 joule.",
+            "prefix": "nergy scale reference = 1 joule.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nUsing equivalent wording, the applied work is 10 "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",
@@ -664,15 +664,15 @@
         "evaluation_rule_id": "sci-rule:physics:003",
         "claim_packet": {
           "claim_id": "claim:physics:003:paraphrase",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:4bfe6ca4961c48c1475f88b5abcee8fe95f74f150ef04a07216506b9807ce0db",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 154,
+            "start": 1851,
+            "end": 2005,
             "exact": "Using equivalent wording, the applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ork = 10 joule; kinetic energy change = 10 joule.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nWith no defined object boundary, the re"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",
@@ -732,15 +732,15 @@
         "evaluation_rule_id": "sci-rule:physics:003",
         "claim_packet": {
           "claim_id": "claim:physics:003:false_red_prevention",
-          "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:9a09595cffb31ad05de3851af717d3ec6cf167f09fbcb76e3735b1f1d314eeba",
+          "document_ref": "qualification-fixture:physics:003",
+          "document_digest": "sha256:8cb8e71faadd4d5e4889289ae4a35abde62ce9d7f70ed1dbdb3c01f93e92be8a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 159,
+            "start": 2030,
+            "end": 2189,
             "exact": "With no defined object boundary, the report compares work on one collection with the kinetic-energy change of another. The energy scale is recorded as 1 joule.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he energy scale is recorded as 1 joule.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:applied-force-work",

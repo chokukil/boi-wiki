@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:semiconductor-devices:002
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Semiconductor carrier current can only have drift and never a diffusion component. The current scale is recorded as 1 ampere.
+
+[in_scope_consistency]
+Carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1 ampere.
+
+[missing_required_condition]
+Without one required scientific condition, the document asserts that carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1 ampere.
+
+[outside_validity_domain]
+For a transport statement with no carrier type identified, the document asserts that carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1 ampere.
+
+[empirical_verification_required]
+For a named nonuniform semiconductor structure, the document asserts that carrier current can contain both a drift component and a diffusion component; the named result requires measurement. The current scale is recorded as 1 ampere.
+
+[negation]
+It is not true that carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1 ampere.
+
+[unit_variation]
+Carrier current can contain both a drift component and a diffusion component. The reviewed quantities are current scale = 1000 milliampere; current scale reference = 1 ampere.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “Carrier current can contain both a drift component and a diffusion component”. The reviewed quantity is current scale = 1 ampere.
+
+[paraphrase]
+In equivalent wording, carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1 ampere.
+
+[false_red_prevention]
+Ionic-species current is not the electron-or-hole current decomposed by this semiconductor rule. The current scale is recorded as 1 ampere.
+
+End of immutable qualification fixture.

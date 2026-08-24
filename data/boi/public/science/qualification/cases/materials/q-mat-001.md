@@ -46,15 +46,15 @@
         "evaluation_rule_id": "sci-rule:materials:001",
         "claim_packet": {
           "claim_id": "claim:materials:001:clear_violation",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:f02ecacc02b7d3d8eae16e1e4a6487c5203fd9a7d0672290108f2d4fb0d818ca",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 136,
+            "start": 163,
+            "end": 299,
             "exact": "Vacancies, dislocation lines, and grain boundaries are the same dimensional defect. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nVacancies, dislocation lines, and grain"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",
@@ -104,15 +104,15 @@
         "evaluation_rule_id": "sci-rule:materials:001",
         "claim_packet": {
           "claim_id": "claim:materials:001:in_scope_consistency",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:c7de2fec592df9cce5fb83e206d3dee54f4b7628580e92827abe0c5333102446",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 150,
+            "start": 324,
+            "end": 474,
             "exact": "Vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "kness scale is recorded as 1 nanometer.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout one required scientific c"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",
@@ -162,15 +162,15 @@
         "evaluation_rule_id": "sci-rule:materials:001",
         "claim_packet": {
           "claim_id": "claim:materials:001:missing_required_condition",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:181466807e12d106991b901e6e91f2f1eb3643b7f4b1e65ddf264dcda1d18727",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 219,
+            "start": 505,
+            "end": 724,
             "exact": "Without one required scientific condition, the document asserts that vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "scale is recorded as 1 nanometer.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nFor an amorphous structure with no i"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",
@@ -216,15 +216,15 @@
         "evaluation_rule_id": "sci-rule:materials:001",
         "claim_packet": {
           "claim_id": "claim:materials:001:outside_validity_domain",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:cc6b124554c8412c5bbd8e048f3aa5e86dce17f6ca804af86c72a9dd6d09af66",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 238,
+            "start": 752,
+            "end": 990,
             "exact": "For an amorphous structure with no identified grain boundary, the document asserts that vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "ss scale is recorded as 1 nanometer.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named microscopy speci"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",
@@ -274,15 +274,15 @@
         "evaluation_rule_id": "sci-rule:materials:001",
         "claim_packet": {
           "claim_id": "claim:materials:001:empirical_verification_required",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:28b30e07e5ddd9aaf90458536bdfea0fbf069f64d29d68c101c85af7c666776b",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 248,
+            "start": 1026,
+            "end": 1274,
             "exact": "For a named microscopy specimen, the document asserts that vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes; the named result requires measurement. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": " is recorded as 1 nanometer.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that vacancies, dislocation lines, a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",
@@ -336,15 +336,15 @@
         "evaluation_rule_id": "sci-rule:materials:001",
         "claim_packet": {
           "claim_id": "claim:materials:001:negation",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:2bfb18643b049045f014a83bb1a809932597c9526f9cf70fee8be3bbc7d9e05c",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 170,
+            "start": 1287,
+            "end": 1457,
             "exact": "It is not true that vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "he film thickness scale is recorded as 1 nanometer.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nVacancies, dislocation lines, and grain bound"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",
@@ -394,15 +394,15 @@
         "evaluation_rule_id": "sci-rule:materials:001",
         "claim_packet": {
           "claim_id": "claim:materials:001:unit_variation",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:5f638470a4ec04228d8f63d7b380278181f207fd4e343d7a64fb93ff6ecdd007",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 215,
-            "exact": "Vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 0.001 micrometer. The same film thickness scale is referenced as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1476,
+            "end": 1688,
+            "exact": "Vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The reviewed quantities are film thickness scale = 0.001 micrometer; film thickness scale reference = 1 nanometer.",
+            "prefix": "m thickness scale is recorded as 1 nanometer.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",
@@ -469,15 +469,15 @@
         "evaluation_rule_id": "sci-rule:materials:001",
         "claim_packet": {
           "claim_id": "claim:materials:001:decision_changing_ambiguity",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:27195f26ab6ddcb7a4cd873e5948fd98060c569b81365a5b02752520a570658c",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 194,
-            "exact": "The document calls the proposition 'Defect dimensional classification' valid without resolving whether it affirms or denies that proposition. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1720,
+            "end": 1948,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes”. The reviewed quantity is film thickness scale = 1 nanometer.",
+            "prefix": "s scale reference = 1 nanometer.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, vacancies, dislocation lin"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",
@@ -523,15 +523,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:materials:001:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:27195f26ab6ddcb7a4cd873e5948fd98060c569b81365a5b02752520a570658c",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 194,
-            "exact": "The document calls the proposition 'Defect dimensional classification' valid without resolving whether it affirms or denies that proposition. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1720,
+            "end": 1948,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes”. The reviewed quantity is film thickness scale = 1 nanometer.",
+            "prefix": "s scale reference = 1 nanometer.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, vacancies, dislocation lin"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",
@@ -579,15 +579,15 @@
         "evaluation_rule_id": "sci-rule:materials:001",
         "claim_packet": {
           "claim_id": "claim:materials:001:paraphrase",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:365145a0ce065c65e587f44fc1468314e8c0f4072d81ad0dffc1289f9949faa7",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 173,
+            "start": 1963,
+            "end": 2136,
             "exact": "In equivalent wording, vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "d quantity is film thickness scale = 1 nanometer.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA surface step is not classified here a"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",
@@ -637,15 +637,15 @@
         "evaluation_rule_id": "sci-rule:materials:001",
         "claim_packet": {
           "claim_id": "claim:materials:001:false_red_prevention",
-          "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:a54b8664b596d2847d4559c71894d9d13aaa3f7c1efbbe44dc61228d0dfa9985",
+          "document_ref": "qualification-fixture:materials:001",
+          "document_digest": "sha256:f2854cede5a261ed164bef4b786e312e18df532f46e86572c4529082753c7e32",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 141,
+            "start": 2161,
+            "end": 2302,
             "exact": "A surface step is not classified here as a vacancy, dislocation line, or grain boundary. The film thickness scale is recorded as 1 nanometer.",
-            "prefix": "",
-            "suffix": ""
+            "prefix": "kness scale is recorded as 1 nanometer.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:crystal-defect",

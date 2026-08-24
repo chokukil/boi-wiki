@@ -51,13 +51,7 @@
     "subject_concept_id": "sci:concept:measurement-uncertainty",
     "object_concept_id": "sci:concept:dispersion-parameter",
     "relation_kind": "empirical_relation",
-    "required_conditions": [
-      {
-        "key": "parameter_sign",
-        "operator": "eq",
-        "value": "non_negative"
-      }
-    ],
+    "required_conditions": [],
     "validity_conditions": [
       {
         "key": "definition_context",
@@ -96,6 +90,9 @@
         "quantity_kind": "uncertainty_parameter",
         "reference_quantity_kind": "uncertainty_parameter_reference"
       }
+    ],
+    "nonnegative_quantity_kinds": [
+      "uncertainty_parameter"
     ]
   }
 }

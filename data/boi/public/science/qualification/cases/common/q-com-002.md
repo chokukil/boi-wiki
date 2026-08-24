@@ -45,15 +45,15 @@
         "evaluation_rule_id": "sci-rule:common:002",
         "claim_packet": {
           "claim_id": "claim:common:002:clear_violation",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:1baeddffbc0dddf8d39fc0fdeb0e528145ede1e9781364ff6e38328909370a57",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 179,
-            "exact": "A length term can equal a time term while the equation remains dimensionally homogeneous. The quantity kind is recorded as value unit. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 321,
+            "exact": "A length term can equal a time term while the equation remains dimensionally homogeneous. The reviewed quantities are left term = 1 meter; right term = 1 second.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nIn the reviewed two-term length example"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",
@@ -107,15 +107,15 @@
         "evaluation_rule_id": "sci-rule:common:002",
         "claim_packet": {
           "claim_id": "claim:common:002:in_scope_consistency",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:1f5e7287f1724d214bc8572d80dc15110db3a12a5f77bf611f1dedd5db3ade72",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 185,
-            "exact": "In the reviewed two-term length example, both sides of the equality have length dimensionality. The quantity kind is recorded as value unit. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 346,
+            "end": 519,
+            "exact": "In the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.",
+            "prefix": " term = 1 meter; right term = 1 second.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying equation form,"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",
@@ -169,15 +169,15 @@
         "evaluation_rule_id": "sci-rule:common:002",
         "claim_packet": {
           "claim_id": "claim:common:002:missing_required_condition",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:d4d57208e40430428c8411d1dde3d55b68e300a64fae47e26ae05c884f08d6b0",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 242,
-            "exact": "Without specifying equation form, the report states that in the reviewed two-term length example, both sides of the equality have length dimensionality. The quantity kind is recorded as value unit. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 550,
+            "end": 780,
+            "exact": "Without specifying equation form, the report states that in the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.",
+            "prefix": "ter; right term = 100 centimeter.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",
@@ -227,15 +227,15 @@
         "evaluation_rule_id": "sci-rule:common:002",
         "claim_packet": {
           "claim_id": "claim:common:002:outside_validity_domain",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:bd13e92f2bd66205c9039a2e1f4323411ea54a437a0d164e87414c33f9a92252",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 256,
-            "exact": "In a different scientific context, the report nevertheless states that in the reviewed two-term length example, both sides of the equality have length dimensionality. The quantity kind is recorded as value unit. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 808,
+            "end": 1052,
+            "exact": "In a different scientific context, the report nevertheless states that in the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.",
+            "prefix": " meter; right term = 100 centimeter.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",
@@ -289,15 +289,15 @@
         "evaluation_rule_id": "sci-rule:common:002",
         "claim_packet": {
           "claim_id": "claim:common:002:empirical_verification_required",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:ee168bf54fcd8cb0189fae329cfb3d3fe40c6699672953a252e4803104257e0a",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 269,
-            "exact": "For a named realization, the report asserts that in the reviewed two-term length example, both sides of the equality have length dimensionality. No qualified observation is bound. The quantity kind is recorded as value unit. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1088,
+            "end": 1345,
+            "exact": "For a named realization, the report asserts that in the reviewed two-term length example, both sides of the equality have length dimensionality. No qualified observation is bound. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.",
+            "prefix": "right term = 100 centimeter.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that in the reviewed two-term length"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",
@@ -355,15 +355,15 @@
         "evaluation_rule_id": "sci-rule:common:002",
         "claim_packet": {
           "claim_id": "claim:common:002:negation",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:96955fc78fe4ca7bb56506e23621f0045c302687823337c2720190b24e94702e",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 205,
-            "exact": "It is not true that in the reviewed two-term length example, both sides of the equality have length dimensionality. The quantity kind is recorded as value unit. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1358,
+            "end": 1551,
+            "exact": "It is not true that in the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.",
+            "prefix": "e left term = 1 meter; right term = 100 centimeter.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nIn the reviewed two-term length example, both"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",
@@ -417,15 +417,15 @@
         "evaluation_rule_id": "sci-rule:common:002",
         "claim_packet": {
           "claim_id": "claim:common:002:unit_variation",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:3b9b07db1693121e6923d2ba635408f4ba6dbe43b4f5a3056d805b1acd9b92ca",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 156,
-            "exact": "In the reviewed two-term length example, both sides of the equality have length dimensionality. The same left term is written as 100 centimeter and 1 meter.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1570,
+            "end": 1752,
+            "exact": "In the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 100 centimeter; left term reference = 1 meter.",
+            "prefix": " term = 1 meter; right term = 100 centimeter.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",
@@ -496,15 +496,15 @@
         "evaluation_rule_id": "sci-rule:common:002",
         "claim_packet": {
           "claim_id": "claim:common:002:decision_changing_ambiguity",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:ab4e0659edf4ee21496da7e43780cb32affe3a9903d69da760b3dd26b45e737f",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 329,
-            "exact": "The wording leaves unresolved whether 'In the reviewed two-term length example, both sides of the equality have length dimensionality.' or instead 'A length term can equal a time term while the equation remains dimensionally homogeneous.'. The quantity kind is recorded as value unit. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1784,
+            "end": 2027,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “In the reviewed two-term length example, both sides of the equality have length dimensionality”. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.",
+            "prefix": "; left term reference = 1 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that i"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",
@@ -554,15 +554,15 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:002:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:ab4e0659edf4ee21496da7e43780cb32affe3a9903d69da760b3dd26b45e737f",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 329,
-            "exact": "The wording leaves unresolved whether 'In the reviewed two-term length example, both sides of the equality have length dimensionality.' or instead 'A length term can equal a time term while the equation remains dimensionally homogeneous.'. The quantity kind is recorded as value unit. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1784,
+            "end": 2027,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “In the reviewed two-term length example, both sides of the equality have length dimensionality”. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.",
+            "prefix": "; left term reference = 1 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that i"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",
@@ -614,15 +614,15 @@
         "evaluation_rule_id": "sci-rule:common:002",
         "claim_packet": {
           "claim_id": "claim:common:002:paraphrase",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:812bb3c5ab4b0fb86c6a60ebd610d0c16902b5cf36249d4a84fbf74b55a31c99",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 233,
-            "exact": "In equivalent wording, the document states that in the reviewed two-term length example, both sides of the equality have length dimensionality. The quantity kind is recorded as value unit. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2042,
+            "end": 2263,
+            "exact": "In equivalent wording, the document states that in the reviewed two-term length example, both sides of the equality have length dimensionality. The reviewed quantities are left term = 1 meter; right term = 100 centimeter.",
+            "prefix": "left term = 1 meter; right term = 100 centimeter.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA mass-energy relation is not the revie"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",
@@ -676,15 +676,15 @@
         "evaluation_rule_id": "sci-rule:common:002",
         "claim_packet": {
           "claim_id": "claim:common:002:false_red_prevention",
-          "document_ref": "qualification:common:002",
-          "document_digest": "sha256:e41feefb2599006e87f5f1e4b06b8b24a30193c5ebad386a5c5aa07781ea5401",
+          "document_ref": "qualification-fixture:common:002",
+          "document_digest": "sha256:1f0c8ca9445cedf859fce44ff5376e30430e1e7b84f833123f1225b23719fc49",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 167,
-            "exact": "A mass-energy relation is not the reviewed equality between two length terms. The quantity kind is recorded as value unit. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2288,
+            "end": 2437,
+            "exact": "A mass-energy relation is not the reviewed equality between two length terms. The reviewed quantities are left term = 1 meter; right term = 1 second.",
+            "prefix": "= 1 meter; right term = 100 centimeter.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:quantity-equation",

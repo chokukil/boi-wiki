@@ -45,22 +45,22 @@
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
           "claim_id": "claim:common:011:clear_violation",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:1c34fe66fcf5f01c78d6335c1ec1a3270aad8a1964af7a0cd72be8e56cef6519",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 118,
-            "exact": "A model-validation-domain record need not identify any validation domain. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 309,
+            "exact": "A model-validation-domain record need not record any domain of validation. The reviewed quantity is validation domain temperature limit = 300 kelvin.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA model-validation-domain record record"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "need_not_record_validation_domain",
             "object_concept_id": "sci:concept:validation-domain",
-            "polarity": "negative",
+            "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "validation_domain_temperature_limit",
@@ -68,16 +68,7 @@
                 "unit": "kelvin"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "record_identity",
-                "value": "bound_validation_record"
-              },
-              {
-                "condition_id": "record_content",
-                "value": "validation_domain"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -102,20 +93,20 @@
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
           "claim_id": "claim:common:011:in_scope_consistency",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:2b2c6640013f66ff56b989c1b029c7caff1595747d800bf762516c330e137f8f",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 152,
-            "exact": "The bound model-validation record identifies the domain of validation of the validated model or simulation. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 334,
+            "end": 516,
+            "exact": "A model-validation-domain record records the domain of validation of the validated modelling or simulation. The reviewed quantity is validation domain temperature limit = 300 kelvin.",
+            "prefix": " domain temperature limit = 300 kelvin.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nA model-validation-domain record "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "records_validation_domain",
             "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
             "quantities": [
@@ -125,16 +116,7 @@
                 "unit": "kelvin"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "record_identity",
-                "value": "bound_validation_record"
-              },
-              {
-                "condition_id": "record_content",
-                "value": "validation_domain"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -159,35 +141,24 @@
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
           "claim_id": "claim:common:011:missing_required_condition",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:194df5530f647515050f336b4f934e43268c52ea861eec2e2c02019a8a426a06",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 211,
-            "exact": "Without specifying record identity, the report states that the bound model-validation record identifies the domain of validation of the validated model or simulation. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 547,
+            "end": 700,
+            "exact": "A model-validation-domain record records the domain of validation of the validated modelling or simulation. No reviewed scale is stated for this fixture.",
+            "prefix": "n temperature limit = 300 kelvin.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nA model-validation-domain record rec"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "records_validation_domain",
             "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
-            "quantities": [
-              {
-                "quantity_kind": "validation_domain_temperature_limit",
-                "value": 300,
-                "unit": "kelvin"
-              }
-            ],
-            "conditions": [
-              {
-                "condition_id": "record_content",
-                "value": "validation_domain"
-              }
-            ],
+            "quantities": [],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -212,39 +183,30 @@
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
           "claim_id": "claim:common:011:outside_validity_domain",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:234be0b9b7050f528930b41d03d3dfdf48a2c54b0ddd55acae0cdb5b8bb9b46d",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 223,
-            "exact": "In a different scientific context, the report nevertheless states that the bound model-validation record identifies the domain of validation of the validated model or simulation. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 728,
+            "end": 990,
+            "exact": "A model-validation-domain record records the domain of validation of the validated modelling or simulation. The accompanying scale is a time duration, not the reviewed physical dimension. The reviewed quantity is validation domain temperature limit = 300 second.",
+            "prefix": "ed scale is stated for this fixture.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nA model-validation-domain re"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "records_validation_domain",
             "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "validation_domain_temperature_limit",
                 "value": 300,
-                "unit": "kelvin"
+                "unit": "second"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "record_identity",
-                "value": "bound_validation_record"
-              },
-              {
-                "condition_id": "record_content",
-                "value": "different_scientific_context"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -269,20 +231,20 @@
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
           "claim_id": "claim:common:011:empirical_verification_required",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:f8e6f26972bd207e674feefac7cc360e04c1a54dcaa5205a0776b2fdecbd7df3",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 236,
-            "exact": "For a named realization, the report asserts that the bound model-validation record identifies the domain of validation of the validated model or simulation. No qualified observation is bound. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1026,
+            "end": 1279,
+            "exact": "A model-validation-domain record records the domain of validation of the validated modelling or simulation. A new unqualified observation requests confirmation of this statement. The reviewed quantity is validation domain temperature limit = 300 kelvin.",
+            "prefix": "perature limit = 300 second.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a model-validation-domain recor"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "records_validation_domain",
             "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
             "quantities": [
@@ -293,14 +255,6 @@
               }
             ],
             "conditions": [
-              {
-                "condition_id": "record_identity",
-                "value": "bound_validation_record"
-              },
-              {
-                "condition_id": "record_content",
-                "value": "validation_domain"
-              },
               {
                 "condition_id": "requested_foundation_011_qualified_observation",
                 "value": "unqualified_observation"
@@ -330,20 +284,20 @@
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
           "claim_id": "claim:common:011:negation",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:8ca7f4f1ba0fc4128a93872aee685233715788afc43c143165596f3004beca06",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 172,
-            "exact": "It is not true that the bound model-validation record identifies the domain of validation of the validated model or simulation. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1292,
+            "end": 1494,
+            "exact": "It is not true that a model-validation-domain record records the domain of validation of the validated modelling or simulation. The reviewed quantity is validation domain temperature limit = 300 kelvin.",
+            "prefix": "s validation domain temperature limit = 300 kelvin.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA model-validation-domain record records the "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "records_validation_domain",
             "object_concept_id": "sci:concept:validation-domain",
             "polarity": "negative",
             "quantities": [
@@ -353,16 +307,7 @@
                 "unit": "kelvin"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "record_identity",
-                "value": "bound_validation_record"
-              },
-              {
-                "condition_id": "record_content",
-                "value": "validation_domain"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -387,20 +332,20 @@
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
           "claim_id": "claim:common:011:unit_variation",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:da3bcd77e589784852dc39ad6c8a8151c3c3d563df50116334f79a1879b9be96",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 191,
-            "exact": "The bound model-validation record identifies the domain of validation of the validated model or simulation. The same validation domain temperature limit is written as 26.85 °C and 300 kelvin.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1513,
+            "end": 1756,
+            "exact": "A model-validation-domain record records the domain of validation of the validated modelling or simulation. The reviewed quantities are validation domain temperature limit = 26.85 °C; validation domain temperature limit reference = 300 kelvin.",
+            "prefix": "dation domain temperature limit = 300 kelvin.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "records_validation_domain",
             "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
             "quantities": [
@@ -415,16 +360,7 @@
                 "unit": "kelvin"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "record_identity",
-                "value": "bound_validation_record"
-              },
-              {
-                "condition_id": "record_content",
-                "value": "validation_domain"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -461,20 +397,20 @@
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
           "claim_id": "claim:common:011:decision_changing_ambiguity",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:11c5cf88c3a959a6db243c7be0c0fe5374e88bc23aade8fb29390ffcf5863f29",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 280,
-            "exact": "The wording leaves unresolved whether 'The bound model-validation record identifies the domain of validation of the validated model or simulation.' or instead 'A model-validation-domain record need not identify any validation domain.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1788,
+            "end": 2040,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A model-validation-domain record records the domain of validation of the validated modelling or simulation”. The reviewed quantity is validation domain temperature limit = 300 kelvin.",
+            "prefix": "re limit reference = 300 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a model-validation-domain "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "records_validation_domain",
             "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
             "quantities": [
@@ -484,16 +420,7 @@
                 "unit": "kelvin"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "record_identity",
-                "value": "bound_validation_record"
-              },
-              {
-                "condition_id": "record_content",
-                "value": "validation_domain"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -514,22 +441,22 @@
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:common:011:decision_changing_ambiguity:alternative",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:11c5cf88c3a959a6db243c7be0c0fe5374e88bc23aade8fb29390ffcf5863f29",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 280,
-            "exact": "The wording leaves unresolved whether 'The bound model-validation record identifies the domain of validation of the validated model or simulation.' or instead 'A model-validation-domain record need not identify any validation domain.'. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1788,
+            "end": 2040,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A model-validation-domain record records the domain of validation of the validated modelling or simulation”. The reviewed quantity is validation domain temperature limit = 300 kelvin.",
+            "prefix": "re limit reference = 300 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a model-validation-domain "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "need_not_record_validation_domain",
             "object_concept_id": "sci:concept:validation-domain",
-            "polarity": "negative",
+            "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "validation_domain_temperature_limit",
@@ -537,16 +464,7 @@
                 "unit": "kelvin"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "record_identity",
-                "value": "bound_validation_record"
-              },
-              {
-                "condition_id": "record_content",
-                "value": "validation_domain"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -569,20 +487,20 @@
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
           "claim_id": "claim:common:011:paraphrase",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:64c9b7eec4c4241b997e51a63299df745ef4b7ce3fed9a99b714c2ede48bcd80",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 200,
-            "exact": "In equivalent wording, the document states that the bound model-validation record identifies the domain of validation of the validated model or simulation. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2055,
+            "end": 2260,
+            "exact": "In equivalent wording, a model-validation-domain record records the domain of validation of the validated modelling or simulation. The reviewed quantity is validation domain temperature limit = 300 kelvin.",
+            "prefix": "validation domain temperature limit = 300 kelvin.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nThe configuration-history record lists "
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "records_validation_domain",
             "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
             "quantities": [
@@ -592,16 +510,7 @@
                 "unit": "kelvin"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "record_identity",
-                "value": "bound_validation_record"
-              },
-              {
-                "condition_id": "record_content",
-                "value": "validation_domain"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -626,22 +535,22 @@
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
           "claim_id": "claim:common:011:false_red_prevention",
-          "document_ref": "qualification:common:011",
-          "document_digest": "sha256:a52d8cb2a6874f4ac1d59c4d2c12a67f44c4c909d3711bc74ec6e309b0a9f7cd",
+          "document_ref": "qualification-fixture:common:011",
+          "document_digest": "sha256:377c65478a3532b7ff24b82f9a72924efc6a9d9fefea139f8b1af6177c77eb26",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 136,
-            "exact": "A configuration log is not the bound model-validation-domain record addressed by this rule. The quantity kind is recorded as value unit.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2285,
+            "end": 2455,
+            "exact": "The configuration-history record lists software revisions but makes no validation-domain claim. The reviewed quantity is validation domain temperature limit = 300 kelvin.",
+            "prefix": " domain temperature limit = 300 kelvin.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "applies",
+            "predicate": "records_configuration_history",
             "object_concept_id": "sci:concept:validation-domain",
-            "polarity": "negative",
+            "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "validation_domain_temperature_limit",
@@ -649,16 +558,7 @@
                 "unit": "kelvin"
               }
             ],
-            "conditions": [
-              {
-                "condition_id": "record_identity",
-                "value": "configuration_log"
-              },
-              {
-                "condition_id": "record_content",
-                "value": "validation_domain"
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
