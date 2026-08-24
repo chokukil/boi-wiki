@@ -28,7 +28,25 @@ def test_boi_admin_does_not_imply_science_admin():
     with pytest.raises(ScienceAuthorizationError, match="Science Verifier access"):
         authz.require_access(generic_admin, roles=generic_admin.roles)
     with pytest.raises(ScienceAuthorizationError, match="science.admin"):
-        authz.require_admin(generic_admin, roles=generic_admin.roles)
+        authz.require_admin(
+            generic_admin,
+            roles_for=lambda resolved_identity: resolved_identity.roles,
+        )
+
+
+def test_admin_boundary_resolves_roles_for_the_authenticated_identity():
+    """Accepting a caller-supplied role list would let a mutation forge final authority."""
+    authz = ScienceAuthorization(access_mode="admin_only")
+    caller = identity("7", "science.admin")
+    resolved_employee_ids: list[str] = []
+
+    def trusted_roles(resolved_identity: AuthIdentity) -> list[str]:
+        resolved_employee_ids.append(resolved_identity.employee_id)
+        return ["boi.admin"]
+
+    with pytest.raises(ScienceAuthorizationError, match="science.admin"):
+        authz.require_admin(caller, roles_for=trusted_roles)
+    assert resolved_employee_ids == ["7"]
 
 
 @pytest.mark.parametrize(

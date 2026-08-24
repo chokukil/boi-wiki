@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from boi_api.app.auth import AuthIdentity
 
@@ -13,6 +13,7 @@ SCIENCE_USER_ROLE = "science.user"
 SCIENCE_POWER_USER_PREFIX = "science.power_user:"
 _ACCESS_MODES = {"admin_only", "pilot", "open"}
 _DOMAIN_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+ScienceRolesResolver = Callable[[AuthIdentity], Sequence[str]]
 
 
 class ScienceAuthorizationError(PermissionError):
@@ -54,29 +55,36 @@ class ScienceAuthorization:
         if self.access_mode == "admin_only":
             return False
         if self.access_mode == "pilot":
-            return SCIENCE_USER_ROLE in resolved or bool(power_user_domains(tuple(resolved)))
+            return SCIENCE_USER_ROLE in resolved or bool(
+                power_user_domains(tuple(resolved))
+            )
         return bool(identity.employee_id.strip()) and "boi.viewer" in resolved
 
     def require_access(self, identity: AuthIdentity, roles: Sequence[str]) -> None:
         if not self.can_access(identity, roles):
             raise ScienceAuthorizationError("Science Verifier access is not authorized")
 
-    def require_admin(self, identity: AuthIdentity, roles: Sequence[str]) -> None:
-        del identity
-        if SCIENCE_ADMIN_ROLE not in self._role_set(roles):
+    def require_admin(
+        self,
+        identity: AuthIdentity,
+        *,
+        roles_for: ScienceRolesResolver,
+    ) -> None:
+        if SCIENCE_ADMIN_ROLE not in self._role_set(roles_for(identity)):
             raise ScienceAuthorizationError("science.admin role required")
 
     def require_proposal_approval(
         self,
         *,
-        actor: str,
-        roles: Sequence[str],
+        identity: AuthIdentity,
+        roles_for: ScienceRolesResolver,
         domain: str,
         proposed_by: str,
     ) -> None:
         """Authorize release-candidate inclusion without broadening Science authority."""
 
-        resolved = self._role_set(roles)
+        actor = identity.employee_id
+        resolved = self._role_set(roles_for(identity))
         if SCIENCE_ADMIN_ROLE in resolved:
             return
         domains = power_user_domains(tuple(resolved))

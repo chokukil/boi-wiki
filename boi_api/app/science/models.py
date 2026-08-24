@@ -190,7 +190,9 @@ class ClaimCondition(ScienceModel):
 
     @model_validator(mode="after")
     def unit_requires_numeric_value(self) -> "ClaimCondition":
-        numeric = isinstance(self.value, (int, float)) and not isinstance(self.value, bool)
+        numeric = isinstance(self.value, (int, float)) and not isinstance(
+            self.value, bool
+        )
         if self.unit is not None and not numeric:
             raise ValueError("condition unit requires a numeric value")
         return self
@@ -263,7 +265,9 @@ class ConditionConstraint(ScienceModel):
             raise ValueError("condition operator requires only a value operand")
         if isinstance(self.value, float) and not isfinite(self.value):
             raise ValueError("condition constraint value must be finite")
-        numeric = isinstance(self.value, (int, float)) and not isinstance(self.value, bool)
+        numeric = isinstance(self.value, (int, float)) and not isinstance(
+            self.value, bool
+        )
         if self.unit is not None and self.operator != "range" and not numeric:
             raise ValueError("condition unit requires a numeric value")
         if self.operator in {"lt", "lte", "gt", "gte"} and not numeric:
@@ -424,25 +428,27 @@ class ResolvedReleaseSet(ScienceModel):
     def exact_selection_and_combined_order(self) -> "ResolvedReleaseSet":
         if self.foundation_release.release_id != self.selection.foundation:
             raise ValueError("Foundation release does not match original selection")
-        if [release.release_id for release in self.domain_releases] != self.selection.domains:
+        if [
+            release.release_id for release in self.domain_releases
+        ] != self.selection.domains:
             raise ValueError("Domain releases do not match original selection")
-        if [release.release_id for release in self.application_releases] != self.selection.applications:
+        if [
+            release.release_id for release in self.application_releases
+        ] != self.selection.applications:
             raise ValueError("Application releases do not match original selection")
         releases = (
             self.foundation_release,
             *self.domain_releases,
             *self.application_releases,
         )
-        expected_digests = {release.release_id: release.content_hash for release in releases}
+        expected_digests = {
+            release.release_id: release.content_hash for release in releases
+        }
         if self.release_digests != expected_digests:
             raise ValueError("release digest map does not match resolved selection")
         release_components = tuple(
             sorted(
-                (
-                    component
-                    for release in releases
-                    for component in release.components
-                ),
+                (component for release in releases for component in release.components),
                 key=lambda item: item.ref,
             )
         )
@@ -450,7 +456,9 @@ class ResolvedReleaseSet(ScienceModel):
         if len(release_component_refs) != len(set(release_component_refs)):
             raise ValueError("resolved releases contain duplicate components")
         if self.components != release_components:
-            raise ValueError("combined release components must exactly match resolved releases")
+            raise ValueError(
+                "combined release components must exactly match resolved releases"
+            )
         if self.rule_components != tuple(
             component for component in self.components if component.kind == "rule"
         ):
@@ -509,12 +517,34 @@ class VerdictPacket(ScienceModel):
     limitations: list[str]
 
 
+class LLMModelSettings(ScienceModel):
+    """Persist only reviewed, non-secret generation controls."""
+
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    top_p: float | None = Field(default=None, ge=0, le=1)
+    max_tokens: int | None = Field(default=None, gt=0)
+    seed: int | None = None
+    timeout_seconds: float | None = Field(default=None, gt=0)
+
+    @field_validator("temperature", "top_p", "timeout_seconds", mode="before")
+    @classmethod
+    def finite_float_setting(cls, value):
+        if value is not None:
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("model setting must be a finite number") from exc
+            if not isfinite(numeric):
+                raise ValueError("model setting must be finite")
+        return value
+
+
 class InterpretationRecord(ScienceModel):
     interpretation_id: str
     document_digest: str
     candidate_claims: list[ClaimPacket]
     model_id: str
-    model_settings: dict[str, str | int | float | bool]
+    model_settings: LLMModelSettings
     prompt_version: str
     dictionary_release_id: str
     ontology_release_id: str
@@ -524,15 +554,6 @@ class InterpretationRecord(ScienceModel):
     user_revision_history: list[dict[str, Any]]
     confirmed_claim_packet_digest: str | None
     response_digest: str
-
-    @field_validator("model_settings")
-    @classmethod
-    def finite_model_settings(
-        cls, settings: dict[str, str | int | float | bool]
-    ) -> dict[str, str | int | float | bool]:
-        if any(isinstance(value, float) and not isfinite(value) for value in settings.values()):
-            raise ValueError("model settings must be finite")
-        return settings
 
 
 class VerificationReport(ScienceModel):
