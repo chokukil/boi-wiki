@@ -53,16 +53,16 @@
     "relation_kind": "dimensional_relation",
     "required_conditions": [
       {
-        "key": "equation_terms_identified",
+        "key": "equation_form",
         "operator": "eq",
-        "value": true
+        "value": "equality_two_length_terms"
       }
     ],
     "validity_conditions": [
       {
-        "key": "registered_units_only",
+        "key": "coverage_scope",
         "operator": "eq",
-        "value": true
+        "value": "registered_length_units"
       }
     ],
     "knowledge_refs": [
@@ -79,15 +79,29 @@
       }
     ],
     "deterministic_evaluator": true,
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_002_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
+    ],
+    "context_dimensions": {},
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "left_equation_term",
+        "quantity_kind": "left_term",
+        "reference_quantity_kind": "left_term_reference"
+      }
+    ],
     "expected_dimensions": {
-      "left_term": "m",
-      "right_term": "m"
-    },
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+      "left_term": "meter",
+      "right_term": "meter"
+    }
   }
 }
 ---
-
 # R-COM-002 — Dimensional homogeneity is necessary, not sufficient
 
 Closed evaluator: `dimension_constraint`. Candidate qualification only.

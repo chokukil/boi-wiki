@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "model",
     "assurance_basis": "hypothesis",
-    "statement": "A model supports a proposed use only within a recorded validation domain and with its assumptions and limitations addressed; a fit statistic alone does not establish universal truth.",
+    "statement": "A record of the domain of validation of the validated model or simulation shall be maintained; this does not itself prove a model valid for an intended use.",
     "definitions": [
       "model basis: theoretical, semi-empirical, or empirical fit",
       "validation domain: recorded range and conditions of validation evidence",
@@ -77,8 +77,8 @@
 }
 ---
 
-# SCI-COM-008 — Model assumptions and validity domain
+# SCI-COM-008 — Narrow reviewed Foundation statement
 
-A model supports a proposed use only within a recorded validation domain and with its assumptions and limitations addressed; a fit statistic alone does not establish universal truth.
+A record of the domain of validation of the validated model or simulation shall be maintained; this does not itself prove a model valid for an intended use.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

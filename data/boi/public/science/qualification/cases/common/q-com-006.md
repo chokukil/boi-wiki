@@ -44,16 +44,16 @@
         "case_kind": "clear_violation",
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
-          "claim_id": "claim:common:006:clear-violation",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-clear-violation",
+          "claim_id": "claim:common:006:clear_violation",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 37,
-            "exact": "Foundation topic 006 clear-violation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 309,
+            "exact": "Measurement accuracy and measurement precision are interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nMeasurement accuracy and measurement pr"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -61,7 +61,13 @@
             "predicate": "interchangeable_with",
             "object_concept_id": "sci:concept:measurement-precision",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.001,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
                 "condition_id": "terminology_context",
@@ -85,26 +91,27 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises clear_violation for SCI-COM-006.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:accuracy-precision"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:006"
       },
       {
         "case_id": "sci-case:common:006:in_scope_consistency",
         "case_kind": "in_scope_consistency",
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
-          "claim_id": "claim:common:006:in-scope-consistency",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-in-scope-consistency",
+          "claim_id": "claim:common:006:in_scope_consistency",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 006 in-scope-consistency.",
-            "prefix": "",
-            "suffix": ""
+            "start": 334,
+            "end": 503,
+            "exact": "Measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "ccuracy assessment error = 0.001 meter.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying terminology co"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -112,7 +119,13 @@
             "predicate": "distinct_from",
             "object_concept_id": "sci:concept:measurement-precision",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.001,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
                 "condition_id": "terminology_context",
@@ -136,26 +149,27 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises in_scope_consistency for SCI-COM-006.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:accuracy-precision"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:006"
       },
       {
         "case_id": "sci-case:common:006:missing_required_condition",
         "case_kind": "missing_required_condition",
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
-          "claim_id": "claim:common:006:missing-required-condition",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-missing-required-condition",
+          "claim_id": "claim:common:006:missing_required_condition",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 48,
-            "exact": "Foundation topic 006 missing-required-condition.",
-            "prefix": "",
-            "suffix": ""
+            "start": 534,
+            "end": 766,
+            "exact": "Without specifying terminology context, the report states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "y assessment error = 0.001 meter.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -163,7 +177,13 @@
             "predicate": "distinct_from",
             "object_concept_id": "sci:concept:measurement-precision",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.001,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
                 "condition_id": "manufacturer_term_definition",
@@ -183,26 +203,27 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "Exercises missing_required_condition for SCI-COM-006.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:accuracy-precision"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:006"
       },
       {
         "case_id": "sci-case:common:006:outside_validity_domain",
         "case_kind": "outside_validity_domain",
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
-          "claim_id": "claim:common:006:outside-validity-domain",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-outside-validity-domain",
+          "claim_id": "claim:common:006:outside_validity_domain",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 45,
-            "exact": "Foundation topic 006 outside-validity-domain.",
-            "prefix": "",
-            "suffix": ""
+            "start": 794,
+            "end": 1034,
+            "exact": "In a different scientific context, the report nevertheless states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "racy assessment error = 0.001 meter.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -210,7 +231,13 @@
             "predicate": "distinct_from",
             "object_concept_id": "sci:concept:measurement-precision",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.001,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
                 "condition_id": "terminology_context",
@@ -218,7 +245,7 @@
               },
               {
                 "condition_id": "manufacturer_term_definition",
-                "value": "__outside__"
+                "value": "different_scientific_context"
               }
             ],
             "process_stage": null,
@@ -234,46 +261,53 @@
           }
         },
         "expected_verdict": "OUTSIDE_VALIDITY_DOMAIN",
-        "rationale": "Exercises outside_validity_domain for SCI-COM-006.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:accuracy-precision"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:006"
       },
       {
         "case_id": "sci-case:common:006:empirical_verification_required",
         "case_kind": "empirical_verification_required",
-        "evaluation_rule_id": "sci-rule:common:008",
+        "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
-          "claim_id": "claim:common:006:empirical-verification-required",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-empirical-verification-required",
+          "claim_id": "claim:common:006:empirical_verification_required",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 53,
-            "exact": "Foundation topic 006 empirical-verification-required.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1070,
+            "end": 1323,
+            "exact": "For a named realization, the report asserts that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. No qualified observation is bound. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "essment error = 0.001 meter.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that measurement accuracy and measur"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:measurement-accuracy",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "distinct_from",
+            "object_concept_id": "sci:concept:measurement-precision",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.001,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
+                "condition_id": "terminology_context",
+                "value": "metrology"
               },
               {
-                "condition_id": "model_basis",
-                "value": "theoretical"
+                "condition_id": "manufacturer_term_definition",
+                "value": "resolved"
               },
               {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "condition_id": "requested_foundation_006_qualified_observation",
+                "value": "unqualified_observation"
               }
             ],
             "process_stage": null,
@@ -288,10 +322,11 @@
           }
         },
         "expected_verdict": "EMPIRICAL_VERIFICATION_REQUIRED",
-        "rationale": "A topic-specific application claim stops for a qualified empirical observation.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
-          "sci-evidence:common:model-validity"
-        ]
+          "sci-evidence:common:accuracy-precision"
+        ],
+        "matrix_rule_id": "sci-rule:common:006"
       },
       {
         "case_id": "sci-case:common:006:negation",
@@ -299,15 +334,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:negation",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-negation",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 30,
-            "exact": "Foundation topic 006 negation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1336,
+            "end": 1525,
+            "exact": "It is not true that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "uantity is accuracy assessment error = 0.001 meter.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nMeasurement accuracy and measurement precisio"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -315,7 +350,13 @@
             "predicate": "distinct_from",
             "object_concept_id": "sci:concept:measurement-precision",
             "polarity": "negative",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.001,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
                 "condition_id": "terminology_context",
@@ -339,26 +380,27 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises negation for SCI-COM-006.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:accuracy-precision"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:006"
       },
       {
         "case_id": "sci-case:common:006:unit_variation",
         "case_kind": "unit_variation",
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
-          "claim_id": "claim:common:006:unit-variation",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-unit-variation",
+          "claim_id": "claim:common:006:unit_variation",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 36,
-            "exact": "Foundation topic 006 unit-variation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1544,
+            "end": 1770,
+            "exact": "Measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantities are accuracy assessment error = 0.1 centimeter; accuracy assessment error reference = 0.001 meter.",
+            "prefix": "y is accuracy assessment error = 0.001 meter.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -368,9 +410,14 @@
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "unit_probe",
-                "value": 100,
-                "unit": "cm"
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.1,
+                "unit": "centimeter"
+              },
+              {
+                "quantity_kind": "accuracy_assessment_error_reference",
+                "value": 0.001,
+                "unit": "meter"
               }
             ],
             "conditions": [
@@ -396,38 +443,39 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises unit_variation for SCI-COM-006.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:accuracy-precision"
         ],
         "unit_equivalence": [
           {
-            "quantity_kind": "unit_probe",
-            "value": 1,
-            "unit": "m"
+            "quantity_kind": "accuracy_assessment_error",
+            "value": 0.001,
+            "unit": "meter"
           },
           {
-            "quantity_kind": "unit_probe",
-            "value": 100,
-            "unit": "cm"
+            "quantity_kind": "accuracy_assessment_error",
+            "value": 0.1,
+            "unit": "centimeter"
           }
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:006"
       },
       {
         "case_id": "sci-case:common:006:decision_changing_ambiguity",
         "case_kind": "decision_changing_ambiguity",
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
-          "claim_id": "claim:common:006:decision-changing-ambiguity",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-decision-changing-ambiguity",
+          "claim_id": "claim:common:006:decision_changing_ambiguity",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 49,
-            "exact": "Foundation topic 006 decision-changing-ambiguity.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1802,
+            "end": 2041,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Measurement accuracy and measurement precision are related but are not interchangeable metrology terms”. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "t error reference = 0.001 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that m"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -435,7 +483,13 @@
             "predicate": "distinct_from",
             "object_concept_id": "sci:concept:measurement-precision",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.001,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
                 "condition_id": "terminology_context",
@@ -461,21 +515,21 @@
           }
         },
         "expected_gate": "ambiguity_gate",
-        "rationale": "Two interpretations produce different candidate verdicts, so interpretation stops.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:accuracy-precision"
         ],
         "alternative_claim_packet": {
-          "claim_id": "claim:common:006:decision-changing-alternative",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-decision-changing-alternative",
+          "claim_id": "claim:common:006:decision_changing_ambiguity:alternative",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 51,
-            "exact": "Foundation topic 006 decision-changing-alternative.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1802,
+            "end": 2041,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “Measurement accuracy and measurement precision are related but are not interchangeable metrology terms”. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "t error reference = 0.001 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that m"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -483,7 +537,13 @@
             "predicate": "interchangeable_with",
             "object_concept_id": "sci:concept:measurement-precision",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.001,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
                 "condition_id": "terminology_context",
@@ -507,7 +567,9 @@
             ],
             "user_confirmed": false
           }
-        }
+        },
+        "matrix_rule_id": "sci-rule:common:006",
+        "expected_verdict": "INSUFFICIENT_INFORMATION"
       },
       {
         "case_id": "sci-case:common:006:paraphrase",
@@ -515,15 +577,15 @@
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
           "claim_id": "claim:common:006:paraphrase",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-paraphrase",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 32,
-            "exact": "Foundation topic 006 paraphrase.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2056,
+            "end": 2273,
+            "exact": "In equivalent wording, the document states that measurement accuracy and measurement precision are related but are not interchangeable metrology terms. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "ntity is accuracy assessment error = 0.001 meter.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nA colloquial vendor label is not the re"
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:measurement-accuracy",
@@ -531,7 +593,13 @@
             "predicate": "distinct_from",
             "object_concept_id": "sci:concept:measurement-precision",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.001,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
                 "condition_id": "terminology_context",
@@ -555,38 +623,45 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises paraphrase for SCI-COM-006.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:accuracy-precision"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:006"
       },
       {
         "case_id": "sci-case:common:006:false_red_prevention",
         "case_kind": "false_red_prevention",
         "evaluation_rule_id": "sci-rule:common:006",
         "claim_packet": {
-          "claim_id": "claim:common:006:false-red-prevention",
-          "document_ref": "qualification:common:006",
-          "document_digest": "sha256:task2-006-false-red-prevention",
+          "claim_id": "claim:common:006:false_red_prevention",
+          "document_ref": "qualification-fixture:common:006",
+          "document_digest": "sha256:2b9ca1de17e5dba2cd0bd38f084296748217380d2a31ce0a249ac4791be51ab8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 006 false-red-prevention.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2298,
+            "end": 2443,
+            "exact": "A colloquial vendor label is not the resolved metrology terminology comparison. The reviewed quantity is accuracy assessment error = 0.001 meter.",
+            "prefix": "ccuracy assessment error = 0.001 meter.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:unsupported:6",
+            "subject_concept_id": "sci:concept:measurement-accuracy",
             "relation_kind": "empirical_relation",
-            "predicate": "distinct_from",
+            "predicate": "interchangeable_with",
             "object_concept_id": "sci:concept:measurement-precision",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "accuracy_assessment_error",
+                "value": 0.001,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
                 "condition_id": "terminology_context",
-                "value": "metrology"
+                "value": "colloquial_vendor_label"
               },
               {
                 "condition_id": "manufacturer_term_definition",
@@ -606,17 +681,17 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "A neighboring unsupported concept remains nondecisive.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:accuracy-precision"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:006"
       }
     ],
     "release_eligibility": "blocked_pending_authorized_admin_review"
   }
 }
 ---
-
 # Q-COM-006
 
 Ten public cases exercise the required qualification kinds against candidate rules only. Synthetic observation fixtures are labeled and never enter operational evidence.

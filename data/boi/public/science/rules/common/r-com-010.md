@@ -57,16 +57,21 @@
     "relation_kind": "empirical_relation",
     "required_conditions": [
       {
-        "key": "system_state_defined",
+        "key": "steady_state_temporal_basis",
         "operator": "eq",
-        "value": true
+        "value": "time_independent"
+      },
+      {
+        "key": "equilibrium_kinetic_basis",
+        "operator": "eq",
+        "value": "equal_forward_reverse_rates"
       }
     ],
     "validity_conditions": [
       {
-        "key": "temporal_behavior_observed",
+        "key": "comparison_scope",
         "operator": "eq",
-        "value": true
+        "value": "definitions_only"
       }
     ],
     "knowledge_refs": [
@@ -89,16 +94,32 @@
       }
     ],
     "deterministic_evaluator": true,
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_010_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
+    ],
+    "context_dimensions": {
+      "observation_duration": "second"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "observation_duration",
+        "quantity_kind": "observation_duration",
+        "reference_quantity_kind": "observation_duration_reference"
+      }
+    ],
     "expected_predicate": "distinct_from",
     "contradiction_predicates": [
-      "equivalent_to"
+      "identical_to"
     ],
-    "expected_polarity": "positive",
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "expected_polarity": "positive"
   }
 }
 ---
-
 # R-COM-010 — Steady state and equilibrium
 
 Closed evaluator: `directional_relation`. Candidate qualification only.

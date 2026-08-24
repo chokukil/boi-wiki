@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:physics:002
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A nonzero net external force cannot change the defined system momentum. The net force is recorded as 1 newton.
+
+[in_scope_consistency]
+For a defined system, a nonzero net external force causes the system momentum to change according to Newton's second law. The net force is recorded as 1 newton.
+
+[missing_required_condition]
+Without specifying the system boundary, the report asserts: For a defined system, a nonzero net external force causes the system momentum to change according to Newton's second law. The net force is recorded as 1 newton.
+
+[outside_validity_domain]
+In an accelerating frame that has not been corrected, the report asserts: For a defined system, a nonzero net external force causes the system momentum to change according to Newton's second law. The net force is recorded as 1 newton.
+
+[empirical_verification_required]
+For a particular force-sensor and cart assembly, the report asserts: For a defined system, a nonzero net external force causes the system momentum to change according to Newton's second law. This named result requires measurement. The net force is recorded as 1 newton.
+
+[negation]
+Under the stated scientific conditions, it is not true that for a defined system, a nonzero net external force causes the system momentum to change according to Newton's second law. The net force is recorded as 1 newton.
+
+[unit_variation]
+For a defined system, a nonzero net external force causes the system momentum to change according to Newton's second law. The reviewed quantities are net force = 1000 millinewton; net force reference = 1 newton.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “For a defined system, a nonzero net external force causes the system momentum to change according to Newton's second law”. The reviewed quantity is net force = 1 newton.
+
+[paraphrase]
+In equivalent wording, the document states: For a defined system, a nonzero net external force causes the system momentum to change according to Newton's second law. The net force is recorded as 1 newton.
+
+[false_red_prevention]
+A zero net external force cannot change the momentum of the defined system. The net force is recorded as 1 newton.
+
+End of immutable qualification fixture.

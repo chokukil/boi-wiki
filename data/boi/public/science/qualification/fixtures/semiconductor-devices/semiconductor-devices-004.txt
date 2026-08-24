@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:semiconductor-devices:004
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Applying forward bias increases the pn-junction barrier height. The voltage scale is recorded as 1 volt.
+
+[in_scope_consistency]
+Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1 volt.
+
+[missing_required_condition]
+Without specifying the junction type, the report asserts: Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1 volt.
+
+[outside_validity_domain]
+Under reverse rather than forward bias, the report asserts: Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1 volt.
+
+[empirical_verification_required]
+For a named pn diode structure, the report asserts: Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. This named result requires measurement. The voltage scale is recorded as 1 volt.
+
+[negation]
+Under the stated scientific conditions, it is not true that applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1 volt.
+
+[unit_variation]
+Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The reviewed quantities are voltage scale = 1000 millivolt; voltage scale reference = 1 volt.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance”. The reviewed quantity is voltage scale = 1 volt.
+
+[paraphrase]
+In equivalent wording, the document states: Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1 volt.
+
+[false_red_prevention]
+Under reverse bias, the junction-barrier response is not the forward-bias comparison addressed by this rule. The voltage scale is recorded as 1 volt.
+
+End of immutable qualification fixture.

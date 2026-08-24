@@ -44,43 +44,38 @@
         "case_kind": "clear_violation",
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
-          "claim_id": "claim:common:003:clear-violation",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-clear-violation",
+          "claim_id": "claim:common:003:clear_violation",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 37,
-            "exact": "Foundation topic 003 clear-violation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 313,
+            "exact": "A one-degree Celsius temperature interval has a different magnitude from a one-kelvin interval. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA temperature interval of one degree Ce"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:celsius-temperature",
-            "relation_kind": "equation",
-            "predicate": "equals_without_offset",
-            "object_concept_id": "sci:concept:kelvin-temperature",
-            "polarity": "positive",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
+            "polarity": "negative",
             "quantities": [
               {
-                "quantity_kind": "converted_temperature",
-                "value": 0,
-                "unit": "°C"
-              },
-              {
-                "quantity_kind": "reference_temperature",
-                "value": 0,
-                "unit": "K"
+                "quantity_kind": "temperature_interval",
+                "value": 1,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "conversion_kind",
-                "value": "affine"
+                "condition_id": "comparison_kind",
+                "value": "unit_interval_magnitude"
               },
               {
-                "condition_id": "conversion_definition_registered",
-                "value": true
+                "condition_id": "unit_pair",
+                "value": "degree_celsius_kelvin"
               }
             ],
             "process_stage": null,
@@ -95,53 +90,49 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises clear_violation for SCI-COM-003.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:celsius-kelvin"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:003"
       },
       {
         "case_id": "sci-case:common:003:in_scope_consistency",
         "case_kind": "in_scope_consistency",
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
-          "claim_id": "claim:common:003:in-scope-consistency",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-in-scope-consistency",
+          "claim_id": "claim:common:003:in_scope_consistency",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 003 in-scope-consistency.",
-            "prefix": "",
-            "suffix": ""
+            "start": 338,
+            "end": 493,
+            "exact": "A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "ity is temperature interval = 1 kelvin.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying comparison kin"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:celsius-temperature",
-            "relation_kind": "equation",
-            "predicate": "equals_after_affine_conversion",
-            "object_concept_id": "sci:concept:kelvin-temperature",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "converted_temperature",
-                "value": 0,
-                "unit": "°C"
-              },
-              {
-                "quantity_kind": "reference_temperature",
-                "value": 273.15,
-                "unit": "K"
+                "quantity_kind": "temperature_interval",
+                "value": 1,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "conversion_kind",
-                "value": "affine"
+                "condition_id": "comparison_kind",
+                "value": "unit_interval_magnitude"
               },
               {
-                "condition_id": "conversion_definition_registered",
-                "value": true
+                "condition_id": "unit_pair",
+                "value": "degree_celsius_kelvin"
               }
             ],
             "process_stage": null,
@@ -156,49 +147,45 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises in_scope_consistency for SCI-COM-003.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:celsius-kelvin"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:003"
       },
       {
         "case_id": "sci-case:common:003:missing_required_condition",
         "case_kind": "missing_required_condition",
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
-          "claim_id": "claim:common:003:missing-required-condition",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-missing-required-condition",
+          "claim_id": "claim:common:003:missing_required_condition",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 48,
-            "exact": "Foundation topic 003 missing-required-condition.",
-            "prefix": "",
-            "suffix": ""
+            "start": 524,
+            "end": 738,
+            "exact": "Without specifying comparison kind, the report states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": " temperature interval = 1 kelvin.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:celsius-temperature",
-            "relation_kind": "equation",
-            "predicate": "equals_after_affine_conversion",
-            "object_concept_id": "sci:concept:kelvin-temperature",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "converted_temperature",
-                "value": 0,
-                "unit": "°C"
-              },
-              {
-                "quantity_kind": "reference_temperature",
-                "value": 273.15,
-                "unit": "K"
+                "quantity_kind": "temperature_interval",
+                "value": 1,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "conversion_definition_registered",
-                "value": true
+                "condition_id": "unit_pair",
+                "value": "degree_celsius_kelvin"
               }
             ],
             "process_stage": null,
@@ -213,53 +200,49 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "Exercises missing_required_condition for SCI-COM-003.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:celsius-kelvin"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:003"
       },
       {
         "case_id": "sci-case:common:003:outside_validity_domain",
         "case_kind": "outside_validity_domain",
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
-          "claim_id": "claim:common:003:outside-validity-domain",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-outside-validity-domain",
+          "claim_id": "claim:common:003:outside_validity_domain",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 45,
-            "exact": "Foundation topic 003 outside-validity-domain.",
-            "prefix": "",
-            "suffix": ""
+            "start": 766,
+            "end": 992,
+            "exact": "In a different scientific context, the report nevertheless states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": " is temperature interval = 1 kelvin.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:celsius-temperature",
-            "relation_kind": "equation",
-            "predicate": "equals_after_affine_conversion",
-            "object_concept_id": "sci:concept:kelvin-temperature",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "converted_temperature",
-                "value": 0,
-                "unit": "°C"
-              },
-              {
-                "quantity_kind": "reference_temperature",
-                "value": 273.15,
-                "unit": "K"
+                "quantity_kind": "temperature_interval",
+                "value": 1,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "conversion_kind",
-                "value": "affine"
+                "condition_id": "comparison_kind",
+                "value": "unit_interval_magnitude"
               },
               {
-                "condition_id": "conversion_definition_registered",
-                "value": false
+                "condition_id": "unit_pair",
+                "value": "different_scientific_context"
               }
             ],
             "process_stage": null,
@@ -274,46 +257,53 @@
           }
         },
         "expected_verdict": "OUTSIDE_VALIDITY_DOMAIN",
-        "rationale": "Exercises outside_validity_domain for SCI-COM-003.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:celsius-kelvin"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:003"
       },
       {
         "case_id": "sci-case:common:003:empirical_verification_required",
         "case_kind": "empirical_verification_required",
-        "evaluation_rule_id": "sci-rule:common:008",
+        "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
-          "claim_id": "claim:common:003:empirical-verification-required",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-empirical-verification-required",
+          "claim_id": "claim:common:003:empirical_verification_required",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 53,
-            "exact": "Foundation topic 003 empirical-verification-required.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1028,
+            "end": 1267,
+            "exact": "For a named realization, the report asserts that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. No qualified observation is bound. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "erature interval = 1 kelvin.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a temperature interval of one d"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
-            "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "temperature_interval",
+                "value": 1,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
+                "condition_id": "comparison_kind",
+                "value": "unit_interval_magnitude"
               },
               {
-                "condition_id": "model_basis",
-                "value": "theoretical"
+                "condition_id": "unit_pair",
+                "value": "degree_celsius_kelvin"
               },
               {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "condition_id": "requested_foundation_003_qualified_observation",
+                "value": "unqualified_observation"
               }
             ],
             "process_stage": null,
@@ -328,10 +318,11 @@
           }
         },
         "expected_verdict": "EMPIRICAL_VERIFICATION_REQUIRED",
-        "rationale": "A topic-specific application claim is routed to the Foundation model-validation rule and stops for empirical evidence.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
-          "sci-evidence:common:model-validity"
-        ]
+          "sci-evidence:common:celsius-kelvin"
+        ],
+        "matrix_rule_id": "sci-rule:common:003"
       },
       {
         "case_id": "sci-case:common:003:negation",
@@ -339,42 +330,37 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:negation",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-negation",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 30,
-            "exact": "Foundation topic 003 negation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1280,
+            "end": 1455,
+            "exact": "It is not true that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "viewed quantity is temperature interval = 1 kelvin.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA temperature interval of one degree Celsius "
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:celsius-temperature",
-            "relation_kind": "equation",
-            "predicate": "equals_after_affine_conversion",
-            "object_concept_id": "sci:concept:kelvin-temperature",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
             "polarity": "negative",
             "quantities": [
               {
-                "quantity_kind": "converted_temperature",
-                "value": 0,
-                "unit": "°C"
-              },
-              {
-                "quantity_kind": "reference_temperature",
-                "value": 273.15,
-                "unit": "K"
+                "quantity_kind": "temperature_interval",
+                "value": 1,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "conversion_kind",
-                "value": "affine"
+                "condition_id": "comparison_kind",
+                "value": "unit_interval_magnitude"
               },
               {
-                "condition_id": "conversion_definition_registered",
-                "value": true
+                "condition_id": "unit_pair",
+                "value": "degree_celsius_kelvin"
               }
             ],
             "process_stage": null,
@@ -389,53 +375,54 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises negation for SCI-COM-003.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:celsius-kelvin"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:003"
       },
       {
         "case_id": "sci-case:common:003:unit_variation",
         "case_kind": "unit_variation",
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
-          "claim_id": "claim:common:003:unit-variation",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-unit-variation",
+          "claim_id": "claim:common:003:unit_variation",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 36,
-            "exact": "Foundation topic 003 unit-variation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1474,
+            "end": 1671,
+            "exact": "A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantities are temperature interval = 1 °C; temperature interval reference = 1 kelvin.",
+            "prefix": " quantity is temperature interval = 1 kelvin.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:celsius-temperature",
-            "relation_kind": "equation",
-            "predicate": "equals_after_affine_conversion",
-            "object_concept_id": "sci:concept:kelvin-temperature",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "converted_temperature",
-                "value": 100,
+                "quantity_kind": "temperature_interval",
+                "value": 1,
                 "unit": "°C"
               },
               {
-                "quantity_kind": "reference_temperature",
-                "value": 373.15,
-                "unit": "K"
+                "quantity_kind": "temperature_interval_reference",
+                "value": 1,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "conversion_kind",
-                "value": "affine"
+                "condition_id": "comparison_kind",
+                "value": "unit_interval_magnitude"
               },
               {
-                "condition_id": "conversion_definition_registered",
-                "value": true
+                "condition_id": "unit_pair",
+                "value": "degree_celsius_kelvin"
               }
             ],
             "process_stage": null,
@@ -450,65 +437,61 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises unit_variation for SCI-COM-003.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:celsius-kelvin"
         ],
         "unit_equivalence": [
           {
-            "quantity_kind": "unit_probe",
+            "quantity_kind": "temperature_interval",
             "value": 1,
-            "unit": "m"
+            "unit": "kelvin"
           },
           {
-            "quantity_kind": "unit_probe",
-            "value": 100,
-            "unit": "cm"
+            "quantity_kind": "temperature_interval",
+            "value": 1,
+            "unit": "°C"
           }
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:003"
       },
       {
         "case_id": "sci-case:common:003:decision_changing_ambiguity",
         "case_kind": "decision_changing_ambiguity",
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
-          "claim_id": "claim:common:003:decision-changing-ambiguity",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-decision-changing-ambiguity",
+          "claim_id": "claim:common:003:decision_changing_ambiguity",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 49,
-            "exact": "Foundation topic 003 decision-changing-ambiguity.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1703,
+            "end": 1928,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin”. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "e interval reference = 1 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that a"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:celsius-temperature",
-            "relation_kind": "equation",
-            "predicate": "equals_after_affine_conversion",
-            "object_concept_id": "sci:concept:kelvin-temperature",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "converted_temperature",
-                "value": 0,
-                "unit": "°C"
-              },
-              {
-                "quantity_kind": "reference_temperature",
-                "value": 273.15,
-                "unit": "K"
+                "quantity_kind": "temperature_interval",
+                "value": 1,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "conversion_kind",
-                "value": "affine"
+                "condition_id": "comparison_kind",
+                "value": "unit_interval_magnitude"
               },
               {
-                "condition_id": "conversion_definition_registered",
-                "value": true
+                "condition_id": "unit_pair",
+                "value": "degree_celsius_kelvin"
               }
             ],
             "process_stage": null,
@@ -525,48 +508,43 @@
           }
         },
         "expected_gate": "ambiguity_gate",
-        "rationale": "Two permitted interpretations produce different candidate verdicts, so interpretation must stop at the ambiguity gate.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:celsius-kelvin"
         ],
         "alternative_claim_packet": {
-          "claim_id": "claim:common:003:decision-changing-alternative",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-decision-changing-alternative",
+          "claim_id": "claim:common:003:decision_changing_ambiguity:alternative",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 51,
-            "exact": "Foundation topic 003 decision-changing-alternative.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1703,
+            "end": 1928,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin”. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "e interval reference = 1 kelvin.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that a"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:celsius-temperature",
-            "relation_kind": "equation",
-            "predicate": "equals_without_offset",
-            "object_concept_id": "sci:concept:kelvin-temperature",
-            "polarity": "positive",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
+            "polarity": "negative",
             "quantities": [
               {
-                "quantity_kind": "converted_temperature",
-                "value": 0,
-                "unit": "°C"
-              },
-              {
-                "quantity_kind": "reference_temperature",
-                "value": 0,
-                "unit": "K"
+                "quantity_kind": "temperature_interval",
+                "value": 1,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "conversion_kind",
-                "value": "affine"
+                "condition_id": "comparison_kind",
+                "value": "unit_interval_magnitude"
               },
               {
-                "condition_id": "conversion_definition_registered",
-                "value": true
+                "condition_id": "unit_pair",
+                "value": "degree_celsius_kelvin"
               }
             ],
             "process_stage": null,
@@ -581,7 +559,9 @@
             ],
             "user_confirmed": false
           }
-        }
+        },
+        "matrix_rule_id": "sci-rule:common:003",
+        "expected_verdict": "INSUFFICIENT_INFORMATION"
       },
       {
         "case_id": "sci-case:common:003:paraphrase",
@@ -589,42 +569,37 @@
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
           "claim_id": "claim:common:003:paraphrase",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-paraphrase",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 32,
-            "exact": "Foundation topic 003 paraphrase.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1943,
+            "end": 2146,
+            "exact": "In equivalent wording, the document states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "ewed quantity is temperature interval = 1 kelvin.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nAn absolute Celsius temperature offset "
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:celsius-temperature",
-            "relation_kind": "equation",
-            "predicate": "equals_after_affine_conversion",
-            "object_concept_id": "sci:concept:kelvin-temperature",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "converted_temperature",
-                "value": 0,
-                "unit": "°C"
-              },
-              {
-                "quantity_kind": "reference_temperature",
-                "value": 273.15,
-                "unit": "K"
+                "quantity_kind": "temperature_interval",
+                "value": 1,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "conversion_kind",
-                "value": "affine"
+                "condition_id": "comparison_kind",
+                "value": "unit_interval_magnitude"
               },
               {
-                "condition_id": "conversion_definition_registered",
-                "value": true
+                "condition_id": "unit_pair",
+                "value": "degree_celsius_kelvin"
               }
             ],
             "process_stage": null,
@@ -639,53 +614,49 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises paraphrase for SCI-COM-003.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:celsius-kelvin"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:003"
       },
       {
         "case_id": "sci-case:common:003:false_red_prevention",
         "case_kind": "false_red_prevention",
         "evaluation_rule_id": "sci-rule:common:003",
         "claim_packet": {
-          "claim_id": "claim:common:003:false-red-prevention",
-          "document_ref": "qualification:common:003",
-          "document_digest": "sha256:task2-003-false-red-prevention",
+          "claim_id": "claim:common:003:false_red_prevention",
+          "document_ref": "qualification-fixture:common:003",
+          "document_digest": "sha256:47b4f702a54c64b49e7a40a434baa2e6f5587d79dc8c539df8985f2a444e3d9e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 003 false-red-prevention.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2171,
+            "end": 2335,
+            "exact": "An absolute Celsius temperature offset is not the unit-interval magnitude comparison covered by this rule. The reviewed quantity is temperature interval = 1 kelvin.",
+            "prefix": "ity is temperature interval = 1 kelvin.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:unsupported:3",
-            "relation_kind": "equation",
-            "predicate": "equals_after_affine_conversion",
-            "object_concept_id": "sci:concept:kelvin-temperature",
-            "polarity": "positive",
+            "subject_concept_id": "sci:concept:celsius-temperature-interval",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:kelvin-temperature-interval",
+            "polarity": "negative",
             "quantities": [
               {
-                "quantity_kind": "converted_temperature",
-                "value": 0,
-                "unit": "°C"
-              },
-              {
-                "quantity_kind": "reference_temperature",
-                "value": 273.15,
-                "unit": "K"
+                "quantity_kind": "temperature_interval",
+                "value": 1,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "conversion_kind",
-                "value": "affine"
+                "condition_id": "comparison_kind",
+                "value": "absolute_temperature_offset"
               },
               {
-                "condition_id": "conversion_definition_registered",
-                "value": true
+                "condition_id": "unit_pair",
+                "value": "degree_celsius_kelvin"
               }
             ],
             "process_stage": null,
@@ -700,17 +671,17 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "A neighboring unsupported concept must remain nondecisive instead of producing a red violation.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:celsius-kelvin"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:003"
       }
     ],
     "release_eligibility": "blocked_pending_authorized_admin_review"
   }
 }
 ---
-
 # Q-COM-003
 
 Ten public cases exercise the required qualification kinds against candidate rules only. Synthetic observation fixtures are labeled and never enter operational evidence.

@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:physics:005
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A control-volume balance is inherently restricted to fixed steady flow. The pressure scale is recorded as 1 pascal.
+
+[in_scope_consistency]
+The control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1 pascal.
+
+[missing_required_condition]
+Without one required scientific condition, the document asserts that the control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1 pascal.
+
+[outside_validity_domain]
+For a balance with its boundary fluxes omitted, the document asserts that the control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1 pascal.
+
+[empirical_verification_required]
+For a named transient flow rig, the document asserts that the control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included; the named result requires measurement. The pressure scale is recorded as 1 pascal.
+
+[negation]
+It is not true that the control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1 pascal.
+
+[unit_variation]
+The control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The reviewed quantities are pressure scale = 1000 millipascal; pressure scale reference = 1 pascal.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “The control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included”. The reviewed quantity is pressure scale = 1 pascal.
+
+[paraphrase]
+In equivalent wording, the control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1 pascal.
+
+[false_red_prevention]
+Across an open surface that does not bound a control volume, the stated closed-surface balance is denied. The pressure scale is recorded as 1 pascal.
+
+End of immutable qualification fixture.

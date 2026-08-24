@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:circuits:002
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+The algebraic voltage sum around the defined lumped-circuit loop is 2 volts but is asserted to equal zero. The voltage scale is recorded as 1 volt.
+
+[in_scope_consistency]
+The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1 volt.
+
+[missing_required_condition]
+The report omits a required scientific condition while stating: The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1 volt.
+
+[outside_validity_domain]
+For an undefined distributed path, the report states: The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1 volt.
+
+[empirical_verification_required]
+For a named instrumented circuit loop, the report states: The algebraic voltage sum around the defined lumped-circuit loop is 0 volts; the named result requires measurement. The voltage scale is recorded as 1 volt.
+
+[negation]
+The report denies the equality even though the algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1 volt.
+
+[unit_variation]
+The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The reviewed quantities are voltage scale = 1000 millivolt; voltage scale reference = 1 volt.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “The algebraic voltage sum around the defined lumped-circuit loop is 0 volts”. The reviewed quantities are voltage scale = 1 volt; algebraic voltage sum = 0 volt; zero voltage = 0 volt.
+
+[paraphrase]
+Using equivalent wording, the algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1 volt.
+
+[false_red_prevention]
+Voltages along an open circuit path are not the algebraic sum around a defined closed loop. The voltage scale is recorded as 1 volt.
+
+End of immutable qualification fixture.

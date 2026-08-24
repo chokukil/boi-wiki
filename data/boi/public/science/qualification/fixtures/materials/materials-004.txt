@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:materials:004
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Increasing absolute temperature decreases the Arrhenius diffusion coefficient while its positive activation energy and mechanism remain unchanged. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.
+
+[in_scope_consistency]
+For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.
+
+[missing_required_condition]
+Without specifying the diffusion model, the report asserts: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.
+
+[outside_validity_domain]
+After the diffusion mechanism changes outside the qualified temperature range, the report asserts: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.
+
+[empirical_verification_required]
+For a named material and furnace run, the report asserts: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. This named result requires measurement. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.
+
+[negation]
+Under the stated scientific conditions, it is not true that for positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.
+
+[unit_variation]
+For a positive activation energy of 1 electron volt and an unchanged Arrhenius mechanism, raising temperature from 300 kelvin to 350 kelvin raises diffusivity from 1e-15 to 5e-15 square metres per second. The reviewed quantities are diffusivity scale = 10000 centimeter ** 2 / second; diffusivity scale reference = 1 meter ** 2 / second.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “For a positive activation energy of 1 electron volt and an unchanged Arrhenius mechanism, raising temperature from 300 kelvin to 350 kelvin raises diffusivity from 1e-15 to 5e-15 square metres per second”. The reviewed quantities are diffusivity scale = 1 meter ** 2 / second; activation energy = 1 electron_volt; temperature before = 300 kelvin; temperature after = 350 kelvin; diffusivity before = 1e-15 meter ** 2 / second; diffusivity after = 5e-15 meter ** 2 / second.
+
+[paraphrase]
+In equivalent wording, the document states: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.
+
+[false_red_prevention]
+After the diffusion mechanism changed, temperature rose from 300 kelvin to 350 kelvin and the measured diffusion coefficient increased from 1e-15 meter ** 2 / second to 5e-15 meter ** 2 / second; the activation energy was 1 electron volt.
+
+End of immutable qualification fixture.

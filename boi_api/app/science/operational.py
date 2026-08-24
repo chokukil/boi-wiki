@@ -4,15 +4,76 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
-from boi_api.app.science.models import ResolvedReleaseSet
+from boi_api.app.science.models import ResolvedReleaseSet, ScienceModel
 from boi_api.app.science.rules import ResolvedRuleSet
-
+from boi_api.app.science.safety import validate_with_closed_error
 
 _ISSUER_CAPABILITY = object()
 _SEAL = object()
+_OBSERVATION_SEAL = object()
+
+
+class ObservationAttestation(ScienceModel):
+    """Digest- and authority-bound payload for a future released observation."""
+
+    observation_id: str
+    observation_digest: str
+    release_set_digest: str
+    rule_id: str
+    measurement_ref: str
+    evidence_ref: str
+    approval_event_ref: str
+    reviewer_id: str
+    reviewer_role: Literal["Admin"]
+
+
+class OperationalObservation:
+    """Opaque observation capability; raw caller proposals cannot construct it."""
+
+    __slots__ = ("_payload_bytes", "_seal")
+
+    def __new__(
+        cls,
+        capability: object | None = None,
+        *,
+        attestation: ObservationAttestation | None = None,
+    ) -> "OperationalObservation":
+        if capability is not _ISSUER_CAPABILITY or attestation is None:
+            raise TypeError(
+                "OperationalObservation is issued only from an authorized released observation"
+            )
+        self = super().__new__(cls)
+        object.__setattr__(self, "_payload_bytes", canonical_json_bytes(attestation))
+        object.__setattr__(self, "_seal", _OBSERVATION_SEAL)
+        return self
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        pass
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError("OperationalObservation is immutable")
+
+    def __reduce__(self) -> object:
+        raise TypeError("OperationalObservation cannot be serialized")
+
+
+def _open_operational_observation(
+    observation: OperationalObservation,
+) -> ObservationAttestation:
+    if (
+        type(observation) is not OperationalObservation
+        or getattr(observation, "_seal", None) is not _OBSERVATION_SEAL
+    ):
+        raise TypeError("Catalog-issued operational observation is required")
+    return ObservationAttestation.model_validate_json(observation._payload_bytes)
+
+
+# No issuer exists yet: the candidate Catalog has no released observation object or
+# authorized observation-review event to bind. Until those schemas exist, empirical
+# SUPPORTS is deliberately impossible rather than accepting caller-supplied labels.
 
 
 def _attestation_payload(
@@ -68,13 +129,16 @@ class OperationalVerification:
             or approval_snapshot is None
         ):
             raise TypeError(
-                "OperationalVerification is issued only by active ScienceCatalog resolution"
+                "OperationalVerification is issued only by active "
+                "ScienceCatalog resolution"
             )
         self = super().__new__(cls)
         attestation = _attestation_payload(release_set, rule_set, approval_snapshot)
         object.__setattr__(self, "_release_bytes", canonical_json_bytes(release_set))
         object.__setattr__(self, "_rule_bytes", canonical_json_bytes(rule_set))
-        object.__setattr__(self, "_attestation_bytes", canonical_json_bytes(attestation))
+        object.__setattr__(
+            self, "_attestation_bytes", canonical_json_bytes(attestation)
+        )
         object.__setattr__(self, "_attestation_digest", sha256_digest(attestation))
         object.__setattr__(self, "_seal", _SEAL)
         return self
@@ -130,17 +194,24 @@ def _open_operational_verification(
         or getattr(operational, "_seal", None) is not _SEAL
     ):
         raise TypeError("Catalog-issued operational verification is required")
-    release_set = ResolvedReleaseSet.model_validate_json(operational._release_bytes)
-    rule_set = ResolvedRuleSet.model_validate_json(operational._rule_bytes)
+    release_set = validate_with_closed_error(
+        lambda: ResolvedReleaseSet.model_validate_json(operational._release_bytes),
+        caught=(ValueError,),
+        closed_error=TypeError("operational verification attestation is invalid"),
+    )
+    rule_set = validate_with_closed_error(
+        lambda: ResolvedRuleSet.model_validate_json(operational._rule_bytes),
+        caught=(ValueError,),
+        closed_error=TypeError("operational verification attestation is invalid"),
+    )
     attestation = json.loads(operational._attestation_bytes)
     expected = _attestation_payload(
         release_set,
         rule_set,
         list(attestation.get("approval_snapshot", [])),
     )
-    if (
-        attestation != expected
-        or operational._attestation_digest != sha256_digest(expected)
+    if attestation != expected or operational._attestation_digest != sha256_digest(
+        expected
     ):
         raise TypeError("operational verification attestation is invalid")
     return release_set, rule_set, attestation

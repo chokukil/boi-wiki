@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:materials:001
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Vacancies, dislocation lines, and grain boundaries are the same dimensional defect. The film thickness scale is recorded as 1 nanometer.
+
+[in_scope_consistency]
+Vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 1 nanometer.
+
+[missing_required_condition]
+Without one required scientific condition, the document asserts that vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 1 nanometer.
+
+[outside_validity_domain]
+For an amorphous structure with no identified grain boundary, the document asserts that vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 1 nanometer.
+
+[empirical_verification_required]
+For a named microscopy specimen, the document asserts that vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes; the named result requires measurement. The film thickness scale is recorded as 1 nanometer.
+
+[negation]
+It is not true that vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 1 nanometer.
+
+[unit_variation]
+Vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The reviewed quantities are film thickness scale = 0.001 micrometer; film thickness scale reference = 1 nanometer.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “Vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes”. The reviewed quantity is film thickness scale = 1 nanometer.
+
+[paraphrase]
+In equivalent wording, vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 1 nanometer.
+
+[false_red_prevention]
+A surface step is not classified here as a vacancy, dislocation line, or grain boundary. The film thickness scale is recorded as 1 nanometer.
+
+End of immutable qualification fixture.

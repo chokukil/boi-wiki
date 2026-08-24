@@ -48,26 +48,15 @@
       "INSUFFICIENT_INFORMATION",
       "OUTSIDE_VALIDITY_DOMAIN"
     ],
-    "subject_concept_id": "sci:concept:measurement-result",
-    "object_concept_id": "sci:concept:measurand",
+    "subject_concept_id": "sci:concept:measurement-result-expression",
+    "object_concept_id": "sci:concept:value-and-uncertainty",
     "relation_kind": "empirical_relation",
-    "required_conditions": [
-      {
-        "key": "measurand_defined",
-        "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "measurement_conditions_defined",
-        "operator": "eq",
-        "value": true
-      }
-    ],
+    "required_conditions": [],
     "validity_conditions": [
       {
-        "key": "measurement_procedure_scope",
+        "key": "definition_context",
         "operator": "eq",
-        "value": "documented"
+        "value": "vim_measurement_result"
       }
     ],
     "knowledge_refs": [
@@ -84,11 +73,28 @@
       }
     ],
     "deterministic_evaluator": true,
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_004_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
+    ],
+    "context_dimensions": {
+      "measured_quantity_value": "meter",
+      "measurement_uncertainty": "meter"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "measured_quantity_value",
+        "quantity_kind": "measured_quantity_value",
+        "reference_quantity_kind": "measured_quantity_value_reference"
+      }
+    ]
   }
 }
 ---
-
 # R-COM-004 — Measurand and measurement result
 
 Closed evaluator: `validity_domain`. Candidate qualification only.

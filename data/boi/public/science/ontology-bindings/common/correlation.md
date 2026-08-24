@@ -32,13 +32,12 @@ science:
   concept_id: "sci:concept:correlation"
   aliases:
     - "correlation"
-    - "association"
     - "상관"
     - "상관관계"
-    - "연관성"
-  meaning: "A statistical association concept, without an ontology-supplied causal outcome."
+  meaning: "A quantified statistical association concept, without an ontology-supplied causal outcome."
   domain: general-science
   must_not_collapse:
+    - "sci:concept:association"
     - "sci:concept:causation"
   interpretation_only: true
   relation_provenance: declared_agent_draft

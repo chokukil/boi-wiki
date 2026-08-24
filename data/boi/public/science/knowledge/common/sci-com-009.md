@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "invariant",
     "assurance_basis": "hypothesis",
-    "statement": "A balance is evaluated for a named inventory and boundary: accumulation equals inflow minus outflow plus generation minus consumption, while allowed source and sink terms depend on the balance target.",
+    "statement": "The cited material-particle mass remains invariant; this draft does not infer an open-control-volume inventory balance from that sentence.",
     "definitions": [
       "system boundary: surface separating system and surroundings",
       "inventory: amount stored inside the boundary",
@@ -78,8 +78,8 @@
 }
 ---
 
-# SCI-COM-009 — Open-system balance
+# SCI-COM-009 — Narrow reviewed Foundation statement
 
-A balance is evaluated for a named inventory and boundary: accumulation equals inflow minus outflow plus generation minus consumption, while allowed source and sink terms depend on the balance target.
+The cited material-particle mass remains invariant; this draft does not infer an open-control-volume inventory balance from that sentence.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

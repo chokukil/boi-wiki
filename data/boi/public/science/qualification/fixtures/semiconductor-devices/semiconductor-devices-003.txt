@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:semiconductor-devices:003
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Low-field semiconductor conductivity is independent of electron and hole concentrations and mobilities. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.
+
+[in_scope_consistency]
+Low-field semiconductor conductivity depends on the bound electron and hole concentrations and mobilities. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.
+
+[missing_required_condition]
+Carrier concentrations and mobilities are listed without identifying the low-field transport regime. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.
+
+[outside_validity_domain]
+The low-field carrier-conductivity equation is asserted as an unchanged high-field transport law. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.
+
+[empirical_verification_required]
+The report claims a measured low-field conductivity for a named wafer, but no qualified observation is bound. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.
+
+[negation]
+It is not true that low-field conductivity depends on electron and hole concentrations and mobilities. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.
+
+[unit_variation]
+In the low-field regime, electron concentration n = 1e21 and hole concentration p = 2e20 per cubic metre, with electron and hole mobilities 0.1 and 0.05 square metres per volt-second, give conductivity 17.623942974 siemens / meter through the carrier-conductivity relation. The reviewed quantities are conductivity scale = 10 millisiemens / centimeter; conductivity scale reference = 1 siemens / meter.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “In the low-field regime, electron concentration n = 1e21 and hole concentration p = 2e20 per cubic metre, with electron and hole mobilities 0.1 and 0.05 square metres per volt-second, give conductivity 17.623942974 siemens / meter through the carrier-conductivity relation”. The reviewed quantities are conductivity scale = 1 siemens / meter; electron concentration = 1e21 1 / meter ** 3; hole concentration = 2e20 1 / meter ** 3; electron mobility = 0.1 meter ** 2 / volt / second; hole mobility = 0.05 meter ** 2 / volt / second; conductivity = 17.623942974 siemens / meter.
+
+[paraphrase]
+Electron and hole populations and their mobilities jointly contribute to low-field semiconductor conductivity. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.
+
+[false_red_prevention]
+In a high-field transport regime, the report does not apply the low-field carrier-conductivity relation even though electron concentration is 1e21 1 / meter ** 3, hole concentration is 2e20 1 / meter ** 3, electron mobility is 0.1 meter ** 2 / volt / second, hole mobility is 0.05 meter ** 2 / volt / second, conductivity is 17.623942974 siemens / meter, and conductivity scale is 1 siemens / meter.
+
+End of immutable qualification fixture.

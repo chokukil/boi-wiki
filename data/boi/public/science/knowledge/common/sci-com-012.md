@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "conditional_relation",
     "assurance_basis": "hypothesis",
-    "statement": "Observed correlation alone does not establish a causal relation; a causal claim requires evidence beyond association, such as an appropriate intervention design or a separately supported mechanism.",
+    "statement": "Correlation does not imply causality, and a broader association is not silently normalized to quantified correlation.",
     "definitions": [
       "association: statistical dependence",
       "correlation: quantified association",
@@ -78,8 +78,8 @@
 }
 ---
 
-# SCI-COM-012 — Correlation does not establish causation
+# SCI-COM-012 — Narrow reviewed Foundation statement
 
-Observed correlation alone does not establish a causal relation; a causal claim requires evidence beyond association, such as an appropriate intervention design or a separately supported mechanism.
+Correlation does not imply causality, and a broader association is not silently normalized to quantified correlation.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

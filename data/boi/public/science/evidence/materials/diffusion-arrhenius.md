@@ -64,15 +64,12 @@ science:
       - key: diffusion_model
         operator: eq
         value: arrhenius
-      - key: material_parameters_known
-        operator: eq
-        value: true
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - The equation states an Arrhenius model; D₀, Eₐ, mechanism, temperature range,
       and material phase must be supplied for quantitative use.
-  claim_scope_hash: sha256:088113758323abae0d305711e75041cf6cf38c1dd4eb39f124c59cec162b2257
+  claim_scope_hash: sha256:0c83d40de943b4e1f3b555b42f13f47c9939a544e0006eab1488990324ebc742
   supports_knowledge: []
   curation_actor:
     type: agent

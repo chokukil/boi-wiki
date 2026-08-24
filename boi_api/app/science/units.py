@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import pint
 
 from boi_api.app.science.models import (
+    ClaimPacket,
     ClaimQuantity,
     ConversionKind,
     ScienceModel,
@@ -78,8 +80,13 @@ class ConversionRegistry:
                 definition.kind,
             )
             if key in keyed:
-                raise ValueError(f"duplicate conversion registration: {definition.conversion_id}")
-            if definition.kind not in {ConversionKind.MULTIPLICATIVE, ConversionKind.AFFINE}:
+                raise ValueError(
+                    f"duplicate conversion registration: {definition.conversion_id}"
+                )
+            if definition.kind not in {
+                ConversionKind.MULTIPLICATIVE,
+                ConversionKind.AFFINE,
+            }:
                 raise UnsupportedConversionError(
                     f"{definition.kind.value} conversion is unsupported"
                 )
@@ -117,7 +124,9 @@ class ConversionRegistry:
             conversion_id is not None and definition.conversion_id != conversion_id
         ):
             if kind is ConversionKind.PROCEDURE_DEFINED:
-                raise UnregisteredConversionError("procedure conversion is unregistered")
+                raise UnregisteredConversionError(
+                    "procedure conversion is unregistered"
+                )
             raise UnregisteredConversionError(
                 f"unregistered {kind.value} conversion: {source_unit} -> {target_unit}"
             )
@@ -153,6 +162,20 @@ class ConversionRegistry:
             kind=definition.kind,
             interval=interval,
             conversion_id=definition.conversion_id,
+        )
+
+    def reviewed_unit_tokens(self) -> tuple[str, ...]:
+        """Return the exact unit spellings admitted by the reviewed registry."""
+
+        return tuple(
+            sorted(
+                {
+                    unit
+                    for source, target, _kind in self._definitions
+                    for unit in (source, target)
+                },
+                key=lambda item: (-len(item), item),
+            )
         )
 
 
@@ -215,6 +238,294 @@ conversion_registry = ConversionRegistry(
                 Decimal("1"),
                 Decimal("-273.15"),
             ),
+            (
+                "sci-conversion:radian-per-second-radian-per-millisecond",
+                ConversionKind.MULTIPLICATIVE,
+                "radian / second",
+                "radian / millisecond",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:radian-per-millisecond-radian-per-second",
+                ConversionKind.MULTIPLICATIVE,
+                "radian / millisecond",
+                "radian / second",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:newton-millinewton",
+                ConversionKind.MULTIPLICATIVE,
+                "newton",
+                "millinewton",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:millinewton-newton",
+                ConversionKind.MULTIPLICATIVE,
+                "millinewton",
+                "newton",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:joule-millijoule",
+                ConversionKind.MULTIPLICATIVE,
+                "joule",
+                "millijoule",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:millijoule-joule",
+                ConversionKind.MULTIPLICATIVE,
+                "millijoule",
+                "joule",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:pascal-millipascal",
+                ConversionKind.MULTIPLICATIVE,
+                "pascal",
+                "millipascal",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:millipascal-pascal",
+                ConversionKind.MULTIPLICATIVE,
+                "millipascal",
+                "pascal",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:mole-per-liter-mole-per-cubic-meter",
+                ConversionKind.MULTIPLICATIVE,
+                "mole / liter",
+                "mole / meter ** 3",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:mole-per-cubic-meter-mole-per-liter",
+                ConversionKind.MULTIPLICATIVE,
+                "mole / meter ** 3",
+                "mole / liter",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:ampere-milliampere",
+                ConversionKind.MULTIPLICATIVE,
+                "ampere",
+                "milliampere",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:milliampere-ampere",
+                ConversionKind.MULTIPLICATIVE,
+                "milliampere",
+                "ampere",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:volt-millivolt",
+                ConversionKind.MULTIPLICATIVE,
+                "volt",
+                "millivolt",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:millivolt-volt",
+                ConversionKind.MULTIPLICATIVE,
+                "millivolt",
+                "volt",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:ohm-milliohm",
+                ConversionKind.MULTIPLICATIVE,
+                "ohm",
+                "milliohm",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:milliohm-ohm",
+                ConversionKind.MULTIPLICATIVE,
+                "milliohm",
+                "ohm",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:farad-millifarad",
+                ConversionKind.MULTIPLICATIVE,
+                "farad",
+                "millifarad",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:millifarad-farad",
+                ConversionKind.MULTIPLICATIVE,
+                "millifarad",
+                "farad",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:square-meter-per-second-square-centimeter-per-second",
+                ConversionKind.MULTIPLICATIVE,
+                "meter ** 2 / second",
+                "centimeter ** 2 / second",
+                Decimal("10000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:square-centimeter-per-second-square-meter-per-second",
+                ConversionKind.MULTIPLICATIVE,
+                "centimeter ** 2 / second",
+                "meter ** 2 / second",
+                Decimal("0.0001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:electron-volt-millielectron-volt",
+                ConversionKind.MULTIPLICATIVE,
+                "electron_volt",
+                "millielectron_volt",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:millielectron-volt-electron-volt",
+                ConversionKind.MULTIPLICATIVE,
+                "millielectron_volt",
+                "electron_volt",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:siemens-per-meter-millisiemens-per-centimeter",
+                ConversionKind.MULTIPLICATIVE,
+                "siemens / meter",
+                "millisiemens / centimeter",
+                Decimal("10"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:millisiemens-per-centimeter-siemens-per-meter",
+                ConversionKind.MULTIPLICATIVE,
+                "millisiemens / centimeter",
+                "siemens / meter",
+                Decimal("0.1"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:nanometer-micrometer",
+                ConversionKind.MULTIPLICATIVE,
+                "nanometer",
+                "micrometer",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:micrometer-nanometer",
+                ConversionKind.MULTIPLICATIVE,
+                "micrometer",
+                "nanometer",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:pascal-second-millipascal-second",
+                ConversionKind.MULTIPLICATIVE,
+                "pascal * second",
+                "millipascal * second",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:millipascal-second-pascal-second",
+                ConversionKind.MULTIPLICATIVE,
+                "millipascal * second",
+                "pascal * second",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:rpm-revolution-per-minute",
+                ConversionKind.MULTIPLICATIVE,
+                "rpm",
+                "revolution / minute",
+                Decimal("1"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:revolution-per-minute-rpm",
+                ConversionKind.MULTIPLICATIVE,
+                "revolution / minute",
+                "rpm",
+                Decimal("1"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:kilogram-gram",
+                ConversionKind.MULTIPLICATIVE,
+                "kilogram",
+                "gram",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:gram-kilogram",
+                ConversionKind.MULTIPLICATIVE,
+                "gram",
+                "kilogram",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:second-millisecond",
+                ConversionKind.MULTIPLICATIVE,
+                "second",
+                "millisecond",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:millisecond-second",
+                ConversionKind.MULTIPLICATIVE,
+                "millisecond",
+                "second",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:dimensionless-percent",
+                ConversionKind.MULTIPLICATIVE,
+                "dimensionless",
+                "percent",
+                Decimal("100"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:percent-dimensionless",
+                ConversionKind.MULTIPLICATIVE,
+                "percent",
+                "dimensionless",
+                Decimal("0.01"),
+                Decimal("0"),
+            ),
         )
     )
 )
@@ -271,8 +582,13 @@ class LockedUnitRegistry(pint.UnitRegistry):
 
 ureg = LockedUnitRegistry()
 
-def _validated_claim_quantity(quantity: ClaimQuantity | dict[str, object]) -> ClaimQuantity:
-    raw_value = quantity.value if isinstance(quantity, ClaimQuantity) else quantity.get("value")
+
+def _validated_claim_quantity(
+    quantity: ClaimQuantity | dict[str, object],
+) -> ClaimQuantity:
+    raw_value = (
+        quantity.value if isinstance(quantity, ClaimQuantity) else quantity.get("value")
+    )
     try:
         if raw_value is not None and not Decimal(str(raw_value)).is_finite():
             raise InvalidQuantityError("quantity magnitude must be finite")
@@ -280,7 +596,9 @@ def _validated_claim_quantity(quantity: ClaimQuantity | dict[str, object]) -> Cl
         raise
     except (ArithmeticError, ValueError):
         pass
-    raw_unit = quantity.unit if isinstance(quantity, ClaimQuantity) else quantity.get("unit")
+    raw_unit = (
+        quantity.unit if isinstance(quantity, ClaimQuantity) else quantity.get("unit")
+    )
     unit = canonical_unit_token(raw_unit)
     try:
         parsed = (
@@ -320,7 +638,9 @@ def _pint_quantity(quantity: ClaimQuantity | dict[str, object]) -> pint.Quantity
     return result
 
 
-def validate_quantity(quantity: ClaimQuantity | dict[str, object]) -> NormalizedQuantity:
+def validate_quantity(
+    quantity: ClaimQuantity | dict[str, object],
+) -> NormalizedQuantity:
     """Parse a claim quantity against bundled definitions and normalize it."""
 
     result = _pint_quantity(quantity)
@@ -355,6 +675,8 @@ def comparable_values(
     left_unit: str,
     right_value: Decimal | int | str,
     right_unit: str,
+    *,
+    interval: bool = False,
 ) -> tuple[Decimal, Decimal]:
     """Return magnitudes in one unit using only an exact reviewed conversion."""
 
@@ -379,10 +701,20 @@ def comparable_values(
     if left_unit == right_unit:
         return left, right
     try:
-        return left, conversion_registry.convert_registered(right, right_unit, left_unit)
+        return left, conversion_registry.convert_registered(
+            right,
+            right_unit,
+            left_unit,
+            interval=interval,
+        )
     except UnregisteredConversionError:
         try:
-            return conversion_registry.convert_registered(left, left_unit, right_unit), right
+            return conversion_registry.convert_registered(
+                left,
+                left_unit,
+                right_unit,
+                interval=interval,
+            ), right
         except UnregisteredConversionError as exc:
             raise UnregisteredConversionError(
                 f"unregistered conversion: {left_unit} <-> {right_unit}"
@@ -392,6 +724,8 @@ def comparable_values(
 def compare_quantities(
     left: ClaimQuantity | dict[str, object],
     right: ClaimQuantity | dict[str, object],
+    *,
+    interval: bool = False,
 ) -> int:
     """Compare compatible quantities, returning ``-1``, ``0``, or ``1``."""
 
@@ -402,5 +736,71 @@ def compare_quantities(
         left_quantity.unit,
         right_quantity.value,
         right_quantity.unit,
+        interval=interval,
     )
     return (left_value > right_value) - (left_value < right_value)
+
+
+_NUMBER_TOKEN = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+
+
+def reviewed_quantity_mentions(text: str) -> tuple[ClaimQuantity, ...]:
+    """Extract explicit number-plus-reviewed-unit mentions without an LLM."""
+
+    units = conversion_registry.reviewed_unit_tokens()
+    unit_pattern = "|".join(re.escape(unit) for unit in units)
+    pattern = re.compile(
+        rf"(?<![\w.])(?P<value>{_NUMBER_TOKEN})\s+(?P<unit>{unit_pattern})"
+        rf"(?![\w*]|\s*[/·*])",
+        re.IGNORECASE,
+    )
+    mentions: list[ClaimQuantity] = []
+    for index, match in enumerate(pattern.finditer(text)):
+        matched_unit = match.group("unit")
+        canonical = next(
+            unit for unit in units if unit.casefold() == matched_unit.casefold()
+        )
+        mentions.append(
+            ClaimQuantity(
+                quantity_kind=f"source_mention_{index}",
+                value=Decimal(match.group("value")),
+                unit=canonical,
+            )
+        )
+    return tuple(mentions)
+
+
+def source_span_mentions_quantity(text: str, quantity: ClaimQuantity) -> bool:
+    """Return whether source text explicitly states this numeric value and unit."""
+
+    pattern = re.compile(
+        rf"(?<![\w.])(?P<value>{_NUMBER_TOKEN})\s+{re.escape(quantity.unit)}"
+        rf"(?![\w*]|\s*[/·*])",
+        re.IGNORECASE,
+    )
+    return any(
+        Decimal(match.group("value")) == quantity.value
+        for match in pattern.finditer(text)
+    )
+
+
+def unmatched_reviewed_quantity_mentions(claim: ClaimPacket) -> tuple[str, ...]:
+    """Find explicit source quantities omitted from the normalized Claim operands."""
+
+    available = list(claim.normalized_claim.quantities)
+    unmatched: list[str] = []
+    for mention in reviewed_quantity_mentions(claim.source_span.exact):
+        matched_index = None
+        for index, quantity in enumerate(available):
+            try:
+                equivalent = compare_quantities(mention, quantity) == 0
+            except InvalidQuantityError:
+                equivalent = False
+            if equivalent:
+                matched_index = index
+                break
+        if matched_index is None:
+            unmatched.append(f"{mention.value} {mention.unit}")
+        else:
+            available.pop(matched_index)
+    return tuple(unmatched)

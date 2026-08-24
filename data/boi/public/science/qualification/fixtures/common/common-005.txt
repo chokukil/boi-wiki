@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:common:005
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Measurement uncertainty is not a non-negative dispersion parameter for values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.
+
+[in_scope_consistency]
+Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.
+
+[missing_required_condition]
+Without specifying parameter sign, the report states that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.
+
+[outside_validity_domain]
+In a different scientific context, the report nevertheless states that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.
+
+[empirical_verification_required]
+For a named realization, the report asserts that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. No qualified observation is bound. The reviewed quantity is uncertainty parameter = 0.01 meter.
+
+[negation]
+It is not true that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.
+
+[unit_variation]
+Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantities are uncertainty parameter = 1 centimeter; uncertainty parameter reference = 0.01 meter.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “Measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand”. The reviewed quantity is uncertainty parameter = 0.01 meter.
+
+[paraphrase]
+In equivalent wording, the document states that measurement uncertainty is a non-negative parameter characterizing dispersion of values attributed to a measurand. The reviewed quantity is uncertainty parameter = 0.01 meter.
+
+[false_red_prevention]
+A signed measurement error is not the non-negative uncertainty parameter defined by this rule. The reviewed quantity is uncertainty parameter = 0.01 meter.
+
+End of immutable qualification fixture.

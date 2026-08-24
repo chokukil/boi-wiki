@@ -53,9 +53,9 @@
     "relation_kind": "causal_relation",
     "required_conditions": [
       {
-        "key": "association_observed",
+        "key": "observed_relation_basis",
         "operator": "eq",
-        "value": true
+        "value": "correlation_only"
       }
     ],
     "validity_conditions": [
@@ -82,17 +82,33 @@
       }
     ],
     "deterministic_evaluator": true,
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_012_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
+    ],
+    "context_dimensions": {
+      "correlation_coefficient": "dimensionless"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "correlation_coefficient",
+        "quantity_kind": "correlation_coefficient",
+        "reference_quantity_kind": "correlation_coefficient_reference"
+      }
+    ],
     "expected_predicate": "does_not_imply",
     "contradiction_predicates": [
       "implies",
       "proves"
     ],
-    "expected_polarity": "positive",
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "expected_polarity": "positive"
   }
 }
 ---
-
 # R-COM-012 — Correlation does not establish causation
 
 Closed evaluator: `directional_relation`. Candidate qualification only.

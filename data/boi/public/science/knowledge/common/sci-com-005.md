@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "definition",
     "assurance_basis": "hypothesis",
-    "statement": "Measurement uncertainty and measurement error are different concepts; an uncertainty value is not a known signed deviation from a true quantity value.",
+    "statement": "Measurement uncertainty is a non-negative parameter characterizing dispersion of quantity values attributed to a measurand.",
     "definitions": [
       "measurement uncertainty: non-negative parameter characterizing attributed dispersion",
       "measurement error: measured value minus a reference value"
@@ -76,8 +76,8 @@
 }
 ---
 
-# SCI-COM-005 — Measurement uncertainty and error
+# SCI-COM-005 — Narrow reviewed Foundation statement
 
-Measurement uncertainty and measurement error are different concepts; an uncertainty value is not a known signed deviation from a true quantity value.
+Measurement uncertainty is a non-negative parameter characterizing dispersion of quantity values attributed to a measurand.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

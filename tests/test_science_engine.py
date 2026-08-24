@@ -6,11 +6,9 @@ import pytest
 from pydantic import ValidationError
 
 from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
-from boi_api.app.science.engine import (
-    UnresolvedAmbiguityError,
-    _verify_resolved_claim as verify_claim,
-    verify_claim as verify_operational_claim,
-)
+from boi_api.app.science.engine import UnresolvedAmbiguityError
+from boi_api.app.science.engine import _verify_resolved_claim as verify_claim
+from boi_api.app.science.engine import verify_claim as verify_operational_claim
 from boi_api.app.science.exceptions import ScienceOperationalError
 from boi_api.app.science.models import (
     ClaimPacket,
@@ -30,10 +28,10 @@ from boi_api.app.science.units import (
     InvalidQuantityError,
     compare_quantities,
     normalized_quantity,
+    unmatched_reviewed_quantity_mentions,
     ureg,
     validate_quantity,
 )
-
 
 KNOWLEDGE_REF = "sci:knowledge:fixture"
 EVIDENCE_REF = "sci:evidence:fixture"
@@ -113,6 +111,9 @@ def rule_fixture(
     contradiction_predicates: list[str] | None = None,
     required_conditions: dict[str, object] | list[dict[str, object]] | None = None,
     validity_conditions: dict[str, object] | list[dict[str, object]] | None = None,
+    empirical_trigger_conditions: list[dict[str, object]] | None = None,
+    context_dimensions: dict[str, str] | None = None,
+    quantity_equivalence_constraints: list[dict[str, object]] | None = None,
     expected_dimensions: dict[str, str] | None = None,
     equation: dict[str, object] | None = None,
     corrected_claim: str | None = None,
@@ -140,6 +141,9 @@ def rule_fixture(
             if isinstance(validity_conditions, dict)
             else (validity_conditions or [])
         ),
+        "empirical_trigger_conditions": empirical_trigger_conditions or [],
+        "context_dimensions": context_dimensions or {},
+        "quantity_equivalence_constraints": quantity_equivalence_constraints or [],
         "expected_dimensions": expected_dimensions or {},
         "equation": equation,
         "knowledge_refs": [KNOWLEDGE_REF],
@@ -150,6 +154,238 @@ def rule_fixture(
     if kind == "directional_relation" or contradiction_predicates is not None:
         payload["contradiction_predicates"] = contradiction_predicates or []
     return VerificationRule.model_validate(payload)
+
+
+def test_rule_quantity_equivalence_rejects_unregistered_same_dimension_conversion_safely():
+    """An unreviewed conversion must not escape as an evaluator exception."""
+    rule = rule_fixture(
+        "sci:rule:closed-quantity-equivalence",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        quantity_equivalence_constraints=[
+            {
+                "scientific_role": "travel_distance",
+                "quantity_kind": "travel_distance",
+                "reference_quantity_kind": "travel_distance_reference",
+            }
+        ],
+    )
+    packet = claim_fixture(
+        "claim:unregistered-equivalent-unit",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        quantities=[
+            {"quantity_kind": "travel_distance", "value": 1000, "unit": "millimeter"},
+            {"quantity_kind": "travel_distance_reference", "value": 1, "unit": "meter"},
+        ],
+    )
+
+    evaluation = evaluate_rule(rule, packet.normalized_claim)
+
+    assert evaluation.applicability == "OUTSIDE_DOMAIN"
+    assert evaluation.reason_codes == ["UNREGISTERED_QUANTITY_EQUIVALENCE"]
+
+
+def test_explicit_second_unit_mention_missing_from_claim_pauses_before_verdict(
+    release_set: ResolvedReleaseSet,
+    rule_set: ResolvedRuleSet,
+):
+    """A deterministic source scan must catch an interpreter-dropped unit operand."""
+    replacement = rule_fixture(
+        "sci:rule:spin-direction",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        quantity_equivalence_constraints=[
+            {
+                "scientific_role": "travel_distance",
+                "quantity_kind": "travel_distance",
+                "reference_quantity_kind": "travel_distance_reference",
+            }
+        ],
+    )
+    packet = claim_fixture(
+        "claim:dropped-source-quantity",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        quantities=[
+            {"quantity_kind": "travel_distance", "value": 100, "unit": "centimeter"}
+        ],
+    )
+    exact = "The same travel distance is reported as 100 centimeter and 1 meter."
+    packet = packet.model_copy(
+        update={
+            "source_span": packet.source_span.model_copy(
+                update={"start": 0, "end": len(exact), "exact": exact}
+            )
+        }
+    )
+    assert unmatched_reviewed_quantity_mentions(packet) == ("1 meter",)
+    pinned_release_set, pinned_rule_set = repin_single_foundation_rule(
+        release_set, rule_set, replacement
+    )
+
+    verdict = verify_claim(packet, pinned_release_set, rule_set=pinned_rule_set)
+
+    assert verdict.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
+    assert verdict.reason_codes == ["UNGROUNDED_REVIEWED_QUANTITY_MENTION"]
+
+
+def test_rule_local_empirical_trigger_requires_measurement_instead_of_reusing_another_rule():
+    """An equipment-specific claim must stay tied to the rule it is qualifying."""
+    rule = rule_fixture(
+        "sci:rule:local-empirical-trigger",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        empirical_trigger_conditions=[
+            {
+                "key": "claim_specificity",
+                "operator": "eq",
+                "value": "equipment_or_numeric",
+            }
+        ],
+    )
+    generic = claim_fixture(
+        "claim:local-empirical-generic",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+    )
+    equipment_specific = claim_fixture(
+        "claim:local-empirical-equipment",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        conditions={"claim_specificity": "equipment_or_numeric"},
+    )
+
+    generic_evaluation = evaluate_rule(rule, generic.normalized_claim)
+    empirical_evaluation = evaluate_rule(rule, equipment_specific.normalized_claim)
+
+    assert generic_evaluation.applicability == "IN_SCOPE"
+    assert generic_evaluation.outcome == "SUPPORTS"
+    assert empirical_evaluation.rule_id == rule.rule_id
+    assert empirical_evaluation.applicability == "EMPIRICAL_ONLY"
+    assert empirical_evaluation.outcome == "UNDECIDED"
+    assert empirical_evaluation.reason_codes == ["QUALIFIED_OBSERVATION_REQUIRED"]
+
+    contradicted = equipment_specific.normalized_claim.model_copy(
+        update={"predicate": "increases"}
+    )
+    contradiction = evaluate_rule(rule, contradicted)
+    assert contradiction.applicability == "IN_SCOPE"
+    assert contradiction.outcome == "CONTRADICTS"
+    assert contradiction.reason_codes == ["RULE_CONTRADICTS"]
+    assert empirical_evaluation.evidence_refs == [EVIDENCE_REF]
+
+
+def test_rule_context_dimension_is_executable_for_equivalent_units_and_wrong_dimensions():
+    """Unit variation must alter a quantity consumed by the target rule's gate."""
+    rule = rule_fixture(
+        "sci:rule:typed-context-dimension",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        context_dimensions={"travel_distance": "meter"},
+    )
+    equivalent = claim_fixture(
+        "claim:typed-context-equivalent",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        quantities=[
+            {"quantity_kind": "travel_distance", "value": "100", "unit": "centimeter"}
+        ],
+    )
+    incompatible = claim_fixture(
+        "claim:typed-context-incompatible",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        quantities=[
+            {"quantity_kind": "travel_distance", "value": "1", "unit": "second"}
+        ],
+    )
+    missing = claim_fixture(
+        "claim:typed-context-missing",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+    )
+
+    assert evaluate_rule(rule, equivalent.normalized_claim).applicability == "IN_SCOPE"
+    wrong = evaluate_rule(rule, incompatible.normalized_claim)
+    assert wrong.applicability == "OUTSIDE_DOMAIN"
+    assert wrong.reason_codes == ["CONTEXT_DIMENSION_MISMATCH"]
+    absent = evaluate_rule(rule, missing.normalized_claim)
+    assert absent.applicability == "MISSING_CONDITIONS"
+    assert absent.reason_codes == ["MISSING_CONTEXT_QUANTITIES"]
+
+
+@pytest.mark.parametrize(
+    ("quantity_kind", "left_value", "left_unit", "right_value", "right_unit"),
+    [
+        ("angular_rate", "1", "radian / second", "0.001", "radian / millisecond"),
+        ("force", "1", "newton", "1000", "millinewton"),
+        ("energy", "1", "joule", "1000", "millijoule"),
+        ("pressure", "1", "pascal", "1000", "millipascal"),
+        ("molarity", "1", "mole / liter", "1000", "mole / meter ** 3"),
+        ("current", "1", "ampere", "1000", "milliampere"),
+        ("voltage", "1", "volt", "1000", "millivolt"),
+        ("resistance", "1", "ohm", "1000", "milliohm"),
+        ("capacitance", "1", "farad", "1000", "millifarad"),
+        (
+            "diffusivity",
+            "1",
+            "meter ** 2 / second",
+            "10000",
+            "centimeter ** 2 / second",
+        ),
+        ("carrier_energy", "1", "electron_volt", "1000", "millielectron_volt"),
+        ("conductivity", "1", "siemens / meter", "10", "millisiemens / centimeter"),
+        ("thickness", "1", "nanometer", "0.001", "micrometer"),
+        ("viscosity", "1", "pascal * second", "1000", "millipascal * second"),
+        ("spin_rate", "1", "rpm", "1", "revolution / minute"),
+    ],
+)
+def test_task3_scientific_unit_variants_use_explicit_exact_conversion_registrations(
+    quantity_kind: str,
+    left_value: str,
+    left_unit: str,
+    right_value: str,
+    right_unit: str,
+):
+    """Domain qualification must not disguise metre-only probes as general SI support."""
+    assert (
+        compare_quantities(
+            {"quantity_kind": quantity_kind, "value": left_value, "unit": left_unit},
+            {"quantity_kind": quantity_kind, "value": right_value, "unit": right_unit},
+        )
+        == 0
+    )
 
 
 @pytest.fixture
@@ -255,7 +491,8 @@ def release(rules: tuple[VerificationRule, ...]) -> ResolvedRelease:
             "status": "active",
             "components": components,
             "component_digests": {
-                component["ref"]: component["declared_digest"] for component in components
+                component["ref"]: component["declared_digest"]
+                for component in components
             },
             "known_limitations": ["fixture-only"],
         }
@@ -300,7 +537,9 @@ def test_engine_rejects_candidate_release_even_with_a_structurally_valid_rule_se
         process_stage="final-coat",
     )
 
-    with pytest.raises(ScienceOperationalError, match="not operational for verification"):
+    with pytest.raises(
+        ScienceOperationalError, match="not operational for verification"
+    ):
         verify_claim(claim, candidate_set, rule_set=candidate_rules)
 
 
@@ -329,10 +568,15 @@ def test_operational_capability_cannot_be_constructed_copied_or_serialized():
     import copy
     import pickle
 
-    from boi_api.app.science.operational import OperationalVerification
+    from boi_api.app.science.operational import (
+        OperationalObservation,
+        OperationalVerification,
+    )
 
     with pytest.raises(TypeError, match="issued only by active ScienceCatalog"):
         OperationalVerification()
+    with pytest.raises(TypeError, match="authorized released observation"):
+        OperationalObservation()
     assert not hasattr(OperationalVerification, "model_copy")
 
     forged = object.__new__(OperationalVerification)
@@ -366,7 +610,9 @@ def repin_single_foundation_rule(
         else component
         for component in release_set.foundation_release.components
     )
-    foundation = release_set.foundation_release.model_copy(update={"components": components})
+    foundation = release_set.foundation_release.model_copy(
+        update={"components": components}
+    )
     updated_release_set = ResolvedReleaseSet.from_single_foundation(foundation)
     updated_rule_set = ResolvedRuleSet(
         release_set_digest=updated_release_set.combined_digest,
@@ -596,7 +842,9 @@ def test_negative_claim_cannot_consist_with_a_satisfied_dimension():
         predicate="has_dimension",
         object_="sci:concept:length",
         polarity="negative",
-        quantities=[{"quantity_kind": "measured_length", "value": "3", "unit": "meter"}],
+        quantities=[
+            {"quantity_kind": "measured_length", "value": "3", "unit": "meter"}
+        ],
     )
 
     evaluation = evaluate_rule(rule, claim.normalized_claim)
@@ -630,8 +878,8 @@ def test_negative_claim_cannot_consist_with_a_satisfied_validity_proposition():
     assert evaluation.reason_codes == ["NEGATED_VALIDITY_DOMAIN_MATCH"]
 
 
-def test_negative_claim_cannot_consist_with_a_qualified_empirical_proposition():
-    """Ignoring polarity would mark denial of a qualified observation consistent."""
+def test_caller_supplied_verified_flag_cannot_qualify_an_empirical_proposition():
+    """A caller boolean is not a Catalog-issued observation capability."""
     rule = rule_fixture(
         "sci:rule:negative-empirical",
         "empirical_boundary",
@@ -660,8 +908,9 @@ def test_negative_claim_cannot_consist_with_a_qualified_empirical_proposition():
         qualified_observations=(observation,),
     )
 
-    assert evaluation.outcome == "CONTRADICTS"
-    assert evaluation.reason_codes == ["NEGATED_QUALIFIED_OBSERVATION"]
+    assert evaluation.applicability == "EMPIRICAL_ONLY"
+    assert evaluation.outcome == "UNDECIDED"
+    assert evaluation.reason_codes == ["QUALIFIED_OBSERVATION_REQUIRED"]
 
 
 def test_rule_conditions_reject_primitive_maps_and_accept_typed_constraints():
@@ -1064,7 +1313,9 @@ def test_verify_claim_cannot_turn_one_sided_condition_unit_red(
 @pytest.mark.parametrize("value", ["fixed", True, None])
 def test_claim_condition_rejects_a_unit_on_nonnumeric_value(value: object):
     """A categorical or missing value cannot acquire measurement semantics from a unit token."""
-    with pytest.raises(ValidationError, match="condition unit requires a numeric value"):
+    with pytest.raises(
+        ValidationError, match="condition unit requires a numeric value"
+    ):
         claim_fixture(
             "claim:nonnumeric-condition-unit",
             subject="sci:concept:input",
@@ -1196,9 +1447,7 @@ def test_verify_claim_cannot_turn_bool_numeric_condition_ambiguity_red(
         relation="monotonic_direction",
         expected_predicate="decreases",
         contradiction_predicates=["increases"],
-        required_conditions=[
-            {"key": "numeric-setting", "operator": "eq", "value": 1}
-        ],
+        required_conditions=[{"key": "numeric-setting", "operator": "eq", "value": 1}],
     )
     pinned_release_set, pinned_rule_set = repin_single_foundation_rule(
         release_set, rule_set, replacement
@@ -1209,9 +1458,7 @@ def test_verify_claim_cannot_turn_bool_numeric_condition_ambiguity_red(
         relation="monotonic_direction",
         predicate="increases",
         object_="sci:concept:film-thickness",
-        typed_conditions=[
-            {"condition_id": "numeric-setting", "value": True}
-        ],
+        typed_conditions=[{"condition_id": "numeric-setting", "value": True}],
     )
 
     packet = verify_claim(claim, pinned_release_set, rule_set=pinned_rule_set)
@@ -1242,9 +1489,7 @@ def test_condition_evaluator_rejects_an_unregistered_cross_unit_conversion():
         relation="monotonic_direction",
         predicate="increases",
         object_="sci:concept:response",
-        typed_conditions=[
-            {"condition_id": "distance", "value": 1, "unit": "inch"}
-        ],
+        typed_conditions=[{"condition_id": "distance", "value": 1, "unit": "inch"}],
     )
 
     with pytest.raises(UnregisteredConversionError, match="unregistered"):
@@ -1279,9 +1524,7 @@ def test_verify_claim_rejects_unregistered_condition_conversion_before_red(
         relation="monotonic_direction",
         predicate="increases",
         object_="sci:concept:film-thickness",
-        typed_conditions=[
-            {"condition_id": "distance", "value": 1, "unit": "inch"}
-        ],
+        typed_conditions=[{"condition_id": "distance", "value": 1, "unit": "inch"}],
     )
 
     with pytest.raises(UnregisteredConversionError, match="unregistered"):
@@ -1309,10 +1552,10 @@ def test_empirical_strings_cannot_qualify_an_observation(
     assert packet.verdict is PrimaryVerdict.EMPIRICAL_VERIFICATION_REQUIRED
 
 
-def test_empirical_rule_requires_a_verified_typed_observation(
+def test_empirical_rule_rejects_caller_supplied_observation_attestation(
     rules: tuple[VerificationRule, ...],
 ):
-    """Only a typed, verified measurement record can satisfy an empirical boundary."""
+    """Neither value of a caller-supplied verified flag crosses the trust boundary."""
     claim = claim_fixture(
         "claim:device-qualified-observation",
         subject="sci:concept:device",
@@ -1320,7 +1563,9 @@ def test_empirical_rule_requires_a_verified_typed_observation(
         predicate="lasts",
         object_="sci:concept:lifetime",
     )
-    device_rule = next(rule for rule in rules if rule.rule_id == "sci:rule:device-lifetime")
+    device_rule = next(
+        rule for rule in rules if rule.rule_id == "sci:rule:device-lifetime"
+    )
     unverified = QualifiedObservation(
         observation_id="sci:observation:device-unverified",
         rule_id=device_rule.rule_id,
@@ -1344,38 +1589,28 @@ def test_empirical_rule_requires_a_verified_typed_observation(
     )
 
     assert rejected.applicability == "EMPIRICAL_ONLY"
-    assert accepted.applicability == "IN_SCOPE"
-    assert accepted.outcome == "SUPPORTS"
+    assert accepted.applicability == "EMPIRICAL_ONLY"
+    assert accepted.outcome == "UNDECIDED"
+    assert accepted.reason_codes == ["QUALIFIED_OBSERVATION_REQUIRED"]
 
 
 @pytest.mark.parametrize(
-    ("verified", "measurement_ref", "evidence_ref", "expected"),
+    ("verified", "measurement_ref", "evidence_ref"),
     [
-        (True, MEASUREMENT_REF, EVIDENCE_REF, PrimaryVerdict.CONSISTENT),
-        (False, MEASUREMENT_REF, EVIDENCE_REF, PrimaryVerdict.EMPIRICAL_VERIFICATION_REQUIRED),
-        (
-            True,
-            "sci:knowledge:unresolved-measurement",
-            EVIDENCE_REF,
-            PrimaryVerdict.EMPIRICAL_VERIFICATION_REQUIRED,
-        ),
-        (
-            True,
-            MEASUREMENT_REF,
-            OTHER_EVIDENCE_REF,
-            PrimaryVerdict.EMPIRICAL_VERIFICATION_REQUIRED,
-        ),
+        (True, MEASUREMENT_REF, EVIDENCE_REF),
+        (False, MEASUREMENT_REF, EVIDENCE_REF),
+        (True, "sci:knowledge:unresolved-measurement", EVIDENCE_REF),
+        (True, MEASUREMENT_REF, OTHER_EVIDENCE_REF),
     ],
 )
-def test_empirical_observation_must_be_verified_and_release_grounded(
+def test_caller_observation_cannot_cross_operational_trust_boundary(
     verified: bool,
     measurement_ref: str,
     evidence_ref: str,
-    expected: PrimaryVerdict,
     release_set: ResolvedReleaseSet,
     rule_set: ResolvedRuleSet,
 ):
-    """Verification, measurement pinning, and exact Rule Evidence are all mandatory."""
+    """Released refs plus a caller boolean still do not form an observation capability."""
     claim = claim_fixture(
         "claim:device-observation-grounding",
         subject="sci:concept:device",
@@ -1391,14 +1626,13 @@ def test_empirical_observation_must_be_verified_and_release_grounded(
         evidence_ref=evidence_ref,
     )
 
-    packet = verify_claim(
-        claim,
-        release_set,
-        rule_set=rule_set,
-        qualified_observations=(observation,),
-    )
-
-    assert packet.verdict is expected
+    with pytest.raises(TypeError, match="Catalog-issued operational observation"):
+        verify_claim(
+            claim,
+            release_set,
+            rule_set=rule_set,
+            qualified_observations=(observation,),  # type: ignore[arg-type]
+        )
 
 
 def test_contradiction_candidate_cannot_override_missing_conditions_or_domain(
@@ -1496,7 +1730,9 @@ def test_release_must_pin_the_rule_and_every_explanation_reference(
     unpinned = release.model_copy(
         update={
             "components": tuple(
-                component for component in release.components if component.ref != "sci:rule:ohm"
+                component
+                for component in release.components
+                if component.ref != "sci:rule:ohm"
             )
         }
     )
@@ -1591,7 +1827,9 @@ def test_substituted_rule_cannot_replace_the_resolved_component_semantic_digest(
         if released.rule.rule_id != "sci:rule:spin-direction":
             substituted_rules.append(released)
             continue
-        substituted_rule = released.rule.model_copy(update={"expected_predicate": "increases"})
+        substituted_rule = released.rule.model_copy(
+            update={"expected_predicate": "increases"}
+        )
         substituted_rules.append(
             released.model_copy(
                 update={
@@ -1687,7 +1925,7 @@ def test_duplicate_rule_ids_are_rejected_before_evaluation_in_any_order(
 
 
 def test_rule_evaluation_reports_matched_concepts_compared_conditions_and_refs(
-    rules: tuple[VerificationRule, ...]
+    rules: tuple[VerificationRule, ...],
 ):
     """Dropping concept or condition comparison detail must break the audit trail."""
     claim = claim_fixture(
@@ -1744,7 +1982,9 @@ def test_dimension_rule_rejects_an_incompatible_claim_quantity():
         relation="dimensional_relation",
         predicate="has_dimension",
         object_="sci:concept:length",
-        quantities=[{"quantity_kind": "measured_length", "value": "3", "unit": "second"}],
+        quantities=[
+            {"quantity_kind": "measured_length", "value": "3", "unit": "second"}
+        ],
     )
 
     evaluation = evaluate_rule(rule, claim.normalized_claim)
@@ -1804,7 +2044,9 @@ def test_incompatible_equation_operands_are_rejected_not_contradicted():
         ],
     )
 
-    with pytest.raises(IncompatibleDimensionsError, match="incompatible equation dimensions"):
+    with pytest.raises(
+        IncompatibleDimensionsError, match="incompatible equation dimensions"
+    ):
         evaluate_rule(rule, claim.normalized_claim)
 
 
@@ -2041,7 +2283,9 @@ def test_ohm_law_product_uses_reviewed_aliases_and_commutative_canonical_order(
         },
     ],
 )
-def test_rule_kind_rejects_payload_for_a_different_evaluator(payload: dict[str, object]):
+def test_rule_kind_rejects_payload_for_a_different_evaluator(
+    payload: dict[str, object],
+):
     """A rule kind must not smuggle fields interpreted by another evaluator."""
     with pytest.raises(ValidationError, match="rule kind payload"):
         VerificationRule.model_validate(payload)
@@ -2074,9 +2318,13 @@ def test_quantity_validation_is_finite_defined_and_dimension_safe(tmp_path):
     assert same == 0
     for invalid in (Decimal("NaN"), Decimal("Infinity"), Decimal("-Infinity")):
         with pytest.raises(InvalidQuantityError, match="finite"):
-            validate_quantity({"quantity_kind": "length", "value": invalid, "unit": "meter"})
+            validate_quantity(
+                {"quantity_kind": "length", "value": invalid, "unit": "meter"}
+            )
     with pytest.raises(InvalidQuantityError, match="undefined unit"):
-        validate_quantity({"quantity_kind": "length", "value": 1, "unit": "made_up_unit"})
+        validate_quantity(
+            {"quantity_kind": "length", "value": 1, "unit": "made_up_unit"}
+        )
     with pytest.raises(IncompatibleDimensionsError, match="incompatible dimensions"):
         compare_quantities(
             {"quantity_kind": "length", "value": 1, "unit": "meter"},
@@ -2112,10 +2360,13 @@ def test_every_registered_unit_family_has_reviewed_alias_normalization(
     if reverse:
         left_unit, right_unit = right_unit, left_unit
 
-    assert compare_quantities(
-        {"quantity_kind": "left", "value": 1, "unit": left_unit},
-        {"quantity_kind": "right", "value": 1, "unit": right_unit},
-    ) == 0
+    assert (
+        compare_quantities(
+            {"quantity_kind": "left", "value": 1, "unit": left_unit},
+            {"quantity_kind": "right", "value": 1, "unit": right_unit},
+        )
+        == 0
+    )
 
 
 @pytest.mark.parametrize(
@@ -2134,10 +2385,13 @@ def test_registered_conversions_accept_canonical_aliases_in_both_directions(
     right_unit: str,
 ):
     """Alias normalization must happen before exact reviewed conversion lookup."""
-    assert compare_quantities(
-        {"quantity_kind": "left", "value": left_value, "unit": left_unit},
-        {"quantity_kind": "right", "value": right_value, "unit": right_unit},
-    ) == 0
+    assert (
+        compare_quantities(
+            {"quantity_kind": "left", "value": left_value, "unit": left_unit},
+            {"quantity_kind": "right", "value": right_value, "unit": right_unit},
+        )
+        == 0
+    )
 
 
 @pytest.mark.parametrize(
@@ -2183,24 +2437,31 @@ def test_allowlisted_multiplicative_and_affine_conversions_use_decimal_arithmeti
     assert convert_value(
         Decimal("10"), "°C", "K", kind=ConversionKind.AFFINE, interval=True
     ) == Decimal("10")
-    assert compare_quantities(
-        {"quantity_kind": "temperature", "value": "25", "unit": "°C"},
-        {"quantity_kind": "temperature", "value": "298.15", "unit": "K"},
-    ) == 0
+    assert (
+        compare_quantities(
+            {"quantity_kind": "temperature", "value": "25", "unit": "°C"},
+            {"quantity_kind": "temperature", "value": "298.15", "unit": "K"},
+        )
+        == 0
+    )
 
 
 def test_logarithmic_and_unregistered_procedure_conversions_fail_explicitly():
     """Removing the kind gate would let Pint or an arbitrary procedure invent a conversion."""
     from boi_api.app.science.models import ConversionKind
     from boi_api.app.science.units import (
-        UnsupportedConversionError,
         UnregisteredConversionError,
+        UnsupportedConversionError,
         convert_value,
     )
 
-    with pytest.raises(UnsupportedConversionError, match="logarithmic conversion is unsupported"):
+    with pytest.raises(
+        UnsupportedConversionError, match="logarithmic conversion is unsupported"
+    ):
         convert_value(Decimal("3"), "dB", "ratio", kind=ConversionKind.LOGARITHMIC)
-    with pytest.raises(UnregisteredConversionError, match="procedure conversion is unregistered"):
+    with pytest.raises(
+        UnregisteredConversionError, match="procedure conversion is unregistered"
+    ):
         convert_value(
             Decimal("7"),
             "instrument_count",
@@ -2376,9 +2637,7 @@ def test_claim_and_rule_units_are_canonicalized_at_their_schema_boundaries():
         predicate="has_length",
         object_="sci:concept:length",
         quantities=[{"quantity_kind": "length", "value": 1, "unit": " meter "}],
-        typed_conditions=[
-            {"condition_id": "temperature", "value": 25, "unit": " °C "}
-        ],
+        typed_conditions=[{"condition_id": "temperature", "value": 25, "unit": " °C "}],
     )
     rule = rule_fixture(
         "sci:rule:canonical-unit-token",
@@ -2412,14 +2671,18 @@ def test_verdict_packet_is_byte_stable_and_only_violation_has_a_correction(
     )
 
     first = verify_claim(claim, release_set, rule_set=rule_set)
-    reversed_rule_set = rule_set.model_copy(update={"rules": tuple(reversed(rule_set.rules))})
+    reversed_rule_set = rule_set.model_copy(
+        update={"rules": tuple(reversed(rule_set.rules))}
+    )
     second = verify_claim(claim, release_set, rule_set=reversed_rule_set)
 
     assert canonical_json_bytes(first) == canonical_json_bytes(second)
     assert first.corrected_claim == (
         "At fixed conditions, increasing spin speed decreases film thickness."
     )
-    assert all(fact.knowledge_refs and fact.evidence_refs for fact in first.explanation_facts)
+    assert all(
+        fact.knowledge_refs and fact.evidence_refs for fact in first.explanation_facts
+    )
 
 
 def test_verdict_preserves_complete_release_selection_and_exact_digests(
@@ -2504,4 +2767,8 @@ def test_verdict_preserves_complete_release_selection_and_exact_digests(
     assert packet.releases.selection == selection
     assert packet.releases.digests == release_set.release_digests
     assert packet.releases.combined_digest == release_set.combined_digest
-    assert packet.limitations == ["application-fixture", "domain-fixture", "fixture-only"]
+    assert packet.limitations == [
+        "application-fixture",
+        "domain-fixture",
+        "fixture-only",
+    ]

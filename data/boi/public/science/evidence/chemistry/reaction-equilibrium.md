@@ -42,9 +42,10 @@ science:
     pdf_page_index: 2
     printed_page: PDF page 3
     hash_scope: retrieved_pdf_bytes
-  original_text: K is the equilibrium constant. It has the same form as Q, but only uses the amounts of products and reactants
+    transcription_method: manual verification against the rendered PDF; the source rendering "K = is" is retained verbatim
+  original_text: K = is the equilibrium constant. It has the same form as Q, but only uses the amounts of products and reactants
     at equilibrium.
-  original_text_hash: sha256:3c87533763158c16b87c99f21cd4405d09385c03b2a066ab29457c568f6f5a77
+  original_text_hash: sha256:58372fc42d88ec04a728829489c4c6cdcf29f47d1580757e5b37d7499f80828d
   language: en
   reviewed_translation: K는 평형상수다. Q와 같은 형식을 갖지만 평형에서의 생성물과 반응물 양만 사용한다.
   decision_eligibility: pending_review
@@ -55,7 +56,7 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.chemistry.reaction_equilibrium
-      purpose: K is the equilibrium constant. It has the same form as Q, but only uses
+      purpose: K = is the equilibrium constant. It has the same form as Q, but only uses
         the amounts of products and reactants at equilibrium.
       required_conditions: []
     forbidden_claim_families:
@@ -63,7 +64,7 @@ science:
     limitations:
     - Activities, standard states, and the balanced reaction remain necessary for quantitative
       use.
-  claim_scope_hash: sha256:c97f3ce59553972bbe4dbe962eb784aad17028f1c93bf25caff448adaf2a6e37
+  claim_scope_hash: sha256:137bed48aef7679022772cba58deca4e53c17cb0f78dd9081ae2a3a4e0f797bb
   supports_knowledge: []
   curation_actor:
     type: agent

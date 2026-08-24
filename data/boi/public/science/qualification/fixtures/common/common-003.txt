@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:common:003
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A one-degree Celsius temperature interval has a different magnitude from a one-kelvin interval. The reviewed quantity is temperature interval = 1 kelvin.
+
+[in_scope_consistency]
+A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.
+
+[missing_required_condition]
+Without specifying comparison kind, the report states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.
+
+[outside_validity_domain]
+In a different scientific context, the report nevertheless states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.
+
+[empirical_verification_required]
+For a named realization, the report asserts that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. No qualified observation is bound. The reviewed quantity is temperature interval = 1 kelvin.
+
+[negation]
+It is not true that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.
+
+[unit_variation]
+A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantities are temperature interval = 1 °C; temperature interval reference = 1 kelvin.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “A temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin”. The reviewed quantity is temperature interval = 1 kelvin.
+
+[paraphrase]
+In equivalent wording, the document states that a temperature interval of one degree Celsius has the same magnitude as an interval of one kelvin. The reviewed quantity is temperature interval = 1 kelvin.
+
+[false_red_prevention]
+An absolute Celsius temperature offset is not the unit-interval magnitude comparison covered by this rule. The reviewed quantity is temperature interval = 1 kelvin.
+
+End of immutable qualification fixture.

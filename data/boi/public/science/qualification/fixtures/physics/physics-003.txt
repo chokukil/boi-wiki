@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:physics:003
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+The applied work is 8 joules while the object's kinetic-energy change is reported as 10 joules. The energy scale is recorded as 1 joule.
+
+[in_scope_consistency]
+The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1 joule.
+
+[missing_required_condition]
+The report omits a required scientific condition while stating: The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1 joule.
+
+[outside_validity_domain]
+With part of the applied work omitted, the report states: The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1 joule.
+
+[empirical_verification_required]
+For a particular instrumented impact test, the report states: The applied work is 10 joules and the object's kinetic-energy change is also 10 joules; the named result requires measurement. The energy scale is recorded as 1 joule.
+
+[negation]
+The report denies the equality even though the applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1 joule.
+
+[unit_variation]
+The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The reviewed quantities are energy scale = 1000 millijoule; energy scale reference = 1 joule.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “The applied work is 10 joules and the object's kinetic-energy change is also 10 joules”. The reviewed quantities are energy scale = 1 joule; applied work = 10 joule; kinetic energy change = 10 joule.
+
+[paraphrase]
+Using equivalent wording, the applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1 joule.
+
+[false_red_prevention]
+With no defined object boundary, the report compares work on one collection with the kinetic-energy change of another. The energy scale is recorded as 1 joule.
+
+End of immutable qualification fixture.

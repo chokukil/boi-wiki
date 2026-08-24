@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:common:001
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A sample length may be represented by a time unit without changing its scientific meaning. The reviewed quantity is sample length = 1 second.
+
+[in_scope_consistency]
+A sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantity is sample length = 1 meter.
+
+[missing_required_condition]
+Without specifying quantity role, the report states that a sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantity is sample length = 1 meter.
+
+[outside_validity_domain]
+In a different scientific context, the report nevertheless states that a sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantity is sample length = 1 meter.
+
+[empirical_verification_required]
+For a named realization, the report asserts that a sample length is represented by a quantity whose unit has length dimensionality. No qualified observation is bound. The reviewed quantity is sample length = 1 meter.
+
+[negation]
+It is not true that a sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantity is sample length = 1 meter.
+
+[unit_variation]
+A sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantities are sample length = 100 centimeter; sample length reference = 1 meter.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “A sample length is represented by a quantity whose unit has length dimensionality”. The reviewed quantity is sample length = 1 meter.
+
+[paraphrase]
+In equivalent wording, the document states that a sample length is represented by a quantity whose unit has length dimensionality. The reviewed quantity is sample length = 1 meter.
+
+[false_red_prevention]
+A time interval is not the sample-length quantity covered by this dimensional example. The reviewed quantity is sample length = 1 second.
+
+End of immutable qualification fixture.

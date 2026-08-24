@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:circuits:005
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A capacitor's state variable is always inductor current and an inductor's is always capacitor voltage. The capacitance scale is recorded as 1 farad.
+
+[in_scope_consistency]
+The capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1 farad.
+
+[missing_required_condition]
+Without one required scientific condition, the document asserts that the capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1 farad.
+
+[outside_validity_domain]
+For an unidentified distributed electromagnetic structure, the document asserts that the capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1 farad.
+
+[empirical_verification_required]
+For a named storage component under test, the document asserts that the capacitor voltage and inductor current are their respective lumped-model state variables; the named result requires measurement. The capacitance scale is recorded as 1 farad.
+
+[negation]
+It is not true that the capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1 farad.
+
+[unit_variation]
+The capacitor voltage and inductor current are their respective lumped-model state variables. The reviewed quantities are capacitance scale = 1000 millifarad; capacitance scale reference = 1 farad.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “The capacitor voltage and inductor current are their respective lumped-model state variables”. The reviewed quantity is capacitance scale = 1 farad.
+
+[paraphrase]
+In equivalent wording, the capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1 farad.
+
+[false_red_prevention]
+A resistor is not a capacitor or inductor whose state variable is covered by this storage-element rule. The capacitance scale is recorded as 1 farad.
+
+End of immutable qualification fixture.

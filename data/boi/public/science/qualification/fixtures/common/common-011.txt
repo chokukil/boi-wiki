@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:common:011
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A model-validation-domain record need not record any domain of validation. The reviewed quantity is validation domain temperature limit = 300 kelvin.
+
+[in_scope_consistency]
+A model-validation-domain record records the domain of validation of the validated modelling or simulation. The reviewed quantity is validation domain temperature limit = 300 kelvin.
+
+[missing_required_condition]
+A model-validation-domain record records the domain of validation of the validated modelling or simulation. No reviewed scale is stated for this fixture.
+
+[outside_validity_domain]
+A model-validation-domain record records the domain of validation of the validated modelling or simulation. The accompanying scale is a time duration, not the reviewed physical dimension. The reviewed quantity is validation domain temperature limit = 300 second.
+
+[empirical_verification_required]
+A model-validation-domain record records the domain of validation of the validated modelling or simulation. A new unqualified observation requests confirmation of this statement. The reviewed quantity is validation domain temperature limit = 300 kelvin.
+
+[negation]
+It is not true that a model-validation-domain record records the domain of validation of the validated modelling or simulation. The reviewed quantity is validation domain temperature limit = 300 kelvin.
+
+[unit_variation]
+A model-validation-domain record records the domain of validation of the validated modelling or simulation. The reviewed quantities are validation domain temperature limit = 26.85 °C; validation domain temperature limit reference = 300 kelvin.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “A model-validation-domain record records the domain of validation of the validated modelling or simulation”. The reviewed quantity is validation domain temperature limit = 300 kelvin.
+
+[paraphrase]
+In equivalent wording, a model-validation-domain record records the domain of validation of the validated modelling or simulation. The reviewed quantity is validation domain temperature limit = 300 kelvin.
+
+[false_red_prevention]
+The configuration-history record lists software revisions but makes no validation-domain claim. The reviewed quantity is validation domain temperature limit = 300 kelvin.
+
+End of immutable qualification fixture.

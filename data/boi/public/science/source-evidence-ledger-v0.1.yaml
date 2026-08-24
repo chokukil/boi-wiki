@@ -105,6 +105,14 @@ sources:
   document: sources/nist-tn-1297.md
   retrieval_status: verified
   release_eligibility: blocked_pending_authorized_admin_review
+- source_id: sci-source:microchemicals-spin-coating-photoresist
+  document: sources/microchemicals-spin-coating-photoresist.md
+  retrieval_status: verified
+  release_eligibility: blocked_pending_authorized_admin_review
+- source_id: sci-source:nistir-5851-1997
+  document: sources/nistir-5851-1997.md
+  retrieval_status: verified
+  release_eligibility: blocked_pending_authorized_admin_review
 evidence:
 - evidence_id: sci-evidence:chemistry:amount-concentration
   source_id: sci-source:chem1-virtual-textbook
@@ -329,5 +337,30 @@ evidence:
 - evidence_id: sci-evidence:spin-coating:vendor-spin-time-guidance
   source_id: sci-source:merck-az-125nxt-01-24
   document: evidence/spin-coating/vendor-spin-time-guidance.md
+  decision_eligibility: pending_review
+  release_eligibility: blocked_pending_authorized_admin_review
+- evidence_id: sci-evidence:spin-coating:microchemicals-spin-mechanism
+  source_id: sci-source:microchemicals-spin-coating-photoresist
+  document: evidence/spin-coating/microchemicals-spin-mechanism.md
+  decision_eligibility: pending_review
+  release_eligibility: blocked_pending_authorized_admin_review
+- evidence_id: sci-evidence:spin-coating:microchemicals-spin-speed-direction
+  source_id: sci-source:microchemicals-spin-coating-photoresist
+  document: evidence/spin-coating/microchemicals-spin-speed-direction.md
+  decision_eligibility: pending_review
+  release_eligibility: blocked_pending_authorized_admin_review
+- evidence_id: sci-evidence:materials:nist-thin-film-bulk-difference
+  source_id: sci-source:nistir-5851-1997
+  document: evidence/materials/nist-thin-film-bulk-difference.md
+  decision_eligibility: pending_review
+  release_eligibility: blocked_pending_authorized_admin_review
+- evidence_id: sci-evidence:spin-coating:microchemicals-film-state-change
+  source_id: sci-source:microchemicals-spin-coating-photoresist
+  document: evidence/spin-coating/microchemicals-film-state-change.md
+  decision_eligibility: pending_review
+  release_eligibility: blocked_pending_authorized_admin_review
+- evidence_id: sci-evidence:spin-coating:microchemicals-equipment-influence
+  source_id: sci-source:microchemicals-spin-coating-photoresist
+  document: evidence/spin-coating/microchemicals-equipment-influence.md
   decision_eligibility: pending_review
   release_eligibility: blocked_pending_authorized_admin_review

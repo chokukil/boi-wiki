@@ -7,10 +7,9 @@ from urllib.parse import urlparse
 
 import yaml
 
+from boi_api.app.okf import split_frontmatter
 from boi_api.app.science.catalog import ScienceCatalog
 from boi_api.app.science.profile import validate_sci_profile_metadata
-from boi_api.app.okf import split_frontmatter
-
 
 EXPECTED_SOURCE_IDS = {
     "sci-source:bipm-si-brochure-9-v4-01",
@@ -35,6 +34,8 @@ EXPECTED_SOURCE_IDS = {
     "sci-source:emslie-1958",
     "sci-source:meyerhofer-1978",
     "sci-source:merck-az-125nxt-01-24",
+    "sci-source:microchemicals-spin-coating-photoresist",
+    "sci-source:nistir-5851-1997",
 }
 
 
@@ -68,9 +69,133 @@ EXPECTED_EVIDENCE_IDS = {
     )),
     *(f"sci-evidence:spin-coating:{name}" for name in (
         "emslie-model", "meyerhofer-model", "vendor-spin-time-guidance",
-        "vendor-spin-curve-observation",
+        "vendor-spin-curve-observation", "microchemicals-spin-mechanism",
+        "microchemicals-spin-speed-direction", "microchemicals-film-state-change",
+        "microchemicals-equipment-influence",
     )),
+    "sci-evidence:materials:nist-thin-film-bulk-difference",
 }
+
+
+def test_task3_authoritative_spans_are_pdf_hash_bound_and_narrowly_scoped() -> None:
+    catalog = ScienceCatalog(_science_root().parents[1])
+    spin = catalog.evidence(
+        "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
+    )
+    mechanism = catalog.evidence(
+        "sci-evidence:spin-coating:microchemicals-spin-mechanism"
+    )
+    state_change = catalog.evidence(
+        "sci-evidence:spin-coating:microchemicals-film-state-change"
+    )
+    equipment = catalog.evidence(
+        "sci-evidence:spin-coating:microchemicals-equipment-influence"
+    )
+    material = catalog.evidence(
+        "sci-evidence:materials:nist-thin-film-bulk-difference"
+    )
+
+    assert spin.locator["content_hash"] == (
+        "sha256:3d9b159838744f504db5c9742ef7f18b1b5f5d2ff78dfecc487086f41639c6b7"
+    )
+    assert spin.locator["pdf_page_index"] == 0
+    assert "reciprocal square root of the spin speed" in spin.original_text
+    assert spin.claim_scope["allowed_claims"][0]["claim_family"] == (
+        "spin_coating.spin_speed_thickness_direction.drying_limited_process"
+    )
+    assert "centrifugal force" in mechanism.original_text
+    assert "solvent evaporates" in mechanism.original_text
+    assert mechanism.claim_scope["allowed_claims"][0]["claim_family"] == (
+        "spin_coating.mechanism.centrifugal_spreading_solvent_evaporation"
+    )
+    assert state_change.locator["pdf_page_index"] == 1
+    assert "measured immediately after spin-coating" in state_change.original_text
+    assert state_change.claim_scope["allowed_claims"][0]["claim_family"] == (
+        "spin_coating.film_thickness.process_state_difference"
+    )
+    assert equipment.locator["pdf_page_index"] == 2
+    assert equipment.original_text == (
+        "The equipment itself has a great influence on the coating result:"
+    )
+    assert equipment.claim_scope["allowed_claims"][0]["claim_family"] == (
+        "spin_coating.equipment.coating_result_influence"
+    )
+    assert material.locator["content_hash"] == (
+        "sha256:7f4e939b3fd4dc621ffd6a534773b08da687d4052b2148c865436ac30b9b854b"
+    )
+    assert material.locator["pdf_page_index"] == 24
+    assert "same chemical composition" in material.original_text
+    assert material.claim_scope["allowed_claims"][0]["claim_family"] == (
+        "materials.thin_film_bulk_property_nontransferability"
+    )
+
+
+def test_exact_pdf_evidence_preserves_the_verified_page_and_source_text() -> None:
+    catalog = ScienceCatalog(_science_root().parents[1])
+    viscosity = catalog.evidence("sci-evidence:physics:viscosity-flow")
+    model = catalog.evidence("sci-evidence:common:model-validity")
+    equilibrium = catalog.evidence("sci-evidence:chemistry:reaction-equilibrium")
+    force = catalog.evidence("sci-evidence:physics:force-momentum")
+
+    assert viscosity.locator["pdf_page_index"] == 11
+    assert viscosity.locator["printed_page"] == "printed/PDF page 12"
+    assert model.original_text == (
+        "A record of the domain of validation of the validated M&S shall be maintained."
+    )
+    assert equilibrium.original_text.startswith("K = is the equilibrium constant.")
+    assert force.original_text.endswith("system of objects as")
+    for evidence in (viscosity, model, equilibrium, force):
+        assert evidence.original_text_hash == "sha256:" + hashlib.sha256(
+            evidence.original_text.encode("utf-8")
+        ).hexdigest()
+
+
+def test_evidence_scopes_do_not_substitute_attestation_or_visual_inference_for_source_operands() -> None:
+    catalog = ScienceCatalog(_science_root().parents[1])
+    diffusion = catalog.evidence("sci-evidence:materials:diffusion-arrhenius")
+    conductivity = catalog.evidence(
+        "sci-evidence:semiconductor-devices:carrier-conductivity"
+    )
+    vendor_figure = catalog.evidence(
+        "sci-evidence:spin-coating:vendor-spin-curve-observation"
+    )
+
+    diffusion_keys = {
+        condition["key"]
+        for condition in diffusion.claim_scope["allowed_claims"][0]["required_conditions"]
+    }
+    conductivity_keys = {
+        condition["key"]
+        for condition in conductivity.claim_scope["allowed_claims"][0]["required_conditions"]
+    }
+    assert "material_parameters_known" not in diffusion_keys
+    assert "carrier_state_parameters_known" not in conductivity_keys
+
+    vendor_claim = vendor_figure.claim_scope["allowed_claims"][0]
+    assert vendor_claim == {
+        "claim_family": "locator_bound.spin_coating.vendor_figure_labels",
+        "purpose": (
+            "Film Thickness (µm) Spin Speed (rpm) AZ 125nXT-10 B AZ 125nXT-7 B"
+        ),
+        "required_conditions": [],
+    }
+    assert "spin_coating.rpm_thickness_direction" in vendor_figure.claim_scope[
+        "forbidden_claim_families"
+    ]
+    assert vendor_figure.figure_observation == {
+        "x_axis": {"label": "Spin Speed", "unit": "rpm"},
+        "y_axis": {"label": "Film Thickness", "unit": "µm"},
+        "series_labels": ["AZ 125nXT-10 B", "AZ 125nXT-7 B"],
+        "extraction_method": (
+            "manual visual transcription of axis and legend labels from PDF page 10; "
+            "no curve interpretation or digitization"
+        ),
+        "review_method": "agent visual transcription pending authorized Admin review",
+        "limits": [
+            "the exact span stores labels only",
+            "no curve direction, range, individual point, interpolation, or extrapolation is asserted",
+        ],
+    }
 
 
 def _science_root() -> Path:
@@ -295,28 +420,9 @@ def test_claim_scope_manifest_blocks_active_release_and_constrains_critical_clai
         "sci-evidence:spin-coating:vendor-spin-curve-observation"
     ]["claim_scope"]
     assert observation_scope["allowed_claims"][0]["claim_family"] == (
-        "spin_coating.rpm_thickness_direction.product_scoped_figure_observation"
+        "locator_bound.spin_coating.vendor_figure_labels"
     )
-    assert observation_scope["allowed_claims"][0]["required_conditions"] == [
-        {"key": "product_family", "operator": "eq", "value": "AZ 125nXT"},
-        {
-            "key": "product_grade",
-            "operator": "in",
-            "values": ["AZ 125nXT-10 B", "AZ 125nXT-7 B"],
-        },
-        {"key": "source_revision", "operator": "eq", "value": "01/24"},
-        {
-            "key": "spin_speed_rpm",
-            "operator": "range",
-            "range": {"minimum": 600, "maximum": 2300},
-            "unit": "rpm",
-        },
-        {
-            "key": "evidence_use_mode",
-            "operator": "eq",
-            "value": "plotted_markers_only",
-        },
-    ]
+    assert observation_scope["allowed_claims"][0]["required_conditions"] == []
     assert mappings["sci-evidence:common:uncertainty-error"]["claim_scope"]["allowed_claims"][0]["claim_family"] == (
         "measurement.uncertainty_definition_only"
     )

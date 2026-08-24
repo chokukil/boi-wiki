@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "definition",
     "assurance_basis": "hypothesis",
-    "statement": "A unit conversion must use its registered conversion kind; Celsius-to-kelvin absolute readings use an affine offset even though degree Celsius and kelvin intervals have equal magnitude.",
+    "statement": "The degree Celsius unit is equal in magnitude to the kelvin unit for temperature intervals; this statement does not itself supply an absolute-temperature offset.",
     "definitions": [
       "multiplicative conversion: scale only",
       "affine conversion: scale and offset",
@@ -78,8 +78,8 @@
 }
 ---
 
-# SCI-COM-003 — Registered unit conversion kind
+# SCI-COM-003 — Narrow reviewed Foundation statement
 
-A unit conversion must use its registered conversion kind; Celsius-to-kelvin absolute readings use an affine offset even though degree Celsius and kelvin intervals have equal magnitude.
+The degree Celsius unit is equal in magnitude to the kelvin unit for temperature intervals; this statement does not itself supply an absolute-temperature offset.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

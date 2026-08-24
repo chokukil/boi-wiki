@@ -44,38 +44,31 @@
         "case_kind": "clear_violation",
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
-          "claim_id": "claim:common:008:clear-violation",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-clear-violation",
+          "claim_id": "claim:common:008:clear_violation",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 37,
-            "exact": "Foundation topic 008 clear-violation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 322,
+            "exact": "A record of the validation domain of validated modelling and simulation need not be maintained. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nA record of the validation domain of va"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
-            "polarity": "negative",
-            "quantities": [],
-            "conditions": [
+            "predicate": "need_not_be_maintained",
+            "object_concept_id": "sci:concept:record-maintenance",
+            "polarity": "positive",
+            "quantities": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
-              },
-              {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "quantity_kind": "validation_domain_length_limit",
+                "value": 1,
+                "unit": "meter"
               }
             ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -88,56 +81,42 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises clear_violation for SCI-COM-008.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
         ],
-        "qualified_observation": {
-          "fixture_only": true,
-          "observation_id": "qualification-fixture:common:008:clear-violation",
-          "rule_id": "sci-rule:common:008",
-          "verified": true,
-          "measurement_ref": "sci:common:008",
-          "evidence_ref": "sci-evidence:common:model-validity"
-        }
+        "matrix_rule_id": "sci-rule:common:008"
       },
       {
         "case_id": "sci-case:common:008:in_scope_consistency",
         "case_kind": "in_scope_consistency",
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
-          "claim_id": "claim:common:008:in-scope-consistency",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-in-scope-consistency",
+          "claim_id": "claim:common:008:in_scope_consistency",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 008 in-scope-consistency.",
-            "prefix": "",
-            "suffix": ""
+            "start": 347,
+            "end": 506,
+            "exact": "A record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "lidation domain length limit = 1 meter.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nA record of the validation domain"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "shall_be_maintained",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
-            "quantities": [],
-            "conditions": [
+            "quantities": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
-              },
-              {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "quantity_kind": "validation_domain_length_limit",
+                "value": 1,
+                "unit": "meter"
               }
             ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -150,52 +129,36 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises in_scope_consistency for SCI-COM-008.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
         ],
-        "qualified_observation": {
-          "fixture_only": true,
-          "observation_id": "qualification-fixture:common:008:in-scope-consistency",
-          "rule_id": "sci-rule:common:008",
-          "verified": true,
-          "measurement_ref": "sci:common:008",
-          "evidence_ref": "sci-evidence:common:model-validity"
-        }
+        "matrix_rule_id": "sci-rule:common:008"
       },
       {
         "case_id": "sci-case:common:008:missing_required_condition",
         "case_kind": "missing_required_condition",
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
-          "claim_id": "claim:common:008:missing-required-condition",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-missing-required-condition",
+          "claim_id": "claim:common:008:missing_required_condition",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 48,
-            "exact": "Foundation topic 008 missing-required-condition.",
-            "prefix": "",
-            "suffix": ""
+            "start": 537,
+            "end": 675,
+            "exact": "A record of the validation domain of validated modelling and simulation shall be maintained. No reviewed scale is stated for this fixture.",
+            "prefix": "on domain length limit = 1 meter.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nA record of the validation domain of"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "shall_be_maintained",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [],
-            "conditions": [
-              {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
-              }
-            ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -208,48 +171,42 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "Exercises missing_required_condition for SCI-COM-008.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:008"
       },
       {
         "case_id": "sci-case:common:008:outside_validity_domain",
         "case_kind": "outside_validity_domain",
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
-          "claim_id": "claim:common:008:outside-validity-domain",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-outside-validity-domain",
+          "claim_id": "claim:common:008:outside_validity_domain",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 45,
-            "exact": "Foundation topic 008 outside-validity-domain.",
-            "prefix": "",
-            "suffix": ""
+            "start": 703,
+            "end": 943,
+            "exact": "A record of the validation domain of validated modelling and simulation shall be maintained. The accompanying scale is a time duration, not the reviewed physical dimension. The reviewed quantity is validation domain length limit = 1 second.",
+            "prefix": "ed scale is stated for this fixture.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nA record of the validation d"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "shall_be_maintained",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
-            "quantities": [],
-            "conditions": [
+            "quantities": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
-              },
-              {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": false
+                "quantity_kind": "validation_domain_length_limit",
+                "value": 1,
+                "unit": "second"
               }
             ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -262,46 +219,45 @@
           }
         },
         "expected_verdict": "OUTSIDE_VALIDITY_DOMAIN",
-        "rationale": "Exercises outside_validity_domain for SCI-COM-008.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:008"
       },
       {
         "case_id": "sci-case:common:008:empirical_verification_required",
         "case_kind": "empirical_verification_required",
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
-          "claim_id": "claim:common:008:empirical-verification-required",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-empirical-verification-required",
+          "claim_id": "claim:common:008:empirical_verification_required",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 53,
-            "exact": "Foundation topic 008 empirical-verification-required.",
-            "prefix": "",
-            "suffix": ""
+            "start": 979,
+            "end": 1209,
+            "exact": "A record of the validation domain of validated modelling and simulation shall be maintained. A new unqualified observation requests confirmation of this statement. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "ain length limit = 1 second.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that a record of the validation doma"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "shall_be_maintained",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_length_limit",
+                "value": 1,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
-              },
-              {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "condition_id": "requested_foundation_008_qualified_observation",
+                "value": "unqualified_observation"
               }
             ],
             "process_stage": null,
@@ -316,10 +272,11 @@
           }
         },
         "expected_verdict": "EMPIRICAL_VERIFICATION_REQUIRED",
-        "rationale": "A topic-specific application claim stops for a qualified empirical observation.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:008"
       },
       {
         "case_id": "sci-case:common:008:negation",
@@ -327,37 +284,30 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:negation",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-negation",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 30,
-            "exact": "Foundation topic 008 negation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1222,
+            "end": 1401,
+            "exact": "It is not true that a record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "antity is validation domain length limit = 1 meter.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nA record of the validation domain of validate"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "shall_be_maintained",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "negative",
-            "quantities": [],
-            "conditions": [
+            "quantities": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
-              },
-              {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "quantity_kind": "validation_domain_length_limit",
+                "value": 1,
+                "unit": "meter"
               }
             ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -370,62 +320,47 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises negation for SCI-COM-008.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
         ],
-        "qualified_observation": {
-          "fixture_only": true,
-          "observation_id": "qualification-fixture:common:008:negation",
-          "rule_id": "sci-rule:common:008",
-          "verified": true,
-          "measurement_ref": "sci:common:008",
-          "evidence_ref": "sci-evidence:common:model-validity"
-        }
+        "matrix_rule_id": "sci-rule:common:008"
       },
       {
         "case_id": "sci-case:common:008:unit_variation",
         "case_kind": "unit_variation",
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
-          "claim_id": "claim:common:008:unit-variation",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-unit-variation",
+          "claim_id": "claim:common:008:unit_variation",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 36,
-            "exact": "Foundation topic 008 unit-variation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1420,
+            "end": 1641,
+            "exact": "A record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantities are validation domain length limit = 100 centimeter; validation domain length limit reference = 1 meter.",
+            "prefix": " is validation domain length limit = 1 meter.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "shall_be_maintained",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "unit_probe",
+                "quantity_kind": "validation_domain_length_limit",
                 "value": 100,
-                "unit": "cm"
-              }
-            ],
-            "conditions": [
-              {
-                "condition_id": "validation_domain_documented",
-                "value": true
+                "unit": "centimeter"
               },
               {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "quantity_kind": "validation_domain_length_limit_reference",
+                "value": 1,
+                "unit": "meter"
               }
             ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -438,68 +373,54 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises unit_variation for SCI-COM-008.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
         ],
         "unit_equivalence": [
           {
-            "quantity_kind": "unit_probe",
+            "quantity_kind": "validation_domain_length_limit",
             "value": 1,
-            "unit": "m"
+            "unit": "meter"
           },
           {
-            "quantity_kind": "unit_probe",
+            "quantity_kind": "validation_domain_length_limit",
             "value": 100,
-            "unit": "cm"
+            "unit": "centimeter"
           }
         ],
-        "qualified_observation": {
-          "fixture_only": true,
-          "observation_id": "qualification-fixture:common:008:unit-variation",
-          "rule_id": "sci-rule:common:008",
-          "verified": true,
-          "measurement_ref": "sci:common:008",
-          "evidence_ref": "sci-evidence:common:model-validity"
-        }
+        "matrix_rule_id": "sci-rule:common:008"
       },
       {
         "case_id": "sci-case:common:008:decision_changing_ambiguity",
         "case_kind": "decision_changing_ambiguity",
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
-          "claim_id": "claim:common:008:decision-changing-ambiguity",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-decision-changing-ambiguity",
+          "claim_id": "claim:common:008:decision_changing_ambiguity",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 49,
-            "exact": "Foundation topic 008 decision-changing-ambiguity.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1673,
+            "end": 1902,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A record of the validation domain of validated modelling and simulation shall be maintained”. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "ength limit reference = 1 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a record of the validation"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "shall_be_maintained",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
-            "quantities": [],
-            "conditions": [
+            "quantities": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
-              },
-              {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "quantity_kind": "validation_domain_length_limit",
+                "value": 1,
+                "unit": "meter"
               }
             ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -514,43 +435,36 @@
           }
         },
         "expected_gate": "ambiguity_gate",
-        "rationale": "Two interpretations produce different candidate verdicts, so interpretation stops.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
         ],
         "alternative_claim_packet": {
-          "claim_id": "claim:common:008:decision-changing-alternative",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-decision-changing-alternative",
+          "claim_id": "claim:common:008:decision_changing_ambiguity:alternative",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 51,
-            "exact": "Foundation topic 008 decision-changing-alternative.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1673,
+            "end": 1902,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “A record of the validation domain of validated modelling and simulation shall be maintained”. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "ength limit reference = 1 meter.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, a record of the validation"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
-            "polarity": "negative",
-            "quantities": [],
-            "conditions": [
+            "predicate": "need_not_be_maintained",
+            "object_concept_id": "sci:concept:record-maintenance",
+            "polarity": "positive",
+            "quantities": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
-              },
-              {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "quantity_kind": "validation_domain_length_limit",
+                "value": 1,
+                "unit": "meter"
               }
             ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -564,14 +478,8 @@
             "user_confirmed": false
           }
         },
-        "qualified_observation": {
-          "fixture_only": true,
-          "observation_id": "qualification-fixture:common:008:ambiguity",
-          "rule_id": "sci-rule:common:008",
-          "verified": true,
-          "measurement_ref": "sci:common:008",
-          "evidence_ref": "sci-evidence:common:model-validity"
-        }
+        "matrix_rule_id": "sci-rule:common:008",
+        "expected_verdict": "INSUFFICIENT_INFORMATION"
       },
       {
         "case_id": "sci-case:common:008:paraphrase",
@@ -579,37 +487,30 @@
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
           "claim_id": "claim:common:008:paraphrase",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-paraphrase",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 32,
-            "exact": "Foundation topic 008 paraphrase.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1917,
+            "end": 2099,
+            "exact": "In equivalent wording, a record of the validation domain of validated modelling and simulation shall be maintained. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "tity is validation domain length limit = 1 meter.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nThe project archive note says the valid"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "shall_be_maintained",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
-            "quantities": [],
-            "conditions": [
+            "quantities": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
-              },
-              {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "quantity_kind": "validation_domain_length_limit",
+                "value": 1,
+                "unit": "meter"
               }
             ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -622,56 +523,42 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises paraphrase for SCI-COM-008.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
         ],
-        "qualified_observation": {
-          "fixture_only": true,
-          "observation_id": "qualification-fixture:common:008:paraphrase",
-          "rule_id": "sci-rule:common:008",
-          "verified": true,
-          "measurement_ref": "sci:common:008",
-          "evidence_ref": "sci-evidence:common:model-validity"
-        }
+        "matrix_rule_id": "sci-rule:common:008"
       },
       {
         "case_id": "sci-case:common:008:false_red_prevention",
         "case_kind": "false_red_prevention",
         "evaluation_rule_id": "sci-rule:common:008",
         "claim_packet": {
-          "claim_id": "claim:common:008:false-red-prevention",
-          "document_ref": "qualification:common:008",
-          "document_digest": "sha256:task2-008-false-red-prevention",
+          "claim_id": "claim:common:008:false_red_prevention",
+          "document_ref": "qualification-fixture:common:008",
+          "document_digest": "sha256:60203fa1dfd6d79a69847db3a6203ebc741ad298388f7132c019ab0d2767bff3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 008 false-red-prevention.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2124,
+            "end": 2282,
+            "exact": "The project archive note says the validation-domain record is archived after project close. The reviewed quantity is validation domain length limit = 1 meter.",
+            "prefix": "lidation domain length limit = 1 meter.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:unsupported:8",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "is_archived_after_project_close",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
-            "quantities": [],
-            "conditions": [
+            "quantities": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
-              },
-              {
-                "condition_id": "model_basis",
-                "value": "theoretical"
-              },
-              {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "quantity_kind": "validation_domain_length_limit",
+                "value": 1,
+                "unit": "meter"
               }
             ],
+            "conditions": [],
             "process_stage": null,
             "material_state": null
           },
@@ -684,17 +571,17 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "A neighboring unsupported concept remains nondecisive.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:008"
       }
     ],
     "release_eligibility": "blocked_pending_authorized_admin_review"
   }
 }
 ---
-
 # Q-COM-008
 
 Ten public cases exercise the required qualification kinds against candidate rules only. Synthetic observation fixtures are labeled and never enter operational evidence.

@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:chemistry:001
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Two moles of solute in one litre of solution are reported as 3 moles per litre. The concentration scale is recorded as 1 mole / liter.
+
+[in_scope_consistency]
+Two moles of solute in one litre of solution are reported as 2 moles per litre. The concentration scale is recorded as 1 mole / liter.
+
+[missing_required_condition]
+The report omits a required scientific condition while stating: Two moles of solute in one litre of solution are reported as 2 moles per litre. The concentration scale is recorded as 1 mole / liter.
+
+[outside_validity_domain]
+Under a mass-concentration convention rather than molarity, the report states: Two moles of solute in one litre of solution are reported as 2 moles per litre. The concentration scale is recorded as 1 mole / liter.
+
+[empirical_verification_required]
+For a named solution preparation batch, the report states: Two moles of solute in one litre of solution are reported as 2 moles per litre; the named result requires measurement. The concentration scale is recorded as 1 mole / liter.
+
+[negation]
+The report denies the equality even though two moles of solute in one litre of solution are reported as 2 moles per litre. The concentration scale is recorded as 1 mole / liter.
+
+[unit_variation]
+Two moles of solute in one litre of solution are reported as 2 moles per litre. The reviewed quantities are concentration scale = 1000 mole / meter ** 3; concentration scale reference = 1 mole / liter.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “Two moles of solute in one litre of solution are reported as 2 moles per litre”. The reviewed quantities are concentration scale = 1 mole / liter; molar concentration = 2 mole / liter; solute amount = 2 mole; solution volume = 1 liter.
+
+[paraphrase]
+Using equivalent wording, two moles of solute in one litre of solution are reported as 2 moles per litre. The concentration scale is recorded as 1 mole / liter.
+
+[false_red_prevention]
+A mass concentration is not numerically equal to a molar concentration without molar-mass information. The concentration scale is recorded as 1 mole / liter.
+
+End of immutable qualification fixture.

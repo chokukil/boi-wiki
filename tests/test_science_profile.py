@@ -52,12 +52,24 @@ def valid_science_metadata(science_type: str) -> dict:
             "source_id": "sci-source:fixture",
             "source_role": "normative_definition",
             "original_url": "https://example.test/source",
-            "content_hash": "sha256:source",
+            "content_hash": "sha256:" + "1" * 64,
         },
         "boi/science-evidence": {
             "evidence_id": "sci:evidence:fixture",
             "source_id": "sci-source:fixture",
-            "locator": {"section": "1"},
+            "locator": {
+                "medium": "pdf",
+                "resource_url": "https://example.test/source.pdf",
+                "requested_url": "https://example.test/source.pdf",
+                "resolved_url": "https://example.test/source.pdf",
+                "content_hash": "sha256:" + "2" * 64,
+                "retrieved_at": "2026-08-25T09:00:00+09:00",
+                "exact": True,
+                "hash_scope": "retrieved_pdf_bytes",
+                "section": "1",
+                "pdf_page_index": 0,
+                "printed_page": "1",
+            },
             "original_text": original_text,
             "original_text_hash": "sha256:" + hashlib.sha256(original_text.encode("utf-8")).hexdigest(),
             "reviewed_translation": "측정은 추적 가능하다.",
@@ -191,6 +203,53 @@ def test_public_source_requires_string_https_url_with_host(original_url: object)
     metadata["science"]["original_url"] = original_url
 
     assert "science.original_url must use HTTPS for public sources" in validate_sci_profile_metadata(metadata)
+
+
+def test_source_content_hash_requires_an_exact_sha256_identity():
+    """A short placeholder must not become authoritative when a Release is rebuilt."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-source")
+    metadata["science"]["content_hash"] = "sha256:deadbeef"
+
+    assert (
+        "science.content_hash must be an exact SHA-256 digest"
+        in validate_sci_profile_metadata(metadata)
+    )
+
+
+@pytest.mark.parametrize(
+    "locator",
+    [
+        {"junk": "x"},
+        {
+            "medium": "pdf",
+            "resource_url": "https://example.test/source.pdf",
+            "content_hash": "sha256:" + "2" * 64,
+        },
+        {
+            "medium": "html",
+            "resource_url": "https://example.test/source",
+            "requested_url": "https://example.test/source",
+            "resolved_url": "https://example.test/source",
+            "content_hash": "sha256:" + "2" * 64,
+            "retrieved_at": "2026-08-25T09:00:00+09:00",
+            "exact": True,
+            "hash_scope": "retrieved_html",
+        },
+    ],
+)
+def test_evidence_locator_is_closed_and_medium_specific(locator: object):
+    """Unknown or incomplete location data must not be blessed by a new manifest."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-evidence")
+    metadata["science"]["locator"] = locator
+
+    assert (
+        "science.locator must be a closed medium-specific Evidence locator"
+        in validate_sci_profile_metadata(metadata)
+    )
 
 
 def test_evidence_hash_must_match_its_utf8_original_text():
@@ -363,7 +422,10 @@ def test_lint_markdown_file_includes_science_profile_errors(tmp_path: Path):
 
 def test_non_science_documents_do_not_receive_science_errors():
     """Ordinary OKF documents must keep their existing validation behavior."""
-    from boi_api.app.science.profile import is_science_document, validate_sci_profile_metadata
+    from boi_api.app.science.profile import (
+        is_science_document,
+        validate_sci_profile_metadata,
+    )
 
     metadata = valid_boi_metadata("boi/test")
 

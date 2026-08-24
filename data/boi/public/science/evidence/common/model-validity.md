@@ -42,10 +42,12 @@ science:
     pdf_page_index: 28
     printed_page: PDF page 29
     hash_scope: retrieved_pdf_bytes
-  original_text: A record of the domain of validation of the M&S shall be maintained.
-  original_text_hash: sha256:b7d8094ac4ccb94bc6ed8d409c289482662df68044ec243bc26797ee9b439e00
+    transcription_method: manual verification against the rendered PDF; line-wrap whitespace reflowed without changing wording
+      or punctuation
+  original_text: A record of the domain of validation of the validated M&S shall be maintained.
+  original_text_hash: sha256:5ee64e6678c5e96d71305f48a65acf1267bf3dc66f671389aedcc43949cea6f0
   language: en
-  reviewed_translation: 모델 및 시뮬레이션의 검증 유효 영역 기록을 유지해야 한다.
+  reviewed_translation: 검증된 모델 및 시뮬레이션의 검증 유효 영역 기록을 유지해야 한다.
   decision_eligibility: pending_review
   access_limitation: ''
   contextual_limitations:
@@ -54,14 +56,15 @@ science:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.model_validity
-      purpose: A record of the domain of validation of the M&S shall be maintained.
+      purpose: A record of the domain of validation of the validated M&S shall be maintained.
       required_conditions: []
     forbidden_claim_families:
+    - common.particular_model_validation_for_intended_use
     - unbounded_or_unqualified_claims
     limitations:
     - This assurance requirement does not prove that a particular model is valid for
       a proposed use.
-  claim_scope_hash: sha256:4bb9675835586691cd37e8cd9e9786d652c71c3168878a3e31deebfe99c9f172
+  claim_scope_hash: sha256:dbe72adcbb4a8ef1d3bd843bc2e70f15c9a37f65dfdc63bc218a1f03a398d98e
   supports_knowledge: []
   curation_actor:
     type: agent

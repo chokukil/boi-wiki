@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:circuits:003
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+At fixed voltage under the passive sign convention, increasing a linear resistor's resistance makes its consumed power increase. The voltage scale is recorded as 1 volt.
+
+[in_scope_consistency]
+For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1 volt.
+
+[missing_required_condition]
+Without specifying the sign convention, the report asserts: For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1 volt.
+
+[outside_validity_domain]
+For a nonlinear element rather than a linear resistor, the report asserts: For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1 volt.
+
+[empirical_verification_required]
+For a particular resistor measured on a named tester, the report asserts: For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. This named result requires measurement. The voltage scale is recorded as 1 volt.
+
+[negation]
+Under the stated scientific conditions, it is not true that for a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1 volt.
+
+[unit_variation]
+For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The reviewed quantities are voltage scale = 1000 millivolt; voltage scale reference = 1 volt.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R”. The reviewed quantity is voltage scale = 1 volt.
+
+[paraphrase]
+In equivalent wording, the document states: For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1 volt.
+
+[false_red_prevention]
+A nonlinear resistor outside the linear-resistor model is reported to draw more power after its operating resistance changes. The voltage scale is recorded as 1 volt.
+
+End of immutable qualification fixture.

@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "definition",
     "assurance_basis": "hypothesis",
-    "statement": "Repeatability, intermediate precision, and reproducibility describe precision under different condition sets and must be labeled by the conditions that actually changed.",
+    "statement": "A reproducibility condition includes changed locations, operators, measuring systems, and replicate measurements on the same or similar objects.",
     "definitions": [
       "repeatability condition: same procedure, operator, system, location, and short interval",
       "intermediate precision: selected changes within one laboratory",
@@ -77,8 +77,8 @@
 }
 ---
 
-# SCI-COM-007 — Repeatability and reproducibility conditions
+# SCI-COM-007 — Narrow reviewed Foundation statement
 
-Repeatability, intermediate precision, and reproducibility describe precision under different condition sets and must be labeled by the conditions that actually changed.
+A reproducibility condition includes changed locations, operators, measuring systems, and replicate measurements on the same or similar objects.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

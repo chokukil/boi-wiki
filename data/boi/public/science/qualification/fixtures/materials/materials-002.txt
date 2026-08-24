@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:materials:002
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+Every defect cluster necessarily strengthens every metal. The pressure scale is recorded as 1 pascal.
+
+[in_scope_consistency]
+The strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1 pascal.
+
+[missing_required_condition]
+Without one required scientific condition, the document asserts that the strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1 pascal.
+
+[outside_validity_domain]
+For a quantitative alloy prediction beyond the cited defect examples, the document asserts that the strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1 pascal.
+
+[empirical_verification_required]
+For a named alloy and heat-treatment batch, the document asserts that the strength effect depends on the identified defect-cluster type in the cited qualitative examples; the named result requires measurement. The pressure scale is recorded as 1 pascal.
+
+[negation]
+It is not true that the strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1 pascal.
+
+[unit_variation]
+The strength effect depends on the identified defect-cluster type in the cited qualitative examples. The reviewed quantities are pressure scale = 1000 millipascal; pressure scale reference = 1 pascal.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “The strength effect depends on the identified defect-cluster type in the cited qualitative examples”. The reviewed quantity is pressure scale = 1 pascal.
+
+[paraphrase]
+In equivalent wording, the strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1 pascal.
+
+[false_red_prevention]
+An isolated solute atom is not the void or precipitate cluster addressed by this strength rule. The pressure scale is recorded as 1 pascal.
+
+End of immutable qualification fixture.

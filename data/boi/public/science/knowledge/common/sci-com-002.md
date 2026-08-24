@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "invariant",
     "assurance_basis": "hypothesis",
-    "statement": "Terms compared by a quantity equation must have compatible dimensions; dimensional compatibility is necessary and does not by itself prove the equation scientifically correct.",
+    "statement": "This executable example checks dimensional homogeneity only for equality between two length terms.",
     "definitions": [
       "quantity equation: a relation among quantities",
       "dimensional homogeneity: compatible dimensions across an equation",
@@ -77,8 +77,8 @@
 }
 ---
 
-# SCI-COM-002 — Dimensional homogeneity is necessary, not sufficient
+# SCI-COM-002 — Narrow reviewed Foundation statement
 
-Terms compared by a quantity equation must have compatible dimensions; dimensional compatibility is necessary and does not by itself prove the equation scientifically correct.
+This executable example checks dimensional homogeneity only for equality between two length terms.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

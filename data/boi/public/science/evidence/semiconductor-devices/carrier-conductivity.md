@@ -62,16 +62,13 @@ science:
       - key: transport_regime
         operator: eq
         value: low_field
-      - key: carrier_state_parameters_known
-        operator: eq
-        value: true
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - This low-field drift conductivity relation requires carrier concentrations and
       mobilities under the model conditions; it is not a universal high-field transport
       law.
-  claim_scope_hash: sha256:fafcb18e95b4b1387449025036dc2fbddb89ed6708fb0155886b220dd3c602ca
+  claim_scope_hash: sha256:e9496ec9e637423f0a2eb739a5d2af1f027f11158041c76ebfc2491e9632ab57
   supports_knowledge: []
   curation_actor:
     type: agent

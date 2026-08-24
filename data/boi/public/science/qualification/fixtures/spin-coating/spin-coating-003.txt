@@ -1,0 +1,35 @@
+Science Verifier immutable qualification fixture
+Rule: sci-rule:spin-coating:003
+Each labelled paragraph is an independently anchored review case.
+
+[clear_violation]
+A dry-film spin model may ignore solvent evaporation and still claim unlimited validity. The dynamic viscosity is recorded as 1 pascal * second.
+
+[in_scope_consistency]
+A dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1 pascal * second.
+
+[missing_required_condition]
+Without one required scientific condition, the document asserts that a dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1 pascal * second.
+
+[outside_validity_domain]
+For a nonvolatile ideal liquid outside the stated dry-photoresist use, the document asserts that a dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1 pascal * second.
+
+[empirical_verification_required]
+For a named volatile resist and exhaust condition, the document asserts that a dry-film spin model records solvent evaporation, drying termination, and its validation domain; the named result requires measurement. The dynamic viscosity is recorded as 1 pascal * second.
+
+[negation]
+It is not true that a dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1 pascal * second.
+
+[unit_variation]
+A dry-film spin model records solvent evaporation, drying termination, and its validation domain. The reviewed quantities are dynamic viscosity = 1000 millipascal * second; dynamic viscosity reference = 1 pascal * second.
+
+[decision_changing_ambiguity]
+A smudged yes-or-no mark appears in the margin beside the statement “A dry-film spin model records solvent evaporation, drying termination, and its validation domain”. The reviewed quantity is dynamic viscosity = 1 pascal * second.
+
+[paraphrase]
+In equivalent wording, a dry-film spin model records solvent evaporation, drying termination, and its validation domain. The dynamic viscosity is recorded as 1 pascal * second.
+
+[false_red_prevention]
+With no validation-domain record, the evaporation-aware model is not asserted to apply to the named dry-film use. The dynamic viscosity is recorded as 1 pascal * second.
+
+End of immutable qualification fixture.

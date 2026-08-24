@@ -169,23 +169,25 @@ The router contract is fixed:
 
 | Method | Path | Request/response | Science authority |
 |---|---|---|---|
-| POST | `/api/science/interpret` | document/selection → Interpretation Record | access-mode user |
-| POST | `/api/science/interpretations/{interpretation_id}/confirm` | exact binding + explicit confirmation → immutable Interpretation version | same authenticated user |
-| POST | `/api/science/claims/{claim_id}/verify` | Claim Packet + ReleaseSelection → Verdict Packet | access-mode user |
-| POST | `/api/science/verify-document` | confirmed claims + ReleaseSelection → Verification Report | access-mode user |
+| POST | `/api/science/interpret` | document/selection + request ID + idempotency key → proposal Interpretation Record | access-mode user |
+| POST | `/api/science/interpretations/{interpretation_id}/confirm` | exact claim IDs + idempotency key + immediate confirmation → immutable confirmed Interpretation version | same authenticated user |
+| POST | `/api/science/claims/{claim_id}/verify` | stored confirmed `interpretation_id` + ReleaseSelection → Verdict Packet | access-mode user |
+| POST | `/api/science/verify-document` | stored confirmed `interpretation_id` + ReleaseSelection + idempotency key → Verification Report | access-mode user |
 | GET | `/api/science/evidence/{evidence_id}` | Evidence detail | access-mode user + source ACL |
 | GET | `/api/science/reports/{report_id}` | stored Verification Report | report/source ACL |
 | GET | `/api/science/reports/{report_id}/export` | `format=markdown|pdf` bytes | report/source export ACL |
-| POST | `/api/science/proposals` | confirmed proposal → proposal record | access-mode user |
+| POST | `/api/science/proposals` | proposal + exact request digest + idempotency key + immediate confirmation → proposal record | access-mode user |
 | POST | `/api/science/proposals/{proposal_id}/review` | `approve|reject|withdraw` + exact object digests → append-only review event | domain Power User for alias/term/interpretation/concept-link only; otherwise Admin; no self-approval |
 | POST | `/api/science/admin/sources/validate` | source object → validation | Admin |
-| POST | `/api/science/admin/evidence/validate` | Evidence span + Source digest/locator/hash/scope → validation | Admin |
+| POST | `/api/science/admin/evidence/validate` | exact Evidence span + Source digest/locator/hash/scope → validation | Admin |
 | POST | `/api/science/admin/knowledge/validate` | knowledge object → validation | Admin |
-| POST | `/api/science/admin/rules/{rule_id}/qualify` | rule + cases → result | Admin |
+| POST | `/api/science/admin/rules/{rule_id}/qualify` | rule digest + sealed case-set digest/IDs → result | Admin |
 | GET | `/api/science/admin/releases/{release_id}/impact` | conflict set + affected historical/current verdicts | Admin |
-| POST | `/api/science/admin/releases/validate` | release ID → G0..G7 report | Admin |
-| POST | `/api/science/admin/releases/{release_id}/activate` | confirmed activation → audit | Admin |
-| POST | `/api/science/admin/releases/{release_id}/withdraw` | confirmed withdrawal → fallback audit | Admin |
+| POST | `/api/science/admin/releases/validate` | release ID/digest + sealed holdout-manifest digest → G0..G7 report | Admin |
+| POST | `/api/science/admin/releases/{release_id}/activate` | exact release/request digests + idempotency key + immediate confirmation → audit | Admin |
+| POST | `/api/science/admin/releases/{release_id}/withdraw` | exact release/request digests + idempotency key + immediate confirmation → fallback audit | Admin |
+
+Verification routes never accept a caller-authored `ClaimPacket`. They load the immutable stored interpretation, require its separate user-confirmation revision, reconstruct the exact confirmed Claim Packet set, and reject any claim ID or digest that is not bound to that record before Catalog/Engine access.
 
 - [ ] **Step 1: Add ReportLab and write failing endpoint tests**
 
@@ -193,7 +195,19 @@ Add `reportlab>=4.2,<5` to `boi_api/requirements.txt`.
 
 ```python
 def test_report_exports_share_report_digest(science_client):
-    report = science_client.post("/api/science/verify-document", json=DOCUMENT_FIXTURE).json()
+    interpretation = science_client.post("/api/science/interpret", json=DOCUMENT_FIXTURE).json()
+    confirmed = science_client.post(
+        f"/api/science/interpretations/{interpretation['interpretation_id']}/confirm",
+        json=CONFIRMATION_FIXTURE,
+    ).json()
+    report = science_client.post(
+        "/api/science/verify-document",
+        json={
+            "interpretation_id": confirmed["interpretation_id"],
+            "release_selection": RELEASE_SELECTION,
+            "idempotency_key": "report-export-test-1",
+        },
+    ).json()
     markdown = science_client.get(f"/api/science/reports/{report['report_id']}/export?format=markdown")
     pdf = science_client.get(f"/api/science/reports/{report['report_id']}/export?format=pdf")
     assert markdown.headers["x-science-report-digest"] == report["report_digest"]

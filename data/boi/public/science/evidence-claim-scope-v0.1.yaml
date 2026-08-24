@@ -17,7 +17,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.chemistry.amount_concentration
-      purpose: Molar concentration (molarity) is the number of moles of solute per liter of solution.
+      purpose: Molar concentration (molarity) is the number of moles of solute per
+        liter of solution.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
@@ -32,14 +33,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: chemistry.catalyst_affects_kinetics_not_thermodynamic_tendency
-      purpose: A catalyst affects reaction kinetics and does not alter the thermodynamic tendency for the reaction
-        to occur.
+      purpose: A catalyst affects reaction kinetics and does not alter the thermodynamic
+        tendency for the reaction to occur.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This span distinguishes kinetic effects from thermodynamic tendency; it does not quantify rate, equilibrium
-      composition, or catalyst performance.
+    - This span distinguishes kinetic effects from thermodynamic tendency; it does
+      not quantify rate, equilibrium composition, or catalyst performance.
   claim_scope_hash: sha256:4b52c3c1b98d9e38cd6a3efd6d6da9fda4089819d5d37d0ab1419557fe0e8525
   allowed_original_text_hash: sha256:4b99fd9327cd0d4d546d18916aea9ad6d27d569b1488372b1ff16104fb44ec89
 - evidence_id: sci-evidence:chemistry:evaporation-vapor-pressure
@@ -49,14 +50,15 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.chemistry.evaporation_vapor_pressure
-      purpose: The vapor pressure is a direct measure of the escaping tendency of molecules from a condensed state
-        of matter.
+      purpose: The vapor pressure is a direct measure of the escaping tendency of
+        molecules from a condensed state of matter.
       required_conditions: []
     forbidden_claim_families:
+    - chemistry.open_process_evaporation_rate
     - unbounded_or_unqualified_claims
     limitations:
     - This does not alone determine an evaporation rate in an open, flowing process.
-  claim_scope_hash: sha256:7633dfe6a04f9f85467319bb5b34002537b5856e73bc7669faa1d8dc4c13638c
+  claim_scope_hash: sha256:d984af5121c1da944a5e09fc5a0d5f309d284dbbe9a99e631475169b7c59d4e8
   allowed_original_text_hash: sha256:dbce87703720dbd37d2cd451ccf39ea5547984ae233724116e1ae2a6aca8e281
 - evidence_id: sci-evidence:chemistry:reaction-equilibrium
   qualification_status: pending_review
@@ -65,15 +67,16 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.chemistry.reaction_equilibrium
-      purpose: K is the equilibrium constant. It has the same form as Q, but only uses the amounts of products and
-        reactants at equilibrium.
+      purpose: K = is the equilibrium constant. It has the same form as Q, but only
+        uses the amounts of products and reactants at equilibrium.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Activities, standard states, and the balanced reaction remain necessary for quantitative use.
-  claim_scope_hash: sha256:c97f3ce59553972bbe4dbe962eb784aad17028f1c93bf25caff448adaf2a6e37
-  allowed_original_text_hash: sha256:3c87533763158c16b87c99f21cd4405d09385c03b2a066ab29457c568f6f5a77
+    - Activities, standard states, and the balanced reaction remain necessary for
+      quantitative use.
+  claim_scope_hash: sha256:137bed48aef7679022772cba58deca4e53c17cb0f78dd9081ae2a3a4e0f797bb
+  allowed_original_text_hash: sha256:58372fc42d88ec04a728829489c4c6cdcf29f47d1580757e5b37d7499f80828d
 - evidence_id: sci-evidence:chemistry:substance-phase
   qualification_status: pending_review
   may_enter_active_release: false
@@ -81,12 +84,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.chemistry.substance_phase
-      purpose: A phase is a region of matter that possesses uniform intensive properties throughout its volume.
+      purpose: A phase is a region of matter that possesses uniform intensive properties
+        throughout its volume.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The operational boundary of a phase can depend on the property and observation scale.
+    - The operational boundary of a phase can depend on the property and observation
+      scale.
   claim_scope_hash: sha256:969abec1279ee1a1e6b321117aa936a7093afeaf73bcdfd0f27a3f977a99fb93
   allowed_original_text_hash: sha256:9ffc0ca5bc5697c30aac3bd829dbd48daf7ed0479e77a714ce2f505f36d39aaf
 - evidence_id: sci-evidence:circuits:capacitor-inductor
@@ -96,13 +101,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.circuits.capacitor_inductor
-      purpose: And the state variable for an inductor was the current while that for a capacitor was the capacitor
-        voltage.
+      purpose: And the state variable for an inductor was the current while that for
+        a capacitor was the capacitor voltage.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This does not provide constitutive equations, initial conditions, or parasitic limits.
+    - This does not provide constitutive equations, initial conditions, or parasitic
+      limits.
   claim_scope_hash: sha256:7d87e9e2f4a3c4ea142345a288c4b3b08da82ebb4148ec991a25ee10b405a54e
   allowed_original_text_hash: sha256:6e40abe7a05c033b74a8c1713522cc290e09bf7b3eafa39ad97556c8415fc85e
 - evidence_id: sci-evidence:circuits:electric-power
@@ -112,7 +118,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: circuits.passive_sign_convention.power_positive_when_consumed
-      purpose: With current referenced into the positive terminal, positive vi denotes consumed power.
+      purpose: With current referenced into the positive terminal, positive vi denotes
+        consumed power.
       required_conditions:
       - key: sign_convention
         operator: eq
@@ -120,8 +127,8 @@ mappings:
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This supports only the passive sign convention. Reversing the reference direction changes the algebraic sign;
-      it does not change physical power flow.
+    - This supports only the passive sign convention. Reversing the reference direction
+      changes the algebraic sign; it does not change physical power flow.
   claim_scope_hash: sha256:8096756a870c65105107eefd489165db85e6457aee637e66a373767ba9f0bed8
   allowed_original_text_hash: sha256:8219b4ee6b1df98fe458698fb7623b83c861cc65c7527b68a92d94e7dea0dcde
 - evidence_id: sci-evidence:circuits:kcl-law
@@ -131,7 +138,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: circuits.kcl.algebraic_current_sum_zero
-      purpose: The algebraic sum of currents at a node is zero under a consistent direction convention.
+      purpose: The algebraic sum of currents at a node is zero under a consistent
+        direction convention.
       required_conditions:
       - key: current_reference_convention
         operator: eq
@@ -145,10 +153,10 @@ mappings:
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The transcript uses currents directed into the node; another sign convention requires algebraically consistent
-      signs.
-    - The zero-sum node rule is bound to a lumped-matter model with no net node-charge accumulation over the modeled
-      timescale.
+    - The transcript uses currents directed into the node; another sign convention
+      requires algebraically consistent signs.
+    - The zero-sum node rule is bound to a lumped-matter model with no net node-charge
+      accumulation over the modeled timescale.
   claim_scope_hash: sha256:d604a48b964dd7ce975f2a4d22369730c252ae163f273e49ff066f2bb8115ab6
   allowed_original_text_hash: sha256:7589d29e989dc6aa1f5649690cb273ee9f3a2af231a4fc8008e2232836daf2e7
 - evidence_id: sci-evidence:circuits:kvl-law
@@ -158,7 +166,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: circuits.kvl.loop_voltage_sum_zero
-      purpose: The algebraic sum of voltages around a loop is zero under consistent polarity and traversal conventions.
+      purpose: The algebraic sum of voltages around a loop is zero under consistent
+        polarity and traversal conventions.
       required_conditions:
       - key: voltage_reference_convention
         operator: eq
@@ -166,8 +175,8 @@ mappings:
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Voltage polarity and traversal direction must be assigned consistently; this short transcript span does not
-      state non-lumped electromagnetic exceptions.
+    - Voltage polarity and traversal direction must be assigned consistently; this
+      short transcript span does not state non-lumped electromagnetic exceptions.
   claim_scope_hash: sha256:35425feac574fe96bee64893f714ce69ebe4e6bd265741ad55600e0d0e4cb268
   allowed_original_text_hash: sha256:3df590628532e97bddec3adead00371adabc5112b4e06e0a8bfe0260fcbe1032
 - evidence_id: sci-evidence:circuits:measurement-loading
@@ -177,12 +186,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.circuits.measurement_loading
-      purpose: This interaction between the oscilloscope and an external circuit is termed circuit loading.
+      purpose: This interaction between the oscilloscope and an external circuit is
+        termed circuit loading.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Whether loading is negligible depends on source and instrument impedances and frequency.
+    - Whether loading is negligible depends on source and instrument impedances and
+      frequency.
   claim_scope_hash: sha256:e6a160896ba4cca8e804a3ced7f3c639930808897e8633846be9be4cada3557d
   allowed_original_text_hash: sha256:75654fcc1d4059d2065dd33df98dc0603a0e92c3f713a02be3ef2fd908e70655
 - evidence_id: sci-evidence:circuits:ohm-model
@@ -192,14 +203,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.circuits.ohm_model
-      purpose: numbers can be codified by Ohm's law, for example, V is equal to RI, the voltage current, relates
-        to the resistance of the object.
+      purpose: numbers can be codified by Ohm's law, for example, V is equal to RI,
+        the voltage current, relates to the resistance of the object.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This transcript sentence presents the resistor abstraction; it is not valid for every nonlinear or time-varying
-      element.
+    - This transcript sentence presents the resistor abstraction; it is not valid
+      for every nonlinear or time-varying element.
   claim_scope_hash: sha256:0c75960364e9d1c8428674b423cdb47d64c8a043a7f981693cb24747d34cd770
   allowed_original_text_hash: sha256:77f9866e3013f286378d0d2227faaeaa56ab9c751c30d8829d47e5a0f103d3e1
 - evidence_id: sci-evidence:circuits:series-parallel
@@ -224,8 +235,9 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.accuracy_precision
-      purpose: The term “measurement accuracy” should not be used for measurement trueness and the term “measurement
-        precision” should not be used for ‘measurement accuracy’, which, however, is related to both these concepts.
+      purpose: The term “measurement accuracy” should not be used for measurement
+        trueness and the term “measurement precision” should not be used for ‘measurement
+        accuracy’, which, however, is related to both these concepts.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
@@ -240,14 +252,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.celsius_kelvin
-      purpose: The unit of Celsius temperature is the degree Celsius, symbol °C, which is by definition equal in
-        magnitude to the unit kelvin.
+      purpose: The unit of Celsius temperature is the degree Celsius, symbol °C, which
+        is by definition equal in magnitude to the unit kelvin.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Equal interval magnitude does not make Celsius and kelvin absolute readings interchangeable; the offset remains
-      relevant.
+    - Equal interval magnitude does not make Celsius and kelvin absolute readings
+      interchangeable; the offset remains relevant.
   claim_scope_hash: sha256:3931d7b0df652bbb234f0cd8880ed9fb15f8488e6d2620debcf2292a7f3a99e8
   allowed_original_text_hash: sha256:61459c78627bb087a81e87405c3499b2e883cdb55a466f3172fe8254ef3d3a94
 - evidence_id: sci-evidence:common:correlation-causation
@@ -257,13 +269,15 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.correlation_causation
-      purpose: Note that correlation does not imply causality. It is possible for two variables to be associated
-        with each other without one of them causing the observed behavior in the other.
+      purpose: Note that correlation does not imply causality. It is possible for
+        two variables to be associated with each other without one of them causing
+        the observed behavior in the other.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This does not exclude causation; it rejects inferring causation from correlation alone.
+    - This does not exclude causation; it rejects inferring causation from correlation
+      alone.
   claim_scope_hash: sha256:943fcf6b3519b3102b269470a324cedafb4da8d7c8e8feff7640421a5d57748f
   allowed_original_text_hash: sha256:d26f2ba0c82816c8808ec01f78d07b89e0ab5034e6c46ae31d48cab9c0d3ed67
 - evidence_id: sci-evidence:common:equilibrium
@@ -273,13 +287,15 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.equilibrium
-      purpose: Chemical reactions reach a state of dynamic equilibrium in which the rates of forward and reverse
-        reactions are equal and there is no net change in composition.
+      purpose: Chemical reactions reach a state of dynamic equilibrium in which the
+        rates of forward and reverse reactions are equal and there is no net change
+        in composition.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This chemical-equilibrium statement does not imply zero microscopic activity or universal equilibrium.
+    - This chemical-equilibrium statement does not imply zero microscopic activity
+      or universal equilibrium.
   claim_scope_hash: sha256:673b075de70413d50668af2d6d5ad1c89c5d179fb30ec9a2c92a67a2d344c978
   allowed_original_text_hash: sha256:97e70ef9240cceb46a035411487ff8fa762fab61dc7a8f01f1171daf58e3db72
 - evidence_id: sci-evidence:common:measurand-result
@@ -289,8 +305,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.measurand_result
-      purpose: A measurement result is generally expressed as a single measured quantity value and a measurement
-        uncertainty.
+      purpose: A measurement result is generally expressed as a single measured quantity
+        value and a measurement uncertainty.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
@@ -305,14 +321,17 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.model_validity
-      purpose: A record of the domain of validation of the M&S shall be maintained.
+      purpose: A record of the domain of validation of the validated M&S shall be
+        maintained.
       required_conditions: []
     forbidden_claim_families:
+    - common.particular_model_validation_for_intended_use
     - unbounded_or_unqualified_claims
     limitations:
-    - This assurance requirement does not prove that a particular model is valid for a proposed use.
-  claim_scope_hash: sha256:4bb9675835586691cd37e8cd9e9786d652c71c3168878a3e31deebfe99c9f172
-  allowed_original_text_hash: sha256:b7d8094ac4ccb94bc6ed8d409c289482662df68044ec243bc26797ee9b439e00
+    - This assurance requirement does not prove that a particular model is valid for
+      a proposed use.
+  claim_scope_hash: sha256:dbe72adcbb4a8ef1d3bd843bc2e70f15c9a37f65dfdc63bc218a1f03a398d98e
+  allowed_original_text_hash: sha256:5ee64e6678c5e96d71305f48a65acf1267bf3dc66f671389aedcc43949cea6f0
 - evidence_id: sci-evidence:common:quantity-unit-dimension
   qualification_status: pending_review
   may_enter_active_release: false
@@ -320,13 +339,15 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.quantity_unit_dimension
-      purpose: Physical quantities can be organized in a system of dimensions, where the system used is decided
-        by convention. Each of the seven base quantities used in the SI is regarded as having its own dimension.
+      purpose: Physical quantities can be organized in a system of dimensions, where
+        the system used is decided by convention. Each of the seven base quantities
+        used in the SI is regarded as having its own dimension.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This defines the SI dimensional framework; it does not by itself validate a proposed equation.
+    - This defines the SI dimensional framework; it does not by itself validate a
+      proposed equation.
   claim_scope_hash: sha256:72979a300d8f105ec2656af4d614d739715e130869ca45d8b127221fd9132750
   allowed_original_text_hash: sha256:0ff0685ae817a8ef57fb5ba3823895b803e8def0f5a6700aa8f3244165520192
 - evidence_id: sci-evidence:common:repeatability-reproducibility
@@ -336,13 +357,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: measurement.reproducibility_definition_only
-      purpose: The cited span may support only the VIM definition of a reproducibility condition, not a full repeatability-versus-reproducibility
-        comparison.
+      purpose: The cited span may support only the VIM definition of a reproducibility
+        condition, not a full repeatability-versus-reproducibility comparison.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This span defines reproducibility conditions; repeatability uses a narrower condition set in the same vocabulary.
+    - This span defines reproducibility conditions; repeatability uses a narrower
+      condition set in the same vocabulary.
   claim_scope_hash: sha256:35dae751fd5a912f908c12fef1c303402caefc9086b9bec45bacd3d55b0bff7e
   allowed_original_text_hash: sha256:2afe10eb83752121abfd3e76fb55c8faa88f7ffc03c98879cc6d6c157ccd09a1
 - evidence_id: sci-evidence:common:steady-state
@@ -352,12 +374,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.steady_state
-      purpose: 'Steady state (time independent) diffusion is described by Fick’s first law:'
+      purpose: 'Steady state (time independent) diffusion is described by Fick’s first
+        law:'
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This is a diffusion-specific steady-state statement, not a claim that every variable or system is at equilibrium.
+    - This is a diffusion-specific steady-state statement, not a claim that every
+      variable or system is at equilibrium.
   claim_scope_hash: sha256:1da6e5fe14ab7e9b3b6bac2429e146b6141d21f855f97a74d148d0162c4432e8
   allowed_original_text_hash: sha256:e4963053d7d7490eeff63890ee23acc02a550679c3dd94ad92591fd1319b9056
 - evidence_id: sci-evidence:common:system-balance
@@ -367,12 +391,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.system_balance
-      purpose: This law asserts that the mass δM = ρδV of a material particle remains invariant.
+      purpose: This law asserts that the mass δM = ρδV of a material particle remains
+        invariant.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This material-particle statement must be transformed carefully before applying it to an open control volume.
+    - This material-particle statement must be transformed carefully before applying
+      it to an open control volume.
   claim_scope_hash: sha256:de12e972cc1525a3a2e6ca9f2912ca57c6d83c348b04ed217c7196f0ade5a9f9
   allowed_original_text_hash: sha256:1515730ab01f2123dd8d50ed5755e0f3611c0cd61194ab11f47b8e821262a55f
 - evidence_id: sci-evidence:common:uncertainty-error
@@ -382,13 +408,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: measurement.uncertainty_definition_only
-      purpose: The cited span may support only the VIM definition of measurement uncertainty, not a contrast with
-        measurement error.
+      purpose: The cited span may support only the VIM definition of measurement uncertainty,
+        not a contrast with measurement error.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This span defines uncertainty, not measurement error; the two concepts must not be collapsed.
+    - This span defines uncertainty, not measurement error; the two concepts must
+      not be collapsed.
   claim_scope_hash: sha256:d9ebaabc41120f8a7d5a0764c140d7958ae611ef0d5a083579b34d8ac3657abf
   allowed_original_text_hash: sha256:59634808518a67404e1a43f1507873c98ba9bed78ffaa5cf2c0960cc167a6ff9
 - evidence_id: sci-evidence:materials:bulk-thin-film
@@ -400,11 +427,12 @@ mappings:
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This scope statement does not establish a transferable bulk-to-thin-film property relation.
+    - This scope statement does not establish a transferable bulk-to-thin-film property
+      relation.
   claim_scope_hash: sha256:da37aa3c6b471cb1c839558ef2f7a36ff2a7a530980af681eec0e4bb840b741b
   allowed_original_text_hash: sha256:26057f630e8441febde66ca5977ac1e731ed708b40e58fb5a2166ca04bd560a6
-  inactive_reason: The stored course-scope span does not establish bulk/thin-film equivalence or a directional rule,
-    so it is inactive decision context.
+  inactive_reason: The stored course-scope span does not establish bulk/thin-film
+    equivalence or a directional rule, so it is inactive decision context.
 - evidence_id: sci-evidence:materials:defects-microstructure
   qualification_status: pending_review
   may_enter_active_release: false
@@ -412,8 +440,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: materials.defect_clusters.qualitative_strength_effect
-      purpose: The cited examples allow a qualitative statement that void clusters weaken metals while precipitates
-        may weaken or strengthen them.
+      purpose: The cited examples allow a qualitative statement that void clusters
+        weaken metals while precipitates may weaken or strengthen them.
       required_conditions:
       - key: effect_scope
         operator: eq
@@ -421,8 +449,8 @@ mappings:
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This is a qualitative materials example. Effect direction depends on defect type and microstructure; it does
-      not supply a universal strength model.
+    - This is a qualitative materials example. Effect direction depends on defect
+      type and microstructure; it does not supply a universal strength model.
   claim_scope_hash: sha256:a9b7f9ba6da7a6a6d5675a770c913772ff383fb88e7685bb76ce80c2204f2bc2
   allowed_original_text_hash: sha256:697e762eaaae8e63356a933c7b031ab5dfeeff0c4847862b3bcb81e38269e591
 - evidence_id: sci-evidence:materials:diffusion-arrhenius
@@ -432,20 +460,18 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: materials.diffusion.arrhenius_coefficient_model
-      purpose: The diffusion coefficient is represented by the cited Arrhenius relation under its model assumptions.
+      purpose: The diffusion coefficient is represented by the cited Arrhenius relation
+        under its model assumptions.
       required_conditions:
       - key: diffusion_model
         operator: eq
         value: arrhenius
-      - key: material_parameters_known
-        operator: eq
-        value: true
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The equation states an Arrhenius model; D₀, Eₐ, mechanism, temperature range, and material phase must be supplied
-      for quantitative use.
-  claim_scope_hash: sha256:088113758323abae0d305711e75041cf6cf38c1dd4eb39f124c59cec162b2257
+    - The equation states an Arrhenius model; D₀, Eₐ, mechanism, temperature range,
+      and material phase must be supplied for quantitative use.
+  claim_scope_hash: sha256:0c83d40de943b4e1f3b555b42f13f47c9939a544e0006eab1488990324ebc742
   allowed_original_text_hash: sha256:5dcaf1d7d06a198aceaaacc838bf5c0231692b6ec6f06ab6062a98cd8c7ea040
 - evidence_id: sci-evidence:materials:phase-transformation
   qualification_status: pending_review
@@ -454,14 +480,16 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.materials.phase_transformation
-      purpose: Liquids can be supercooled- cooled to temperatures below their equilibrium freezing points. Likewise,
-        solids can be superheated- heated to temperatures above the melting point. Such phases are unstable or metastable
-        and will readily transform to the equilibrium state.
+      purpose: Liquids can be supercooled- cooled to temperatures below their equilibrium
+        freezing points. Likewise, solids can be superheated- heated to temperatures
+        above the melting point. Such phases are unstable or metastable and will readily
+        transform to the equilibrium state.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Kinetic barriers and timescale determine whether transformation occurs in a particular case.
+    - Kinetic barriers and timescale determine whether transformation occurs in a
+      particular case.
   claim_scope_hash: sha256:94f685a1df408f9aa3496a8850fd5f8ba92b0bf6ce43fc28d9c27abfc5d2828a
   allowed_original_text_hash: sha256:a2ba6b32ff19b146c827a6b1347ecc288b7f513699ba3e06b729a9672493cb0a
 - evidence_id: sci-evidence:materials:structure-grain
@@ -471,8 +499,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.materials.structure_grain
-      purpose: Identify one 0D defect (vacancy), one 1D defect (line), one 2D defect (grain boundary – actually
-        appears in 1D here).
+      purpose: Identify one 0D defect (vacancy), one 1D defect (line), one 2D defect
+        (grain boundary – actually appears in 1D here).
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
@@ -487,13 +515,15 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.physics.control_volume_flux
-      purpose: Both forms A and B are valid for arbitrarily moving and deforming control volumes (i.e. control volumes
-        that may be expanding, translating, accelerating, or whatever), and for unsteady as well as steady flows.
+      purpose: Both forms A and B are valid for arbitrarily moving and deforming control
+        volumes (i.e. control volumes that may be expanding, translating, accelerating,
+        or whatever), and for unsteady as well as steady flows.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The equations and sign convention in the source are required before calculating a flux balance.
+    - The equations and sign convention in the source are required before calculating
+      a flux balance.
   claim_scope_hash: sha256:b0f05cf6167219d31f3ecd575e2f8a6269a7b13ee6227a3823f2ffd2381cba4a
   allowed_original_text_hash: sha256:780658a4237062307dd4b44c9a810564b02a671fcccee8f94a4ea29d06463a0a
 - evidence_id: sci-evidence:physics:force-momentum
@@ -503,15 +533,16 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.physics.force_momentum
-      purpose: We conclude that the external force causes the momentum of the system to change, and we thus restate
-        and generalize Newton’s Second Law for a system of objects.
+      purpose: We conclude that the external force causes the momentum of the system
+        to change, and we thus restate and generalize Newton’s Second Law for a system
+        of objects as
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - Applicability requires a defined system and reference frame.
-  claim_scope_hash: sha256:b59c3176673af7c832d52e5bcec869d86a89a2eae2dd26d5bc5d10cc88e97b2c
-  allowed_original_text_hash: sha256:d9e683681f17bb8f4e804dca5a6e52e473af3b6fceb3cdff00058a1d7d505837
+  claim_scope_hash: sha256:df8a86c3056e919c88210f734aea150b2f7b3e0284b4bf30843b4fa16013174f
+  allowed_original_text_hash: sha256:5d80a2f657106aa4cb788eeb4b8b298759c3bbe506689eb74f09b290662be2cc
 - evidence_id: sci-evidence:physics:rotation-angular-speed
   qualification_status: pending_review
   may_enter_active_release: false
@@ -519,8 +550,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.physics.rotation_angular_speed
-      purpose: The angular speed is the magnitude of the rate of change of angle with respect to time, which we
-        denote by the Greek letter ω.
+      purpose: The angular speed is the magnitude of the rate of change of angle with
+        respect to time, which we denote by the Greek letter ω.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
@@ -535,13 +566,15 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.physics.viscosity_flow
-      purpose: The defining attribute of a simple fluid, however, is that it keeps deforming, or straining, as long
-        as any shear stress, no matter how small, is applied to it.
+      purpose: The defining attribute of a simple fluid, however, is that it keeps
+        deforming, or straining, as long as any shear stress, no matter how small,
+        is applied to it.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This is not a Newtonian constitutive equation and does not supply a viscosity value.
+    - This is not a Newtonian constitutive equation and does not supply a viscosity
+      value.
   claim_scope_hash: sha256:7ed59bc83739be16c0a6e9b56fc1e276e60586fabcb0001473790c796d48cdcb
   allowed_original_text_hash: sha256:14050b6414fe334508cef8b37c343c3447066254b7566f28e2faebe68c2f7235
 - evidence_id: sci-evidence:physics:work-energy-power
@@ -551,14 +584,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.physics.work_energy_power
-      purpose: the work done by the applied force on an object is identically equal to the change in kinetic energy
-        of the object.
+      purpose: the work done by the applied force on an object is identically equal
+        to the change in kinetic energy of the object.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This span states the work–kinetic-energy theorem; separate definitions are needed for power and multi-energy
-      balances.
+    - This span states the work–kinetic-energy theorem; separate definitions are needed
+      for power and multi-energy balances.
   claim_scope_hash: sha256:b0ad6297d6084cc3943e15f50e4832ef1bf2bbd0d587067ee5d8c3327e71dce7
   allowed_original_text_hash: sha256:a89023544a44dc493b7d3bd17bf459fd113b891c82e1051049cee3b60a44d361
 - evidence_id: sci-evidence:semiconductor-devices:bands-fermi-level
@@ -568,13 +601,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.semiconductor_devices.bands_fermi_level
-      purpose: EF is called the Fermi energy or the Fermi level. f(E) is the probability of a state at energy E
-        being occupied by an electron.
+      purpose: EF is called the Fermi energy or the Fermi level. f(E) is the probability
+        of a state at energy E being occupied by an electron.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The occupation probability depends on the full Fermi function and its temperature assumptions.
+    - The occupation probability depends on the full Fermi function and its temperature
+      assumptions.
   claim_scope_hash: sha256:1b980be68cb0c4e504017829b03ce7269bf7516c5f13070ef3e0a650f678cd04
   allowed_original_text_hash: sha256:a95c9ab1196e8d319ffa27f9184d4d4624e67327b19b1011a52347093df8d0e8
 - evidence_id: sci-evidence:semiconductor-devices:carrier-conductivity
@@ -589,15 +623,13 @@ mappings:
       - key: transport_regime
         operator: eq
         value: low_field
-      - key: carrier_state_parameters_known
-        operator: eq
-        value: true
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This low-field drift conductivity relation requires carrier concentrations and mobilities under the model
-      conditions; it is not a universal high-field transport law.
-  claim_scope_hash: sha256:fafcb18e95b4b1387449025036dc2fbddb89ed6708fb0155886b220dd3c602ca
+    - This low-field drift conductivity relation requires carrier concentrations and
+      mobilities under the model conditions; it is not a universal high-field transport
+      law.
+  claim_scope_hash: sha256:e9496ec9e637423f0a2eb739a5d2af1f027f11158041c76ebfc2491e9632ab57
   allowed_original_text_hash: sha256:a7f286856b6d4fc93a51bd0d52a3888674e44d3b74a23e7901f9e68529c2e925
 - evidence_id: sci-evidence:semiconductor-devices:drift-diffusion
   qualification_status: pending_review
@@ -606,12 +638,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.semiconductor_devices.drift_diffusion
-      purpose: In addition to the drift current, there is a second component of current called the diffusion current.
+      purpose: In addition to the drift current, there is a second component of current
+        called the diffusion current.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The relative contribution requires carrier gradients, fields, material parameters, and boundary conditions.
+    - The relative contribution requires carrier gradients, fields, material parameters,
+      and boundary conditions.
   claim_scope_hash: sha256:a8dc33a40096699ec2c84e504811b97b87e1c6ce65d84b22dfa2a7b017825a7d
   allowed_original_text_hash: sha256:809f9386b483e176d3733fad6d6917837ae76e3effbc47c9bf60c35bc78cd6ca
 - evidence_id: sci-evidence:semiconductor-devices:mos-capacitor
@@ -621,13 +655,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.semiconductor_devices.mos_capacitor
-      purpose: An MOS capacitor (Fig. 5–1) is made of a semiconductor body or substrate, an insulator film, such
-        as SiO2, and a metal electrode called a gate.
+      purpose: An MOS capacitor (Fig. 5–1) is made of a semiconductor body or substrate,
+        an insulator film, such as SiO2, and a metal electrode called a gate.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This structural definition does not imply ideal zero leakage or specify a C–V regime.
+    - This structural definition does not imply ideal zero leakage or specify a C–V
+      regime.
   claim_scope_hash: sha256:cd7c5d70fe9ed1dd689f5488041fd778a836b76b3b1e48c7b04467ac0a93749f
   allowed_original_text_hash: sha256:7a9e16056ecc80db27d9222509f03820e1ce2e4db89de8bdeff99425d82a8221
 - evidence_id: sci-evidence:semiconductor-devices:mos-gate-ideal-model
@@ -637,7 +672,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: semiconductor.mos_gate.ideal_zero_gate_current_model
-      purpose: The cited ideal model sets iG = 0 because the gate oxide is treated as insulating.
+      purpose: The cited ideal model sets iG = 0 because the gate oxide is treated
+        as insulating.
       required_conditions:
       - key: model_regime
         operator: eq
@@ -645,8 +681,8 @@ mappings:
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This is an idealized model assumption tied to an insulating gate oxide; it must not be generalized to all
-      fabricated MOS gates.
+    - This is an idealized model assumption tied to an insulating gate oxide; it must
+      not be generalized to all fabricated MOS gates.
   claim_scope_hash: sha256:076f327b110ef6e35c0e05f86c9d5b1c360af2b2a8acdb2217b4986e0318064b
   allowed_original_text_hash: sha256:c92d0867c6cfc590f6a176a9af90e4f113580f3442f8ee67e9ab3142b7e2d111
 - evidence_id: sci-evidence:semiconductor-devices:mos-gate-real-leakage
@@ -656,7 +692,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: semiconductor.mos_gate.ultrathin_sio2_tunneling_limit
-      purpose: The cited source identifies tunneling leakage as a limiting factor for SiO2 below its stated thickness.
+      purpose: The cited source identifies tunneling leakage as a limiting factor
+        for SiO2 below its stated thickness.
       required_conditions:
       - key: gate_dielectric
         operator: eq
@@ -668,8 +705,8 @@ mappings:
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The stated threshold and limiting mechanism are scoped to the cited SiO2 discussion; material stack, field,
-      area, temperature, and device design still matter.
+    - The stated threshold and limiting mechanism are scoped to the cited SiO2 discussion;
+      material stack, field, area, temperature, and device design still matter.
   claim_scope_hash: sha256:c78e1c0cf0673ca59b0f4ae12dd5f722721826ab9eb752289cb5c64792b4f3bd
   allowed_original_text_hash: sha256:dc0ae0375875529d4d18601b2a415396767a2d9aaf01f7ab1163f09c234dc74b
 - evidence_id: sci-evidence:semiconductor-devices:pn-junction
@@ -679,14 +716,15 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.semiconductor_devices.pn_junction
-      purpose: a forward bias of V reduces the barrier height from φbi to φbi – V. This reduces the drift field
-        and upsets the balance between diffusion and drift that exists at zero bias.
+      purpose: a forward bias of V reduces the barrier height from φbi to φbi – V.
+        This reduces the drift field and upsets the balance between diffusion and
+        drift that exists at zero bias.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - This statement uses the chapter's idealized junction treatment; high-level injection and nonideal effects
-      are outside this span.
+    - This statement uses the chapter's idealized junction treatment; high-level injection
+      and nonideal effects are outside this span.
   claim_scope_hash: sha256:cf1364bba843e200a6388e2076650de0e33d30acb4ba8d14e66c6e69c5ef6096
   allowed_original_text_hash: sha256:ab73caa63aef404d0c1fee85a842c2c7bdf07df6f58d2045e39bd2756f865ea4
 - evidence_id: sci-evidence:semiconductor-devices:transistor-operating-region
@@ -696,13 +734,14 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.semiconductor_devices.transistor_operating_region
-      purpose: The part of the IV curves with Vds << Vdsat is the linear region, and the part with Vds > Vdsat is
-        the saturation region.
+      purpose: The part of the IV curves with Vds << Vdsat is the linear region, and
+        the part with Vds > Vdsat is the saturation region.
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - The named regions use the model and Vdsat definition in the source; short-channel effects can alter behavior.
+    - The named regions use the model and Vdsat definition in the source; short-channel
+      effects can alter behavior.
   claim_scope_hash: sha256:8bbceac5275f0299932a3f5f2bf29a7cc5362ec67759809a0ceff9941e76d0a7
   allowed_original_text_hash: sha256:1269bb0655cde1365274af4227cc388ae618ae72dfb5d6b8e28b7e8c13651fff
 - evidence_id: sci-evidence:spin-coating:emslie-model
@@ -714,12 +753,12 @@ mappings:
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Only Crossref abstract metadata was inspected by the agent; equations, assumptions, pages, and article context
-      were not available.
+    - Only Crossref abstract metadata was inspected by the agent; equations, assumptions,
+      pages, and article context were not available.
   claim_scope_hash: sha256:9acb6b1e25ecd0c95a9d5d1a386f6381b839ca5718b2ae47061ae36e50271f51
   allowed_original_text_hash: sha256:c87d8907967596e7b1521971ddb58ec8eead47c94afd71cd514806f73a4e5624
-  inactive_reason: AIP full text returned HTTP 403. Crossref abstract metadata cannot enter an active decision path
-    without lawful full-text locator review.
+  inactive_reason: AIP full text returned HTTP 403. Crossref abstract metadata cannot
+    enter an active decision path without lawful full-text locator review.
 - evidence_id: sci-evidence:spin-coating:meyerhofer-model
   qualification_status: inactive
   may_enter_active_release: false
@@ -729,48 +768,31 @@ mappings:
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
-    - Only Crossref abstract metadata was inspected by the agent; the article equations, fit range, and experimental
-      context were not.
+    - Only Crossref abstract metadata was inspected by the agent; the article equations,
+      fit range, and experimental context were not.
   claim_scope_hash: sha256:83145ab7a5b2b0633ddff7a9c007566abd6f72841be80cdca88d9a15cb5f3dfe
   allowed_original_text_hash: sha256:d236033f0611e6de36ecf89d9f62d95f41a4d560a9a015f4be855ab12d9c6dc4
-  inactive_reason: AIP full text returned HTTP 403. Crossref abstract metadata cannot enter an active decision path
-    without lawful full-text locator review.
+  inactive_reason: AIP full text returned HTTP 403. Crossref abstract metadata cannot
+    enter an active decision path without lawful full-text locator review.
 - evidence_id: sci-evidence:spin-coating:vendor-spin-curve-observation
   qualification_status: pending_review
   may_enter_active_release: false
   claim_scope:
     schema_version: '0.1'
     allowed_claims:
-    - claim_family: spin_coating.rpm_thickness_direction.product_scoped_figure_observation
-      purpose: Both plotted AZ 125nXT grades show decreasing thickness as spin speed increases across their displayed
-        markers.
-      required_conditions:
-      - key: product_family
-        operator: eq
-        value: AZ 125nXT
-      - key: product_grade
-        operator: in
-        values:
-        - AZ 125nXT-10 B
-        - AZ 125nXT-7 B
-      - key: source_revision
-        operator: eq
-        value: 01/24
-      - key: spin_speed_rpm
-        operator: range
-        range:
-          minimum: 600
-          maximum: 2300
-        unit: rpm
-      - key: evidence_use_mode
-        operator: eq
-        value: plotted_markers_only
+    - claim_family: locator_bound.spin_coating.vendor_figure_labels
+      purpose: Film Thickness (µm) Spin Speed (rpm) AZ 125nXT-10 B AZ 125nXT-7 B
+      required_conditions: []
     forbidden_claim_families:
+    - spin_coating.rpm_thickness_direction
+    - spin_coating.numeric_curve_or_recipe
     - unbounded_or_unqualified_claims
     limitations:
-    - Product-scoped to AZ 125nXT revision 01/24 and the displayed figure; it is not a universal spin-coating law.
-    - Approximate visual ranges are not digitized data and cannot authorize a numeric recipe or extrapolation.
-  claim_scope_hash: sha256:efd7b7ea531ec0c6538f87cb63d262ddf76ccb669b922957b2375c8c99f8607d
+    - Product-scoped to AZ 125nXT revision 01/24 and the displayed figure; it is not
+      a universal spin-coating law.
+    - The pinned exact span records only axis and series labels; it does not assert
+      curve direction, numeric data points, range, or recipe.
+  claim_scope_hash: sha256:4387e1b8ce07b9fa276619b852c0f36dd88c240c67f1c7935615df67f09211c2
   allowed_original_text_hash: sha256:7c156fb15f79237d9172fd263bc232e5a42ef78a7838d884d4f594313280bbe0
 - evidence_id: sci-evidence:spin-coating:vendor-spin-time-guidance
   qualification_status: pending_review
@@ -779,7 +801,8 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: spin_coating.spin_time_thinning.product_scoped
-      purpose: For the cited AZ 125nXT document, extended spin time is associated with continued thinning.
+      purpose: For the cited AZ 125nXT document, extended spin time is associated
+        with continued thinning.
       required_conditions:
       - key: product_family
         operator: eq
@@ -791,7 +814,131 @@ mappings:
     - spin_coating.rpm_thickness_direction
     - spin_coating.spin_speed_thickness_direction
     limitations:
-    - Product-scoped to AZ 125nXT revision 01/24. This prose supports a spin-time statement only and supplies no
-      RPM-to-thickness direction or recipe authorization.
+    - Product-scoped to AZ 125nXT revision 01/24. This prose supports a spin-time
+      statement only and supplies no RPM-to-thickness direction or recipe authorization.
   claim_scope_hash: sha256:76ba741670e239be16a398ec50aaea3c6267159f0ef572f17963513510dfc306
   allowed_original_text_hash: sha256:1554ccbca1d7cc4a24c10c1b9ee6b1e461cf827fade78d1e160e2478214a1378
+- evidence_id: sci-evidence:spin-coating:microchemicals-spin-mechanism
+  qualification_status: pending_review
+  may_enter_active_release: false
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: spin_coating.mechanism.centrifugal_spreading_solvent_evaporation
+      purpose: Spin coating spreads photoresist and removes excess material while
+        concurrent solvent evaporation contributes to stopping further thinning.
+      required_conditions:
+      - key: material_class
+        operator: eq
+        value: photoresist
+      - key: process_method
+        operator: eq
+        value: spin_coating
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This mechanism span does not provide a numeric recipe, exponent, or equipment-specific
+      film thickness.
+  claim_scope_hash: sha256:0937143a23646b54748655198bda5f3357e19484093ba343ed3cc772b1f2c81d
+  allowed_original_text_hash: sha256:ca8128d6ed35e34e964a4b3b99c2c6aa13f6e7903fb6b41e6411c0dfe946f836
+- evidence_id: sci-evidence:spin-coating:microchemicals-spin-speed-direction
+  qualification_status: pending_review
+  may_enter_active_release: false
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: spin_coating.spin_speed_thickness_direction.drying_limited_process
+      purpose: For a drying-limited photoresist spin-coating process, attainable film
+        thickness decreases approximately with the reciprocal square root of spin
+        speed.
+      required_conditions:
+      - key: material_class
+        operator: eq
+        value: photoresist
+      - key: process_method
+        operator: eq
+        value: spin_coating
+      - key: thinning_continues_until
+        operator: eq
+        value: drying_stops_flow
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - The approximation does not authorize a numeric recipe, equipment transfer, or
+      extrapolation beyond a qualified process domain.
+  claim_scope_hash: sha256:b9e788573d5bb37a51a131c93947bdb0701ba98a1fe54c8e4415a273fb2fa4a2
+  allowed_original_text_hash: sha256:40b4fe4a8c1931dc6fc235fdb77a170a111504c8eca41566186953d6d5687d27
+- evidence_id: sci-evidence:materials:nist-thin-film-bulk-difference
+  qualification_status: pending_review
+  may_enter_active_release: false
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: materials.thin_film_bulk_property_nontransferability
+      purpose: Mechanical properties of thin films can differ from bulk material of
+        the same chemical composition because deposition conditions differ.
+      required_conditions:
+      - key: property_class
+        operator: eq
+        value: mechanical
+      - key: material_form
+        operator: eq
+        value: thin_film
+      - key: comparison_composition
+        operator: eq
+        value: same
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This span does not quantify every thin-film property or predict the direction
+      and magnitude of a particular film's difference.
+  claim_scope_hash: sha256:0058af8531a119403e7eebda85425f5e0d203543433c1ddf1915d38b9da46618
+  allowed_original_text_hash: sha256:0b6c4f292aaa42a15355e25a1f0ab700bccf9f450665216e0845b8117044a0b0
+- evidence_id: sci-evidence:spin-coating:microchemicals-film-state-change
+  qualification_status: pending_review
+  may_enter_active_release: false
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: spin_coating.film_thickness.process_state_difference
+      purpose: A thickness measured immediately after spin coating can change further
+        as residual solvent evaporates, so the measurement state must remain explicit
+        when thicknesses are compared.
+      required_conditions:
+      - key: material_class
+        operator: eq
+        value: photoresist
+      - key: process_method
+        operator: eq
+        value: spin_coating
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - The caption does not quantify a universal before/after thickness difference
+      or authorize interchange between measurement states.
+  claim_scope_hash: sha256:3f67c91ac21658ab7e3151cbe196652c6332917129890137c5fc9cb924903c90
+  allowed_original_text_hash: sha256:2bc33b5c7878c3e46a7e5c30276454f922dc6b8b6d7eeea3260fe28da7583729
+- evidence_id: sci-evidence:spin-coating:microchemicals-equipment-influence
+  qualification_status: pending_review
+  may_enter_active_release: false
+  claim_scope:
+    schema_version: '0.1'
+    allowed_claims:
+    - claim_family: spin_coating.equipment.coating_result_influence
+      purpose: Spin-coating equipment can materially influence the coating result,
+        so an exact equipment-specific result cannot be transferred from a general
+        mechanism alone.
+      required_conditions:
+      - key: material_class
+        operator: eq
+        value: photoresist
+      - key: process_method
+        operator: eq
+        value: spin_coating
+    forbidden_claim_families:
+    - unbounded_or_unqualified_claims
+    limitations:
+    - This sentence establishes equipment influence but does not establish a particular
+      coater's exact thickness or a numeric setting.
+  claim_scope_hash: sha256:7388462a108def2292e825ced5b03efcc443e4df852f110b022ab2e9807dedef
+  allowed_original_text_hash: sha256:436248d5f554ac208e70f12fb11a8b1e552f1ec9b41dcc8b2de31b902de6f3b8

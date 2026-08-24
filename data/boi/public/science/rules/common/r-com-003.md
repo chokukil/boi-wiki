@@ -37,7 +37,7 @@
     "rule_id": "sci-rule:common:003",
     "standard_id": "R-COM-003",
     "pack_id": "sci-pack:science-foundation/0.1.0",
-    "rule_kind": "equation_constraint",
+    "rule_kind": "validity_domain",
     "inputs": [
       "sci:concept:celsius-temperature",
       "sci:concept:kelvin-temperature"
@@ -48,21 +48,21 @@
       "INSUFFICIENT_INFORMATION",
       "OUTSIDE_VALIDITY_DOMAIN"
     ],
-    "subject_concept_id": "sci:concept:celsius-temperature",
-    "object_concept_id": "sci:concept:kelvin-temperature",
-    "relation_kind": "equation",
+    "subject_concept_id": "sci:concept:celsius-temperature-interval",
+    "object_concept_id": "sci:concept:kelvin-temperature-interval",
+    "relation_kind": "dimensional_relation",
     "required_conditions": [
       {
-        "key": "conversion_kind",
+        "key": "comparison_kind",
         "operator": "eq",
-        "value": "affine"
+        "value": "unit_interval_magnitude"
       }
     ],
     "validity_conditions": [
       {
-        "key": "conversion_definition_registered",
+        "key": "unit_pair",
         "operator": "eq",
-        "value": true
+        "value": "degree_celsius_kelvin"
       }
     ],
     "knowledge_refs": [
@@ -79,19 +79,28 @@
       }
     ],
     "deterministic_evaluator": true,
-    "equation": {
-      "left_quantity_kind": "converted_temperature",
-      "right_quantity_kinds": [
-        "reference_temperature"
-      ],
-      "operator": "equal",
-      "relative_tolerance": "0"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_003_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
+    ],
+    "context_dimensions": {
+      "temperature_interval": "kelvin"
     },
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "temperature_interval",
+        "quantity_kind": "temperature_interval",
+        "reference_quantity_kind": "temperature_interval_reference",
+        "interval": true
+      }
+    ]
   }
 }
 ---
-
 # R-COM-003 — Registered unit conversion kind
 
 Closed evaluator: `equation_constraint`. Candidate qualification only.

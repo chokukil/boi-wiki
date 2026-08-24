@@ -44,36 +44,38 @@
         "case_kind": "clear_violation",
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
-          "claim_id": "claim:common:009:clear-violation",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-clear-violation",
+          "claim_id": "claim:common:009:clear_violation",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 37,
-            "exact": "Foundation topic 009 clear-violation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 160,
+            "end": 321,
+            "exact": "The mass of the identified material particle necessarily changes merely because the particle moves. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "ph is an independently anchored review case.\n\n[clear_violation]\n",
+            "suffix": "\n\n[in_scope_consistency]\nThe mass of the identified material par"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:open-system-inventory",
+            "subject_concept_id": "sci:concept:material-particle-mass",
             "relation_kind": "causal_relation",
-            "predicate": "must_remain_constant",
-            "object_concept_id": "sci:concept:boundary-flow",
+            "predicate": "changes_with_motion",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "material_particle_mass",
+                "value": 1,
+                "unit": "kilogram"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "system_boundary_defined",
-                "value": true
+                "condition_id": "particle_identity",
+                "value": "bounded_material_particle"
               },
               {
-                "condition_id": "balance_quantity",
-                "value": "total_mass"
-              },
-              {
-                "condition_id": "flow_terms_accounted",
-                "value": true
+                "condition_id": "statement_scope",
+                "value": "lagrangian_mass_invariance"
               }
             ],
             "process_stage": null,
@@ -88,46 +90,49 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises clear_violation for SCI-COM-009.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:system-balance"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:009"
       },
       {
         "case_id": "sci-case:common:009:in_scope_consistency",
         "case_kind": "in_scope_consistency",
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
-          "claim_id": "claim:common:009:in-scope-consistency",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-in-scope-consistency",
+          "claim_id": "claim:common:009:in_scope_consistency",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 009 in-scope-consistency.",
-            "prefix": "",
-            "suffix": ""
+            "start": 346,
+            "end": 489,
+            "exact": "The mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "is material particle mass = 1 kilogram.\n\n[in_scope_consistency]\n",
+            "suffix": "\n\n[missing_required_condition]\nWithout specifying particle ident"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:open-system-inventory",
+            "subject_concept_id": "sci:concept:material-particle-mass",
             "relation_kind": "causal_relation",
-            "predicate": "can_change_with_flow",
-            "object_concept_id": "sci:concept:boundary-flow",
+            "predicate": "remains_invariant",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "material_particle_mass",
+                "value": 1,
+                "unit": "kilogram"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "system_boundary_defined",
-                "value": true
+                "condition_id": "particle_identity",
+                "value": "bounded_material_particle"
               },
               {
-                "condition_id": "balance_quantity",
-                "value": "total_mass"
-              },
-              {
-                "condition_id": "flow_terms_accounted",
-                "value": true
+                "condition_id": "statement_scope",
+                "value": "lagrangian_mass_invariance"
               }
             ],
             "process_stage": null,
@@ -142,42 +147,45 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises in_scope_consistency for SCI-COM-009.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:system-balance"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:009"
       },
       {
         "case_id": "sci-case:common:009:missing_required_condition",
         "case_kind": "missing_required_condition",
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
-          "claim_id": "claim:common:009:missing-required-condition",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-missing-required-condition",
+          "claim_id": "claim:common:009:missing_required_condition",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 48,
-            "exact": "Foundation topic 009 missing-required-condition.",
-            "prefix": "",
-            "suffix": ""
+            "start": 520,
+            "end": 724,
+            "exact": "Without specifying particle identity, the report states that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "erial particle mass = 1 kilogram.\n\n[missing_required_condition]\n",
+            "suffix": "\n\n[outside_validity_domain]\nIn a different scientific context, t"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:open-system-inventory",
+            "subject_concept_id": "sci:concept:material-particle-mass",
             "relation_kind": "causal_relation",
-            "predicate": "can_change_with_flow",
-            "object_concept_id": "sci:concept:boundary-flow",
+            "predicate": "remains_invariant",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "material_particle_mass",
+                "value": 1,
+                "unit": "kilogram"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "balance_quantity",
-                "value": "total_mass"
-              },
-              {
-                "condition_id": "flow_terms_accounted",
-                "value": true
+                "condition_id": "statement_scope",
+                "value": "lagrangian_mass_invariance"
               }
             ],
             "process_stage": null,
@@ -192,46 +200,49 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "Exercises missing_required_condition for SCI-COM-009.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:system-balance"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:009"
       },
       {
         "case_id": "sci-case:common:009:outside_validity_domain",
         "case_kind": "outside_validity_domain",
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
-          "claim_id": "claim:common:009:outside-validity-domain",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-outside-validity-domain",
+          "claim_id": "claim:common:009:outside_validity_domain",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 45,
-            "exact": "Foundation topic 009 outside-validity-domain.",
-            "prefix": "",
-            "suffix": ""
+            "start": 752,
+            "end": 966,
+            "exact": "In a different scientific context, the report nevertheless states that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "material particle mass = 1 kilogram.\n\n[outside_validity_domain]\n",
+            "suffix": "\n\n[empirical_verification_required]\nFor a named realization, the"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:open-system-inventory",
+            "subject_concept_id": "sci:concept:material-particle-mass",
             "relation_kind": "causal_relation",
-            "predicate": "can_change_with_flow",
-            "object_concept_id": "sci:concept:boundary-flow",
+            "predicate": "remains_invariant",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "material_particle_mass",
+                "value": 1,
+                "unit": "kilogram"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "system_boundary_defined",
-                "value": true
+                "condition_id": "particle_identity",
+                "value": "bounded_material_particle"
               },
               {
-                "condition_id": "balance_quantity",
-                "value": "total_mass"
-              },
-              {
-                "condition_id": "flow_terms_accounted",
-                "value": false
+                "condition_id": "statement_scope",
+                "value": "different_scientific_context"
               }
             ],
             "process_stage": null,
@@ -246,46 +257,53 @@
           }
         },
         "expected_verdict": "OUTSIDE_VALIDITY_DOMAIN",
-        "rationale": "Exercises outside_validity_domain for SCI-COM-009.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:system-balance"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:009"
       },
       {
         "case_id": "sci-case:common:009:empirical_verification_required",
         "case_kind": "empirical_verification_required",
-        "evaluation_rule_id": "sci-rule:common:008",
+        "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
-          "claim_id": "claim:common:009:empirical-verification-required",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-empirical-verification-required",
+          "claim_id": "claim:common:009:empirical_verification_required",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 53,
-            "exact": "Foundation topic 009 empirical-verification-required.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1002,
+            "end": 1229,
+            "exact": "For a named realization, the report asserts that the mass of the identified material particle remains invariant during its motion. No qualified observation is bound. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": " particle mass = 1 kilogram.\n\n[empirical_verification_required]\n",
+            "suffix": "\n\n[negation]\nIt is not true that the mass of the identified mate"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
-            "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "subject_concept_id": "sci:concept:material-particle-mass",
+            "relation_kind": "causal_relation",
+            "predicate": "remains_invariant",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "material_particle_mass",
+                "value": 1,
+                "unit": "kilogram"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
+                "condition_id": "particle_identity",
+                "value": "bounded_material_particle"
               },
               {
-                "condition_id": "model_basis",
-                "value": "theoretical"
+                "condition_id": "statement_scope",
+                "value": "lagrangian_mass_invariance"
               },
               {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "condition_id": "requested_foundation_009_qualified_observation",
+                "value": "unqualified_observation"
               }
             ],
             "process_stage": null,
@@ -300,10 +318,11 @@
           }
         },
         "expected_verdict": "EMPIRICAL_VERIFICATION_REQUIRED",
-        "rationale": "A topic-specific application claim stops for a qualified empirical observation.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
-          "sci-evidence:common:model-validity"
-        ]
+          "sci-evidence:common:system-balance"
+        ],
+        "matrix_rule_id": "sci-rule:common:009"
       },
       {
         "case_id": "sci-case:common:009:negation",
@@ -311,35 +330,37 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:negation",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-negation",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 30,
-            "exact": "Foundation topic 009 negation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1242,
+            "end": 1405,
+            "exact": "It is not true that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "ed quantity is material particle mass = 1 kilogram.\n\n[negation]\n",
+            "suffix": "\n\n[unit_variation]\nThe mass of the identified material particle "
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:open-system-inventory",
+            "subject_concept_id": "sci:concept:material-particle-mass",
             "relation_kind": "causal_relation",
-            "predicate": "can_change_with_flow",
-            "object_concept_id": "sci:concept:boundary-flow",
+            "predicate": "remains_invariant",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "negative",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "material_particle_mass",
+                "value": 1,
+                "unit": "kilogram"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "system_boundary_defined",
-                "value": true
+                "condition_id": "particle_identity",
+                "value": "bounded_material_particle"
               },
               {
-                "condition_id": "balance_quantity",
-                "value": "total_mass"
-              },
-              {
-                "condition_id": "flow_terms_accounted",
-                "value": true
+                "condition_id": "statement_scope",
+                "value": "lagrangian_mass_invariance"
               }
             ],
             "process_stage": null,
@@ -354,52 +375,54 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises negation for SCI-COM-009.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:system-balance"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:009"
       },
       {
         "case_id": "sci-case:common:009:unit_variation",
         "case_kind": "unit_variation",
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
-          "claim_id": "claim:common:009:unit-variation",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-unit-variation",
+          "claim_id": "claim:common:009:unit_variation",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 36,
-            "exact": "Foundation topic 009 unit-variation.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1424,
+            "end": 1616,
+            "exact": "The mass of the identified material particle remains invariant during its motion. The reviewed quantities are material particle mass = 1000 gram; material particle mass reference = 1 kilogram.",
+            "prefix": "ntity is material particle mass = 1 kilogram.\n\n[unit_variation]\n",
+            "suffix": "\n\n[decision_changing_ambiguity]\nA smudged yes-or-no mark appears"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:open-system-inventory",
+            "subject_concept_id": "sci:concept:material-particle-mass",
             "relation_kind": "causal_relation",
-            "predicate": "can_change_with_flow",
-            "object_concept_id": "sci:concept:boundary-flow",
+            "predicate": "remains_invariant",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "unit_probe",
-                "value": 100,
-                "unit": "cm"
+                "quantity_kind": "material_particle_mass",
+                "value": 1000,
+                "unit": "gram"
+              },
+              {
+                "quantity_kind": "material_particle_mass_reference",
+                "value": 1,
+                "unit": "kilogram"
               }
             ],
             "conditions": [
               {
-                "condition_id": "system_boundary_defined",
-                "value": true
+                "condition_id": "particle_identity",
+                "value": "bounded_material_particle"
               },
               {
-                "condition_id": "balance_quantity",
-                "value": "total_mass"
-              },
-              {
-                "condition_id": "flow_terms_accounted",
-                "value": true
+                "condition_id": "statement_scope",
+                "value": "lagrangian_mass_invariance"
               }
             ],
             "process_stage": null,
@@ -414,58 +437,61 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises unit_variation for SCI-COM-009.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:system-balance"
         ],
         "unit_equivalence": [
           {
-            "quantity_kind": "unit_probe",
+            "quantity_kind": "material_particle_mass",
             "value": 1,
-            "unit": "m"
+            "unit": "kilogram"
           },
           {
-            "quantity_kind": "unit_probe",
-            "value": 100,
-            "unit": "cm"
+            "quantity_kind": "material_particle_mass",
+            "value": 1000,
+            "unit": "gram"
           }
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:009"
       },
       {
         "case_id": "sci-case:common:009:decision_changing_ambiguity",
         "case_kind": "decision_changing_ambiguity",
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
-          "claim_id": "claim:common:009:decision-changing-ambiguity",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-decision-changing-ambiguity",
+          "claim_id": "claim:common:009:decision_changing_ambiguity",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 49,
-            "exact": "Foundation topic 009 decision-changing-ambiguity.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1648,
+            "end": 1861,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The mass of the identified material particle remains invariant during its motion”. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "cle mass reference = 1 kilogram.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that t"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:open-system-inventory",
+            "subject_concept_id": "sci:concept:material-particle-mass",
             "relation_kind": "causal_relation",
-            "predicate": "can_change_with_flow",
-            "object_concept_id": "sci:concept:boundary-flow",
+            "predicate": "remains_invariant",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "material_particle_mass",
+                "value": 1,
+                "unit": "kilogram"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "system_boundary_defined",
-                "value": true
+                "condition_id": "particle_identity",
+                "value": "bounded_material_particle"
               },
               {
-                "condition_id": "balance_quantity",
-                "value": "total_mass"
-              },
-              {
-                "condition_id": "flow_terms_accounted",
-                "value": true
+                "condition_id": "statement_scope",
+                "value": "lagrangian_mass_invariance"
               }
             ],
             "process_stage": null,
@@ -482,41 +508,43 @@
           }
         },
         "expected_gate": "ambiguity_gate",
-        "rationale": "Two interpretations produce different candidate verdicts, so interpretation stops.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:system-balance"
         ],
         "alternative_claim_packet": {
-          "claim_id": "claim:common:009:decision-changing-alternative",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-decision-changing-alternative",
+          "claim_id": "claim:common:009:decision_changing_ambiguity:alternative",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 51,
-            "exact": "Foundation topic 009 decision-changing-alternative.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1648,
+            "end": 1861,
+            "exact": "A smudged yes-or-no mark appears in the margin beside the statement “The mass of the identified material particle remains invariant during its motion”. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "cle mass reference = 1 kilogram.\n\n[decision_changing_ambiguity]\n",
+            "suffix": "\n\n[paraphrase]\nIn equivalent wording, the document states that t"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:open-system-inventory",
+            "subject_concept_id": "sci:concept:material-particle-mass",
             "relation_kind": "causal_relation",
-            "predicate": "must_remain_constant",
-            "object_concept_id": "sci:concept:boundary-flow",
+            "predicate": "changes_with_motion",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "material_particle_mass",
+                "value": 1,
+                "unit": "kilogram"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "system_boundary_defined",
-                "value": true
+                "condition_id": "particle_identity",
+                "value": "bounded_material_particle"
               },
               {
-                "condition_id": "balance_quantity",
-                "value": "total_mass"
-              },
-              {
-                "condition_id": "flow_terms_accounted",
-                "value": true
+                "condition_id": "statement_scope",
+                "value": "lagrangian_mass_invariance"
               }
             ],
             "process_stage": null,
@@ -531,7 +559,9 @@
             ],
             "user_confirmed": false
           }
-        }
+        },
+        "matrix_rule_id": "sci-rule:common:009",
+        "expected_verdict": "INSUFFICIENT_INFORMATION"
       },
       {
         "case_id": "sci-case:common:009:paraphrase",
@@ -539,35 +569,37 @@
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
           "claim_id": "claim:common:009:paraphrase",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-paraphrase",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 32,
-            "exact": "Foundation topic 009 paraphrase.",
-            "prefix": "",
-            "suffix": ""
+            "start": 1876,
+            "end": 2067,
+            "exact": "In equivalent wording, the document states that the mass of the identified material particle remains invariant during its motion. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": " quantity is material particle mass = 1 kilogram.\n\n[paraphrase]\n",
+            "suffix": "\n\n[false_red_prevention]\nAn open control-volume inventory is not"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:open-system-inventory",
+            "subject_concept_id": "sci:concept:material-particle-mass",
             "relation_kind": "causal_relation",
-            "predicate": "can_change_with_flow",
-            "object_concept_id": "sci:concept:boundary-flow",
+            "predicate": "remains_invariant",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "material_particle_mass",
+                "value": 1,
+                "unit": "kilogram"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "system_boundary_defined",
-                "value": true
+                "condition_id": "particle_identity",
+                "value": "bounded_material_particle"
               },
               {
-                "condition_id": "balance_quantity",
-                "value": "total_mass"
-              },
-              {
-                "condition_id": "flow_terms_accounted",
-                "value": true
+                "condition_id": "statement_scope",
+                "value": "lagrangian_mass_invariance"
               }
             ],
             "process_stage": null,
@@ -582,46 +614,49 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises paraphrase for SCI-COM-009.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:system-balance"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:009"
       },
       {
         "case_id": "sci-case:common:009:false_red_prevention",
         "case_kind": "false_red_prevention",
         "evaluation_rule_id": "sci-rule:common:009",
         "claim_packet": {
-          "claim_id": "claim:common:009:false-red-prevention",
-          "document_ref": "qualification:common:009",
-          "document_digest": "sha256:task2-009-false-red-prevention",
+          "claim_id": "claim:common:009:false_red_prevention",
+          "document_ref": "qualification-fixture:common:009",
+          "document_digest": "sha256:d7875197a38436df192b781105da32d07505a37b69f99a12d60e04b20710eb8b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
-            "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 009 false-red-prevention.",
-            "prefix": "",
-            "suffix": ""
+            "start": 2092,
+            "end": 2259,
+            "exact": "An open control-volume inventory is not the identified material particle whose mass invariance is stated. The reviewed quantity is material particle mass = 1 kilogram.",
+            "prefix": "is material particle mass = 1 kilogram.\n\n[false_red_prevention]\n",
+            "suffix": "\n\nEnd of immutable qualification fixture.\n"
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:unsupported:9",
+            "subject_concept_id": "sci:concept:material-particle-mass",
             "relation_kind": "causal_relation",
-            "predicate": "can_change_with_flow",
-            "object_concept_id": "sci:concept:boundary-flow",
+            "predicate": "changes_with_motion",
+            "object_concept_id": "sci:concept:material-particle-motion",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "material_particle_mass",
+                "value": 1,
+                "unit": "kilogram"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "system_boundary_defined",
-                "value": true
+                "condition_id": "particle_identity",
+                "value": "open_control_volume_inventory"
               },
               {
-                "condition_id": "balance_quantity",
-                "value": "total_mass"
-              },
-              {
-                "condition_id": "flow_terms_accounted",
-                "value": true
+                "condition_id": "statement_scope",
+                "value": "lagrangian_mass_invariance"
               }
             ],
             "process_stage": null,
@@ -636,17 +671,17 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "A neighboring unsupported concept remains nondecisive.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:system-balance"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:009"
       }
     ],
     "release_eligibility": "blocked_pending_authorized_admin_review"
   }
 }
 ---
-
 # Q-COM-009
 
 Ten public cases exercise the required qualification kinds against candidate rules only. Synthetic observation fixtures are labeled and never enter operational evidence.

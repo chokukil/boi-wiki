@@ -37,7 +37,7 @@
     "rule_id": "sci-rule:common:005",
     "standard_id": "R-COM-005",
     "pack_id": "sci-pack:science-foundation/0.1.0",
-    "rule_kind": "directional_relation",
+    "rule_kind": "validity_domain",
     "inputs": [
       "sci:concept:measurement-uncertainty",
       "sci:concept:measurement-error"
@@ -49,20 +49,14 @@
       "OUTSIDE_VALIDITY_DOMAIN"
     ],
     "subject_concept_id": "sci:concept:measurement-uncertainty",
-    "object_concept_id": "sci:concept:measurement-error",
+    "object_concept_id": "sci:concept:dispersion-parameter",
     "relation_kind": "empirical_relation",
-    "required_conditions": [
-      {
-        "key": "definitions_matched",
-        "operator": "eq",
-        "value": true
-      }
-    ],
+    "required_conditions": [],
     "validity_conditions": [
       {
-        "key": "metrology_vocabulary",
+        "key": "definition_context",
         "operator": "eq",
-        "value": "VIM"
+        "value": "vim_measurement_uncertainty"
       }
     ],
     "knowledge_refs": [
@@ -79,16 +73,30 @@
       }
     ],
     "deterministic_evaluator": true,
-    "expected_predicate": "distinct_from",
-    "contradiction_predicates": [
-      "identical_to"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_005_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
     ],
-    "expected_polarity": "positive",
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "context_dimensions": {
+      "uncertainty_parameter": "meter"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "uncertainty_parameter",
+        "quantity_kind": "uncertainty_parameter",
+        "reference_quantity_kind": "uncertainty_parameter_reference"
+      }
+    ],
+    "nonnegative_quantity_kinds": [
+      "uncertainty_parameter"
+    ]
   }
 }
 ---
-
 # R-COM-005 — Measurement uncertainty and error
 
 Closed evaluator: `directional_relation`. Candidate qualification only.

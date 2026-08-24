@@ -61,10 +61,11 @@ science:
         from a condensed state of matter.
       required_conditions: []
     forbidden_claim_families:
+    - chemistry.open_process_evaporation_rate
     - unbounded_or_unqualified_claims
     limitations:
     - This does not alone determine an evaporation rate in an open, flowing process.
-  claim_scope_hash: sha256:7633dfe6a04f9f85467319bb5b34002537b5856e73bc7669faa1d8dc4c13638c
+  claim_scope_hash: sha256:d984af5121c1da944a5e09fc5a0d5f309d284dbbe9a99e631475169b7c59d4e8
   supports_knowledge: []
   curation_actor:
     type: agent
