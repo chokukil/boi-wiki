@@ -34,6 +34,28 @@ _REVIEWED_UNIT_ALIASES = {
 }
 
 
+def _is_unit_identifier_character(character: str) -> bool:
+    return (
+        character == "_"
+        or character.isalpha()
+        or (character.isascii() and character.isdigit())
+    )
+
+
+def _contains_ambiguous_ph_identifier(expression: str) -> bool:
+    start = 0
+    while (index := expression.find("pH", start)) >= 0:
+        before = expression[index - 1] if index else ""
+        after_index = index + 2
+        after = expression[after_index] if after_index < len(expression) else ""
+        if (not before or not _is_unit_identifier_character(before)) and (
+            not after or not _is_unit_identifier_character(after)
+        ):
+            return True
+        start = after_index
+    return False
+
+
 def canonical_science_unit_token(value: object) -> str:
     """Return the reviewed canonical spelling for a unit or registered product."""
 
@@ -42,15 +64,13 @@ def canonical_science_unit_token(value: object) -> str:
     token = value.strip()
     if not token:
         raise ValueError("unit token must be nonempty")
-    if token == "pH":
+    if _contains_ambiguous_ph_identifier(token):
         raise ValueError("ambiguous unit token: pH")
     if token.count("*") == 1:
         factors = [
             _REVIEWED_UNIT_ALIASES.get(factor.strip(), factor.strip())
             for factor in token.split("*")
         ]
-        if "pH" in factors:
-            raise ValueError("ambiguous unit token: pH")
         if sorted(factors) == ["ampere", "ohm"]:
             return "ampere * ohm"
     return _REVIEWED_UNIT_ALIASES.get(token, token)

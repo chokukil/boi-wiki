@@ -2064,6 +2064,131 @@ def test_ambiguous_ph_token_is_not_parsed_as_an_si_prefix_unit():
         expected_dimensionality("pH")
 
 
+AMBIGUOUS_COMPOSITE_PH_UNITS = [
+    pytest.param("pH / meter", id="division"),
+    pytest.param("pH ** 2", id="exponent"),
+    pytest.param("pH²", id="unicode-exponent"),
+    pytest.param("meter * pH * second", id="three-factor"),
+    pytest.param("meter / (pH * second)", id="parenthesized"),
+]
+
+
+@pytest.mark.parametrize("unit", AMBIGUOUS_COMPOSITE_PH_UNITS)
+def test_composite_ph_is_rejected_at_claim_and_rule_schema_boundaries(unit: str):
+    """Any standalone pH identifier in a unit expression must fail before storage."""
+    with pytest.raises(ValidationError, match="ambiguous unit token: pH"):
+        claim_fixture(
+            "claim:ambiguous-composite-ph-schema",
+            subject="sci:concept:sample",
+            relation="dimensional_relation",
+            predicate="has_gradient",
+            object_="sci:concept:gradient",
+            quantities=[{"quantity_kind": "gradient", "value": 7, "unit": unit}],
+        )
+    with pytest.raises(ValidationError, match="ambiguous unit token: pH"):
+        rule_fixture(
+            "sci:rule:ambiguous-composite-ph-schema",
+            "dimension_constraint",
+            subject="sci:concept:sample",
+            object_="sci:concept:gradient",
+            expected_dimensions={"gradient": unit},
+        )
+
+
+def _stored_dimension_pair_with_unvalidated_unit(
+    unit: str,
+    *,
+    polarity: str = "positive",
+    rule_id: str = "sci:rule:stored-composite-ph",
+) -> tuple[VerificationRule, ClaimPacket]:
+    """Model a previously stored payload so evaluators retain their own boundary."""
+    rule = rule_fixture(
+        rule_id,
+        "dimension_constraint",
+        subject="sci:concept:sample",
+        object_="sci:concept:gradient",
+        expected_dimensions={"gradient": "meter"},
+    ).model_copy(update={"expected_dimensions": {"gradient": unit}})
+    claim = claim_fixture(
+        "claim:stored-composite-ph",
+        subject="sci:concept:sample",
+        relation="dimensional_relation",
+        predicate="has_gradient",
+        object_="sci:concept:gradient",
+        polarity=polarity,
+        quantities=[{"quantity_kind": "gradient", "value": 7, "unit": "meter"}],
+    )
+    quantity = claim.normalized_claim.quantities[0].model_copy(update={"unit": unit})
+    normalized = claim.normalized_claim.model_copy(update={"quantities": [quantity]})
+    return rule, claim.model_copy(update={"normalized_claim": normalized})
+
+
+@pytest.mark.parametrize("unit", AMBIGUOUS_COMPOSITE_PH_UNITS)
+def test_dimension_evaluator_rejects_composite_ph_in_stored_payloads(unit: str):
+    """A stored schema bypass must not let Pint turn composite pH into picohenry."""
+    from boi_api.app.science.units import AmbiguousUnitError
+
+    rule, claim = _stored_dimension_pair_with_unvalidated_unit(unit)
+
+    with pytest.raises(AmbiguousUnitError, match="ambiguous unit token: pH"):
+        evaluate_rule(rule, claim.normalized_claim)
+
+
+@pytest.mark.parametrize("unit", AMBIGUOUS_COMPOSITE_PH_UNITS)
+def test_comparison_boundary_rejects_composite_ph(unit: str):
+    """Identical ambiguous expressions must not short-circuit to numeric equality."""
+    from boi_api.app.science.units import AmbiguousUnitError
+
+    quantity = {"quantity_kind": "gradient", "value": 7, "unit": unit}
+
+    with pytest.raises(AmbiguousUnitError, match="ambiguous unit token: pH"):
+        compare_quantities(quantity, quantity)
+
+
+@pytest.mark.parametrize("polarity", ["positive", "negative"])
+@pytest.mark.parametrize("unit", AMBIGUOUS_COMPOSITE_PH_UNITS)
+def test_verify_claim_never_selects_a_verdict_for_composite_ph(
+    unit: str,
+    polarity: str,
+    release_set: ResolvedReleaseSet,
+    rule_set: ResolvedRuleSet,
+):
+    """Neither matching nor negated composite pH dimensions may reach verdict selection."""
+    from boi_api.app.science.units import AmbiguousUnitError
+
+    replacement, claim = _stored_dimension_pair_with_unvalidated_unit(
+        unit,
+        polarity=polarity,
+        rule_id="sci:rule:spin-direction",
+    )
+    pinned_release_set, pinned_rule_set = repin_single_foundation_rule(
+        release_set, rule_set, replacement
+    )
+
+    with pytest.raises(AmbiguousUnitError, match="ambiguous unit token: pH"):
+        verify_claim(claim, pinned_release_set, rule_set=pinned_rule_set)
+
+
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [
+        ("pHase", "pHase"),
+        ("alpha_pH", "alpha_pH"),
+        ("pH2", "pH2"),
+        ("A * Ω", "ampere * ohm"),
+        ("Ω * A", "ampere * ohm"),
+    ],
+)
+def test_ph_lexical_guard_preserves_other_identifiers_and_reviewed_products(
+    unit: str,
+    expected: str,
+):
+    """Substring matches must not reject identifiers or alter reviewed products."""
+    from boi_api.app.science.models import canonical_science_unit_token
+
+    assert canonical_science_unit_token(unit) == expected
+
+
 @pytest.mark.parametrize("unit", ["pH ", " pH", "\tpH\n"])
 def test_whitespace_ph_variants_are_rejected_at_claim_and_rule_boundaries(unit: str):
     """Removing token canonicalization would let Pint reinterpret whitespace pH as picohenry."""
