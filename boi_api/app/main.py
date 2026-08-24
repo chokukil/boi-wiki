@@ -153,6 +153,14 @@ LANGFLOW_SIMULATOR_MODE = os.getenv("LANGFLOW_SIMULATOR_MODE", "langflow").strip
 BOI_CONTENT_ROOT = Path(os.getenv("BOI_CONTENT_ROOT") or os.getenv("DATA_ROOT") or "/data/boi")
 BOI_RUNTIME_ROOT = Path(os.getenv("BOI_RUNTIME_ROOT") or str(BOI_CONTENT_ROOT.parent))
 DATA_ROOT = Path(os.getenv("DATA_ROOT") or str(BOI_CONTENT_ROOT))
+SCIENCE_RUNTIME_ROOT = Path(os.getenv("SCIENCE_RUNTIME_ROOT") or str(BOI_RUNTIME_ROOT / "science"))
+BOI_SCIENCE_ACCESS_MODE = os.getenv("BOI_SCIENCE_ACCESS_MODE", "admin_only").strip().lower()
+BOI_SCIENCE_DICTIONARY_RELEASE_ID = os.getenv(
+    "BOI_SCIENCE_DICTIONARY_RELEASE_ID", "boi:dictionary:current/0.1.0"
+).strip()
+BOI_SCIENCE_ONTOLOGY_RELEASE_ID = os.getenv(
+    "BOI_SCIENCE_ONTOLOGY_RELEASE_ID", "sci:ontology:domain-packs-draft/0.1.0"
+).strip()
 EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT") or str(BOI_RUNTIME_ROOT / "events"))
 EVENT_CATALOG_ROOT = Path(os.getenv("EVENT_CATALOG_ROOT", "/data/event_catalog"))
 ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT", "/data/action_catalog"))
@@ -32278,3 +32286,85 @@ async def users() -> dict[str, Any]:
         "auth_mode": auth_mode(),
         "users": [{"employee_id": k, "name": USER_NAMES.get(k), "teams": v} for k, v in USER_TEAMS.items()],
     }
+
+
+def _configure_science_verifier() -> None:
+    """Attach Science routes with BoI ACL and Science-local authority resolvers."""
+    from .science.authorization import ScienceAuthorization
+    from .science.catalog import ScienceCatalog
+    from .science.llm import ScienceLLMClient, ScienceLLMConfig
+    from .science.routes import ScienceRouteDependencies, create_science_router
+    from .science.service import ScienceService
+    from .science.storage import ScienceRuntimeStore
+
+    authorization = ScienceAuthorization(BOI_SCIENCE_ACCESS_MODE)
+
+    def science_roles(identity: AuthIdentity) -> list[str]:
+        return roles_for(identity.employee_id)
+
+    catalog = ScienceCatalog(
+        DATA_ROOT,
+        reviewer_role_resolver=lambda actor: roles_for(str(actor.get("user_id") or "")),
+    )
+    runtime_store = ScienceRuntimeStore(
+        SCIENCE_RUNTIME_ROOT,
+        authorization=authorization,
+        roles_for=science_roles,
+    )
+
+    def load_document(identity: AuthIdentity, boi_ref: str) -> str | None:
+        doc = find_doc_by_id(boi_ref, identity.employee_id)
+        if doc is None or not access_policy_for_doc(doc, identity.employee_id).can_read:
+            return None
+        return str(doc.get("body") or "")
+
+    def can_read_boi(identity: AuthIdentity, boi_ref: str) -> bool:
+        doc = find_doc_by_id(boi_ref, identity.employee_id)
+        return bool(doc and access_policy_for_doc(doc, identity.employee_id).can_read)
+
+    def can_export_boi(identity: AuthIdentity, boi_ref: str) -> bool:
+        doc = find_doc_by_id(boi_ref, identity.employee_id)
+        return bool(doc and access_policy_for_doc(doc, identity.employee_id).can_export)
+
+    def report_access(identity: AuthIdentity, report: Any, *, export: bool) -> bool:
+        document_ref = str(report.document_ref or "")
+        if not document_ref or document_ref.startswith("boi:submitted:"):
+            return report.created_by == identity.employee_id
+        check = can_export_boi if export else can_read_boi
+        return check(identity, document_ref)
+
+    def service_provider() -> ScienceService:
+        bindings = catalog.ontology_bindings_for_release(BOI_SCIENCE_ONTOLOGY_RELEASE_ID)
+        return ScienceService(
+            catalog=catalog,
+            runtime_store=runtime_store,
+            llm_client=ScienceLLMClient(ScienceLLMConfig.from_env()),
+            dictionary_release_id=BOI_SCIENCE_DICTIONARY_RELEASE_ID,
+            ontology_release_id=BOI_SCIENCE_ONTOLOGY_RELEASE_ID,
+            ontology_binding_ids=[binding.object_id for binding in bindings],
+        )
+
+    app.state.science_authorization = authorization
+    app.state.science_catalog = catalog
+    app.state.science_runtime_store = runtime_store
+    app.include_router(
+        create_science_router(
+            ScienceRouteDependencies(
+                authorization=authorization,
+                service_provider=service_provider,
+                runtime_store=runtime_store,
+                catalog=catalog,
+                boi_root=DATA_ROOT,
+                current_identity_dependency=current_identity,
+                roles_for=roles_for,
+                load_document=load_document,
+                can_read_boi=can_read_boi,
+                can_export_boi=can_export_boi,
+                can_read_report=lambda identity, report: report_access(identity, report, export=False),
+                can_export_report=lambda identity, report: report_access(identity, report, export=True),
+            )
+        )
+    )
+
+
+_configure_science_verifier()

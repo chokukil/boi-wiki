@@ -1328,6 +1328,25 @@ class ScienceCatalog:
     def ontology_binding(self, binding_id: str) -> ScienceObject:
         return self._copy_object(self._require("ontology_binding", binding_id))
 
+    def ontology_bindings_for_release(
+        self, ontology_release_id: str
+    ) -> tuple[ScienceObject, ...]:
+        """Return a stable, immutable view of one interpretation release."""
+
+        matches = [
+            binding
+            for binding in self._objects["ontology_binding"].values()
+            if getattr(binding, "ontology_release_id", None) == ontology_release_id
+        ]
+        if not matches:
+            raise ScienceCatalogError(
+                f"unknown ontology release: {ontology_release_id}"
+            )
+        return tuple(
+            self._copy_object(binding)
+            for binding in sorted(matches, key=lambda item: item.object_id)
+        )
+
     def pack(self, pack_id: str) -> ScienceObject:
         return self._copy_object(self._require("pack", pack_id))
 
