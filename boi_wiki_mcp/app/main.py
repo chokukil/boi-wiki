@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import inspect
 import json
 import os
@@ -232,6 +234,20 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "capability_deduplicate", "description": "[Deprecated alias] Use workflow_definition_deduplicate."},
     {"name": "event_skills_list", "description": "List Event Skill registry entries used by BoI Agent and WorkflowDefinition registration."},
     {"name": "action_skills_list", "description": "List Action Skill registry entries used by BoI Agent and WorkflowDefinition registration."},
+    {"name": "science_interpret", "description": "Interpret document claims against the active Science ontology without deciding a verdict."},
+    {"name": "science_interpretation_confirm", "description": "Record an explicit user-confirmed interpretation binding before resuming affected claim verification."},
+    {"name": "science_verify_claim", "description": "Verify one interpreted claim through the deterministic Science rule engine."},
+    {"name": "science_verify_document", "description": "Verify a document and return source-anchored annotations plus the immutable report reference."},
+    {"name": "science_evidence_get", "description": "Return public Science Evidence text, translation, locator, source URL, scope, and integrity metadata."},
+    {"name": "science_report_get", "description": "Return one immutable Science verification report with verdicts, explanations, evidence, and component digests."},
+    {"name": "science_report_export", "description": "Export the exact Science report packet as Markdown or PDF bytes without changing its verdicts or citations."},
+    {"name": "science_proposal_create", "description": "Create a user-confirmed proposal for later Power User or Admin review; never changes active Science knowledge."},
+    {"name": "science_source_validate", "description": "Validate a proposed Science Source and locator/hash contract without approving it."},
+    {"name": "science_knowledge_validate", "description": "Validate a proposed Science Knowledge object without approving it."},
+    {"name": "science_rule_qualify", "description": "Run deterministic qualification cases for a Science Rule without approving or activating it."},
+    {"name": "science_release_validate", "description": "Validate a Science Release Candidate and its exact object digests without activating it."},
+    {"name": "science_release_activate", "description": "Activate an Admin-reviewed Science Release after explicit confirmation and authenticated role enforcement."},
+    {"name": "science_release_withdraw", "description": "Withdraw an active Science Release after explicit confirmation and authenticated role enforcement."},
 ]
 MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
     {"uri": "boi://docs/{boi_id}", "description": "Public BoI document as JSON text. Use employee-scoped templates for private/team content."},
@@ -334,6 +350,25 @@ MCP_TOOL_IA_GROUPS = [
             "sop_run_history",
             "workflow_start",
             "workflow_status",
+        },
+    ),
+    (
+        "Science Verifier",
+        {
+            "science_interpret",
+            "science_interpretation_confirm",
+            "science_verify_claim",
+            "science_verify_document",
+            "science_evidence_get",
+            "science_report_get",
+            "science_report_export",
+            "science_proposal_create",
+            "science_source_validate",
+            "science_knowledge_validate",
+            "science_rule_qualify",
+            "science_release_validate",
+            "science_release_activate",
+            "science_release_withdraw",
         },
     ),
     (
@@ -655,6 +690,37 @@ async def api_post(
     return body if isinstance(body, dict) else {"value": body}
 
 
+async def api_get_bytes(
+    path: str,
+    *,
+    employee_id: str | None = None,
+    params: dict[str, Any] | None = None,
+    service_token: bool = False,
+) -> dict[str, Any]:
+    """Return an API export byte-for-byte with a locally verified digest."""
+    query = dict(params or {})
+    query.setdefault("employee_id", employee_id or DEFAULT_EMPLOYEE_ID)
+    headers = {"x-service-token": SERVICE_TOKEN} if service_token else {}
+    async with httpx.AsyncClient(timeout=MCP_BACKEND_TIMEOUT_SECONDS) as client:
+        resp = await client.get(f"{BOI_API_URL}{path}", params=query, headers=headers)
+    if resp.status_code >= 400:
+        try:
+            body: Any = resp.json()
+        except Exception:
+            body = {"text": resp.text}
+        raise RuntimeError(
+            json.dumps(
+                {"status_code": resp.status_code, "body": body}, ensure_ascii=False
+            )
+        )
+    content = bytes(resp.content)
+    return {
+        "content_base64": base64.b64encode(content).decode("ascii"),
+        "content_type": str(resp.headers.get("content-type") or "application/octet-stream").split(";", 1)[0],
+        "sha256": hashlib.sha256(content).hexdigest(),
+    }
+
+
 def as_text(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2)
 
@@ -702,6 +768,201 @@ mcp = FastMCP(
     stateless_http=True,
     **fastmcp_transport_kwargs(),
 )
+
+
+def require_science_confirmation(user_confirmed: bool, operation: str) -> None:
+    if not user_confirmed:
+        raise ValueError(f"user_confirmed=true is required before {operation}")
+
+
+@mcp.tool(name="science_interpret")
+async def science_interpret(
+    document: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    request_id: str = "",
+) -> dict[str, Any]:
+    """Interpret claim spans and ontology bindings without deciding verdicts."""
+    return await api_post(
+        "/api/science/interpret",
+        employee_id=employee_id,
+        payload={"document": document, "request_id": request_id},
+    )
+
+
+@mcp.tool(name="science_interpretation_confirm")
+async def science_interpretation_confirm(
+    interpretation_id: str,
+    binding_id: str,
+    user_confirmed: bool,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    request_id: str = "",
+) -> dict[str, Any]:
+    """Confirm one outcome-changing interpretation binding and resume only its claim."""
+    require_science_confirmation(user_confirmed, "science_interpretation_confirm")
+    return await api_post(
+        f"/api/science/interpretations/{interpretation_id}/confirm",
+        employee_id=employee_id,
+        payload={
+            "binding_id": binding_id,
+            "user_confirmed": True,
+            "request_id": request_id,
+        },
+    )
+
+
+@mcp.tool(name="science_verify_claim")
+async def science_verify_claim(
+    claim_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    request_id: str = "",
+) -> dict[str, Any]:
+    """Ask BoI's deterministic engine to verify one interpreted claim."""
+    return await api_post(
+        f"/api/science/claims/{claim_id}/verify",
+        employee_id=employee_id,
+        payload={"request_id": request_id},
+    )
+
+
+@mcp.tool(name="science_verify_document")
+async def science_verify_document(
+    document: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    request_id: str = "",
+) -> dict[str, Any]:
+    """Verify a document and return annotations plus the immutable report reference."""
+    return await api_post(
+        "/api/science/verify-document",
+        employee_id=employee_id,
+        payload={"document": document, "request_id": request_id},
+    )
+
+
+@mcp.tool(name="science_evidence_get")
+async def science_evidence_get(
+    evidence_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Return source-visible Evidence with integrity and applicability metadata."""
+    return await api_get(
+        f"/api/science/evidence/{evidence_id}", employee_id=employee_id
+    )
+
+
+@mcp.tool(name="science_report_get")
+async def science_report_get(
+    report_id: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Return an immutable Science verification report packet."""
+    return await api_get(f"/api/science/reports/{report_id}", employee_id=employee_id)
+
+
+@mcp.tool(name="science_report_export")
+async def science_report_export(
+    report_id: str,
+    format: Literal["markdown", "pdf"] = "markdown",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Export the exact report bytes and their independently computed digest."""
+    return await api_get_bytes(
+        f"/api/science/reports/{report_id}/export",
+        employee_id=employee_id,
+        params={"format": format},
+    )
+
+
+@mcp.tool(name="science_proposal_create")
+async def science_proposal_create(
+    proposal: dict[str, Any],
+    user_confirmed: bool,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Create a proposal only; this never changes the active Science Release."""
+    require_science_confirmation(user_confirmed, "science_proposal_create")
+    return await api_post(
+        "/api/science/proposals",
+        employee_id=employee_id,
+        payload={"proposal": proposal, "user_confirmed": True},
+    )
+
+
+@mcp.tool(name="science_source_validate")
+async def science_source_validate(
+    source: dict[str, Any], employee_id: str = DEFAULT_EMPLOYEE_ID
+) -> dict[str, Any]:
+    """Validate a Source proposal without approving it."""
+    return await api_post(
+        "/api/science/admin/sources/validate",
+        employee_id=employee_id,
+        payload={"source": source},
+    )
+
+
+@mcp.tool(name="science_knowledge_validate")
+async def science_knowledge_validate(
+    knowledge: dict[str, Any], employee_id: str = DEFAULT_EMPLOYEE_ID
+) -> dict[str, Any]:
+    """Validate a Knowledge proposal without approving it."""
+    return await api_post(
+        "/api/science/admin/knowledge/validate",
+        employee_id=employee_id,
+        payload={"knowledge": knowledge},
+    )
+
+
+@mcp.tool(name="science_rule_qualify")
+async def science_rule_qualify(
+    rule_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID
+) -> dict[str, Any]:
+    """Run qualification cases without approving or activating the Rule."""
+    return await api_post(
+        f"/api/science/admin/rules/{rule_id}/qualify",
+        employee_id=employee_id,
+        payload={},
+    )
+
+
+@mcp.tool(name="science_release_validate")
+async def science_release_validate(
+    release: dict[str, Any], employee_id: str = DEFAULT_EMPLOYEE_ID
+) -> dict[str, Any]:
+    """Validate an exact Release Candidate without activating it."""
+    return await api_post(
+        "/api/science/admin/releases/validate",
+        employee_id=employee_id,
+        payload={"release": release},
+    )
+
+
+@mcp.tool(name="science_release_activate")
+async def science_release_activate(
+    release_id: str,
+    user_confirmed: bool,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Activate only after API-side authenticated science.admin enforcement."""
+    require_science_confirmation(user_confirmed, "science_release_activate")
+    return await api_post(
+        f"/api/science/admin/releases/{release_id}/activate",
+        employee_id=employee_id,
+        payload={"user_confirmed": True},
+    )
+
+
+@mcp.tool(name="science_release_withdraw")
+async def science_release_withdraw(
+    release_id: str,
+    user_confirmed: bool,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+) -> dict[str, Any]:
+    """Withdraw only after API-side authenticated science.admin enforcement."""
+    require_science_confirmation(user_confirmed, "science_release_withdraw")
+    return await api_post(
+        f"/api/science/admin/releases/{release_id}/withdraw",
+        employee_id=employee_id,
+        payload={"user_confirmed": True},
+    )
 
 
 @mcp.tool(name="boi_search")
@@ -3498,7 +3759,111 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
     tool_name = (req.tool or "").replace(".", "_").replace("-", "_")
     args = dict(req.arguments or {})
     employee_id = str(args.get("employee_id") or DEFAULT_EMPLOYEE_ID)
-    if tool_name in {"boi_search", "search_boi", "boi_search_sample"}:
+    if tool_name in {"science_release_activate", "science_release_withdraw"}:
+        # A shared service token is not an Admin identity. These operations must
+        # travel through an interactive authenticated caller path.
+        return JSONResponse(
+            {"detail": "interactive_admin_identity_required"}, status_code=403
+        )
+    if tool_name == "science_interpret":
+        result = await api_post(
+            "/api/science/interpret",
+            employee_id=employee_id,
+            payload={
+                "document": str(args.get("document") or ""),
+                "request_id": str(args.get("request_id") or req.request_id or ""),
+            },
+            service_token=True,
+        )
+    elif tool_name == "science_interpretation_confirm":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        interpretation_id = str(args.get("interpretation_id") or "")
+        result = await api_post(
+            f"/api/science/interpretations/{interpretation_id}/confirm",
+            employee_id=employee_id,
+            payload={
+                "binding_id": str(args.get("binding_id") or ""),
+                "user_confirmed": True,
+                "request_id": str(args.get("request_id") or req.request_id or ""),
+            },
+            service_token=True,
+        )
+    elif tool_name == "science_verify_claim":
+        claim_id = str(args.get("claim_id") or "")
+        result = await api_post(
+            f"/api/science/claims/{claim_id}/verify",
+            employee_id=employee_id,
+            payload={"request_id": str(args.get("request_id") or req.request_id or "")},
+            service_token=True,
+        )
+    elif tool_name == "science_verify_document":
+        result = await api_post(
+            "/api/science/verify-document",
+            employee_id=employee_id,
+            payload={
+                "document": str(args.get("document") or ""),
+                "request_id": str(args.get("request_id") or req.request_id or ""),
+            },
+            service_token=True,
+        )
+    elif tool_name == "science_evidence_get":
+        result = await api_get(
+            f"/api/science/evidence/{str(args.get('evidence_id') or '')}",
+            employee_id=employee_id,
+            service_token=True,
+        )
+    elif tool_name == "science_report_get":
+        result = await api_get(
+            f"/api/science/reports/{str(args.get('report_id') or '')}",
+            employee_id=employee_id,
+            service_token=True,
+        )
+    elif tool_name == "science_report_export":
+        result = await api_get_bytes(
+            f"/api/science/reports/{str(args.get('report_id') or '')}/export",
+            employee_id=employee_id,
+            params={"format": str(args.get("format") or "markdown")},
+            service_token=True,
+        )
+    elif tool_name == "science_proposal_create":
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        result = await api_post(
+            "/api/science/proposals",
+            employee_id=employee_id,
+            payload={"proposal": args.get("proposal") or {}, "user_confirmed": True},
+            service_token=True,
+        )
+    elif tool_name == "science_source_validate":
+        result = await api_post(
+            "/api/science/admin/sources/validate",
+            employee_id=employee_id,
+            payload={"source": args.get("source") or {}},
+            service_token=True,
+        )
+    elif tool_name == "science_knowledge_validate":
+        result = await api_post(
+            "/api/science/admin/knowledge/validate",
+            employee_id=employee_id,
+            payload={"knowledge": args.get("knowledge") or {}},
+            service_token=True,
+        )
+    elif tool_name == "science_rule_qualify":
+        result = await api_post(
+            f"/api/science/admin/rules/{str(args.get('rule_id') or '')}/qualify",
+            employee_id=employee_id,
+            payload={},
+            service_token=True,
+        )
+    elif tool_name == "science_release_validate":
+        result = await api_post(
+            "/api/science/admin/releases/validate",
+            employee_id=employee_id,
+            payload={"release": args.get("release") or {}},
+            service_token=True,
+        )
+    elif tool_name in {"boi_search", "search_boi", "boi_search_sample"}:
         result = await boi_search_impl(query=str(args.get("query") or ""), employee_id=employee_id, service_token=True)
     elif tool_name == "boi_get":
         result = await boi_get_impl(str(args.get("boi_id") or req.boi_id or ""), employee_id=employee_id, service_token=True)
