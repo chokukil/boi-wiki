@@ -102,6 +102,7 @@ class ScienceLLMConfig:
     model_id: str
     response_format_mode: Literal["json_schema", "prompt_json"] = "json_schema"
     reasoning_mode: Literal["default", "disabled"] = "default"
+    max_attempts: int = 1
     settings: LLMModelSettings = field(default_factory=LLMModelSettings, repr=False)
     _base_url: str = field(default="", repr=False)
     _api_key: str = field(default="", repr=False)
@@ -135,6 +136,14 @@ class ScienceLLMConfig:
             )
             or "default"
         )
+        raw_max_attempts = (
+            cls._first(
+                values,
+                "BOI_SCIENCE_LLM_MAX_ATTEMPTS",
+                "BOI_LLM_MAX_ATTEMPTS",
+            )
+            or "1"
+        )
         if not base_url or not model_id:
             raise ScienceInterpretationUnavailable(
                 "Science LLM configuration is unavailable",
@@ -148,6 +157,15 @@ class ScienceLLMConfig:
         if reasoning_mode not in {"default", "disabled"}:
             raise ScienceInterpretationUnavailable(
                 "Science LLM reasoning configuration is invalid",
+                diagnostic_code="invalid_configuration",
+            ) from None
+        try:
+            max_attempts = int(raw_max_attempts)
+        except (TypeError, ValueError):
+            max_attempts = 0
+        if max_attempts not in {1, 2, 3}:
+            raise ScienceInterpretationUnavailable(
+                "Science LLM retry configuration is invalid",
                 diagnostic_code="invalid_configuration",
             ) from None
         validate_with_closed_error(
@@ -187,6 +205,7 @@ class ScienceLLMConfig:
             model_id=model_id,
             response_format_mode=response_format_mode,
             reasoning_mode=reasoning_mode,
+            max_attempts=max_attempts,
             settings=settings,
             _base_url=base_url,
             _api_key=api_key,
@@ -293,6 +312,41 @@ class ScienceLLMClient:
         return schema
 
     def interpret(
+        self,
+        document_text: str,
+        *,
+        ontology_candidates: Sequence[Mapping[str, Any]],
+    ) -> ScienceLLMResult:
+        retriable = {
+            "invalid_envelope",
+            "invalid_json",
+            "schema_invalid",
+            "timeout",
+            "transport_error",
+            "http_status_429",
+            "http_status_500",
+            "http_status_502",
+            "http_status_503",
+            "http_status_504",
+        }
+        for attempt in range(self.config.max_attempts):
+            try:
+                return self._interpret_once(
+                    document_text,
+                    ontology_candidates=ontology_candidates,
+                )
+            except ScienceInterpretationUnavailable as error:
+                if (
+                    attempt + 1 >= self.config.max_attempts
+                    or error.diagnostic_code not in retriable
+                ):
+                    raise
+        raise ScienceInterpretationUnavailable(
+            "Science interpretation failed closed",
+            diagnostic_code="invalid_response",
+        )
+
+    def _interpret_once(
         self,
         document_text: str,
         *,

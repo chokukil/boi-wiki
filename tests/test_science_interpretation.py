@@ -394,6 +394,30 @@ def test_llm_client_can_disable_qwen_thinking_for_bounded_extraction() -> None:
     assert user_message.endswith("\n/no_think")
 
 
+def test_llm_client_retries_only_invalid_candidate_and_accepts_valid_schema() -> None:
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return _openai_response("not-json" if calls == 1 else _llm_content())
+
+    config = ScienceLLMConfig.from_env(
+        {
+            "BOI_SCIENCE_LLM_BASE_URL": "https://science-llm.test/v1",
+            "BOI_SCIENCE_LLM_MODEL": "fixture-model",
+            "BOI_SCIENCE_LLM_MAX_ATTEMPTS": "2",
+        }
+    )
+    result = ScienceLLMClient(config, transport=httpx.MockTransport(handler)).interpret(
+        "RPM 증가 시 두께 변화", ontology_candidates=[]
+    )
+
+    assert config.max_attempts == 2
+    assert calls == 2
+    assert result.payload.claims[0].normalized_claim.predicate == "increases"
+
+
 def test_llm_config_rejects_unknown_response_format_mode() -> None:
     with pytest.raises(ScienceInterpretationUnavailable) as captured:
         ScienceLLMConfig.from_env(
