@@ -4,7 +4,7 @@ Date: 2026-08-25 (Asia/Seoul)
 
 Branch: `codex/science-application`
 
-Implementation commit: `6f136fe6a6ef611a630705b933d5dfba37dfc2aa`
+Implementation commit: `d749af8d888cee4383a0987dab3e57d3456bb4ec`
 
 Reviewed base: `1a28f8bf653db9fb27040fb6a9832af50e48f859`
 
@@ -13,7 +13,7 @@ Foundation enforcement base: `707ddb7ee680326bf006dd5d05582e4d5bc3bc04`
 ## Scope and trust boundaries
 
 This change fixes every Critical/Important finding in the Task 2 review and all
-three follow-up re-reviews, including the final canonical URL-boundary report,
+four follow-up re-reviews, including the final token-boundary report,
 while preserving the Task 1 atomic record/audit protocol and the Foundation
 Catalog-issued operational capability.
 
@@ -71,20 +71,22 @@ Catalog-issued operational capability.
   Raw C0/space characters, NFKC-changing input, malformed percent syntax,
   noncanonical scheme/hostname/port, percent-encoded authority, userinfo, and
   every fragment fail closed before parsing can discard or reinterpret bytes.
-- Path normalization runs before every strict percent-decode iteration. The
-  complete decoded path and compact segments are checked before canonical
-  re-encoding. Generic credential prefixes, `X-Amz`/`X-Goog`/`X-Ms`,
-  SharedAccess/SAS, bearer/presigned forms, forbidden key-value delimiters, and
-  credential names split across path segments are rejected.
+- Path normalization runs before every strict percent-decode iteration. A
+  shared boundary tokenizer scans exact markers and reviewed multi-token
+  sequences anywhere across path segments and canonical hostname labels. It
+  recognizes all 22 generic/vendor families plus `X-Amz`/`X-Goog`/`X-Ms`
+  credential/signature and SharedAccessSignature forms without treating
+  `signals`, `sigma`, or `authors` as `sig`/`auth` markers.
 - Stable source queries are denied by default. The only current reviewed
   exception is `download=true|1`, which preserves the checked-in BIPM immutable
   PDF source links without admitting a signed or tracking URL.
 - Adversarial tests cover Source and `resource_url`/`requested_url`/
   `resolved_url` values through service, real Store save, direct private-file
   load, and WAL recovery, including nested non-URL locator secrets. Every
-  returned failure is sanitized and no rejected report is published. A closed
-  `raise_safe_science_validation_error()` helper is available for Task 3 so a
-  raw input-bearing Pydantic error is never returned by the future REST layer.
+  returned failure is sanitized and no rejected report is published. The
+  `closed_science_validation_error()` factory is called only after the raw
+  validation exception scope exits, so the future Task 3 REST adapter can raise
+  a closed error with neither a cause nor implicit secret-bearing context.
 
 ## RED evidence
 
@@ -146,6 +148,14 @@ The review fixes were implemented in adversarial TDD slices.
    service RED failures, and `/api/key-hidden` produced four more, proving a
    split-prefix path bypass before the final bounded segment-prefix scan.
 
+10. The token-boundary slice first failed collection because the closed error
+    factory did not exist. After adding only that factory and Pydantic input
+    hiding, 44 benign-prefix path/hostname credentials were still accepted and
+    the three required scientific paths were falsely denied: `47 failed, 1
+    passed`. The final matrix expands the 22 compact families with every
+    reviewed separated vendor credential/signature sequence and exercises the
+    same URLs through service, Store save/load, and WAL recovery.
+
 ## GREEN behavior
 
 ### C1: proposal-only interpretation and explicit confirmation
@@ -184,6 +194,10 @@ The review fixes were implemented in adversarial TDD slices.
 - HTTP status, timeout, transport, malformed envelope/JSON, forbidden output,
   and schema errors expose only closed diagnostic codes and sanitized messages.
   Raw `httpx` errors are never retained as exception causes.
+- All `ScienceModel` validation strings hide input values. The public validation
+  factory takes no raw exception and is invoked after the `except` scope; the
+  real adapter-pattern test proves the raised closed error has no cause, no
+  context, and no secret-bearing text.
 
 ### I2: immutable, self-verifying grounding snapshot
 
@@ -225,7 +239,7 @@ Focused Task 2 review-fix suite:
 ```text
 umask 077 && TMPDIR=/tmp/boi-sci-pytest /tmp/boi-sci-uv/bin/pytest -q \
   tests/test_science_interpretation.py --tb=short
-219 passed in 12.52s
+573 passed in 16.06s
 ```
 
 Fresh combined Task 2 + Task 1 + Foundation regression:
@@ -237,7 +251,7 @@ umask 077 && TMPDIR=/tmp/boi-sci-pytest /tmp/boi-sci-uv/bin/pytest -q \
   tests/test_science_catalog.py tests/test_science_engine.py \
   tests/test_science_models.py tests/test_science_profile.py \
   tests/test_science_source_ledger.py --tb=short
-630 passed in 9.26s
+984 passed in 20.89s
 ```
 
 Static verification:
@@ -272,9 +286,10 @@ Ruff 0.16 rule. Compile and diff checks completed with no output/errors.
   resolution.
 - No endpoint, API key, raw idempotency key, LLM reason, LLM Evidence, or LLM
   locator is stored.
-- The stable-source policy deliberately rejects opaque compact credential
-  prefixes, including prefixes split across path segments. No permissive
-  exception was added for ambiguous bearer-like source identifiers.
+- The stable-source policy rejects only exact reviewed boundary tokens and
+  multi-token sequences, including those appearing after benign path/hostname
+  tokens or split across segments/labels. It intentionally permits the ordinary
+  scientific tokens `signals`, `sigma`, and `authors`.
 - Proposed invalid ontology refs cannot be confirmed and cannot enter a verdict,
   annotation, Evidence link, or report.
 - Task 1 no-follow IO, atomic publication, audit WAL, recovery, collision checks,
