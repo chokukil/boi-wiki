@@ -33,12 +33,20 @@ def test_boi_wiki_mcp_health(mcp_module):
     assert body["mcp_endpoint"] == "http://boi-wiki-mcp.example:28200/mcp"
     assert body["bridge_endpoint"] == "http://boi-wiki-mcp.example:28200/api/mcp/call"
     assert body["health_endpoint"] == "http://boi-wiki-mcp.example:28200/health"
-    assert body["capabilities"]["tools"] == 131
     assert body["capabilities"]["tools"] == len(body["capability_lists"]["tools"])
+    assert body["capabilities"]["tools"] >= 145
     assert body["capabilities"]["resource_templates"] == 11
     assert body["capability_lists"]["tools"][0]["name"] == "boi_search"
     group_names = [group["name"] for group in body["tool_groups"]]
-    assert group_names[:6] == ["BoI Wiki", "BoI Inbox", "SOP", "Event Broker", "Action", "Advanced"]
+    assert group_names[:7] == [
+        "BoI Wiki",
+        "BoI Inbox",
+        "SOP",
+        "Science Verifier",
+        "Event Broker",
+        "Action",
+        "Advanced",
+    ]
     grouped_tool_names = [
         tool["name"]
         for group in body["tool_groups"]
