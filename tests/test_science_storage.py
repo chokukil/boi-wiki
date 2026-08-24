@@ -295,29 +295,216 @@ def test_audit_rows_are_append_only_and_action_typed(
     """Audit serialization must not retain endpoint or credential values at any depth."""
     runtime_store.append_audit(
         identity=science_admin,
-        action="interpretation_saved",
-        target_id="sci-interpretation:fixture",
+        action="standalone_note_recorded",
+        target_id="sci-note:00000000-0000-4000-8000-000000000001",
         details={
-            "document_digest": digest("document"),
+            "note_digest": digest("note-one"),
         },
     )
     runtime_store.append_audit(
-        identity=AuthIdentity(employee_id="100002", display_name="power user"),
-        action="proposal_saved",
-        target_id="sci-proposal:00000000-0000-4000-8000-000000000001",
-        details={"domain": "lithography", "kind": "term_alias"},
+        identity=science_admin,
+        action="standalone_note_recorded",
+        target_id="sci-note:00000000-0000-4000-8000-000000000002",
+        details={"note_digest": digest("note-two")},
     )
 
     raw = runtime_store.audit_path.read_text(encoding="utf-8")
     rows = [json.loads(line) for line in raw.splitlines()]
     assert [row["action"] for row in rows[-2:]] == [
-        "interpretation_saved",
-        "proposal_saved",
+        "standalone_note_recorded",
+        "standalone_note_recorded",
     ]
     assert rows[-2]["details"] == {
-        "document_digest": digest("document"),
+        "note_digest": digest("note-one"),
     }
     assert runtime_store.audit_path.stat().st_mode & 0o777 == 0o600
+
+
+def test_public_audit_rejects_ordinary_user_forged_approval(
+    runtime_store: ScienceRuntimeStore,
+):
+    """A pilot user cannot manufacture release-candidate history."""
+    proposal_id = "sci-proposal:00000000-0000-4000-8000-000000000010"
+    approval_id = "sci-approval:00000000-0000-4000-8000-000000000010"
+
+    with pytest.raises(ScienceAuthorizationError, match="internal|admin"):
+        runtime_store.append_audit(
+            identity=AuthIdentity(employee_id="100003", display_name="ordinary user"),
+            action="proposal_approved_for_release_candidate",
+            target_id=proposal_id,
+            details={"approval_id": approval_id, "domain": "lithography"},
+        )
+
+    assert not runtime_store.audit_path.exists()
+    assert runtime_store.pending_transaction_ids() == []
+
+
+@pytest.mark.parametrize(
+    ("action", "target_id", "details"),
+    [
+        (
+            "interpretation_saved",
+            "sci-interpretation:nonexistent",
+            {"document_digest": digest("nonexistent")},
+        ),
+        (
+            "proposal_approved_for_release_candidate",
+            "sci-proposal:00000000-0000-4000-8000-000000000011",
+            {
+                "approval_id": "sci-approval:00000000-0000-4000-8000-000000000011",
+                "domain": "lithography",
+            },
+        ),
+    ],
+)
+def test_public_audit_rejects_admin_record_actions_without_dependencies(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    action: str,
+    target_id: str,
+    details: dict[str, str],
+):
+    """Admin authority cannot bypass immutable record-bound event production."""
+    with pytest.raises(ScienceAuthorizationError, match="internal"):
+        runtime_store.append_audit(
+            identity=science_admin,
+            action=action,
+            target_id=target_id,
+            details=details,
+        )
+
+    assert not runtime_store.audit_path.exists()
+
+
+def test_public_audit_cannot_duplicate_saved_or_approved_events(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+):
+    """Only the immutable record transactions may produce the four mutation actions."""
+    interpretation = runtime_store.save_interpretation(
+        interpretation_payload("sci-interpretation:no-duplicate"),
+        identity=science_admin,
+    )
+    proposal = runtime_store.save_proposal(
+        identity=AuthIdentity(employee_id="100003", display_name="proposer"),
+        domain="lithography",
+        kind="term_alias",
+        payload={"alias": "PR"},
+    )
+    approval = runtime_store.approve_proposal(
+        proposal.proposal_id, identity=science_admin
+    )
+    before = runtime_store.audit_path.read_bytes()
+
+    with pytest.raises(ScienceAuthorizationError, match="internal"):
+        runtime_store.append_audit(
+            identity=science_admin,
+            action="interpretation_saved",
+            target_id=interpretation.interpretation_id,
+            details={"document_digest": interpretation.document_digest},
+        )
+    with pytest.raises(ScienceAuthorizationError, match="internal"):
+        runtime_store.append_audit(
+            identity=science_admin,
+            action="proposal_approved_for_release_candidate",
+            target_id=proposal.proposal_id,
+            details={"approval_id": approval.approval_id, "domain": proposal.domain},
+        )
+
+    assert runtime_store.audit_path.read_bytes() == before
+    rows = [json.loads(line) for line in before.splitlines()]
+    assert (
+        sum(
+            row["action"] == "interpretation_saved"
+            and row["target_id"] == interpretation.interpretation_id
+            for row in rows
+        )
+        == 1
+    )
+    assert (
+        sum(
+            row["action"] == "proposal_approved_for_release_candidate"
+            and row["target_id"] == proposal.proposal_id
+            for row in rows
+        )
+        == 1
+    )
+
+
+def test_public_standalone_audit_requires_science_admin(
+    runtime_store: ScienceRuntimeStore,
+):
+    """The only public audit action is a non-authoritative admin note."""
+    with pytest.raises(ScienceAuthorizationError, match="science.admin"):
+        runtime_store.append_audit(
+            identity=AuthIdentity(employee_id="100003", display_name="ordinary user"),
+            action="standalone_note_recorded",
+            target_id="sci-note:00000000-0000-4000-8000-000000000012",
+            details={"note_digest": digest("admin-note")},
+        )
+
+
+def test_public_standalone_note_target_is_semantically_unique(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+):
+    """A standalone note ID names one immutable operational note."""
+    target_id = "sci-note:00000000-0000-4000-8000-000000000013"
+    runtime_store.append_audit(
+        identity=science_admin,
+        action="standalone_note_recorded",
+        target_id=target_id,
+        details={"note_digest": digest("first-note")},
+    )
+
+    with pytest.raises(ImmutableScienceRecordError, match="note target"):
+        runtime_store.append_audit(
+            identity=science_admin,
+            action="standalone_note_recorded",
+            target_id=target_id,
+            details={"note_digest": digest("second-note")},
+        )
+
+    rows = [
+        json.loads(line)
+        for line in runtime_store.audit_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert sum(row["target_id"] == target_id for row in rows) == 1
+
+
+def test_recovery_rejects_audit_only_wal_forged_into_record_action(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Canonical audit-only bytes cannot bypass the internal-action boundary."""
+    real_append = runtime_store._append_audit_event_locked
+
+    def fail_note_audit(event: ScienceAuditRecord):
+        raise OSError("leave standalone WAL pending")
+
+    monkeypatch.setattr(runtime_store, "_append_audit_event_locked", fail_note_audit)
+    with pytest.raises(ScienceTransactionPendingError):
+        runtime_store.append_audit(
+            identity=science_admin,
+            action="standalone_note_recorded",
+            target_id="sci-note:00000000-0000-4000-8000-000000000014",
+            details={"note_digest": digest("pending-note")},
+        )
+    monkeypatch.setattr(runtime_store, "_append_audit_event_locked", real_append)
+    transaction_id = runtime_store.pending_transaction_ids()[0]
+    journal_path = runtime_store.record_path("transactions", transaction_id)
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    journal["audit"]["action"] = "interpretation_saved"
+    journal["audit"]["target_id"] = "sci-interpretation:forged-recovery"
+    journal["audit"]["details"] = {"document_digest": digest("forged")}
+    journal_path.write_bytes(canonical_json_bytes(journal))
+
+    with pytest.raises(ImmutableScienceRecordError, match="Record-mutation|immutable"):
+        runtime_store.recover_pending_transactions()
+
+    assert journal_path.exists()
+    assert not runtime_store.audit_path.exists()
 
 
 def test_proposal_authorship_and_approval_use_one_trusted_identity_resolver(
@@ -362,47 +549,47 @@ def test_proposal_authorship_and_approval_use_one_trusted_identity_resolver(
     [
         (
             AuthIdentity(employee_id="Bearer-actor-secret", display_name="bad"),
-            "sci-interpretation:fixture",
-            {"document_digest": digest("document")},
+            "sci-note:00000000-0000-4000-8000-000000000020",
+            {"note_digest": digest("note")},
         ),
         (
             AuthIdentity(employee_id="sk-live-secret", display_name="bad"),
-            "sci-interpretation:fixture",
-            {"document_digest": digest("document")},
+            "sci-note:00000000-0000-4000-8000-000000000020",
+            {"note_digest": digest("note")},
         ),
         (
             AuthIdentity(employee_id="100001", display_name="bad"),
             "https://internal.invalid/token=target-secret",
-            {"document_digest": digest("document")},
+            {"note_digest": digest("note")},
         ),
         (
             AuthIdentity(employee_id="100001", display_name="bad"),
             "internal.invalid:1236",
-            {"document_digest": digest("document")},
+            {"note_digest": digest("note")},
         ),
         (
             AuthIdentity(employee_id="100001", display_name="bad"),
-            "sci-interpretation:fixture",
-            {"document_digest": "Bearer detail-secret"},
+            "sci-note:00000000-0000-4000-8000-000000000020",
+            {"note_digest": "Bearer detail-secret"},
         ),
         (
             AuthIdentity(employee_id="100001", display_name="bad"),
-            "sci-interpretation:fixture",
-            {"document_digest": "endpoint=https://internal.invalid/v1"},
+            "sci-note:00000000-0000-4000-8000-000000000020",
+            {"note_digest": "endpoint=https://internal.invalid/v1"},
         ),
         (
             AuthIdentity(employee_id="100001", display_name="bad"),
-            "sci-interpretation:fixture",
+            "sci-note:00000000-0000-4000-8000-000000000020",
             {
-                "document_digest": digest("document"),
+                "note_digest": digest("note"),
                 "apiKey": "camel-secret",
             },
         ),
         (
             AuthIdentity(employee_id="100001", display_name="bad"),
-            "sci-interpretation:fixture",
+            "sci-note:00000000-0000-4000-8000-000000000020",
             {
-                "document_digest": digest("document"),
+                "note_digest": digest("note"),
                 "context": ["safe", "Bearer list-secret"],
             },
         ),
@@ -423,7 +610,7 @@ def test_audit_rejects_sensitive_scalars_in_every_persisted_position(
     with pytest.raises(ScienceSensitivePersistenceError):
         runtime_store.append_audit(
             identity=identity,
-            action="interpretation_saved",
+            action="standalone_note_recorded",
             target_id=target_id,
             details=details,
         )
@@ -443,9 +630,9 @@ def test_audit_rejects_unknown_but_nonsecret_action_details(
     with pytest.raises(ValidationError, match="Extra inputs"):
         runtime_store.append_audit(
             identity=science_admin,
-            action="interpretation_saved",
-            target_id="sci-interpretation:fixture",
-            details={"document_digest": digest("document"), "note": "safe"},
+            action="standalone_note_recorded",
+            target_id="sci-note:00000000-0000-4000-8000-000000000021",
+            details={"note_digest": digest("note"), "note": "safe"},
         )
 
 
@@ -473,16 +660,16 @@ def test_audit_short_write_is_completed_as_one_valid_json_row(
     monkeypatch.setattr(os, "write", short_once)
     runtime_store.append_audit(
         identity=science_admin,
-        action="interpretation_saved",
-        target_id="sci-interpretation:short-write",
-        details={"document_digest": digest("document")},
+        action="standalone_note_recorded",
+        target_id="sci-note:00000000-0000-4000-8000-000000000030",
+        details={"note_digest": digest("short-write")},
     )
 
     rows = [
         json.loads(line)
         for line in runtime_store.audit_path.read_text(encoding="utf-8").splitlines()
     ]
-    assert rows[-1]["target_id"] == "sci-interpretation:short-write"
+    assert rows[-1]["target_id"] == "sci-note:00000000-0000-4000-8000-000000000030"
     assert calls >= 2
 
 
@@ -494,9 +681,9 @@ def test_audit_mid_row_error_rolls_back_and_fsyncs_previous_eof(
     """A second-write exception must leave the prior JSONL bytes exactly intact."""
     runtime_store.append_audit(
         identity=science_admin,
-        action="interpretation_saved",
-        target_id="sci-interpretation:seed",
-        details={"document_digest": digest("seed")},
+        action="standalone_note_recorded",
+        target_id="sci-note:00000000-0000-4000-8000-000000000031",
+        details={"note_digest": digest("seed")},
     )
     before = runtime_store.audit_path.read_bytes()
     audit_inode = runtime_store.audit_path.stat().st_ino
@@ -518,9 +705,9 @@ def test_audit_mid_row_error_rolls_back_and_fsyncs_previous_eof(
     ) as caught:
         runtime_store.append_audit(
             identity=science_admin,
-            action="interpretation_saved",
-            target_id="sci-interpretation:failed",
-            details={"document_digest": digest("failed")},
+            action="standalone_note_recorded",
+            target_id="sci-note:00000000-0000-4000-8000-000000000032",
+            details={"note_digest": digest("failed")},
         )
     assert runtime_store.audit_path.read_bytes() == before
     assert caught.value.record_published is False
@@ -1552,9 +1739,9 @@ def crash_on_audit_row(descriptor, data):
 store._write_all = crash_on_audit_row
 store.append_audit(
     identity=AuthIdentity(employee_id="100001", display_name="audit writer"),
-    action="interpretation_saved",
-    target_id="sci-interpretation:audit-process-crash",
-    details={"document_digest": sys.argv[2]},
+    action="standalone_note_recorded",
+    target_id="sci-note:00000000-0000-4000-8000-000000000040",
+    details={"note_digest": sys.argv[2]},
 )
 """
     crashed = subprocess.run(
@@ -1576,6 +1763,6 @@ store.append_audit(
         for line in recovered.audit_path.read_text(encoding="utf-8").splitlines()
     ]
     assert [row["target_id"] for row in rows] == [
-        "sci-interpretation:audit-process-crash"
+        "sci-note:00000000-0000-4000-8000-000000000040"
     ]
     assert recovered.pending_transaction_ids() == []

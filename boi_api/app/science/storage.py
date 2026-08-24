@@ -23,6 +23,7 @@ from pydantic import Field, model_validator
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.authorization import (
     ScienceAuthorization,
+    ScienceAuthorizationError,
     ScienceRolesResolver,
 )
 from boi_api.app.science.digests import canonical_json_bytes
@@ -40,12 +41,14 @@ ProposalKind = Literal[
     "concept_link",
     "ambiguity_pattern",
 ]
-AuditAction = Literal[
+RecordAuditAction = Literal[
     "interpretation_saved",
     "report_saved",
     "proposal_saved",
     "proposal_approved_for_release_candidate",
 ]
+StandaloneAuditAction = Literal["standalone_note_recorded"]
+AuditAction = RecordAuditAction | StandaloneAuditAction
 CollectionName = Literal[
     "interpretations",
     "reports",
@@ -69,6 +72,12 @@ _TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.[0-9a-f]{32}\.tmp$")
 _UUID_PATTERN = (
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 )
+_RECORD_AUDIT_ACTIONS = {
+    "interpretation_saved",
+    "report_saved",
+    "proposal_saved",
+    "proposal_approved_for_release_candidate",
+}
 
 _SENSITIVE_KEYS = {
     "api_key",
@@ -196,11 +205,16 @@ class ProposalApprovedAuditDetails(ScienceModel):
     domain: str = Field(pattern=_DOMAIN_PATTERN)
 
 
+class StandaloneNoteAuditDetails(ScienceModel):
+    note_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
 _AUDIT_DETAIL_MODELS: dict[str, type[ScienceModel]] = {
     "interpretation_saved": InterpretationSavedAuditDetails,
     "report_saved": ReportSavedAuditDetails,
     "proposal_saved": ProposalSavedAuditDetails,
     "proposal_approved_for_release_candidate": ProposalApprovedAuditDetails,
+    "standalone_note_recorded": StandaloneNoteAuditDetails,
 }
 
 
@@ -226,10 +240,15 @@ class ScienceAuditRecord(ScienceModel):
             target_matches = _INTERPRETATION_ID_RE.fullmatch(self.target_id)
         elif self.action == "report_saved":
             target_matches = _REPORT_ID_RE.fullmatch(self.target_id)
-        else:
+        elif self.action in {
+            "proposal_saved",
+            "proposal_approved_for_release_candidate",
+        }:
             target_matches = re.fullmatch(
                 rf"sci-proposal:{_UUID_PATTERN}", self.target_id
             )
+        else:
+            target_matches = re.fullmatch(rf"sci-note:{_UUID_PATTERN}", self.target_id)
         if not target_matches:
             raise ValueError(
                 f"Science audit target is invalid for action {self.action}"
@@ -811,6 +830,10 @@ class ScienceRuntimeStore:
     def _validate_audit_journal_semantics(
         journal: ScienceAuditTransactionJournal,
     ) -> None:
+        if journal.audit.action != "standalone_note_recorded":
+            raise ImmutableScienceRecordError(
+                "Record-mutation audit actions require an immutable record transaction"
+            )
         if journal.actor_id != journal.audit.actor:
             raise ImmutableScienceRecordError(
                 "Science audit-only transaction actor linkage mismatch"
@@ -1060,6 +1083,13 @@ class ScienceRuntimeStore:
     ) -> None:
         record_targets: set[tuple[CollectionName, str]] = set()
         journal_event_ids: set[str] = set()
+        planned_note_targets: set[str] = set()
+        ledger_note_targets = {
+            event.target_id: event_id
+            for event_id, row in audit_rows.items()
+            if (event := ScienceAuditRecord.model_validate_json(row[:-1])).action
+            == "standalone_note_recorded"
+        }
 
         for item in plan:
             journal = item.journal
@@ -1074,6 +1104,18 @@ class ScienceRuntimeStore:
                 raise ImmutableScienceRecordError(
                     f"Science audit event ID collision for {event_id}"
                 )
+            if journal.audit.action == "standalone_note_recorded":
+                note_target = journal.audit.target_id
+                if note_target in planned_note_targets:
+                    raise ImmutableScienceRecordError(
+                        "Science recovery plan has a duplicate standalone note target"
+                    )
+                planned_note_targets.add(note_target)
+                ledger_event_id = ledger_note_targets.get(note_target)
+                if ledger_event_id is not None and ledger_event_id != event_id:
+                    raise ImmutableScienceRecordError(
+                        "Science standalone note target already exists"
+                    )
 
             if not isinstance(journal, ScienceTransactionJournal):
                 continue
@@ -1280,6 +1322,16 @@ class ScienceRuntimeStore:
             audit=audit,
         )
         self._validate_audit_journal_semantics(journal)
+        item = _RecoveryPlanItem(
+            journal=journal,
+            record=None,
+            record_bytes=None,
+            audit_row=canonical_json_bytes(audit) + b"\n",
+        )
+        audit_rows = self._audit_rows_from_complete_content(
+            self._audit_content_locked()
+        )
+        self._validate_global_recovery_plan_locked([item], audit_rows)
         try:
             self._publish_bytes_locked(
                 "transactions", transaction_id, canonical_json_bytes(journal)
@@ -1488,11 +1540,19 @@ class ScienceRuntimeStore:
         target_id: str,
         details: Mapping[str, Any],
     ) -> ScienceAuditRecord:
+        if action in _RECORD_AUDIT_ACTIONS:
+            raise ScienceAuthorizationError(
+                "Record-mutation audit actions are internal to immutable transactions"
+            )
         event = self._new_audit_event(
             identity=identity,
             action=action,
             target_id=target_id,
             details=details,
+        )
+        self.authorization.require_admin(
+            identity,
+            roles_for=self._roles_for,
         )
         with self._exclusive():
             self._commit_audit_only_locked(event)
