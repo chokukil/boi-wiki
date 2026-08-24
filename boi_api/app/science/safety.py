@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Mapping, Sequence
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, TypeVar, cast
 from urllib.parse import quote, unquote, urlsplit
 
 
@@ -132,6 +132,33 @@ _EXACT_CREDENTIAL_TOKENS = frozenset(
         "sharedaccesssignature",
     }
 )
+_LONG_COMPACT_CREDENTIAL_FAMILIES = (
+    "accesskey",
+    "accesstoken",
+    "apikey",
+    "authorization",
+    "basicauth",
+    "bearer",
+    "clientsecret",
+    "credential",
+    "password",
+    "passwd",
+    "privatekey",
+    "signature",
+    "xamz",
+    "xgoog",
+    "xms",
+    "sharedaccess",
+    "presigned",
+    "xamzcredential",
+    "xamzsignature",
+    "xgoogcredential",
+    "xgoogsignature",
+    "xmscredential",
+    "xmssignature",
+    "sharedaccesssignature",
+)
+_SHORT_AMBIGUOUS_CREDENTIAL_MARKERS = ("auth", "sig", "token", "secret", "sas")
 _CREDENTIAL_TOKEN_SEQUENCES = (
     ("access", "key"),
     ("access", "token"),
@@ -164,6 +191,32 @@ def closed_science_validation_error() -> SciencePublicValidationError:
     """Build a closed error after an input-bearing exception scope has ended."""
 
     return SciencePublicValidationError()
+
+
+_ValidationResultT = TypeVar("_ValidationResultT")
+_VALIDATION_MISSING = object()
+
+
+def validate_with_closed_error(
+    operation: Callable[[], _ValidationResultT],
+    *,
+    caught: tuple[type[BaseException], ...],
+    closed_error: BaseException,
+) -> _ValidationResultT:
+    """Run validation and raise only after its input-bearing exception is gone."""
+
+    result: _ValidationResultT | object = _VALIDATION_MISSING
+    rejected = False
+    try:
+        result = operation()
+    except caught:
+        rejected = True
+    if rejected:
+        del operation, caught
+        raise closed_error
+    if result is _VALIDATION_MISSING:
+        raise RuntimeError("closed validation returned no result")
+    return cast(_ValidationResultT, result)
 
 
 def _validate_percent_syntax(value: str) -> None:
@@ -218,9 +271,34 @@ def _boundary_tokens(parts: Sequence[str]) -> tuple[str, ...]:
     )
 
 
+def _looks_like_compact_opaque_value(value: str) -> bool:
+    return (
+        len(value) >= 24
+        and value.isalnum()
+        and sum(character.isdigit() for character in value) >= 4
+        and len(set(value)) >= 8
+    )
+
+
+def _contains_compact_credential(token: str) -> bool:
+    if any(family in token for family in _LONG_COMPACT_CREDENTIAL_FAMILIES):
+        return True
+    for marker in _SHORT_AMBIGUOUS_CREDENTIAL_MARKERS:
+        offset = 0
+        while (index := token.find(marker, offset)) >= 0:
+            suffix = token[index + len(marker) :]
+            if _looks_like_compact_opaque_value(suffix):
+                return True
+            offset = index + 1
+    return False
+
+
 def _reject_credential_token_stream(parts: Sequence[str], *, location: str) -> None:
     tokens = _boundary_tokens(parts)
-    if any(token in _EXACT_CREDENTIAL_TOKENS for token in tokens):
+    if any(
+        token in _EXACT_CREDENTIAL_TOKENS or _contains_compact_credential(token)
+        for token in tokens
+    ):
         raise ScienceSensitivePersistenceError(
             f"stable source URL {location} contains credential material"
         )

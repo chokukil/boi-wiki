@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1359,9 +1360,19 @@ _BOUNDARY_CREDENTIAL_URLS = [
         f"https://file-{marker}-hidden-boundary-value.example.test/paper",
     )
 ]
+_COMPACT_OPAQUE_VALUE = "9f4c2a7d8e1b6c3a5d0f7e2c4b9a1d6e"
+_COMPACT_CREDENTIAL_URLS = [
+    url
+    for family in _CREDENTIAL_TOKEN_FAMILIES
+    for url in (
+        f"https://example.test/private/{family}{_COMPACT_OPAQUE_VALUE}",
+        f"https://file{family}{_COMPACT_OPAQUE_VALUE}.example.test/paper",
+    )
+]
 _UNSAFE_STABLE_SOURCE_URLS = [
     *_CANONICAL_URL_BYPASSES,
     *_BOUNDARY_CREDENTIAL_URLS,
+    *_COMPACT_CREDENTIAL_URLS,
 ]
 
 
@@ -1422,6 +1433,13 @@ def test_stable_source_url_rejects_exact_credential_tokens_anywhere(url: str):
 
 def test_stable_source_url_matrix_covers_all_22_reviewed_credential_families():
     assert len(_CREDENTIAL_TOKEN_FAMILIES) == 22
+    assert len(_COMPACT_CREDENTIAL_URLS) * 4 == 176
+
+
+@pytest.mark.parametrize("url", _COMPACT_CREDENTIAL_URLS)
+def test_stable_source_url_rejects_compact_credential_plus_opaque_value(url: str):
+    with pytest.raises(ValueError):
+        validate_credential_free_https_url(url)
 
 
 @pytest.mark.parametrize(
@@ -1430,6 +1448,8 @@ def test_stable_source_url_matrix_covers_all_22_reviewed_credential_families():
         "https://example.test/signals-and-systems/paper",
         "https://example.test/sigma-model/paper",
         "https://example.test/authors/feynman",
+        "https://example.test/tokenization/paper",
+        "https://example.test/secretory-pathway/paper",
     ],
 )
 def test_stable_source_url_allows_normal_scientific_tokens(url: str):
@@ -2075,6 +2095,176 @@ def test_real_store_load_rejects_canonical_report_with_credential_source_url(
         store.load_report(injected["report_id"])
 
     assert "hidden-load-value" not in str(captured.value)
+
+
+def _serialized_exception_graph(error: BaseException) -> str:
+    graph: list[dict[str, object]] = []
+    pending: list[BaseException] = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        node: dict[str, object] = {
+            "type": type(current).__name__,
+            "args": repr(current.args),
+            "dict": repr(current.__dict__),
+            "traceback": "".join(traceback.format_exception(current)),
+        }
+        if isinstance(current, ValidationError):
+            node["validation_errors"] = current.errors(include_url=False)
+        graph.append(node)
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        if current.__context__ is not None:
+            pending.append(current.__context__)
+    return json.dumps(graph, ensure_ascii=True, default=str, sort_keys=True)
+
+
+def _assert_closed_runtime_validation_error(
+    error: BaseException, *, secret: str
+) -> None:
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert secret not in str(error)
+    assert secret not in repr(error.args)
+    assert secret not in repr(error.__dict__)
+    assert secret not in "".join(traceback.format_exception(error))
+    serialized = _serialized_exception_graph(error)
+    assert "ValidationError" not in serialized
+    assert secret not in serialized
+
+
+def _report_with_compact_locator_secret(report, *, report_id: str) -> dict[str, object]:
+    injected = report.model_dump(mode="json")
+    injected["report_id"] = report_id
+    injected["annotations"][0]["evidence_links"][0]["locator"]["resource_url"] = (
+        f"https://example.test/private/apikey{_COMPACT_OPAQUE_VALUE}"
+    )
+    injected["report_digest"] = sha256_digest(
+        {key: value for key, value in injected.items() if key != "report_digest"}
+    )
+    return injected
+
+
+def test_real_service_discards_pydantic_context_for_rejected_locator(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, _store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    catalog.evidence_locator = {
+        "section": "3.2",
+        "resource_url": (f"https://example.test/private/apikey{_COMPACT_OPAQUE_VALUE}"),
+    }
+
+    with pytest.raises(ScienceOperationalError) as captured:
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key="science-request:closed-service-validation",
+        )
+
+    _assert_closed_runtime_validation_error(
+        captured.value, secret=_COMPACT_OPAQUE_VALUE
+    )
+
+
+def test_real_store_save_discards_pydantic_context_for_rejected_report(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:closed-save-base",
+    )
+    injected = _report_with_compact_locator_secret(
+        report, report_id="sci-report:closed-save"
+    )
+
+    with pytest.raises(ValueError) as captured:
+        store.save_report(injected, identity=science_identity)
+
+    _assert_closed_runtime_validation_error(
+        captured.value, secret=_COMPACT_OPAQUE_VALUE
+    )
+
+
+def test_real_store_load_discards_pydantic_context_for_rejected_report(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:closed-load-base",
+    )
+    injected = _report_with_compact_locator_secret(
+        report, report_id="sci-report:closed-load"
+    )
+    path = store.record_path("reports", injected["report_id"])
+    path.write_bytes(canonical_json_bytes(injected))
+    path.chmod(0o600)
+
+    with pytest.raises(ValueError) as captured:
+        store.load_report(injected["report_id"])
+
+    _assert_closed_runtime_validation_error(
+        captured.value, secret=_COMPACT_OPAQUE_VALUE
+    )
+
+
+def test_wal_recovery_discards_pydantic_context_for_rejected_report(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    real_append = store._append_audit_event_locked
+
+    def fail_report_audit(event):
+        if event.action == "report_saved":
+            raise OSError("simulated closed-validation audit interruption")
+        return real_append(event)
+
+    monkeypatch.setattr(store, "_append_audit_event_locked", fail_report_audit)
+    with pytest.raises(ScienceTransactionPendingError) as pending:
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key="science-request:closed-wal-base",
+        )
+    journal_path = next((store.root / "transactions").glob("*.json"))
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    record = journal["record"]
+    record["annotations"][0]["evidence_links"][0]["locator"]["resource_url"] = (
+        f"https://example.test/private/apikey{_COMPACT_OPAQUE_VALUE}"
+    )
+    record["report_digest"] = sha256_digest(
+        {key: value for key, value in record.items() if key != "report_digest"}
+    )
+    journal["audit"]["details"]["report_digest"] = record["report_digest"]
+    journal_path.write_bytes(canonical_json_bytes(journal))
+    store.record_path("reports", pending.value.record_id).unlink()
+    monkeypatch.setattr(store, "_append_audit_event_locked", real_append)
+
+    with pytest.raises(ValueError) as captured:
+        store.recover_pending_transactions()
+
+    _assert_closed_runtime_validation_error(
+        captured.value, secret=_COMPACT_OPAQUE_VALUE
+    )
 
 
 @pytest.mark.parametrize(

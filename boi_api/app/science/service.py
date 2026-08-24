@@ -7,6 +7,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal
 
+from pydantic import ValidationError
+
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.anchors import resolve_anchor
 from boi_api.app.science.digests import sha256_digest
@@ -40,6 +42,7 @@ from boi_api.app.science.operational import OperationalVerification
 from boi_api.app.science.safety import (
     ScienceSensitivePersistenceError,
     validate_credential_free_https_url,
+    validate_with_closed_error,
 )
 from boi_api.app.science.storage import ImmutableScienceRecordError
 
@@ -778,24 +781,26 @@ class ScienceService:
             raise ScienceOperationalError(
                 f"grounded Evidence has no source locator: {evidence_ref}"
             )
-        try:
-            safe_locator = EvidenceLocator.model_validate(deepcopy(dict(locator)))
-        except (ValueError, ScienceSensitivePersistenceError):
-            raise ScienceOperationalError(
+        safe_locator = validate_with_closed_error(
+            lambda: EvidenceLocator.model_validate(deepcopy(dict(locator))),
+            caught=(ValidationError, ScienceSensitivePersistenceError),
+            closed_error=ScienceOperationalError(
                 "grounded Evidence locator failed closed safety validation"
-            ) from None
+            ),
+        )
         source = self._pinned_object(
             release_set,
             ref=source_id,
             kind="source",
         )
         url = getattr(source, "original_url", None)
-        try:
-            safe_source_url = validate_credential_free_https_url(url)
-        except ScienceSensitivePersistenceError:
-            raise ScienceOperationalError(
+        safe_source_url = validate_with_closed_error(
+            lambda: validate_credential_free_https_url(url),
+            caught=(ScienceSensitivePersistenceError,),
+            closed_error=ScienceOperationalError(
                 f"grounded Evidence has no approved source link: {evidence_ref}"
-            ) from None
+            ),
+        )
         original_text = getattr(evidence, "original_text", None)
         original_text_hash = getattr(evidence, "original_text_hash", None)
         if (

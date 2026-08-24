@@ -34,6 +34,7 @@ from boi_api.app.science.models import (
 )
 from boi_api.app.science.safety import (
     ScienceSensitivePersistenceError,
+    validate_with_closed_error,
 )
 from boi_api.app.science.safety import (
     reject_sensitive_persistence as _reject_sensitive_scalars,
@@ -604,14 +605,16 @@ class ScienceRuntimeStore:
         if canonical is None:
             raise KeyError(f"unknown Science runtime record: {record_id}")
         payload = json.loads(canonical.decode("utf-8"))
-        try:
-            record = model.model_validate(payload)
-        except (ValidationError, ScienceSensitivePersistenceError):
-            if model in {InterpretationRecord, VerificationReport}:
-                raise ScienceSensitivePersistenceError(
+        if model in {InterpretationRecord, VerificationReport}:
+            record = validate_with_closed_error(
+                lambda: model.model_validate(payload),
+                caught=(ValidationError, ScienceSensitivePersistenceError),
+                closed_error=ScienceSensitivePersistenceError(
                     "unsafe Science runtime record rejected"
-                ) from None
-            raise
+                ),
+            )
+        else:
+            record = model.model_validate(payload)
         identifier_field = {
             "interpretations": "interpretation_id",
             "reports": "report_id",
@@ -747,16 +750,17 @@ class ScienceRuntimeStore:
     def _validate_journal_semantics(
         self, journal: ScienceTransactionJournal
     ) -> ScienceModel:
-        try:
-            record = self._record_model(journal.collection).model_validate(
-                journal.record
-            )
-        except (ValidationError, ScienceSensitivePersistenceError):
-            if journal.collection in {"interpretations", "reports"}:
-                raise ScienceSensitivePersistenceError(
+        record_model = self._record_model(journal.collection)
+        if journal.collection in {"interpretations", "reports"}:
+            record = validate_with_closed_error(
+                lambda: record_model.model_validate(journal.record),
+                caught=(ValidationError, ScienceSensitivePersistenceError),
+                closed_error=ScienceSensitivePersistenceError(
                     "unsafe Science transaction record rejected"
-                ) from None
-            raise
+                ),
+            )
+        else:
+            record = record_model.model_validate(journal.record)
         embedded_id = self._record_identifier(journal.collection, record)
         if embedded_id != journal.record_id:
             raise ImmutableScienceRecordError(
@@ -1353,17 +1357,18 @@ class ScienceRuntimeStore:
         *,
         identity: AuthIdentity,
     ) -> InterpretationRecord:
-        try:
-            payload = (
-                record.model_dump(mode="json", exclude_none=False)
-                if isinstance(record, InterpretationRecord)
-                else record
-            )
-            interpretation = InterpretationRecord.model_validate(payload)
-        except (ValidationError, ScienceSensitivePersistenceError):
-            raise ScienceSensitivePersistenceError(
+        payload = (
+            record.model_dump(mode="json", exclude_none=False)
+            if isinstance(record, InterpretationRecord)
+            else record
+        )
+        interpretation = validate_with_closed_error(
+            lambda: InterpretationRecord.model_validate(payload),
+            caught=(ValidationError, ScienceSensitivePersistenceError),
+            closed_error=ScienceSensitivePersistenceError(
                 "unsafe Science interpretation record rejected"
-            ) from None
+            ),
+        )
         if interpretation.operation_binding.actor_id != identity.employee_id:
             raise ScienceAuthorizationError(
                 "Science interpretation actor does not match trusted identity"
@@ -1479,17 +1484,18 @@ class ScienceRuntimeStore:
         *,
         identity: AuthIdentity,
     ) -> VerificationReport:
-        try:
-            payload = (
-                record.model_dump(mode="json", exclude_none=False)
-                if isinstance(record, VerificationReport)
-                else record
-            )
-            report = VerificationReport.model_validate(payload)
-        except (ValidationError, ScienceSensitivePersistenceError):
-            raise ScienceSensitivePersistenceError(
+        payload = (
+            record.model_dump(mode="json", exclude_none=False)
+            if isinstance(record, VerificationReport)
+            else record
+        )
+        report = validate_with_closed_error(
+            lambda: VerificationReport.model_validate(payload),
+            caught=(ValidationError, ScienceSensitivePersistenceError),
+            closed_error=ScienceSensitivePersistenceError(
                 "unsafe Science report record rejected"
-            ) from None
+            ),
+        )
         if report.operation_binding.actor_id != identity.employee_id:
             raise ScienceAuthorizationError(
                 "Science report actor does not match trusted identity"
