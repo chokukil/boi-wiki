@@ -17,6 +17,7 @@ SCIENCE_TOOLS = {
     "science_report_export",
     "science_proposal_create",
     "science_source_validate",
+    "science_evidence_validate",
     "science_knowledge_validate",
     "science_rule_qualify",
     "science_release_validate",
@@ -121,6 +122,9 @@ async def test_governance_tools_keep_validation_separate_from_mutation(
     monkeypatch.setattr(mcp_module, "api_post", fake_post)
 
     await mcp_module.science_source_validate({"source_id": "s-1"}, employee_id="a")
+    await mcp_module.science_evidence_validate(
+        {"evidence_id": "e-1"}, employee_id="a"
+    )
     await mcp_module.science_knowledge_validate(
         {"knowledge_id": "k-1"}, employee_id="a"
     )
@@ -140,6 +144,7 @@ async def test_governance_tools_keep_validation_separate_from_mutation(
 
     assert [path for path, _ in calls] == [
         "/api/science/admin/sources/validate",
+        "/api/science/admin/evidence/validate",
         "/api/science/admin/knowledge/validate",
         "/api/science/admin/rules/r-1/qualify",
         "/api/science/admin/releases/validate",
