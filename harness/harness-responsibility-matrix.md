@@ -10,6 +10,10 @@ Use this matrix to keep BoI Wiki lightweight while still giving API, MCP, and Ac
 | Action | Route real external work through Action Gateway allowlists and approval policy; distinguish `user_confirmed` from high-risk `approved_by`. | Action Gateway, Event Router, MCP `action_invoke`, Agent execution cards | Action catalog tests, high-risk approval tests |
 | State | Append runtime changes and decisions to logs/artifacts instead of rewriting user history; keep raw IDs internal or diagnostic. | Action logs, Event Stream, artifact attachments, Inbox history | append-only tests, raw-ID visibility tests |
 | Verification | Every public scenario has a narrow automated check plus a smoke command that can run without optional overlays. | pytest, scripts, compose profiles, local workspace check | final acceptance suite and compose config smoke |
+| Science Source Curation | Preserve exact Source version, locator, quote hash, translation, claim scope, ACL, and separate Admin review. | OKF Science Source/Evidence, Admin review UI/API | source reachability, digest, scope, and self-approval tests |
+| Science Knowledge Authoring | Keep Dictionary/Ontology interpretation separate from atomic Knowledge and locator-bound Evidence. | sci-profile Knowledge, Ontology bindings, EvidenceUse | atomicity, overclaim, applicability, and version tests |
+| Science Rule Qualification | Exercise each deterministic Rule with ten real scientific claims before independent sealed holdout. | candidate RuleSet, qualification matrices, release preflight | five-verdict, false-red, ambiguity, and candidate-authority tests |
+| Science Verification | Keep untrusted interpretation outside verdict authority and preserve one report across Web/REST/MCP/exports. | Science Verifier canvas, REST/MCP, Markdown/PDF | anchor, confirmation, evidence visibility, parity, restart tests |
 
 ## Guardrail Defaults
 
