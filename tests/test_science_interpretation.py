@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -31,6 +32,7 @@ from boi_api.app.science.models import (
     ResolvedComponent,
     ResolvedRelease,
     ResolvedReleaseSet,
+    ReviewedSourceURLProfile,
     SourceSpan,
     VerificationReport,
 )
@@ -49,7 +51,9 @@ from boi_api.app.science.service import (
 from boi_api.app.science.source_identity import (
     ReviewedSourceURLIdentity,
     _build_reviewed_source_url_profile,
+    _issue_catalog_reviewed_source_url_identity,
     _issue_reviewed_source_url_identity,
+    _open_reviewed_source_url_identity,
 )
 from boi_api.app.science.storage import (
     ImmutableScienceRecordError,
@@ -575,7 +579,7 @@ class _Catalog:
         self._reviewed_source_url = self.source_url
         self._reviewed_evidence_locator = json.loads(json.dumps(self.evidence_locator))
 
-    def resolve_reviewed_source_url_identity(self, release_set, evidence_id):
+    def _active_reviewed_source_url_profile(self, release_set, evidence_id):
         assert release_set == self.release_set
         if (
             evidence_id != "sci:evidence:spin-direction"
@@ -601,7 +605,21 @@ class _Catalog:
             raise ScienceOperationalError(
                 "reviewed Source URL identity failed closed fixture validation"
             ) from None
-        return _issue_reviewed_source_url_identity(profile)
+        return profile
+
+    def resolve_reviewed_source_url_identity(self, release_set, evidence_id):
+        # The production issuer accepts only the exact ScienceCatalog type. This
+        # narrow patch lets the application service fake exercise the same live
+        # revalidation behavior without publishing a test issuer in production.
+        with patch(
+            "boi_api.app.science.source_identity._is_exact_science_catalog",
+            return_value=True,
+        ):
+            return _issue_catalog_reviewed_source_url_identity(
+                self,
+                release_set,
+                evidence_id,
+            )
 
     def resolve_rule_set(self, release_set):
         self.resolve_legacy_calls += 1
@@ -650,6 +668,45 @@ class _Catalog:
             path=self.boi_root / "public/science/sources/spin-paper.md",
         )
 
+    def validate_verification_report_authority(self, report):
+        if (
+            report.release_selection != self.release_set.selection
+            or report.release_digests != self.release_set.release_digests
+        ):
+            raise ScienceOperationalError("report release is not fixture-authoritative")
+        for annotation in report.annotations:
+            knowledge = self.knowledge(annotation.knowledge_id)
+            if (
+                annotation.knowledge_digest != knowledge.digest
+                or annotation.text != knowledge.statement
+            ):
+                raise ScienceOperationalError(
+                    "report Knowledge is not fixture-authoritative"
+                )
+            for link in annotation.evidence_links:
+                expected = self._active_reviewed_source_url_profile(
+                    self.release_set,
+                    link.evidence_id,
+                )
+                if link.reviewed_source != expected:
+                    raise ScienceOperationalError(
+                        "report Source profile is not fixture-authoritative"
+                    )
+                evidence = self.evidence(link.evidence_id)
+                source = self.source(link.source_id)
+                if (
+                    link.evidence_digest != evidence.digest
+                    or link.source_digest != source.digest
+                    or link.original_text_hash != evidence.original_text_hash
+                    or link.quote_hash != evidence.original_text_hash
+                    or link.url != source.original_url
+                    or link.locator.model_dump(mode="json", exclude_none=True)
+                    != evidence.locator
+                ):
+                    raise ScienceOperationalError(
+                        "report Evidence is not fixture-authoritative"
+                    )
+
 
 @pytest.fixture
 def science_identity() -> AuthIdentity:
@@ -686,6 +743,7 @@ def _real_service(tmp_path: Path, content: dict[str, object] | None = None):
         tmp_path / "science-runtime",
         authorization=ScienceAuthorization(access_mode="pilot"),
         roles_for=lambda _identity: ["science.admin"],
+        report_authority_validator=catalog.validate_verification_report_authority,
     )
     llm = _StaticLLM(content or _llm_content())
     service = ScienceService(
@@ -1499,6 +1557,29 @@ def test_reviewed_source_identity_cannot_be_constructed_by_a_caller():
         ReviewedSourceURLIdentity()
 
 
+def test_candidate_preview_cannot_be_promoted_through_direct_identity_issuer():
+    catalog = _Catalog()
+    candidate = _build_reviewed_source_url_profile(
+        qualification_state="candidate",
+        release_set_digest=catalog.release_set.combined_digest,
+        source_id="sci:source:spin-paper",
+        source_digest=SOURCE_DIGEST,
+        evidence_id="sci:evidence:spin-direction",
+        evidence_digest=EVIDENCE_DIGEST,
+        canonical_source_url=catalog.source_url,
+        locator=EvidenceLocator.model_validate(catalog.evidence_locator),
+    )
+    payload = candidate.model_dump(mode="json")
+    payload["qualification_state"] = "active"
+    payload["profile_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "profile_digest"}
+    )
+    promoted = ReviewedSourceURLProfile.model_validate(payload)
+
+    with pytest.raises(TypeError, match="direct Source identity issuance is forbidden"):
+        _issue_reviewed_source_url_identity(promoted)
+
+
 def test_reviewed_source_identity_is_opaque_immutable_and_nonserializable():
     import copy
     import pickle
@@ -1514,6 +1595,29 @@ def test_reviewed_source_identity_is_opaque_immutable_and_nonserializable():
         copy.copy(identity)
     with pytest.raises(TypeError, match="cannot be serialized"):
         pickle.dumps(identity)
+
+
+def test_reviewed_source_identity_revalidates_catalog_on_every_open():
+    catalog = _Catalog()
+    identity = catalog.resolve_reviewed_source_url_identity(
+        catalog.release_set, "sci:evidence:spin-direction"
+    )
+    catalog.source_url = "https://example.test/reviewed-replacement"
+    catalog._review_current_source_identity()
+
+    with pytest.raises(TypeError, match="no longer authoritative"):
+        _open_reviewed_source_url_identity(identity)
+
+
+def test_catalog_identity_issuer_rejects_an_arbitrary_catalog_double():
+    catalog = _Catalog()
+
+    with pytest.raises(TypeError, match="exact ScienceCatalog"):
+        _issue_catalog_reviewed_source_url_identity(
+            catalog,
+            catalog.release_set,
+            "sci:evidence:spin-direction",
+        )
 
 
 def test_service_rejects_a_raw_unsealed_source_profile(
@@ -1567,6 +1671,313 @@ def test_candidate_source_profile_cannot_become_an_authoritative_report(
 
     with pytest.raises(ValidationError, match="active reviewed Source URL"):
         VerificationReport.model_validate(payload)
+
+
+def _report_with_coordinated_unreviewed_source(
+    report: VerificationReport,
+    *,
+    report_id: str,
+    source_url: str,
+) -> dict[str, object]:
+    payload = report.model_dump(mode="json")
+    payload["report_id"] = report_id
+    link = payload["annotations"][0]["evidence_links"][0]
+    link["url"] = source_url
+    profile = link["reviewed_source"]
+    profile["canonical_source_url"] = source_url
+    profile["canonical_source_url_digest"] = sha256_digest(source_url)
+    profile["profile_digest"] = sha256_digest(
+        {key: value for key, value in profile.items() if key != "profile_digest"}
+    )
+    payload["report_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "report_digest"}
+    )
+    return payload
+
+
+def _report_with_coordinated_unreleased_provenance(
+    report: VerificationReport,
+    *,
+    report_id: str,
+) -> dict[str, object]:
+    payload = report.model_dump(mode="json")
+    payload["report_id"] = report_id
+    selection = {
+        "foundation": "sci-release:not-in-catalog",
+        "domains": [],
+        "applications": [],
+    }
+    release_content_digest = sha256_digest("unreleased-release-content")
+    release_set_digest = sha256_digest("unreleased-release-set")
+    payload["release_selection"] = selection
+    payload["release_digests"] = {selection["foundation"]: release_content_digest}
+    binding = payload["operation_binding"]
+    binding["release_digest"] = sha256_digest(selection)
+    binding["request_digest"] = sha256_digest(
+        {
+            "operation": "verify_document",
+            "interpretation_id": payload["interpretation_ids"][0],
+            "claim_digest": binding["claim_digest"],
+            "release_selection": selection,
+        }
+    )
+    forged_source_id = "sci:source:not-in-catalog"
+    forged_source_digest = sha256_digest("unreleased-source")
+    forged_evidence_id = "sci:evidence:not-in-catalog"
+    forged_evidence_digest = sha256_digest("unreleased-evidence")
+    forged_knowledge_id = "sci:knowledge:not-in-catalog"
+    forged_knowledge_digest = sha256_digest("unreleased-knowledge")
+    forged_url = "https://unreviewed.example.test/all-provenance"
+    forged_locator = EvidenceLocator(section="fabricated section 999").model_dump(
+        mode="json"
+    )
+    for verdict in payload["verdict_packets"]:
+        verdict["releases"] = {
+            "selection": selection,
+            "digests": payload["release_digests"],
+            "combined_digest": release_set_digest,
+        }
+        verdict["knowledge_refs"] = [forged_knowledge_id]
+        verdict["evidence_refs"] = [forged_evidence_id]
+        for fact in verdict["explanation_facts"]:
+            fact["knowledge_refs"] = [forged_knowledge_id]
+            fact["evidence_refs"] = [forged_evidence_id]
+    for annotation in payload["annotations"]:
+        annotation["knowledge_id"] = forged_knowledge_id
+        annotation["knowledge_digest"] = forged_knowledge_digest
+        for link in annotation["evidence_links"]:
+            link["evidence_id"] = forged_evidence_id
+            link["evidence_digest"] = forged_evidence_digest
+            link["source_id"] = forged_source_id
+            link["source_digest"] = forged_source_digest
+            link["url"] = forged_url
+            link["locator"] = forged_locator
+            lookup = link["source_lookup"]
+            lookup.update(
+                {
+                    "source_id": forged_source_id,
+                    "source_digest": forged_source_digest,
+                    "boi_id": "boi:public:science:source:not-in-catalog",
+                    "versioned_path": "public/science/sources/not-in-catalog.md",
+                }
+            )
+            lookup["lookup_digest"] = sha256_digest(
+                {key: value for key, value in lookup.items() if key != "lookup_digest"}
+            )
+            profile = link["reviewed_source"]
+            profile.update(
+                {
+                    "release_set_digest": release_set_digest,
+                    "source_id": forged_source_id,
+                    "source_digest": forged_source_digest,
+                    "evidence_id": forged_evidence_id,
+                    "evidence_digest": forged_evidence_digest,
+                    "canonical_source_url": forged_url,
+                    "canonical_source_url_digest": sha256_digest(forged_url),
+                    "locator": forged_locator,
+                    "locator_digest": sha256_digest(forged_locator),
+                    "locator_url_digests": {},
+                }
+            )
+            profile["profile_digest"] = sha256_digest(
+                {
+                    key: value
+                    for key, value in profile.items()
+                    if key != "profile_digest"
+                }
+            )
+    payload["report_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "report_digest"}
+    )
+    return payload
+
+
+def test_report_annotations_must_exactly_cover_verdict_explanation_facts(
+    science_identity: AuthIdentity,
+):
+    service, catalog, _store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:annotation-fact-binding-base",
+    )
+    payload = report.model_dump(mode="json")
+    payload["annotations"][0]["fact_id"] = "sci:fact:not-in-verdict"
+    payload["report_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "report_digest"}
+    )
+
+    with pytest.raises(ValidationError, match="explanation fact"):
+        VerificationReport.model_validate(payload)
+
+
+def test_store_direct_save_rejects_self_consistent_unreviewed_source_profile(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:authority-direct-save-base",
+    )
+    forged = _report_with_coordinated_unreviewed_source(
+        report,
+        report_id="sci-report:coordinated-unreviewed-save",
+        source_url="https://unreviewed.example.test/replacement",
+    )
+    VerificationReport.model_validate(forged)
+
+    with pytest.raises(ImmutableScienceRecordError, match="Catalog authority"):
+        store.save_report(forged, identity=science_identity)
+
+    assert not store.record_path("reports", forged["report_id"]).exists()
+
+
+def test_store_private_load_rejects_self_consistent_unreviewed_source_profile(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:authority-private-load-base",
+    )
+    forged = _report_with_coordinated_unreviewed_source(
+        report,
+        report_id="sci-report:coordinated-unreviewed-load",
+        source_url="https://unreviewed.example.test/private-load",
+    )
+    path = store.record_path("reports", forged["report_id"])
+    path.write_bytes(canonical_json_bytes(forged))
+    path.chmod(0o600)
+
+    with pytest.raises(ImmutableScienceRecordError, match="Catalog authority"):
+        store.load_report(forged["report_id"])
+
+
+def test_store_rejects_coordinated_unreleased_release_and_provenance(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:authority-all-provenance-base",
+    )
+    forged = _report_with_coordinated_unreleased_provenance(
+        report,
+        report_id="sci-report:coordinated-unreleased-provenance",
+    )
+    VerificationReport.model_validate(forged)
+
+    with pytest.raises(ImmutableScienceRecordError, match="Catalog authority"):
+        store.save_report(forged, identity=science_identity)
+
+
+def test_store_wal_recovery_rejects_self_consistent_unreviewed_source_profile(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    real_append = store._append_audit_event_locked
+
+    def fail_report_audit(event):
+        if event.action == "report_saved":
+            raise OSError("simulated authority WAL interruption")
+        return real_append(event)
+
+    monkeypatch.setattr(store, "_append_audit_event_locked", fail_report_audit)
+    with pytest.raises(ScienceTransactionPendingError) as pending:
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key="science-request:authority-wal-base",
+        )
+    journal_path = next((store.root / "transactions").glob("*.json"))
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    forged = _report_with_coordinated_unreviewed_source(
+        VerificationReport.model_validate(journal["record"]),
+        report_id=pending.value.record_id,
+        source_url="https://unreviewed.example.test/from-wal",
+    )
+    journal["record"] = forged
+    journal["audit"]["details"]["report_digest"] = forged["report_digest"]
+    journal_path.write_bytes(canonical_json_bytes(journal))
+    store.record_path("reports", pending.value.record_id).unlink()
+    monkeypatch.setattr(store, "_append_audit_event_locked", real_append)
+
+    with pytest.raises(ImmutableScienceRecordError, match="Catalog authority"):
+        store.recover_pending_transactions()
+
+    assert not store.record_path("reports", pending.value.record_id).exists()
+    assert journal_path.exists()
+
+
+def test_store_requires_an_authoritative_report_validator(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, source_store, _llm = _real_service(tmp_path / "source")
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:missing-authority-base",
+    )
+    proposal = source_store.load_interpretation(
+        confirmed.operation_binding.source_interpretation_id
+    )
+    unbound_store = ScienceRuntimeStore(
+        tmp_path / "unbound",
+        authorization=ScienceAuthorization(access_mode="pilot"),
+        roles_for=lambda _identity: ["science.admin"],
+    )
+    unbound_store.save_interpretation(proposal, identity=science_identity)
+    unbound_store.save_interpretation(confirmed, identity=science_identity)
+
+    with pytest.raises(ImmutableScienceRecordError, match="Catalog authority"):
+        unbound_store.save_report(report, identity=science_identity)
+
+    assert not unbound_store.record_path("reports", report.report_id).exists()
+
+
+def test_store_catalog_validator_failure_discards_sensitive_exception_context(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:closed-authority-base",
+    )
+    secret = "https://hidden-authority-validator-secret.test/private"
+
+    def fail_authority(_report):
+        raise ValueError(secret)
+
+    store._report_authority_validator = fail_authority
+    with pytest.raises(ImmutableScienceRecordError) as captured:
+        store.save_report(report, identity=science_identity)
+
+    _assert_closed_runtime_validation_error(captured.value, secret=secret)
 
 
 @pytest.mark.parametrize(

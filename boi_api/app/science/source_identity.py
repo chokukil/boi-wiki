@@ -8,7 +8,6 @@ from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
 from boi_api.app.science.models import EvidenceLocator, ReviewedSourceURLProfile
 from boi_api.app.science.safety import validate_with_closed_error
 
-_ISSUER_CAPABILITY = object()
 _SEAL = object()
 
 
@@ -58,27 +57,15 @@ def _build_reviewed_source_url_profile(
 class ReviewedSourceURLIdentity:
     """Non-serializable proof that Catalog qualified one exact active profile."""
 
-    __slots__ = ("_profile_bytes", "_seal")
+    __slots__ = ("_profile_bytes", "_revalidate", "_seal")
 
     def __new__(
         cls,
-        capability: object | None = None,
-        *,
-        profile: ReviewedSourceURLProfile | None = None,
     ) -> "ReviewedSourceURLIdentity":
-        if (
-            capability is not _ISSUER_CAPABILITY
-            or profile is None
-            or profile.qualification_state != "active"
-        ):
-            raise TypeError(
-                "ReviewedSourceURLIdentity is issued only by active "
-                "ScienceCatalog resolution"
-            )
-        self = super().__new__(cls)
-        object.__setattr__(self, "_profile_bytes", canonical_json_bytes(profile))
-        object.__setattr__(self, "_seal", _SEAL)
-        return self
+        raise TypeError(
+            "ReviewedSourceURLIdentity is issued only by active "
+            "ScienceCatalog resolution"
+        )
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         pass
@@ -99,7 +86,46 @@ class ReviewedSourceURLIdentity:
 def _issue_reviewed_source_url_identity(
     profile: ReviewedSourceURLProfile,
 ) -> ReviewedSourceURLIdentity:
-    return ReviewedSourceURLIdentity(_ISSUER_CAPABILITY, profile=profile)
+    del profile
+    raise TypeError("direct Source identity issuance is forbidden")
+
+
+def _is_exact_science_catalog(catalog: object) -> bool:
+    # Import lazily because Catalog itself imports this module.
+    from boi_api.app.science.catalog import ScienceCatalog
+
+    return type(catalog) is ScienceCatalog
+
+
+def _issue_catalog_reviewed_source_url_identity(
+    catalog: object,
+    release_set: object,
+    evidence_id: str,
+) -> ReviewedSourceURLIdentity:
+    """Issue only after a real Catalog re-resolves the exact active profile."""
+
+    if not _is_exact_science_catalog(catalog):
+        raise TypeError("Source identity issuer requires an exact ScienceCatalog")
+    resolver = getattr(catalog, "_active_reviewed_source_url_profile", None)
+    if not callable(resolver):
+        raise TypeError("ScienceCatalog Source authority is unavailable")
+
+    def revalidate() -> ReviewedSourceURLProfile:
+        current = resolver(release_set, evidence_id)
+        if type(current) is not ReviewedSourceURLProfile:
+            raise TypeError(
+                "ScienceCatalog Source authority returned an invalid profile"
+            )
+        return current
+
+    profile = revalidate()
+    if profile.qualification_state != "active":
+        raise TypeError("ScienceCatalog Source authority is not active")
+    identity = object.__new__(ReviewedSourceURLIdentity)
+    object.__setattr__(identity, "_profile_bytes", canonical_json_bytes(profile))
+    object.__setattr__(identity, "_revalidate", revalidate)
+    object.__setattr__(identity, "_seal", _SEAL)
+    return identity
 
 
 def _open_reviewed_source_url_identity(
@@ -108,6 +134,7 @@ def _open_reviewed_source_url_identity(
     if (
         type(identity) is not ReviewedSourceURLIdentity
         or getattr(identity, "_seal", None) is not _SEAL
+        or not callable(getattr(identity, "_revalidate", None))
     ):
         raise TypeError("Catalog-issued reviewed Source URL identity is required")
     profile = validate_with_closed_error(
@@ -120,4 +147,7 @@ def _open_reviewed_source_url_identity(
         or canonical_json_bytes(profile) != identity._profile_bytes
     ):
         raise TypeError("reviewed Source URL identity is invalid")
+    current = identity._revalidate()
+    if current != profile or canonical_json_bytes(current) != identity._profile_bytes:
+        raise TypeError("reviewed Source URL identity is no longer authoritative")
     return profile

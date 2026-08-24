@@ -30,6 +30,7 @@ from boi_api.app.science.models import (
     ResolvedRelease,
     ResolvedReleaseSet,
     ReviewedSourceURLProfile,
+    VerificationReport,
 )
 from boi_api.app.science.operational import (
     OperationalVerification,
@@ -52,7 +53,7 @@ from boi_api.app.science.safety import (
 from boi_api.app.science.source_identity import (
     ReviewedSourceURLIdentity,
     _build_reviewed_source_url_profile,
-    _issue_reviewed_source_url_identity,
+    _issue_catalog_reviewed_source_url_identity,
 )
 
 ObjectKind = Literal[
@@ -657,10 +658,10 @@ class ScienceCatalog:
             release_set, evidence_id, qualification_state="candidate"
         )
 
-    def resolve_reviewed_source_url_identity(
+    def _active_reviewed_source_url_profile(
         self, release_set: ResolvedReleaseSet, evidence_id: str
-    ) -> ReviewedSourceURLIdentity:
-        """Issue an opaque identity for one exact active released Source/Evidence pair."""
+    ) -> ReviewedSourceURLProfile:
+        """Re-resolve one exact active Source/Evidence profile without issuing it."""
 
         resolved = self.resolve_release_set(release_set.selection)
         if resolved != release_set:
@@ -678,10 +679,120 @@ class ScienceCatalog:
             )
         for release in releases:
             self._assert_active_decision_components(release)
-        profile = self._reviewed_source_url_profile(
+        return self._reviewed_source_url_profile(
             resolved, evidence_id, qualification_state="active"
         )
-        return _issue_reviewed_source_url_identity(profile)
+
+    def resolve_reviewed_source_url_identity(
+        self, release_set: ResolvedReleaseSet, evidence_id: str
+    ) -> ReviewedSourceURLIdentity:
+        """Issue an opaque identity for one exact active released Source/Evidence pair."""
+
+        return _issue_catalog_reviewed_source_url_identity(
+            self,
+            release_set,
+            evidence_id,
+        )
+
+    def validate_verification_report_authority(
+        self,
+        report: VerificationReport,
+    ) -> None:
+        """Re-resolve every authoritative report reference from this Catalog."""
+
+        resolved = self.resolve_release_set(report.release_selection)
+        if resolved.release_digests != report.release_digests:
+            raise ScienceOperationalError(
+                "report release digests do not match Catalog resolution"
+            )
+        if any(
+            verdict.releases.combined_digest != resolved.combined_digest
+            for verdict in report.verdict_packets
+        ):
+            raise ScienceOperationalError(
+                "report release-set digest does not match Catalog resolution"
+            )
+        releases = (
+            resolved.foundation_release,
+            *resolved.domain_releases,
+            *resolved.application_releases,
+        )
+        if any(release.status not in {"active", "superseded"} for release in releases):
+            raise ScienceOperationalError(
+                "report authority requires an active or superseded release"
+            )
+        for release in releases:
+            self._assert_active_decision_components(release)
+
+        component_by_ref = {
+            component.ref: component for component in resolved.components
+        }
+        for annotation in report.annotations:
+            knowledge_component = component_by_ref.get(annotation.knowledge_id)
+            knowledge = self._require("knowledge", annotation.knowledge_id)
+            if (
+                knowledge_component is None
+                or knowledge_component.kind != "knowledge"
+                or knowledge_component.declared_digest
+                != knowledge_component.actual_digest
+                or knowledge_component.actual_digest != knowledge.digest
+                or annotation.knowledge_digest != knowledge.digest
+                or annotation.text != getattr(knowledge, "statement", None)
+            ):
+                raise ScienceOperationalError(
+                    "report Knowledge is not exactly release-resolved"
+                )
+
+            for link in annotation.evidence_links:
+                expected_profile = self._reviewed_source_url_profile(
+                    resolved,
+                    link.evidence_id,
+                    qualification_state="active",
+                )
+                if link.reviewed_source != expected_profile:
+                    raise ScienceOperationalError(
+                        "report Source/Evidence profile is not Catalog-authoritative"
+                    )
+                evidence = self._require("evidence", link.evidence_id)
+                source = self._require("source", link.source_id)
+                original_text = getattr(evidence, "original_text", None)
+                original_text_hash = getattr(evidence, "original_text_hash", None)
+                if (
+                    evidence.digest != link.evidence_digest
+                    or getattr(evidence, "source_id", None) != link.source_id
+                    or source.digest != link.source_digest
+                    or not isinstance(original_text, str)
+                    or sha256_digest(original_text) != original_text_hash
+                    or link.original_text_hash != original_text_hash
+                    or link.quote_hash != original_text_hash
+                ):
+                    raise ScienceOperationalError(
+                        "report Source/Evidence bytes are not exactly release-resolved"
+                    )
+                try:
+                    versioned_path = source.path.relative_to(self.boi_root).as_posix()
+                except (AttributeError, TypeError, ValueError):
+                    raise ScienceOperationalError(
+                        "report Source lookup path is not Catalog-authoritative"
+                    ) from None
+                expected_lookup = {
+                    "source_id": source.object_id,
+                    "source_digest": source.digest,
+                    "boi_id": getattr(source, "boi_id", None),
+                    "versioned_path": versioned_path,
+                    "visibility": getattr(source, "visibility", None),
+                    "classification": getattr(source, "classification", None),
+                    "acl_policy": getattr(source, "acl_policy", None),
+                }
+                if (
+                    link.source_lookup.model_dump(
+                        mode="json", exclude={"lookup_digest"}
+                    )
+                    != expected_lookup
+                ):
+                    raise ScienceOperationalError(
+                        "report Source lookup identity is not Catalog-authoritative"
+                    )
 
     @staticmethod
     def _family_is_within(claim_family: str, boundary: str) -> bool:

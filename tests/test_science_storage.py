@@ -290,6 +290,7 @@ def runtime_store(tmp_path: Path) -> ScienceRuntimeStore:
         tmp_path / "science-runtime",
         authorization=ScienceAuthorization(access_mode="pilot"),
         roles_for=science_roles,
+        report_authority_validator=lambda _report: None,
     )
 
 

@@ -1679,5 +1679,5 @@ def test_catalog_candidate_source_url_preview_has_no_operational_authority(
     )
 
     assert preview.qualification_state == "candidate"
-    with pytest.raises(TypeError, match="issued only"):
+    with pytest.raises(TypeError, match="direct Source identity issuance is forbidden"):
         _issue_reviewed_source_url_identity(preview)
