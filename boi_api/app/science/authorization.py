@@ -80,13 +80,13 @@ class ScienceAuthorization:
         roles_for: ScienceRolesResolver,
         domain: str,
         proposed_by: str,
-    ) -> None:
+    ) -> str:
         """Authorize release-candidate inclusion without broadening Science authority."""
 
         actor = identity.employee_id
         resolved = self._role_set(roles_for(identity))
         if SCIENCE_ADMIN_ROLE in resolved:
-            return
+            return SCIENCE_ADMIN_ROLE
         domains = power_user_domains(tuple(resolved))
         if domain not in domains:
             raise ScienceAuthorizationError(
@@ -96,3 +96,4 @@ class ScienceAuthorization:
             raise ScienceAuthorizationError(
                 "Science Power User proposal self-approval is forbidden"
             )
+        return f"{SCIENCE_POWER_USER_PREFIX}{domain}"

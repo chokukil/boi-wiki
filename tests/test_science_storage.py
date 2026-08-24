@@ -5,11 +5,13 @@ import os
 import shutil
 import subprocess
 import sys
+from copy import deepcopy
 from hashlib import sha256
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Barrier
+from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -23,6 +25,7 @@ from boi_api.app.science.digests import canonical_json_bytes
 from boi_api.app.science.storage import (
     ImmutableScienceRecordError,
     ScienceAuditRecord,
+    ScienceProposalApproval,
     ScienceSensitivePersistenceError,
     ScienceTransactionPendingError,
     UnsafeScienceRuntimePathError,
@@ -454,9 +457,14 @@ def test_audit_short_write_is_completed_as_one_valid_json_row(
     """Treating a short write as final would leave a corrupt JSON fragment."""
     real_write = os.write
     calls = 0
+    audit_inode: int | None = None
 
     def short_once(descriptor: int, data: bytes) -> int:
-        nonlocal calls
+        nonlocal audit_inode, calls
+        if bytes(data).endswith(b"\n"):
+            audit_inode = os.fstat(descriptor).st_ino
+        if audit_inode is None or os.fstat(descriptor).st_ino != audit_inode:
+            return real_write(descriptor, data)
         calls += 1
         if calls == 1:
             return real_write(descriptor, data[: max(1, len(data) // 2)])
@@ -491,18 +499,23 @@ def test_audit_mid_row_error_rolls_back_and_fsyncs_previous_eof(
         details={"document_digest": digest("seed")},
     )
     before = runtime_store.audit_path.read_bytes()
+    audit_inode = runtime_store.audit_path.stat().st_ino
     real_write = os.write
     calls = 0
 
     def partial_then_error(descriptor: int, data: bytes) -> int:
         nonlocal calls
+        if os.fstat(descriptor).st_ino != audit_inode:
+            return real_write(descriptor, data)
         calls += 1
         if calls == 1:
             return real_write(descriptor, data[: max(1, len(data) // 2)])
         raise OSError("injected mid-row failure")
 
     monkeypatch.setattr(os, "write", partial_then_error)
-    with pytest.raises(OSError, match="injected mid-row failure"):
+    with pytest.raises(
+        ScienceTransactionPendingError, match="injected mid-row failure"
+    ) as caught:
         runtime_store.append_audit(
             identity=science_admin,
             action="interpretation_saved",
@@ -510,6 +523,9 @@ def test_audit_mid_row_error_rolls_back_and_fsyncs_previous_eof(
             details={"document_digest": digest("failed")},
         )
     assert runtime_store.audit_path.read_bytes() == before
+    assert caught.value.record_published is False
+    assert caught.value.audit_pending is True
+    assert runtime_store.pending_transaction_ids()
 
 
 def test_record_load_rejects_final_component_symlink(
@@ -1199,3 +1215,367 @@ def test_recovery_rejects_tampered_journal_filename_before_mutation(
     with pytest.raises(ImmutableScienceRecordError, match="filename"):
         runtime_store.recover_pending_transactions()
     assert tampered_path.exists()
+
+
+def write_cloned_journal(
+    runtime_store: ScienceRuntimeStore,
+    source: dict[str, object],
+) -> tuple[Path, dict[str, object]]:
+    clone = deepcopy(source)
+    transaction_id = f"sci-transaction:{uuid4()}"
+    clone["transaction_id"] = transaction_id
+    path = runtime_store.record_path("transactions", transaction_id)
+    path.write_bytes(canonical_json_bytes(clone))
+    path.chmod(0o600)
+    return path, clone
+
+
+def leave_verified_temp_residue(runtime_store: ScienceRuntimeStore) -> Path:
+    residue = runtime_store.root / "reports" / f".{('a' * 64)}.{('b' * 32)}.tmp"
+    residue.write_bytes(b"verified-private-residue")
+    residue.chmod(0o600)
+    return residue
+
+
+@pytest.mark.parametrize("different_record_bytes", [False, True])
+def test_global_recovery_preflight_rejects_every_duplicate_record_target(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+    different_record_bytes: bool,
+):
+    """No filename ordering may select one of two WALs for the same record."""
+    payload, _, first_path, journal = leave_pending_interpretation(
+        runtime_store,
+        science_admin,
+        monkeypatch,
+        f"sci-interpretation:duplicate-target-{different_record_bytes}",
+    )
+    runtime_store.record_path("interpretations", payload["interpretation_id"]).unlink()
+    second_path, clone = write_cloned_journal(runtime_store, journal)
+    clone["audit"]["event_id"] = f"sci-audit:{uuid4()}"
+    if different_record_bytes:
+        clone["record"]["model_id"] = "conflicting-model"
+    second_path.write_bytes(canonical_json_bytes(clone))
+    residue = leave_verified_temp_residue(runtime_store)
+    audit_before = (
+        runtime_store.audit_path.read_bytes()
+        if runtime_store.audit_path.exists()
+        else b""
+    )
+
+    with pytest.raises(ImmutableScienceRecordError, match="duplicate|record target"):
+        runtime_store.recover_pending_transactions()
+
+    assert first_path.exists() and second_path.exists()
+    assert residue.exists()
+    assert not runtime_store.record_path(
+        "interpretations", payload["interpretation_id"]
+    ).exists()
+    assert (
+        runtime_store.audit_path.read_bytes()
+        if runtime_store.audit_path.exists()
+        else b""
+    ) == audit_before
+
+
+def test_global_recovery_preflight_rejects_duplicate_journal_event_ids(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """One event ID cannot authorize two different record transactions."""
+    payload, _, first_path, journal = leave_pending_interpretation(
+        runtime_store,
+        science_admin,
+        monkeypatch,
+        "sci-interpretation:event-owner-a",
+    )
+    runtime_store.record_path("interpretations", payload["interpretation_id"]).unlink()
+    second_path, clone = write_cloned_journal(runtime_store, journal)
+    second_id = "sci-interpretation:event-owner-b"
+    clone["record_id"] = second_id
+    clone["record"]["interpretation_id"] = second_id
+    clone["audit"]["target_id"] = second_id
+    second_path.write_bytes(canonical_json_bytes(clone))
+    residue = leave_verified_temp_residue(runtime_store)
+
+    with pytest.raises(
+        ImmutableScienceRecordError, match="duplicate.*event|event.*duplicate"
+    ):
+        runtime_store.recover_pending_transactions()
+
+    assert first_path.exists() and second_path.exists() and residue.exists()
+    assert not runtime_store.record_path("interpretations", second_id).exists()
+
+
+def test_global_preflight_checks_existing_record_collisions_before_any_publish(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A late WAL collision must prevent an earlier valid WAL from publishing."""
+    first_id = "sci-interpretation:preflight-first"
+    payload, _, first_path, journal = leave_pending_interpretation(
+        runtime_store, science_admin, monkeypatch, first_id
+    )
+    runtime_store.record_path("interpretations", first_id).unlink()
+    second_path, clone = write_cloned_journal(runtime_store, journal)
+    second_id = "sci-interpretation:preflight-existing-collision"
+    clone["record_id"] = second_id
+    clone["record"]["interpretation_id"] = second_id
+    clone["audit"]["event_id"] = f"sci-audit:{uuid4()}"
+    clone["audit"]["target_id"] = second_id
+    second_path.write_bytes(canonical_json_bytes(clone))
+    collision = interpretation_payload(second_id, model_id="existing-conflict")
+    collision_path = runtime_store.record_path("interpretations", second_id)
+    collision_path.write_bytes(canonical_json_bytes(collision))
+    collision_path.chmod(0o600)
+
+    with pytest.raises(ImmutableScienceRecordError, match="collision"):
+        runtime_store.recover_pending_transactions()
+
+    assert first_path.exists() and second_path.exists()
+    assert not runtime_store.record_path("interpretations", first_id).exists()
+    assert runtime_store.record_path(
+        "interpretations", second_id
+    ).read_bytes() == canonical_json_bytes(collision)
+    assert payload["interpretation_id"] == first_id
+
+
+def test_global_preflight_rejects_ledger_event_collision_before_record_publish(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A spoofed ledger row must be found before its WAL record becomes visible."""
+    payload, _, journal_path, journal = leave_pending_interpretation(
+        runtime_store,
+        science_admin,
+        monkeypatch,
+        "sci-interpretation:ledger-preflight",
+    )
+    record_path = runtime_store.record_path(
+        "interpretations", payload["interpretation_id"]
+    )
+    record_path.unlink()
+    spoof = deepcopy(journal["audit"])
+    spoof["actor"] = "999999"
+    runtime_store.audit_path.write_bytes(canonical_json_bytes(spoof) + b"\n")
+    runtime_store.audit_path.chmod(0o600)
+    residue = leave_verified_temp_residue(runtime_store)
+
+    with pytest.raises(
+        ImmutableScienceRecordError, match="event.*collision|collision.*event"
+    ):
+        runtime_store.recover_pending_transactions()
+
+    assert journal_path.exists() and residue.exists()
+    assert not record_path.exists()
+
+
+def leave_pending_approval(
+    runtime_store: ScienceRuntimeStore,
+    proposer: AuthIdentity,
+    approver: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[object, Path, Path, dict[str, object]]:
+    proposal = runtime_store.save_proposal(
+        identity=proposer,
+        domain="lithography",
+        kind="concept_link",
+        payload={"from": "RPM", "to": "rotational_speed"},
+    )
+    before = set(runtime_store.pending_transaction_ids())
+    real_append = runtime_store._append_audit_event_locked
+
+    def fail_approval_audit(event: ScienceAuditRecord):
+        if event.action == "proposal_approved_for_release_candidate":
+            raise OSError("injected pending approval")
+        return real_append(event)
+
+    monkeypatch.setattr(
+        runtime_store, "_append_audit_event_locked", fail_approval_audit
+    )
+    with pytest.raises(ScienceTransactionPendingError):
+        runtime_store.approve_proposal(proposal.proposal_id, identity=approver)
+    monkeypatch.setattr(runtime_store, "_append_audit_event_locked", real_append)
+    transaction_id = (set(runtime_store.pending_transaction_ids()) - before).pop()
+    journal_path = runtime_store.record_path("transactions", transaction_id)
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    approval_path = runtime_store.record_path(
+        "proposal-approvals", journal["record_id"]
+    )
+    return proposal, journal_path, approval_path, journal
+
+
+def test_approval_recovery_requires_existing_source_proposal(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A self-consistent approval WAL cannot invent a nonexistent proposal."""
+    proposal, journal_path, approval_path, _ = leave_pending_approval(
+        runtime_store,
+        AuthIdentity(employee_id="100003", display_name="proposer"),
+        science_admin,
+        monkeypatch,
+    )
+    runtime_store.record_path("proposals", proposal.proposal_id).unlink()
+    approval_path.unlink()
+    audit_before = runtime_store.audit_path.read_bytes()
+
+    with pytest.raises(
+        ImmutableScienceRecordError, match="proposal.*missing|dependency"
+    ):
+        runtime_store.recover_pending_transactions()
+
+    assert journal_path.exists() and not approval_path.exists()
+    assert runtime_store.audit_path.read_bytes() == audit_before
+
+
+def test_approval_recovery_rejects_self_consistent_proposal_mismatch(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Approval fields and snapshot must still match the referenced proposal bytes."""
+    _, journal_path, approval_path, journal = leave_pending_approval(
+        runtime_store,
+        AuthIdentity(employee_id="100003", display_name="proposer"),
+        science_admin,
+        monkeypatch,
+    )
+    approval_path.unlink()
+    journal["record"]["domain"] = "materials"
+    journal["record"]["proposal_kind"] = "term_alias"
+    journal["audit"]["details"]["domain"] = "materials"
+    snapshot = journal["record"].get("authority_snapshot")
+    if snapshot:
+        snapshot["domain"] = "materials"
+        snapshot["proposal_kind"] = "term_alias"
+    journal_path.write_bytes(canonical_json_bytes(journal))
+
+    with pytest.raises(ImmutableScienceRecordError, match="proposal.*mismatch|linkage"):
+        runtime_store.recover_pending_transactions()
+
+    assert journal_path.exists() and not approval_path.exists()
+
+
+def test_approval_recovery_requires_proposal_derived_approval_id(
+    runtime_store: ScienceRuntimeStore,
+    science_admin: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A separate valid approval UUID cannot be attached to a real proposal."""
+    _, journal_path, approval_path, journal = leave_pending_approval(
+        runtime_store,
+        AuthIdentity(employee_id="100003", display_name="proposer"),
+        science_admin,
+        monkeypatch,
+    )
+    approval_path.unlink()
+    unrelated_id = f"sci-approval:{uuid4()}"
+    journal["record_id"] = unrelated_id
+    journal["record"]["approval_id"] = unrelated_id
+    journal["audit"]["details"]["approval_id"] = unrelated_id
+    journal_path.write_bytes(canonical_json_bytes(journal))
+
+    with pytest.raises(ImmutableScienceRecordError, match="proposal.*linkage|linkage"):
+        runtime_store.recover_pending_transactions()
+
+    assert journal_path.exists()
+    assert not runtime_store.record_path("proposal-approvals", unrelated_id).exists()
+
+
+def test_approval_recovery_preserves_historical_trusted_authority_snapshot(
+    runtime_store: ScienceRuntimeStore,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Role changes after a crash must not rewrite the authorized past decision."""
+    proposal, _, _, journal = leave_pending_approval(
+        runtime_store,
+        AuthIdentity(employee_id="100003", display_name="proposer"),
+        AuthIdentity(employee_id="200002", display_name="domain reviewer"),
+        monkeypatch,
+    )
+    runtime_root = runtime_store.root
+    runtime_store.close()
+
+    recovered = ScienceRuntimeStore(
+        runtime_root,
+        authorization=ScienceAuthorization("pilot"),
+        roles_for=lambda identity: [],
+    )
+    approval_id = journal["record_id"]
+    approval = recovered._load(
+        "proposal-approvals", approval_id, ScienceProposalApproval
+    )
+
+    assert approval.proposal_id == proposal.proposal_id
+    assert (
+        approval.authority_snapshot.authority_role == "science.power_user:lithography"
+    )
+    assert approval.authority_snapshot.approved_by == "200002"
+    assert recovered.pending_transaction_ids() == []
+
+
+def test_public_append_audit_half_row_process_crash_recovers_from_audit_wal(
+    runtime_store: ScienceRuntimeStore,
+):
+    """The public audit interface must not leave an unbound partial-row startup DoS."""
+    runtime_root = runtime_store.root
+    runtime_store.close()
+    script = r"""
+import os
+import sys
+from pathlib import Path
+
+from boi_api.app.auth import AuthIdentity
+from boi_api.app.science.authorization import ScienceAuthorization
+from boi_api.app.science.storage import ScienceRuntimeStore
+
+store = ScienceRuntimeStore(
+    Path(sys.argv[1]),
+    authorization=ScienceAuthorization("pilot"),
+    roles_for=lambda identity: ["science.admin"],
+)
+real_write_all = store._write_all
+
+def crash_on_audit_row(descriptor, data):
+    if data.endswith(b"\n"):
+        os.write(descriptor, data[: max(1, len(data) // 2)])
+        os.fsync(descriptor)
+        os._exit(31)
+    return real_write_all(descriptor, data)
+
+store._write_all = crash_on_audit_row
+store.append_audit(
+    identity=AuthIdentity(employee_id="100001", display_name="audit writer"),
+    action="interpretation_saved",
+    target_id="sci-interpretation:audit-process-crash",
+    details={"document_digest": sys.argv[2]},
+)
+"""
+    crashed = subprocess.run(
+        [sys.executable, "-c", script, str(runtime_root), digest("audit-crash")],
+        cwd=Path(__file__).parents[1],
+        check=False,
+        timeout=10,
+    )
+    assert crashed.returncode == 31
+
+    recovered = ScienceRuntimeStore(
+        runtime_root,
+        authorization=ScienceAuthorization("pilot"),
+        roles_for=science_roles,
+    )
+
+    rows = [
+        json.loads(line)
+        for line in recovered.audit_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [row["target_id"] for row in rows] == [
+        "sci-interpretation:audit-process-crash"
+    ]
+    assert recovered.pending_transaction_ids() == []
