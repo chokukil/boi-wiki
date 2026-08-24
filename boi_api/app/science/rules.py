@@ -6,8 +6,7 @@ from collections.abc import Callable
 from decimal import Decimal
 from typing import Literal, TypeAlias
 
-import pint
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from boi_api.app.science.models import (
     ClaimCondition,
@@ -21,8 +20,9 @@ from boi_api.app.science.models import (
 )
 from boi_api.app.science.units import (
     IncompatibleDimensionsError,
-    _pint_quantity,
+    canonical_unit_token,
     compare_quantities,
+    comparable_values,
     expected_dimensionality,
     validate_quantity,
 )
@@ -75,6 +75,11 @@ class VerificationRule(ScienceModel):
     knowledge_refs: list[str] = Field(min_length=1)
     evidence_refs: list[str] = Field(min_length=1)
     corrected_claim: str | None = None
+
+    @field_validator("expected_dimensions")
+    @classmethod
+    def canonical_dimension_units(cls, value: dict[str, str]) -> dict[str, str]:
+        return {kind: canonical_unit_token(unit) for kind, unit in value.items()}
 
     @model_validator(mode="after")
     def has_kind_specific_constraint(self) -> "VerificationRule":
@@ -189,6 +194,32 @@ def _concept_match(rule: VerificationRule, claim: NormalizedClaim) -> bool:
     )
 
 
+def _is_numeric_scalar(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _scalar_kind(value: object) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if _is_numeric_scalar(value):
+        return "numeric"
+    if isinstance(value, str):
+        return "string"
+    return "unsupported"
+
+
+def _compatible_condition_scalar(
+    constraint: ConditionConstraint, actual_value: object
+) -> bool:
+    if (
+        constraint.operator == "range"
+        or constraint.unit is not None
+        or constraint.operator in {"lt", "lte", "gt", "gte"}
+    ):
+        return _is_numeric_scalar(actual_value)
+    return _scalar_kind(actual_value) == _scalar_kind(constraint.value)
+
+
 def _condition_evaluations(
     expected: list[ConditionConstraint], claim: NormalizedClaim
 ) -> list[ConditionEvaluation]:
@@ -205,6 +236,8 @@ def _condition_evaluations(
             reason_code = "MISSING_CONDITION_VALUE"
         elif constraint.unit is not None and actual_unit is None:
             reason_code = "MISSING_CONDITION_UNIT"
+        elif not _compatible_condition_scalar(constraint, actual_value):
+            reason_code = "INCOMPATIBLE_CONDITION_TYPES"
         else:
             try:
                 if constraint.operator == "range":
@@ -374,7 +407,12 @@ def _applicability_gate(
             conditions=required + validity,
         )
     if any(
-        item.reason_code in {"MISSING_CONDITION_VALUE", "MISSING_CONDITION_UNIT"}
+        item.reason_code
+        in {
+            "MISSING_CONDITION_VALUE",
+            "MISSING_CONDITION_UNIT",
+            "INCOMPATIBLE_CONDITION_TYPES",
+        }
         for item in validity
     ):
         details = {
@@ -448,22 +486,28 @@ def _equation_outcome(rule: VerificationRule, claim: NormalizedClaim) -> bool | 
     kinds = [equation.left_quantity_kind, *equation.right_quantity_kinds]
     if any(kind not in quantities for kind in kinds):
         return None
-    left = _pint_quantity(quantities[equation.left_quantity_kind])
-    right_items = [_pint_quantity(quantities[kind]) for kind in equation.right_quantity_kinds]
+    left = quantities[equation.left_quantity_kind]
+    right_items = [quantities[kind] for kind in equation.right_quantity_kinds]
     if equation.operator == "equal":
-        right = right_items[0]
+        right_value = right_items[0].value
+        right_unit = right_items[0].unit
     elif equation.operator == "product":
-        right = right_items[0] * right_items[1]
+        right_value = right_items[0].value * right_items[1].value
+        right_unit = f"{right_items[0].unit} * {right_items[1].unit}"
     else:
-        right = right_items[0] / right_items[1]
+        right_value = right_items[0].value / right_items[1].value
+        right_unit = f"{right_items[0].unit} / {right_items[1].unit}"
     try:
-        right = right.to(left.units)
-    except pint.DimensionalityError as exc:
+        left_value, right_value = comparable_values(
+            left.value,
+            left.unit,
+            right_value,
+            right_unit,
+        )
+    except IncompatibleDimensionsError as exc:
         raise IncompatibleDimensionsError(
-            f"incompatible equation dimensions: {right.dimensionality} and {left.dimensionality}"
+            "incompatible equation dimensions"
         ) from exc
-    left_value = Decimal(str(left.magnitude))
-    right_value = Decimal(str(right.magnitude))
     scale = max(abs(right_value), Decimal(1))
     return abs(left_value - right_value) <= equation.relative_tolerance * scale
 

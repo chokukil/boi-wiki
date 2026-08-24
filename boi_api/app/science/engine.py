@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.exceptions import ScienceOperationalError
 from boi_api.app.science.models import (
     ClaimPacket,
     ConditionEvaluation,
@@ -185,6 +186,11 @@ def verify_claim(
         )
 
     integrity_reasons = _rule_set_integrity(release_set, rule_set)
+    if integrity_reasons:
+        raise ScienceOperationalError(
+            "Science release/rule-set integrity failure: "
+            + ", ".join(integrity_reasons)
+        )
     supplied_rules = tuple(released.rule for released in rule_set.rules)
     pinned_rules = _resolved_refs(release_set, "rule")
     knowledge_refs = _resolved_refs(release_set, "knowledge")
@@ -195,7 +201,7 @@ def verify_claim(
         for rule in candidates
         if rule.rule_id in pinned_rules and _grounded(rule, knowledge_refs, evidence_refs)
     ]
-    coverage_missing = bool(integrity_reasons) or len(trusted) != len(candidates) or not candidates
+    coverage_missing = len(trusted) != len(candidates) or not candidates
     observations = tuple(qualified_observations)
 
     def observations_for(rule: VerificationRule) -> tuple[QualifiedObservation, ...]:
@@ -216,14 +222,13 @@ def verify_claim(
             qualified_observations=observations_for(rule),
         )
         for rule in sorted(trusted, key=lambda item: item.rule_id)
-    ] if not integrity_reasons else []
+    ]
     evaluations = [item for item in evaluations if item.applicability != "NOT_APPLICABLE"]
 
     verdict, decisive, reason_codes = _select_verdict(
         evaluations,
         coverage_missing=coverage_missing,
     )
-    reason_codes = sorted(set(reason_codes) | set(integrity_reasons))
     decisive = sorted(decisive, key=lambda item: item.rule_id)
     decisive_rule_ids = [item.rule_id for item in decisive]
     selected_knowledge = sorted(

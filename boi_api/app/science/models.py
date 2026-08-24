@@ -15,6 +15,22 @@ class ScienceModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _canonical_unit_field(value: str) -> str:
+    token = value.strip()
+    if not token:
+        raise ValueError("unit token must be nonempty")
+    if token == "pH":
+        raise ValueError("ambiguous unit token: pH")
+    return token
+
+
+def _canonical_identifier(value: str, field_name: str) -> str:
+    identifier = value.strip()
+    if not identifier:
+        raise ValueError(f"{field_name} must be nonempty")
+    return identifier
+
+
 class PrimaryVerdict(str, Enum):
     VIOLATION = "VIOLATION"
     CONSISTENT = "CONSISTENT"
@@ -80,6 +96,16 @@ class ClaimQuantity(ScienceModel):
     value: Decimal
     unit: str
 
+    @field_validator("quantity_kind")
+    @classmethod
+    def canonical_quantity_kind(cls, value: str) -> str:
+        return _canonical_identifier(value, "quantity_kind")
+
+    @field_validator("unit")
+    @classmethod
+    def canonical_unit(cls, value: str) -> str:
+        return _canonical_unit_field(value)
+
     @field_validator("value")
     @classmethod
     def finite_value(cls, value: Decimal) -> Decimal:
@@ -92,6 +118,16 @@ class ClaimCondition(ScienceModel):
     condition_id: str
     value: str | int | float | bool | None
     unit: str | None = None
+
+    @field_validator("condition_id")
+    @classmethod
+    def canonical_condition_id(cls, value: str) -> str:
+        return _canonical_identifier(value, "condition_id")
+
+    @field_validator("unit")
+    @classmethod
+    def canonical_unit(cls, value: str | None) -> str | None:
+        return _canonical_unit_field(value) if value is not None else None
 
     @field_validator("value")
     @classmethod
@@ -126,6 +162,11 @@ class ConditionConstraint(ScienceModel):
     range: ConditionRange | None = None
     unit: str | None = None
 
+    @field_validator("unit")
+    @classmethod
+    def canonical_unit(cls, value: str | None) -> str | None:
+        return _canonical_unit_field(value) if value is not None else None
+
     @model_validator(mode="after")
     def valid_operand(self) -> "ConditionConstraint":
         if self.operator == "range":
@@ -153,6 +194,21 @@ class NormalizedClaim(ScienceModel):
     conditions: list[ClaimCondition]
     process_stage: str | None
     material_state: str | None
+
+    @model_validator(mode="after")
+    def unambiguous_lookup_identifiers(self) -> "NormalizedClaim":
+        quantity_kinds = [quantity.quantity_kind for quantity in self.quantities]
+        if len(quantity_kinds) != len(set(quantity_kinds)):
+            raise ValueError("quantity_kind values must be unique")
+        condition_ids = [condition.condition_id for condition in self.conditions]
+        if len(condition_ids) != len(set(condition_ids)):
+            raise ValueError("condition_id values must be unique")
+        reserved = {"process_stage", "material_state"} & set(condition_ids)
+        if reserved:
+            raise ValueError(
+                f"reserved condition_id is not allowed: {', '.join(sorted(reserved))}"
+            )
+        return self
 
 
 class ClaimInterpretation(ScienceModel):

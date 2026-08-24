@@ -31,6 +31,22 @@ class UnregisteredConversionError(InvalidQuantityError):
     """No exact allowlisted conversion is registered for the requested pair."""
 
 
+_AMBIGUOUS_UNIT_TOKENS = frozenset({"pH"})
+
+
+def canonical_unit_token(unit: object) -> str:
+    """Canonicalize spelling noise before any unit policy or registry lookup."""
+
+    if not isinstance(unit, str):
+        raise InvalidQuantityError("unit token must be a string")
+    token = unit.strip()
+    if not token:
+        raise InvalidQuantityError("unit token must be nonempty")
+    if token in _AMBIGUOUS_UNIT_TOKENS:
+        raise AmbiguousUnitError(f"ambiguous unit token: {token}")
+    return token
+
+
 class NormalizedQuantity(ScienceModel):
     """A finite quantity represented in Pint base units."""
 
@@ -56,7 +72,11 @@ class ConversionRegistry:
     def __init__(self, definitions: tuple[ConversionDefinition, ...]):
         keyed: dict[tuple[str, str, ConversionKind], ConversionDefinition] = {}
         for definition in definitions:
-            key = (definition.source_unit, definition.target_unit, definition.kind)
+            key = (
+                canonical_unit_token(definition.source_unit),
+                canonical_unit_token(definition.target_unit),
+                definition.kind,
+            )
             if key in keyed:
                 raise ValueError(f"duplicate conversion registration: {definition.conversion_id}")
             if definition.kind not in {ConversionKind.MULTIPLICATIVE, ConversionKind.AFFINE}:
@@ -84,6 +104,8 @@ class ConversionRegistry:
             raise InvalidQuantityError("conversion value must be finite")
         if kind is ConversionKind.LOGARITHMIC:
             raise UnsupportedConversionError("logarithmic conversion is unsupported")
+        source_unit = canonical_unit_token(source_unit)
+        target_unit = canonical_unit_token(target_unit)
         definition = self._definitions.get((source_unit, target_unit, kind))
         if definition is None or (
             conversion_id is not None and definition.conversion_id != conversion_id
@@ -95,6 +117,37 @@ class ConversionRegistry:
             )
         offset = Decimal("0") if interval else definition.offset
         return magnitude * definition.scale + offset
+
+    def convert_registered(
+        self,
+        value: Decimal | int | str,
+        source_unit: str,
+        target_unit: str,
+        *,
+        interval: bool = False,
+    ) -> Decimal:
+        """Use the one reviewed conversion registered for this exact unit pair."""
+
+        source_unit = canonical_unit_token(source_unit)
+        target_unit = canonical_unit_token(target_unit)
+        matches = [
+            definition
+            for (source, target, _kind), definition in self._definitions.items()
+            if source == source_unit and target == target_unit
+        ]
+        if len(matches) != 1:
+            raise UnregisteredConversionError(
+                f"unregistered conversion: {source_unit} -> {target_unit}"
+            )
+        definition = matches[0]
+        return self.convert(
+            value,
+            source_unit,
+            target_unit,
+            kind=definition.kind,
+            interval=interval,
+            conversion_id=definition.conversion_id,
+        )
 
 
 conversion_registry = ConversionRegistry(
@@ -122,6 +175,22 @@ conversion_registry = ConversionRegistry(
                 "meter",
                 "centimeter",
                 Decimal("100"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:ohm-law-product-voltage",
+                ConversionKind.MULTIPLICATIVE,
+                "ampere * ohm",
+                "volt",
+                Decimal("1"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:voltage-ohm-law-product",
+                ConversionKind.MULTIPLICATIVE,
+                "volt",
+                "ampere * ohm",
+                Decimal("1"),
                 Decimal("0"),
             ),
             *(
@@ -204,14 +273,6 @@ class LockedUnitRegistry(pint.UnitRegistry):
 
 ureg = LockedUnitRegistry()
 
-_AMBIGUOUS_UNIT_TOKENS = frozenset({"pH"})
-
-
-def _reject_ambiguous_unit(unit: str) -> None:
-    if unit in _AMBIGUOUS_UNIT_TOKENS:
-        raise AmbiguousUnitError(f"ambiguous unit token: {unit}")
-
-
 def _validated_claim_quantity(quantity: ClaimQuantity | dict[str, object]) -> ClaimQuantity:
     raw_value = quantity.value if isinstance(quantity, ClaimQuantity) else quantity.get("value")
     try:
@@ -221,8 +282,14 @@ def _validated_claim_quantity(quantity: ClaimQuantity | dict[str, object]) -> Cl
         raise
     except (ArithmeticError, ValueError):
         pass
+    raw_unit = quantity.unit if isinstance(quantity, ClaimQuantity) else quantity.get("unit")
+    unit = canonical_unit_token(raw_unit)
     try:
-        parsed = quantity if isinstance(quantity, ClaimQuantity) else ClaimQuantity.model_validate(quantity)
+        parsed = (
+            quantity
+            if isinstance(quantity, ClaimQuantity)
+            else ClaimQuantity.model_validate({**quantity, "unit": unit})
+        )
     except (TypeError, ValueError) as exc:
         raise InvalidQuantityError("invalid quantity") from exc
     if not parsed.value.is_finite():
@@ -232,7 +299,6 @@ def _validated_claim_quantity(quantity: ClaimQuantity | dict[str, object]) -> Cl
 
 def _pint_quantity(quantity: ClaimQuantity | dict[str, object]) -> pint.Quantity:
     parsed = _validated_claim_quantity(quantity)
-    _reject_ambiguous_unit(parsed.unit)
     try:
         if parsed.unit in {"°C", "degC", "degree_Celsius"}:
             kelvin = convert_value(
@@ -278,12 +344,51 @@ def normalized_quantity(value: Decimal, unit: str) -> NormalizedQuantity:
 def expected_dimensionality(unit: str) -> str:
     """Return the dimensionality of a trusted rule-declared unit."""
 
-    _reject_ambiguous_unit(unit)
+    unit = canonical_unit_token(unit)
     try:
         quantity = ureg.Quantity(Decimal(1), unit).to_base_units()
     except (pint.UndefinedUnitError, ValueError, TypeError) as exc:
         raise InvalidQuantityError(f"undefined unit: {unit}") from exc
     return str(quantity.dimensionality)
+
+
+def comparable_values(
+    left_value: Decimal | int | str,
+    left_unit: str,
+    right_value: Decimal | int | str,
+    right_unit: str,
+) -> tuple[Decimal, Decimal]:
+    """Return magnitudes in one unit using only an exact reviewed conversion."""
+
+    left_unit = canonical_unit_token(left_unit)
+    right_unit = canonical_unit_token(right_unit)
+    try:
+        left = Decimal(str(left_value))
+        right = Decimal(str(right_value))
+    except (ArithmeticError, ValueError) as exc:
+        raise InvalidQuantityError("quantity magnitude must be finite") from exc
+    if not left.is_finite() or not right.is_finite():
+        raise InvalidQuantityError("quantity magnitude must be finite")
+    try:
+        left_dimension = ureg.Quantity(Decimal(1), left_unit).dimensionality
+        right_dimension = ureg.Quantity(Decimal(1), right_unit).dimensionality
+    except (pint.UndefinedUnitError, ValueError, TypeError) as exc:
+        raise InvalidQuantityError("undefined unit in quantity comparison") from exc
+    if left_dimension != right_dimension:
+        raise IncompatibleDimensionsError(
+            f"incompatible dimensions: {left_dimension} and {right_dimension}"
+        )
+    if left_unit == right_unit:
+        return left, right
+    try:
+        return left, conversion_registry.convert_registered(right, right_unit, left_unit)
+    except UnregisteredConversionError:
+        try:
+            return conversion_registry.convert_registered(left, left_unit, right_unit), right
+        except UnregisteredConversionError as exc:
+            raise UnregisteredConversionError(
+                f"unregistered conversion: {left_unit} <-> {right_unit}"
+            ) from exc
 
 
 def compare_quantities(
@@ -292,13 +397,12 @@ def compare_quantities(
 ) -> int:
     """Compare compatible quantities, returning ``-1``, ``0``, or ``1``."""
 
-    left_quantity = _pint_quantity(left)
-    right_quantity = _pint_quantity(right)
-    if left_quantity.dimensionality != right_quantity.dimensionality:
-        raise IncompatibleDimensionsError(
-            "incompatible dimensions: "
-            f"{left_quantity.dimensionality} and {right_quantity.dimensionality}"
-        )
-    left_value = Decimal(str(left_quantity.magnitude))
-    right_value = Decimal(str(right_quantity.magnitude))
+    left_quantity = _validated_claim_quantity(left)
+    right_quantity = _validated_claim_quantity(right)
+    left_value, right_value = comparable_values(
+        left_quantity.value,
+        left_quantity.unit,
+        right_quantity.value,
+        right_quantity.unit,
+    )
     return (left_value > right_value) - (left_value < right_value)

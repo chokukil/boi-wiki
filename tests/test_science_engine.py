@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
 from boi_api.app.science.engine import UnresolvedAmbiguityError, verify_claim
+from boi_api.app.science.exceptions import ScienceOperationalError
 from boi_api.app.science.models import (
     ClaimPacket,
     PrimaryVerdict,
@@ -262,6 +263,35 @@ def make_rule_set(
             for rule in rules
         ),
     )
+
+
+def repin_single_foundation_rule(
+    release_set: ResolvedReleaseSet,
+    rule_set: ResolvedRuleSet,
+    replacement: VerificationRule,
+) -> tuple[ResolvedReleaseSet, ResolvedRuleSet]:
+    """Build a coherent single-Foundation fixture around one replacement Rule."""
+    semantic_digest = sha256_digest(replacement)
+    components = tuple(
+        component.model_copy(update={"semantic_digest": semantic_digest})
+        if component.ref == replacement.rule_id
+        else component
+        for component in release_set.foundation_release.components
+    )
+    foundation = release_set.foundation_release.model_copy(update={"components": components})
+    updated_release_set = ResolvedReleaseSet.from_single_foundation(foundation)
+    updated_rule_set = ResolvedRuleSet(
+        release_set_digest=updated_release_set.combined_digest,
+        rules=tuple(
+            released.model_copy(
+                update={"rule": replacement, "semantic_digest": semantic_digest}
+            )
+            if released.rule.rule_id == replacement.rule_id
+            else released
+            for released in rule_set.rules
+        ),
+    )
+    return updated_release_set, updated_rule_set
 
 
 @pytest.fixture
@@ -723,6 +753,217 @@ def test_same_number_with_incompatible_condition_units_cannot_create_false_red()
     assert "INCOMPATIBLE_CONDITION_UNITS" in evaluation.reason_codes
 
 
+@pytest.mark.parametrize("identifier", ["", "   "])
+def test_claim_rejects_empty_quantity_kind_and_condition_id(identifier: str):
+    """Blank identifiers must not disappear into quantity/condition lookup maps."""
+    with pytest.raises(ValidationError, match="nonempty"):
+        claim_fixture(
+            "claim:empty-quantity-kind",
+            subject="sci:concept:input",
+            relation="equation",
+            predicate="equals",
+            object_="sci:concept:output",
+            quantities=[{"quantity_kind": identifier, "value": 1, "unit": "meter"}],
+        )
+    with pytest.raises(ValidationError, match="nonempty"):
+        claim_fixture(
+            "claim:empty-condition-id",
+            subject="sci:concept:input",
+            relation="monotonic_direction",
+            predicate="increases",
+            object_="sci:concept:output",
+            typed_conditions=[{"condition_id": identifier, "value": "fixed"}],
+        )
+
+
+def test_claim_rejects_duplicate_quantity_and_condition_identifiers():
+    """Last-value-wins maps must not resolve ambiguous repeated scientific inputs."""
+    with pytest.raises(ValidationError, match="quantity_kind values must be unique"):
+        claim_fixture(
+            "claim:duplicate-quantity-kind",
+            subject="sci:concept:input",
+            relation="equation",
+            predicate="equals",
+            object_="sci:concept:output",
+            quantities=[
+                {"quantity_kind": "length", "value": 1, "unit": "meter"},
+                {"quantity_kind": "length", "value": 2, "unit": "meter"},
+            ],
+        )
+    with pytest.raises(ValidationError, match="condition_id values must be unique"):
+        claim_fixture(
+            "claim:duplicate-condition-id",
+            subject="sci:concept:input",
+            relation="monotonic_direction",
+            predicate="increases",
+            object_="sci:concept:output",
+            typed_conditions=[
+                {"condition_id": "temperature", "value": 100, "unit": "°C"},
+                {"condition_id": "temperature", "value": 25, "unit": "°C"},
+            ],
+        )
+
+
+@pytest.mark.parametrize("reserved", ["process_stage", "material_state"])
+def test_claim_condition_ids_cannot_collide_with_reserved_synthetic_conditions(
+    reserved: str,
+):
+    """A typed condition must not override process_stage or material_state lookup."""
+    with pytest.raises(ValidationError, match="reserved condition_id"):
+        claim_fixture(
+            f"claim:reserved-condition:{reserved}",
+            subject="sci:concept:input",
+            relation="monotonic_direction",
+            predicate="increases",
+            object_="sci:concept:output",
+            typed_conditions=[{"condition_id": reserved, "value": "attacker-value"}],
+            process_stage="reviewed-stage",
+            material_state="reviewed-state",
+        )
+
+
+@pytest.mark.parametrize(
+    ("operator", "expected", "actual"),
+    [("eq", 1, True), ("ne", 0, True), ("eq", "1", 1)],
+)
+def test_unitless_condition_evaluator_rejects_incompatible_scalar_kinds(
+    operator: str,
+    expected: object,
+    actual: object,
+):
+    """Python bool/numeric equality must not satisfy a decision-changing Rule gate."""
+    rule = rule_fixture(
+        "sci:rule:typed-scalar-condition",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        required_conditions=[
+            {"key": "setting", "operator": operator, "value": expected}
+        ],
+    )
+    claim = claim_fixture(
+        "claim:typed-scalar-condition",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:response",
+        typed_conditions=[{"condition_id": "setting", "value": actual}],
+    )
+
+    evaluation = evaluate_rule(rule, claim.normalized_claim)
+
+    assert evaluation.applicability == "MISSING_CONDITIONS"
+    assert evaluation.outcome == "UNDECIDED"
+    assert "INCOMPATIBLE_CONDITION_TYPES" in evaluation.reason_codes
+
+
+def test_verify_claim_cannot_turn_bool_numeric_condition_ambiguity_red(
+    release_set: ResolvedReleaseSet,
+    rule_set: ResolvedRuleSet,
+):
+    """Full verification must keep bool distinct from integer before predicate red."""
+    replacement = rule_fixture(
+        "sci:rule:spin-direction",
+        "directional_relation",
+        subject="sci:concept:spin-speed",
+        object_="sci:concept:film-thickness",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        required_conditions=[
+            {"key": "numeric-setting", "operator": "eq", "value": 1}
+        ],
+    )
+    pinned_release_set, pinned_rule_set = repin_single_foundation_rule(
+        release_set, rule_set, replacement
+    )
+    claim = claim_fixture(
+        "claim:verify-bool-numeric-condition",
+        subject="sci:concept:spin-speed",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:film-thickness",
+        typed_conditions=[
+            {"condition_id": "numeric-setting", "value": True}
+        ],
+    )
+
+    packet = verify_claim(claim, pinned_release_set, rule_set=pinned_rule_set)
+
+    assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
+    assert "INCOMPATIBLE_CONDITION_TYPES" in packet.reason_codes
+    assert packet.corrected_claim is None
+
+
+def test_condition_evaluator_rejects_an_unregistered_cross_unit_conversion():
+    """Falling back to Pint would let 1 inch satisfy a 2.54 centimeter red gate."""
+    from boi_api.app.science.units import UnregisteredConversionError
+
+    rule = rule_fixture(
+        "sci:rule:unregistered-condition-conversion",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        required_conditions=[
+            {"key": "distance", "operator": "eq", "value": 2.54, "unit": "centimeter"}
+        ],
+    )
+    claim = claim_fixture(
+        "claim:unregistered-condition-conversion",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:response",
+        typed_conditions=[
+            {"condition_id": "distance", "value": 1, "unit": "inch"}
+        ],
+    )
+
+    with pytest.raises(UnregisteredConversionError, match="unregistered"):
+        evaluate_rule(rule, claim.normalized_claim)
+
+
+def test_verify_claim_rejects_unregistered_condition_conversion_before_red(
+    release_set: ResolvedReleaseSet,
+    rule_set: ResolvedRuleSet,
+):
+    """The full verifier must not turn an unreviewed Pint conversion into VIOLATION."""
+    from boi_api.app.science.units import UnregisteredConversionError
+
+    replacement = rule_fixture(
+        "sci:rule:spin-direction",
+        "directional_relation",
+        subject="sci:concept:spin-speed",
+        object_="sci:concept:film-thickness",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        required_conditions=[
+            {"key": "distance", "operator": "eq", "value": 2.54, "unit": "centimeter"}
+        ],
+    )
+    pinned_release_set, pinned_rule_set = repin_single_foundation_rule(
+        release_set, rule_set, replacement
+    )
+    claim = claim_fixture(
+        "claim:verify-unregistered-condition-conversion",
+        subject="sci:concept:spin-speed",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:film-thickness",
+        typed_conditions=[
+            {"condition_id": "distance", "value": 1, "unit": "inch"}
+        ],
+    )
+
+    with pytest.raises(UnregisteredConversionError, match="unregistered"):
+        verify_claim(claim, pinned_release_set, rule_set=pinned_rule_set)
+
+
 @pytest.mark.parametrize("observation_value", ["unqualified", "false"])
 def test_empirical_strings_cannot_qualify_an_observation(
     observation_value: str,
@@ -884,6 +1125,32 @@ def test_unresolved_ambiguity_stops_before_rule_evaluation(
         verify_claim(claim, release_set, rule_set=rule_set)
 
 
+def test_incompatible_release_set_is_an_operational_error_not_a_verdict(
+    release_set: ResolvedReleaseSet,
+    rule_set: ResolvedRuleSet,
+):
+    """Release incompatibility must never be reported as absent scientific information."""
+    incompatible = release_set.model_copy(
+        update={
+            "compatibility": release_set.compatibility.model_copy(
+                update={"compatible": False}
+            )
+        }
+    )
+    claim = claim_fixture(
+        "claim:incompatible-release-set",
+        subject="sci:concept:spin-speed",
+        relation="monotonic_direction",
+        predicate="increases",
+        object_="sci:concept:film-thickness",
+        conditions={"resist": "same", "viscosity": "same"},
+        process_stage="final-coat",
+    )
+
+    with pytest.raises(ScienceOperationalError, match="INCOMPATIBLE_RELEASE_SET"):
+        verify_claim(claim, incompatible, rule_set=rule_set)
+
+
 def test_release_must_pin_the_rule_and_every_explanation_reference(
     release: ResolvedRelease,
     rule_set: ResolvedRuleSet,
@@ -910,14 +1177,15 @@ def test_release_must_pin_the_rule_and_every_explanation_reference(
         }
     )
 
-    packet = verify_claim(
-        claim,
-        ResolvedReleaseSet.from_single_foundation(unpinned),
-        rule_set=rule_set,
-    )
-
-    assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
-    assert packet.explanation_facts == []
+    with pytest.raises(
+        ScienceOperationalError,
+        match="RULE_SET_RELEASE_SET_MISMATCH",
+    ):
+        verify_claim(
+            claim,
+            ResolvedReleaseSet.from_single_foundation(unpinned),
+            rule_set=rule_set,
+        )
 
 
 def test_omitting_any_release_pinned_rule_fails_complete_coverage(
@@ -943,11 +1211,8 @@ def test_omitting_any_release_pinned_rule_fails_complete_coverage(
         }
     )
 
-    packet = verify_claim(claim, release_set, rule_set=omitted)
-
-    assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
-    assert "RULE_SET_INCOMPLETE" in packet.reason_codes
-    assert packet.corrected_claim is None
+    with pytest.raises(ScienceOperationalError, match="RULE_SET_INCOMPLETE"):
+        verify_claim(claim, release_set, rule_set=omitted)
 
 
 def test_same_id_substituted_rule_body_fails_semantic_integrity(
@@ -980,11 +1245,8 @@ def test_same_id_substituted_rule_body_fails_semantic_integrity(
         }
     )
 
-    packet = verify_claim(claim, release_set, rule_set=substituted)
-
-    assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
-    assert "RULE_SEMANTIC_DIGEST_MISMATCH" in packet.reason_codes
-    assert packet.corrected_claim is None
+    with pytest.raises(ScienceOperationalError, match="RULE_SEMANTIC_DIGEST_MISMATCH"):
+        verify_claim(claim, release_set, rule_set=substituted)
 
 
 def test_substituted_rule_cannot_replace_the_resolved_component_semantic_digest(
@@ -1016,10 +1278,8 @@ def test_substituted_rule_cannot_replace_the_resolved_component_semantic_digest(
         )
     substituted = rule_set.model_copy(update={"rules": tuple(substituted_rules)})
 
-    packet = verify_claim(claim, release_set, rule_set=substituted)
-
-    assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
-    assert "RULE_SEMANTIC_DIGEST_MISMATCH" in packet.reason_codes
+    with pytest.raises(ScienceOperationalError, match="RULE_SEMANTIC_DIGEST_MISMATCH"):
+        verify_claim(claim, release_set, rule_set=substituted)
 
 
 def test_released_rule_component_digest_must_match_exact_release_component(
@@ -1046,10 +1306,8 @@ def test_released_rule_component_digest_must_match_exact_release_component(
         }
     )
 
-    packet = verify_claim(claim, release_set, rule_set=altered)
-
-    assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
-    assert "RULE_COMPONENT_DIGEST_MISMATCH" in packet.reason_codes
+    with pytest.raises(ScienceOperationalError, match="RULE_COMPONENT_DIGEST_MISMATCH"):
+        verify_claim(claim, release_set, rule_set=altered)
 
 
 def test_extra_unpinned_rule_fails_exact_release_coverage(
@@ -1078,11 +1336,8 @@ def test_extra_unpinned_rule_fails_exact_release_coverage(
     )
     expanded = rule_set.model_copy(update={"rules": (*rule_set.rules, extra)})
 
-    packet = verify_claim(claim, release_set, rule_set=expanded)
-
-    assert packet.verdict is PrimaryVerdict.INSUFFICIENT_INFORMATION
-    assert "RULE_SET_HAS_EXTRA_RULES" in packet.reason_codes
-    assert packet.corrected_claim is None
+    with pytest.raises(ScienceOperationalError, match="RULE_SET_HAS_EXTRA_RULES"):
+        verify_claim(claim, release_set, rule_set=expanded)
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -1226,6 +1481,69 @@ def test_incompatible_equation_operands_are_rejected_not_contradicted():
     )
 
     with pytest.raises(IncompatibleDimensionsError, match="incompatible equation dimensions"):
+        evaluate_rule(rule, claim.normalized_claim)
+
+
+def test_equation_evaluator_rejects_an_unregistered_cross_unit_conversion():
+    """An equal equation must not use Pint to equate inch with centimeter implicitly."""
+    from boi_api.app.science.units import UnregisteredConversionError
+
+    rule = rule_fixture(
+        "sci:rule:unregistered-equation-conversion",
+        "equation_constraint",
+        subject="sci:concept:length-comparison",
+        object_="sci:concept:length",
+        equation={
+            "left_quantity_kind": "left_length",
+            "right_quantity_kinds": ["right_length"],
+            "operator": "equal",
+        },
+    )
+    claim = claim_fixture(
+        "claim:unregistered-equation-conversion",
+        subject="sci:concept:length-comparison",
+        relation="equation",
+        predicate="equals",
+        object_="sci:concept:length",
+        quantities=[
+            {"quantity_kind": "left_length", "value": 1, "unit": "inch"},
+            {"quantity_kind": "right_length", "value": 2.54, "unit": "centimeter"},
+        ],
+    )
+
+    with pytest.raises(UnregisteredConversionError, match="unregistered"):
+        evaluate_rule(rule, claim.normalized_claim)
+
+
+def test_product_equation_rejects_unregistered_composite_unit_conversion():
+    """Pint scaling of composite inch units must not decide an area equation."""
+    from boi_api.app.science.units import UnregisteredConversionError
+
+    rule = rule_fixture(
+        "sci:rule:unregistered-product-conversion",
+        "equation_constraint",
+        subject="sci:concept:area-comparison",
+        object_="sci:concept:area",
+        equation={
+            "left_quantity_kind": "area",
+            "right_quantity_kinds": ["width", "height"],
+            "operator": "product",
+        },
+    )
+    claim = claim_fixture(
+        "claim:unregistered-product-conversion",
+        subject="sci:concept:area-comparison",
+        relation="equation",
+        predicate="equals",
+        object_="sci:concept:area",
+        quantities=[
+            {"quantity_kind": "area", "value": 6.4516, "unit": "centimeter ** 2"},
+            {"quantity_kind": "width", "value": 1, "unit": "inch"},
+            {"quantity_kind": "height", "value": 1, "unit": "inch"},
+        ],
+    )
+
+    with pytest.raises(UnregisteredConversionError, match="unregistered"):
         evaluate_rule(rule, claim.normalized_claim)
 
 
@@ -1398,6 +1716,58 @@ def test_ambiguous_ph_token_is_not_parsed_as_an_si_prefix_unit():
         validate_quantity({"quantity_kind": "acidity", "value": "7", "unit": "pH"})
     with pytest.raises(AmbiguousUnitError, match="ambiguous unit token: pH"):
         expected_dimensionality("pH")
+
+
+@pytest.mark.parametrize("unit", ["pH ", " pH", "\tpH\n"])
+def test_whitespace_ph_variants_are_rejected_at_claim_and_rule_boundaries(unit: str):
+    """Removing token canonicalization would let Pint reinterpret whitespace pH as picohenry."""
+    with pytest.raises(ValidationError, match="ambiguous unit token: pH"):
+        claim_fixture(
+            "claim:ambiguous-ph-boundary",
+            subject="sci:concept:sample",
+            relation="dimensional_relation",
+            predicate="has_acidity",
+            object_="sci:concept:acidity",
+            quantities=[{"quantity_kind": "acidity", "value": 7, "unit": unit}],
+        )
+    with pytest.raises(ValidationError, match="ambiguous unit token: pH"):
+        rule_fixture(
+            "sci:rule:ambiguous-ph-boundary",
+            "dimension_constraint",
+            subject="sci:concept:sample",
+            object_="sci:concept:acidity",
+            expected_dimensions={"acidity": unit},
+        )
+
+
+def test_claim_and_rule_units_are_canonicalized_at_their_schema_boundaries():
+    """Keeping surrounding whitespace would make allowlist keys depend on spelling noise."""
+    claim = claim_fixture(
+        "claim:canonical-unit-token",
+        subject="sci:concept:sample",
+        relation="dimensional_relation",
+        predicate="has_length",
+        object_="sci:concept:length",
+        quantities=[{"quantity_kind": "length", "value": 1, "unit": " meter "}],
+        typed_conditions=[
+            {"condition_id": "temperature", "value": 25, "unit": " °C "}
+        ],
+    )
+    rule = rule_fixture(
+        "sci:rule:canonical-unit-token",
+        "dimension_constraint",
+        subject="sci:concept:sample",
+        object_="sci:concept:length",
+        expected_dimensions={"length": " meter "},
+        required_conditions=[
+            {"key": "temperature", "operator": "eq", "value": 25, "unit": " °C "}
+        ],
+    )
+
+    assert claim.normalized_claim.quantities[0].unit == "meter"
+    assert claim.normalized_claim.conditions[0].unit == "°C"
+    assert rule.expected_dimensions == {"length": "meter"}
+    assert rule.required_conditions[0].unit == "°C"
 
 
 def test_verdict_packet_is_byte_stable_and_only_violation_has_a_correction(
