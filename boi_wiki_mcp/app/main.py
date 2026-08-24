@@ -243,6 +243,7 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "science_report_export", "description": "Export the exact Science report packet as Markdown or PDF bytes without changing its verdicts or citations."},
     {"name": "science_proposal_create", "description": "Create a user-confirmed proposal for later Power User or Admin review; never changes active Science knowledge."},
     {"name": "science_source_validate", "description": "Validate a proposed Science Source and locator/hash contract without approving it."},
+    {"name": "science_evidence_validate", "description": "Validate an exact Science Evidence span, locator, translation, claim scope, and Source digest without approving it."},
     {"name": "science_knowledge_validate", "description": "Validate a proposed Science Knowledge object without approving it."},
     {"name": "science_rule_qualify", "description": "Run deterministic qualification cases for a Science Rule without approving or activating it."},
     {"name": "science_release_validate", "description": "Validate a Science Release Candidate and its exact object digests without activating it."},
@@ -364,6 +365,7 @@ MCP_TOOL_IA_GROUPS = [
             "science_report_export",
             "science_proposal_create",
             "science_source_validate",
+            "science_evidence_validate",
             "science_knowledge_validate",
             "science_rule_qualify",
             "science_release_validate",
@@ -896,6 +898,18 @@ async def science_source_validate(
         "/api/science/admin/sources/validate",
         employee_id=employee_id,
         payload={"source": source},
+    )
+
+
+@mcp.tool(name="science_evidence_validate")
+async def science_evidence_validate(
+    evidence: dict[str, Any], employee_id: str = DEFAULT_EMPLOYEE_ID
+) -> dict[str, Any]:
+    """Validate one exact Evidence span and its Source binding without approval."""
+    return await api_post(
+        "/api/science/admin/evidence/validate",
+        employee_id=employee_id,
+        payload={"evidence": evidence},
     )
 
 
@@ -3840,6 +3854,13 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             "/api/science/admin/sources/validate",
             employee_id=employee_id,
             payload={"source": args.get("source") or {}},
+            service_token=True,
+        )
+    elif tool_name == "science_evidence_validate":
+        result = await api_post(
+            "/api/science/admin/evidence/validate",
+            employee_id=employee_id,
+            payload={"evidence": args.get("evidence") or {}},
             service_token=True,
         )
     elif tool_name == "science_knowledge_validate":
