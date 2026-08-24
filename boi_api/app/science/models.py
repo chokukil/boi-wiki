@@ -134,6 +134,7 @@ class ResolvedComponent(ScienceModel):
     ]
     declared_digest: str
     actual_digest: str
+    semantic_digest: str | None = None
 
 
 class ResolvedRelease(ScienceModel):

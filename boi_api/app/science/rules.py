@@ -18,6 +18,7 @@ from boi_api.app.science.models import (
     ScienceModel,
 )
 from boi_api.app.science.units import (
+    IncompatibleDimensionsError,
     _pint_quantity,
     expected_dimensionality,
     validate_quantity,
@@ -43,6 +44,16 @@ class EquationConstraint(ScienceModel):
         return self
 
 
+class QualifiedObservation(ScienceModel):
+    """A reviewed measurement record considered by an empirical rule."""
+
+    observation_id: str
+    rule_id: str
+    verified: bool
+    measurement_ref: str
+    evidence_ref: str
+
+
 class VerificationRule(ScienceModel):
     """A validated rule description; it contains data, never executable code."""
 
@@ -57,20 +68,58 @@ class VerificationRule(ScienceModel):
     validity_conditions: dict[str, ConditionValue] = Field(default_factory=dict)
     expected_dimensions: dict[str, str] = Field(default_factory=dict)
     equation: EquationConstraint | None = None
-    observation_condition_id: str | None = None
     knowledge_refs: list[str] = Field(min_length=1)
     evidence_refs: list[str] = Field(min_length=1)
     corrected_claim: str | None = None
 
     @model_validator(mode="after")
     def has_kind_specific_constraint(self) -> "VerificationRule":
-        if self.rule_kind in {RuleKind.DIRECTIONAL_RELATION, RuleKind.EQUATION_CONSTRAINT}:
-            if self.expected_predicate is None and self.equation is None:
-                raise ValueError("directional/equation rule requires a predicate or equation")
-        if self.rule_kind is RuleKind.DIMENSION_CONSTRAINT and not self.expected_dimensions:
-            raise ValueError("dimension rule requires expected_dimensions")
+        if (
+            self.rule_kind is not RuleKind.DIRECTIONAL_RELATION
+            and "expected_polarity" in self.model_fields_set
+        ):
+            raise ValueError(f"rule kind payload invalid for {self.rule_kind.value}")
+        if (
+            self.rule_kind in {RuleKind.VALIDITY_DOMAIN, RuleKind.EMPIRICAL_BOUNDARY}
+            and self.corrected_claim is not None
+        ):
+            raise ValueError(f"rule kind payload invalid for {self.rule_kind.value}")
+        if self.rule_kind is RuleKind.DIRECTIONAL_RELATION:
+            if self.expected_predicate is None or self.equation is not None or self.expected_dimensions:
+                raise ValueError("rule kind payload invalid for directional_relation")
+        elif self.rule_kind is RuleKind.EQUATION_CONSTRAINT:
+            if self.equation is None or self.expected_predicate is not None or self.expected_dimensions:
+                raise ValueError("rule kind payload invalid for equation_constraint")
+        elif self.rule_kind is RuleKind.DIMENSION_CONSTRAINT:
+            if not self.expected_dimensions or self.expected_predicate is not None or self.equation is not None:
+                raise ValueError("rule kind payload invalid for dimension_constraint")
+        else:
+            if self.expected_predicate is not None or self.equation is not None or self.expected_dimensions:
+                raise ValueError(f"rule kind payload invalid for {self.rule_kind.value}")
         if self.rule_kind is RuleKind.VALIDITY_DOMAIN and not self.validity_conditions:
-            raise ValueError("validity rule requires validity_conditions")
+            raise ValueError("rule kind payload invalid for validity_domain")
+        return self
+
+
+class ReleasedRule(ScienceModel):
+    """A typed rule payload bound to its OKF and semantic digests."""
+
+    rule: VerificationRule
+    component_digest: str
+    semantic_digest: str
+
+
+class ResolvedRuleSet(ScienceModel):
+    """The complete set of typed rules resolved for one immutable Release."""
+
+    release_id: str
+    rules: tuple[ReleasedRule, ...]
+
+    @model_validator(mode="after")
+    def unique_rule_ids(self) -> "ResolvedRuleSet":
+        rule_ids = [released.rule.rule_id for released in self.rules]
+        if len(rule_ids) != len(set(rule_ids)):
+            raise ValueError("duplicate rule ID in resolved rule set")
         return self
 
 
@@ -80,7 +129,10 @@ class DetailedRuleEvaluation(RuleEvaluation):
     matched_concept_ids: list[str]
 
 
-RuleEvaluator: TypeAlias = Callable[[VerificationRule, NormalizedClaim], DetailedRuleEvaluation]
+RuleEvaluator: TypeAlias = Callable[
+    [VerificationRule, NormalizedClaim, tuple[QualifiedObservation, ...]],
+    DetailedRuleEvaluation,
+]
 
 
 def _claim_values(claim: NormalizedClaim) -> dict[str, ConditionValue]:
@@ -209,7 +261,9 @@ def _predicate_evaluation(
 
 
 def evaluate_directional_relation(
-    rule: VerificationRule, claim: NormalizedClaim
+    rule: VerificationRule,
+    claim: NormalizedClaim,
+    qualified_observations: tuple[QualifiedObservation, ...] = (),
 ) -> DetailedRuleEvaluation:
     return _predicate_evaluation(rule, claim)
 
@@ -232,8 +286,10 @@ def _equation_outcome(rule: VerificationRule, claim: NormalizedClaim) -> bool | 
         right = right_items[0] / right_items[1]
     try:
         right = right.to(left.units)
-    except pint.DimensionalityError:
-        return False
+    except pint.DimensionalityError as exc:
+        raise IncompatibleDimensionsError(
+            f"incompatible equation dimensions: {right.dimensionality} and {left.dimensionality}"
+        ) from exc
     left_value = Decimal(str(left.magnitude))
     right_value = Decimal(str(right.magnitude))
     scale = max(abs(right_value), Decimal(1))
@@ -241,10 +297,10 @@ def _equation_outcome(rule: VerificationRule, claim: NormalizedClaim) -> bool | 
 
 
 def evaluate_equation_constraint(
-    rule: VerificationRule, claim: NormalizedClaim
+    rule: VerificationRule,
+    claim: NormalizedClaim,
+    qualified_observations: tuple[QualifiedObservation, ...] = (),
 ) -> DetailedRuleEvaluation:
-    if rule.expected_predicate is not None:
-        return _predicate_evaluation(rule, claim)
     gated = _applicability_gate(rule, claim)
     if isinstance(gated, DetailedRuleEvaluation):
         return gated
@@ -270,7 +326,9 @@ def evaluate_equation_constraint(
 
 
 def evaluate_dimension_constraint(
-    rule: VerificationRule, claim: NormalizedClaim
+    rule: VerificationRule,
+    claim: NormalizedClaim,
+    qualified_observations: tuple[QualifiedObservation, ...] = (),
 ) -> DetailedRuleEvaluation:
     gated = _applicability_gate(rule, claim)
     if isinstance(gated, DetailedRuleEvaluation):
@@ -301,7 +359,9 @@ def evaluate_dimension_constraint(
 
 
 def evaluate_validity_domain(
-    rule: VerificationRule, claim: NormalizedClaim
+    rule: VerificationRule,
+    claim: NormalizedClaim,
+    qualified_observations: tuple[QualifiedObservation, ...] = (),
 ) -> DetailedRuleEvaluation:
     gated = _applicability_gate(rule, claim)
     if isinstance(gated, DetailedRuleEvaluation):
@@ -318,33 +378,26 @@ def evaluate_validity_domain(
 
 
 def evaluate_empirical_boundary(
-    rule: VerificationRule, claim: NormalizedClaim
+    rule: VerificationRule,
+    claim: NormalizedClaim,
+    qualified_observations: tuple[QualifiedObservation, ...] = (),
 ) -> DetailedRuleEvaluation:
     gated = _applicability_gate(rule, claim)
     if isinstance(gated, DetailedRuleEvaluation):
         return gated
     required, validity = gated
-    values = _claim_values(claim)
-    observation = (
-        values.get(rule.observation_condition_id)
-        if rule.observation_condition_id is not None
-        else None
+    qualified = any(
+        observation.rule_id == rule.rule_id and observation.verified
+        for observation in qualified_observations
     )
-    if observation is not True and not (isinstance(observation, str) and bool(observation.strip())):
-        return _base_evaluation(
-            rule,
-            claim,
-            applicability="EMPIRICAL_ONLY",
-            outcome="UNDECIDED",
-            reason_codes=["QUALIFIED_OBSERVATION_REQUIRED"],
-            conditions=required + validity,
-        )
     return _base_evaluation(
         rule,
         claim,
-        applicability="IN_SCOPE",
-        outcome="SUPPORTS",
-        reason_codes=["QUALIFIED_OBSERVATION_PRESENT"],
+        applicability="IN_SCOPE" if qualified else "EMPIRICAL_ONLY",
+        outcome="SUPPORTS" if qualified else "UNDECIDED",
+        reason_codes=[
+            "QUALIFIED_OBSERVATION_PRESENT" if qualified else "QUALIFIED_OBSERVATION_REQUIRED"
+        ],
         conditions=required + validity,
     )
 
@@ -358,11 +411,16 @@ RULE_EVALUATORS: dict[RuleKind, RuleEvaluator] = {
 }
 
 
-def evaluate_rule(rule: VerificationRule, claim: NormalizedClaim) -> DetailedRuleEvaluation:
+def evaluate_rule(
+    rule: VerificationRule,
+    claim: NormalizedClaim,
+    *,
+    qualified_observations: tuple[QualifiedObservation, ...] = (),
+) -> DetailedRuleEvaluation:
     """Dispatch one validated rule through the closed evaluator allowlist."""
 
     try:
         evaluator = RULE_EVALUATORS[rule.rule_kind]
     except KeyError as exc:  # Defensive boundary if an invalid object bypasses Pydantic.
         raise ValueError(f"unsupported rule kind: {rule.rule_kind}") from exc
-    return evaluator(rule, claim)
+    return evaluator(rule, claim, qualified_observations)

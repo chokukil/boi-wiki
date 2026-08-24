@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from boi_api.app.okf import (
     split_frontmatter,
@@ -21,6 +21,7 @@ from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
 from boi_api.app.science.models import ReleaseSelection, ResolvedComponent, ResolvedRelease
 from boi_api.app.science.profile import SCIENCE_TYPE_REQUIREMENTS, validate_sci_profile_metadata
+from boi_api.app.science.rules import ReleasedRule, ResolvedRuleSet, VerificationRule
 
 
 ObjectKind = Literal[
@@ -270,6 +271,18 @@ class ScienceCatalog:
             raise ScienceCatalogError(f"science release has invalid component_digests: {release.object_id}")
         return value
 
+    @staticmethod
+    def _verification_rule(rule: ScienceObject) -> VerificationRule:
+        payload = {
+            field_name: deepcopy(getattr(rule, field_name))
+            for field_name in VerificationRule.model_fields
+            if hasattr(rule, field_name)
+        }
+        try:
+            return VerificationRule.model_validate(payload)
+        except ValidationError as exc:
+            raise ScienceCatalogError(f"invalid verification rule payload: {rule.object_id}") from exc
+
     def resolve_release(self, release_id: str) -> ResolvedRelease:
         release = self._require("release", release_id)
         declared_content_hash = self._string_field(release, "content_hash")
@@ -291,6 +304,11 @@ class ScienceCatalog:
                     kind=component.kind,
                     declared_digest=declared_digest,
                     actual_digest=component.digest,
+                    semantic_digest=(
+                        sha256_digest(self._verification_rule(component))
+                        if component.kind == "rule"
+                        else None
+                    ),
                 )
             )
         schema_version = self._string_field(release, "schema_version")
@@ -311,6 +329,33 @@ class ScienceCatalog:
             component_digests={ref: declared_digests[ref] for ref in refs},
             known_limitations=list(known_limitations),
         )
+
+    def resolve_rule_set(self, release: ResolvedRelease) -> ResolvedRuleSet:
+        """Resolve every rule payload and bind it to the exact Release component."""
+
+        released_rules: list[ReleasedRule] = []
+        for component in sorted(release.components, key=lambda item: item.ref):
+            if component.kind != "rule":
+                continue
+            stored = self._require("rule", component.ref)
+            if (
+                stored.digest != component.actual_digest
+                or component.declared_digest != component.actual_digest
+                or release.component_digests.get(component.ref) != component.actual_digest
+            ):
+                raise ScienceCatalogError(f"rule component digest mismatch: {component.ref}")
+            rule = self._verification_rule(stored)
+            semantic_digest = sha256_digest(rule)
+            if component.semantic_digest != semantic_digest:
+                raise ScienceCatalogError(f"rule semantic digest mismatch: {component.ref}")
+            released_rules.append(
+                ReleasedRule(
+                    rule=rule,
+                    component_digest=component.actual_digest,
+                    semantic_digest=semantic_digest,
+                )
+            )
+        return ResolvedRuleSet(release_id=release.release_id, rules=tuple(released_rules))
 
     def resolve_release_set(self, selection: ReleaseSelection) -> tuple[ResolvedRelease, ...]:
         release_ids = (selection.foundation, *sorted(selection.domains), *sorted(selection.applications))

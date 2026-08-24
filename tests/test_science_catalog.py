@@ -94,7 +94,7 @@ def _object_metadata() -> dict[str, tuple[str, dict, str]]:
         ),
         "rule": (
             "boi/science-rule",
-            {"rule_id": "sci:rule:fixture", "pack_id": "sci-pack:fixture", "rule_kind": "directional_relation", "inputs": ["sci:input:fixture"], "outcomes": ["CONSISTENT"], "knowledge_refs": ["sci:knowledge:fixture"], "evidence_refs": ["sci:evidence:fixture"]},
+            {"rule_id": "sci:rule:fixture", "pack_id": "sci-pack:fixture", "rule_kind": "directional_relation", "inputs": ["sci:concept:input", "sci:concept:response"], "outcomes": ["VIOLATION", "CONSISTENT"], "subject_concept_id": "sci:concept:input", "object_concept_id": "sci:concept:response", "relation_kind": "monotonic_direction", "expected_predicate": "decreases", "knowledge_refs": ["sci:knowledge:fixture"], "evidence_refs": ["sci:evidence:fixture"]},
             "rules/rule.md",
         ),
         "binding": (
@@ -292,6 +292,30 @@ def test_qualification_case_queries_and_release_sets_are_deterministic(science_t
     assert [case.case_id for case in catalog.qualification_cases_for_pack("sci-pack:fixture")] == ["case:first", "case:second"]
     assert catalog.claim_fixture("case:first") == {"claim_id": "claim:first"}
     assert [release.release_id for release in catalog.resolve_release_set(ReleaseSelection(foundation="sci-release:0.1.0"))] == ["sci-release:0.1.0"]
+
+
+def test_catalog_produces_digest_bound_typed_rule_set(science_tree: Path):
+    """A resolved Rule must bind its typed semantics to the exact pinned OKF component."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.digests import sha256_digest
+
+    digest = _component_digest(science_tree, "rules/rule.md")
+    release_path = science_tree / "public/science/releases/sci-release-0.1.0.md"
+    metadata = yaml.safe_load(release_path.read_text(encoding="utf-8").split("---", 2)[1])
+    metadata["science"]["component_digests"] = {"sci:rule:fixture": digest}
+    metadata["science"]["components"] = ["sci:rule:fixture"]
+    _write_release(science_tree, "releases/sci-release-0.1.0.md", metadata)
+    catalog = ScienceCatalog(science_tree)
+    release = catalog.resolve_release("sci-release:0.1.0")
+
+    rule_set = catalog.resolve_rule_set(release)
+
+    assert rule_set.release_id == release.release_id
+    assert len(rule_set.rules) == 1
+    released = rule_set.rules[0]
+    component = next(item for item in release.components if item.ref == released.rule.rule_id)
+    assert released.component_digest == component.actual_digest == digest
+    assert released.semantic_digest == component.semantic_digest == sha256_digest(released.rule)
 
 
 @pytest.mark.parametrize("status", ["release_candidate", "superseded", "withdrawn"])

@@ -14,7 +14,13 @@ from boi_api.app.science.models import (
     ResolvedRelease,
     VerdictPacket,
 )
-from boi_api.app.science.rules import DetailedRuleEvaluation, VerificationRule, evaluate_rule
+from boi_api.app.science.rules import (
+    DetailedRuleEvaluation,
+    QualifiedObservation,
+    ResolvedRuleSet,
+    VerificationRule,
+    evaluate_rule,
+)
 
 
 class UnresolvedAmbiguityError(ValueError):
@@ -51,6 +57,41 @@ def _grounded(
         and set(rule.knowledge_refs) <= knowledge_refs
         and set(rule.evidence_refs) <= evidence_refs
     )
+
+
+def _rule_set_integrity(release: ResolvedRelease, rule_set: ResolvedRuleSet) -> list[str]:
+    if rule_set.release_id != release.release_id:
+        return ["RULE_SET_RELEASE_MISMATCH"]
+
+    supplied_ids = [released.rule.rule_id for released in rule_set.rules]
+    if len(supplied_ids) != len(set(supplied_ids)):
+        return ["DUPLICATE_RULE_ID"]
+    pinned = {component.ref: component for component in release.components if component.kind == "rule"}
+    supplied = set(supplied_ids)
+    pinned_ids = set(pinned)
+    if supplied != pinned_ids:
+        if supplied < pinned_ids:
+            return ["RULE_SET_INCOMPLETE"]
+        if pinned_ids < supplied:
+            return ["RULE_SET_HAS_EXTRA_RULES"]
+        return ["RULE_SET_ID_MISMATCH"]
+
+    reasons: set[str] = set()
+    for released in rule_set.rules:
+        rule_id = released.rule.rule_id
+        component = pinned[rule_id]
+        if (
+            released.component_digest != component.actual_digest
+            or component.declared_digest != component.actual_digest
+            or release.component_digests.get(rule_id) != component.actual_digest
+        ):
+            reasons.add("RULE_COMPONENT_DIGEST_MISMATCH")
+        if (
+            released.semantic_digest != component.semantic_digest
+            or sha256_digest(released.rule) != released.semantic_digest
+        ):
+            reasons.add("RULE_SEMANTIC_DIGEST_MISMATCH")
+    return sorted(reasons)
 
 
 def _select_verdict(
@@ -123,7 +164,8 @@ def verify_claim(
     release: ResolvedRelease,
     verifier_version: str = "science-verifier/0.1.0",
     *,
-    rules: Iterable[VerificationRule] | None = None,
+    rule_set: ResolvedRuleSet,
+    qualified_observations: Iterable[QualifiedObservation] = (),
 ) -> VerdictPacket:
     """Build a byte-stable verdict without filesystem, network, or dynamic code access."""
 
@@ -133,7 +175,8 @@ def verify_claim(
             f"unresolved decision-changing ambiguity must stop before verification: {ambiguity}"
         )
 
-    supplied_rules = tuple(rules or ())
+    integrity_reasons = _rule_set_integrity(release, rule_set)
+    supplied_rules = tuple(released.rule for released in rule_set.rules)
     pinned_rules = _resolved_refs(release, "rule")
     knowledge_refs = _resolved_refs(release, "knowledge")
     evidence_refs = _resolved_refs(release, "evidence")
@@ -143,17 +186,35 @@ def verify_claim(
         for rule in candidates
         if rule.rule_id in pinned_rules and _grounded(rule, knowledge_refs, evidence_refs)
     ]
-    coverage_missing = len(trusted) != len(candidates) or not candidates
+    coverage_missing = bool(integrity_reasons) or len(trusted) != len(candidates) or not candidates
+    observations = tuple(qualified_observations)
+
+    def observations_for(rule: VerificationRule) -> tuple[QualifiedObservation, ...]:
+        return tuple(
+            observation
+            for observation in observations
+            if observation.rule_id == rule.rule_id
+            and observation.verified
+            and observation.measurement_ref in knowledge_refs
+            and observation.evidence_ref in evidence_refs
+            and observation.evidence_ref in rule.evidence_refs
+        )
+
     evaluations = [
-        evaluate_rule(rule, claim.normalized_claim)
+        evaluate_rule(
+            rule,
+            claim.normalized_claim,
+            qualified_observations=observations_for(rule),
+        )
         for rule in sorted(trusted, key=lambda item: item.rule_id)
-    ]
+    ] if not integrity_reasons else []
     evaluations = [item for item in evaluations if item.applicability != "NOT_APPLICABLE"]
 
     verdict, decisive, reason_codes = _select_verdict(
         evaluations,
         coverage_missing=coverage_missing,
     )
+    reason_codes = sorted(set(reason_codes) | set(integrity_reasons))
     decisive = sorted(decisive, key=lambda item: item.rule_id)
     decisive_rule_ids = [item.rule_id for item in decisive]
     selected_knowledge = sorted(
