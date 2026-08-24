@@ -7,6 +7,8 @@ description: Use when proposing, validating, reviewing, or releasing BoI Science
 
 Scientific curation is **제안만** until the proper human role reviews an exact immutable object. Validation proves contract compliance, not scientific approval.
 
+Use an **authenticated user bearer** for every Science MCP call. A `service token` authenticates only the MCP transport and **사용자 identity가 아니다**; it cannot provide curation or release authority.
+
 Read these before acting:
 
 - `harness/science-source-curation-harness.md`

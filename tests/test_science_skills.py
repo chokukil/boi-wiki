@@ -62,6 +62,8 @@ def test_verifier_skill_preserves_boi_authority_and_the_confirmation_loop():
         "report_digest",
     ):
         assert required in body
+    assert "authenticated user bearer" in body
+    assert "service token" in body and "사용자 identity가 아니다" in body
     for verdict in (
         "VIOLATION",
         "CONSISTENT",
@@ -111,6 +113,8 @@ def test_curator_skill_is_proposal_only_and_matches_role_boundaries():
     ):
         assert required in body
     assert "자신이 만든 제안" in body and "승인하지 않는다" in body
+    assert "authenticated user bearer" in body
+    assert "service token" in body and "사용자 identity가 아니다" in body
     assert "RPM을" not in body
     assert "촉매는" not in body
     assert "옴의 법칙" not in body

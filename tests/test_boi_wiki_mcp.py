@@ -2021,6 +2021,8 @@ def test_check_boi_wiki_mcp_details_and_client_checklist(monkeypatch, capsys):
             "resources": 0,
             "resource_templates": 11,
             "prompts": 5,
+            "science_tools_ok": True,
+            "missing_science_tools": [],
             "tool_names": [
                 "boi_search",
                 "boi_get",
@@ -2115,6 +2117,8 @@ def test_check_boi_wiki_mcp_skips_authenticated_bridge_without_token(monkeypatch
             "resources": 0,
             "resource_templates": 11,
             "prompts": 5,
+            "science_tools_ok": True,
+            "missing_science_tools": [],
         }
 
     async def fail_bridge(*args, **kwargs):
@@ -2142,6 +2146,40 @@ def test_check_boi_wiki_mcp_skips_authenticated_bridge_without_token(monkeypatch
     assert body["bridge"]["status"] == "skipped"
 
 
+def test_check_boi_wiki_mcp_fails_when_a_science_tool_is_missing(monkeypatch, capsys):
+    import scripts.check_boi_wiki_mcp as script
+
+    async def fake_check_protocol(*args, **kwargs):
+        return {
+            "tools": 80,
+            "resources": 0,
+            "resource_templates": 11,
+            "prompts": 5,
+            "science_tools_ok": False,
+            "missing_science_tools": ["science_verify_document"],
+        }
+
+    monkeypatch.setattr(script, "check_protocol", fake_check_protocol)
+    args = argparse.Namespace(
+        base_url="http://localhost:8200",
+        mcp_url="http://localhost:8200/mcp",
+        service_token="",
+        query="SOP",
+        summary=True,
+        details=False,
+        client_checklist=False,
+        full_bridge=False,
+        require_bridge=False,
+    )
+
+    exit_code = asyncio.run(script.main_async(args))
+
+    assert exit_code == 1
+    body = json.loads(capsys.readouterr().out)
+    assert body["ok"] is False
+    assert body["protocol"]["missing_science_tools"] == ["science_verify_document"]
+
+
 def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys):
     import scripts.check_boi_wiki_mcp as script
 
@@ -2151,6 +2189,8 @@ def test_check_boi_wiki_mcp_can_require_authenticated_bridge(monkeypatch, capsys
             "resources": 0,
             "resource_templates": 11,
             "prompts": 5,
+            "science_tools_ok": True,
+            "missing_science_tools": [],
         }
 
     monkeypatch.setattr(script, "check_protocol", fake_check_protocol)
@@ -2848,7 +2888,14 @@ def test_check_boi_wiki_mcp_main_can_include_agent_contract(monkeypatch, capsys)
     import scripts.check_boi_wiki_mcp as script
 
     async def fake_check_protocol(*args, **kwargs):
-        return {"tools": 80, "resources": 0, "resource_templates": 11, "prompts": 5}
+        return {
+            "tools": 80,
+            "resources": 0,
+            "resource_templates": 11,
+            "prompts": 5,
+            "science_tools_ok": True,
+            "missing_science_tools": [],
+        }
 
     async def fake_check_bridge(*args, **kwargs):
         return {"ok": True, "status": "mcp_invoked", "tool": "boi.search", "request_id": "check-boi-wiki-mcp"}
@@ -2909,7 +2956,14 @@ def test_check_boi_wiki_mcp_reads_service_token_from_dotenv_without_printing(mon
 
     async def fake_check_protocol(*args, **kwargs):
         seen["protocol_token"] = kwargs.get("service_token", "")
-        return {"tools": 80, "resources": 0, "resource_templates": 11, "prompts": 5}
+        return {
+            "tools": 80,
+            "resources": 0,
+            "resource_templates": 11,
+            "prompts": 5,
+            "science_tools_ok": True,
+            "missing_science_tools": [],
+        }
 
     async def fake_check_bridge(base_url, service_token, query):
         seen["bridge_token"] = service_token

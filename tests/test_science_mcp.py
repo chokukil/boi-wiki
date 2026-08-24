@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import sys
 
 from fastapi.testclient import TestClient
+import httpx
 import pytest
 
 
@@ -34,6 +36,15 @@ def mcp_module(monkeypatch):
     return importlib.import_module("boi_wiki_mcp.app.main")
 
 
+@pytest.fixture()
+def authenticated_science_user(mcp_module):
+    token = mcp_module.MCP_CALLER_BEARER_TOKEN.set("test-user-bearer")
+    try:
+        yield
+    finally:
+        mcp_module.MCP_CALLER_BEARER_TOKEN.reset(token)
+
+
 def test_science_tools_are_discoverable_as_one_group(mcp_module):
     health = TestClient(mcp_module.app).get("/health").json()
     tool_names = {item["name"] for item in health["capability_lists"]["tools"]}
@@ -46,8 +57,19 @@ def test_science_tools_are_discoverable_as_one_group(mcp_module):
 
 
 @pytest.mark.asyncio
-async def test_verification_tools_are_thin_api_adapters(mcp_module, monkeypatch):
+async def test_science_tools_require_an_authenticated_user_bearer(mcp_module):
+    with pytest.raises(PermissionError, match="interactive_user_identity_required"):
+        await mcp_module.science_interpret(
+            "원문", request_id="r-1", idempotency_key="idem-1"
+        )
+
+
+@pytest.mark.asyncio
+async def test_verification_tools_forward_stored_identity_contract_unchanged(
+    mcp_module, monkeypatch, authenticated_science_user
+):
     calls: list[tuple[str, str, dict]] = []
+    release_selection = {"foundation": "sci-release:0.1.0", "domains": []}
 
     async def fake_post(path, **kwargs):
         calls.append(("POST", path, kwargs))
@@ -60,18 +82,18 @@ async def test_verification_tools_are_thin_api_adapters(mcp_module, monkeypatch)
     monkeypatch.setattr(mcp_module, "api_post", fake_post)
     monkeypatch.setattr(mcp_module, "api_get", fake_get)
 
-    await mcp_module.science_interpret("원문", employee_id="u-1", request_id="r-1")
+    await mcp_module.science_interpret(
+        "원문", request_id="r-1", idempotency_key="idem-1"
+    )
     await mcp_module.science_interpretation_confirm(
-        "i-1", "b-1", user_confirmed=True, employee_id="u-1", request_id="r-2"
+        "i-1", ["c-1"], user_confirmed=True, idempotency_key="idem-2"
     )
-    await mcp_module.science_verify_claim(
-        "c-1", employee_id="u-1", request_id="r-3"
-    )
+    await mcp_module.science_verify_claim("i-2", "c-1", release_selection)
     await mcp_module.science_verify_document(
-        "문서", employee_id="u-1", request_id="r-4"
+        "i-2", release_selection, idempotency_key="idem-3"
     )
-    await mcp_module.science_evidence_get("e-1", employee_id="u-1")
-    await mcp_module.science_report_get("report-1", employee_id="u-1")
+    await mcp_module.science_evidence_get("e-1")
+    await mcp_module.science_report_get("report-1")
 
     assert [(method, path) for method, path, _ in calls] == [
         ("POST", "/api/science/interpret"),
@@ -81,39 +103,75 @@ async def test_verification_tools_are_thin_api_adapters(mcp_module, monkeypatch)
         ("GET", "/api/science/evidence/e-1"),
         ("GET", "/api/science/reports/report-1"),
     ]
-    for _method, _path, kwargs in calls[:4]:
-        assert kwargs["employee_id"] == "u-1"
-
-
-@pytest.mark.asyncio
-async def test_export_preserves_api_bytes_and_digest(mcp_module, monkeypatch):
-    async def fake_bytes(path, **kwargs):
-        assert path == "/api/science/reports/report-1/export"
-        assert kwargs["params"] == {"format": "pdf"}
-        return {
-            "content_base64": "JVBERi0xLjQ=",
-            "content_type": "application/pdf",
-            "sha256": "abc123",
-        }
-
-    monkeypatch.setattr(mcp_module, "api_get_bytes", fake_bytes)
-
-    result = await mcp_module.science_report_export(
-        "report-1", format="pdf", employee_id="u-1"
-    )
-
-    assert result == {
-        "content_base64": "JVBERi0xLjQ=",
-        "content_type": "application/pdf",
-        "sha256": "abc123",
+    for _method, _path, kwargs in calls:
+        assert kwargs["bearer_token"] == "test-user-bearer"
+        assert kwargs.get("employee_id") is None
+    assert calls[2][2]["payload"] == {
+        "interpretation_id": "i-2",
+        "release_selection": release_selection,
+    }
+    assert calls[3][2]["payload"] == {
+        "interpretation_id": "i-2",
+        "release_selection": release_selection,
+        "idempotency_key": "idem-3",
     }
 
 
 @pytest.mark.asyncio
-async def test_governance_tools_keep_validation_separate_from_mutation(
+async def test_export_preserves_report_digest_and_distinct_content_hash(
     mcp_module, monkeypatch
 ):
+    content = b"%PDF-1.4"
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, *args, **kwargs):
+            assert kwargs["headers"] == {"authorization": "Bearer user-token"}
+            assert "employee_id" not in kwargs["params"]
+            return httpx.Response(
+                200,
+                content=content,
+                headers={
+                    "content-type": "application/pdf",
+                    "x-science-report-digest": "sha256:" + "a" * 64,
+                    "content-disposition": 'attachment; filename="report.pdf"',
+                },
+            )
+
+    monkeypatch.setattr(mcp_module.httpx, "AsyncClient", FakeClient)
+
+    result = await mcp_module.api_get_bytes(
+        "/api/science/reports/report-1/export",
+        params={"format": "pdf"},
+        bearer_token="user-token",
+    )
+
+    assert result["report_digest"] == "sha256:" + "a" * 64
+    assert result["content_sha256"] == hashlib.sha256(content).hexdigest()
+    assert result["content_type"] == "application/pdf"
+    assert result["content_disposition"] == 'attachment; filename="report.pdf"'
+    assert "sha256" not in result
+
+
+@pytest.mark.asyncio
+async def test_governance_tools_preserve_exact_requests_and_user_identity(
+    mcp_module, monkeypatch, authenticated_science_user
+):
     calls: list[tuple[str, dict]] = []
+    qualification = {
+        "rule_id": "r-1",
+        "rule_digest": "sha256:" + "1" * 64,
+        "case_set_digest": "sha256:" + "2" * 64,
+        "case_ids": ["case-1"],
+    }
 
     async def fake_post(path, **kwargs):
         calls.append((path, kwargs))
@@ -121,25 +179,32 @@ async def test_governance_tools_keep_validation_separate_from_mutation(
 
     monkeypatch.setattr(mcp_module, "api_post", fake_post)
 
-    await mcp_module.science_source_validate({"source_id": "s-1"}, employee_id="a")
-    await mcp_module.science_evidence_validate(
-        {"evidence_id": "e-1"}, employee_id="a"
-    )
-    await mcp_module.science_knowledge_validate(
-        {"knowledge_id": "k-1"}, employee_id="a"
-    )
-    await mcp_module.science_rule_qualify("r-1", employee_id="a")
+    await mcp_module.science_source_validate({"source_id": "s-1"})
+    await mcp_module.science_evidence_validate({"evidence_id": "e-1"})
+    await mcp_module.science_knowledge_validate({"knowledge_id": "k-1"})
+    await mcp_module.science_rule_qualify("r-1", qualification)
     await mcp_module.science_release_validate(
-        {"release_id": "rel-1"}, employee_id="a"
+        "rel-1", "sha256:" + "3" * 64, "sha256:" + "4" * 64
     )
     await mcp_module.science_proposal_create(
-        {"kind": "alias"}, user_confirmed=True, employee_id="p"
+        {"kind": "alias"},
+        request_digest="sha256:" + "5" * 64,
+        idempotency_key="idem-p",
+        user_confirmed=True,
     )
     await mcp_module.science_release_activate(
-        "rel-1", user_confirmed=True, employee_id="a"
+        "rel-1",
+        "sha256:" + "3" * 64,
+        request_digest="sha256:" + "6" * 64,
+        idempotency_key="idem-a",
+        user_confirmed=True,
     )
     await mcp_module.science_release_withdraw(
-        "rel-1", user_confirmed=True, employee_id="a"
+        "rel-1",
+        "sha256:" + "3" * 64,
+        request_digest="sha256:" + "7" * 64,
+        idempotency_key="idem-w",
+        user_confirmed=True,
     )
 
     assert [path for path, _ in calls] == [
@@ -152,8 +217,19 @@ async def test_governance_tools_keep_validation_separate_from_mutation(
         "/api/science/admin/releases/rel-1/activate",
         "/api/science/admin/releases/rel-1/withdraw",
     ]
+    assert calls[3][1]["payload"] == qualification
+    assert calls[4][1]["payload"] == {
+        "release_id": "rel-1",
+        "release_digest": "sha256:" + "3" * 64,
+        "holdout_manifest_digest": "sha256:" + "4" * 64,
+    }
+    for path, kwargs in calls:
+        assert kwargs["bearer_token"] == "test-user-bearer", path
+        assert kwargs.get("employee_id") is None, path
     for path, kwargs in calls[-3:]:
         assert kwargs["payload"]["user_confirmed"] is True, path
+        assert kwargs["payload"]["request_digest"].startswith("sha256:"), path
+        assert kwargs["payload"]["idempotency_key"], path
 
 
 @pytest.mark.parametrize(
@@ -161,17 +237,31 @@ async def test_governance_tools_keep_validation_separate_from_mutation(
     [
         (
             "science_interpretation_confirm",
-            {"interpretation_id": "i-1", "binding_id": "b-1"},
+            {
+                "interpretation_id": "i-1",
+                "claim_ids": ["c-1"],
+                "idempotency_key": "idem-c",
+            },
         ),
-        ("science_proposal_create", {"proposal": {"kind": "alias"}}),
+        (
+            "science_proposal_create",
+            {
+                "proposal": {"kind": "alias"},
+                "request_digest": "sha256:" + "5" * 64,
+                "idempotency_key": "idem-p",
+            },
+        ),
     ],
 )
-def test_bridge_requires_explicit_confirmation_for_science_mutations(
+def test_authenticated_bridge_requires_explicit_confirmation(
     mcp_module, tool, args
 ):
     response = TestClient(mcp_module.app).post(
         "/api/mcp/call",
-        headers={"x-service-token": "test-service-token"},
+        headers={
+            "x-service-token": "test-service-token",
+            "authorization": "Bearer test-user-bearer",
+        },
         json={"tool": tool, "arguments": args},
     )
 
@@ -181,16 +271,23 @@ def test_bridge_requires_explicit_confirmation_for_science_mutations(
 
 @pytest.mark.parametrize(
     "tool",
-    ["science_release_activate", "science_release_withdraw"],
+    [
+        "science_interpret",
+        "science_interpretation_confirm",
+        "science_proposal_create",
+        "science_release_activate",
+        "science_release_withdraw",
+    ],
 )
-def test_service_token_bridge_cannot_activate_or_withdraw_release(mcp_module, tool):
+def test_service_token_only_bridge_cannot_use_science_identity(
+    mcp_module, tool
+):
     response = TestClient(mcp_module.app).post(
         "/api/mcp/call",
         headers={"x-service-token": "test-service-token"},
         json={
             "tool": tool,
             "arguments": {
-                "release_id": "rel-1",
                 "employee_id": "admin-claimed-by-client",
                 "user_confirmed": True,
             },
@@ -198,4 +295,37 @@ def test_service_token_bridge_cannot_activate_or_withdraw_release(mcp_module, to
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"] == "interactive_admin_identity_required"
+    assert response.json()["detail"] == "interactive_user_identity_required"
+
+
+def test_authenticated_bridge_ignores_forged_employee_and_forwards_bearer(
+    mcp_module, monkeypatch
+):
+    captured: dict = {}
+
+    async def fake_post(path, **kwargs):
+        captured.update({"path": path, **kwargs})
+        return {"ok": True}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_post)
+    response = TestClient(mcp_module.app).post(
+        "/api/mcp/call",
+        headers={
+            "x-service-token": "test-service-token",
+            "authorization": "Bearer real-user-token",
+        },
+        json={
+            "tool": "science_verify_claim",
+            "arguments": {
+                "employee_id": "forged-user",
+                "interpretation_id": "i-1",
+                "claim_id": "c-1",
+                "release_selection": {"foundation": "sci-release:0.1.0"},
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["bearer_token"] == "real-user-token"
+    assert captured.get("employee_id") is None
+    assert captured["payload"]["interpretation_id"] == "i-1"

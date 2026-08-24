@@ -1,4 +1,5 @@
 import base64
+from contextvars import ContextVar
 import hashlib
 import inspect
 import json
@@ -25,6 +26,9 @@ DEFAULT_EMPLOYEE_ID = os.getenv("DEFAULT_EMPLOYEE_ID", "100001")
 ACTION_GATEWAY_URL = os.getenv("ACTION_GATEWAY_URL", "http://action-gateway:8100").rstrip("/")
 MCP_BACKEND_TIMEOUT_SECONDS = float(os.getenv("MCP_BACKEND_TIMEOUT_SECONDS", "120"))
 MCP_REQUIRE_SERVICE_TOKEN = str(os.getenv("MCP_REQUIRE_SERVICE_TOKEN", "false")).strip().lower() in {"1", "true", "yes", "on"}
+MCP_CALLER_BEARER_TOKEN: ContextVar[str | None] = ContextVar(
+    "mcp_caller_bearer_token", default=None
+)
 
 DEFAULT_PUBLIC_BASE_URL = "http://localhost:8200"
 
@@ -657,10 +661,18 @@ async def api_get(
     employee_id: str | None = None,
     params: dict[str, Any] | None = None,
     service_token: bool = False,
+    bearer_token: str | None = None,
 ) -> dict[str, Any]:
+    if service_token and bearer_token:
+        raise ValueError("service_token and bearer_token are mutually exclusive")
     query = dict(params or {})
-    query.setdefault("employee_id", employee_id or DEFAULT_EMPLOYEE_ID)
-    headers = {"x-service-token": SERVICE_TOKEN} if service_token else {}
+    if not bearer_token:
+        query.setdefault("employee_id", employee_id or DEFAULT_EMPLOYEE_ID)
+    headers = (
+        {"x-service-token": SERVICE_TOKEN}
+        if service_token
+        else ({"authorization": f"Bearer {bearer_token}"} if bearer_token else {})
+    )
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(f"{BOI_API_URL}{path}", params=query, headers=headers)
     try:
@@ -678,9 +690,16 @@ async def api_post(
     employee_id: str | None = None,
     payload: dict[str, Any] | None = None,
     service_token: bool = False,
+    bearer_token: str | None = None,
 ) -> dict[str, Any]:
-    params = {"employee_id": employee_id or DEFAULT_EMPLOYEE_ID}
-    headers = {"x-service-token": SERVICE_TOKEN} if service_token else {}
+    if service_token and bearer_token:
+        raise ValueError("service_token and bearer_token are mutually exclusive")
+    params = {} if bearer_token else {"employee_id": employee_id or DEFAULT_EMPLOYEE_ID}
+    headers = (
+        {"x-service-token": SERVICE_TOKEN}
+        if service_token
+        else ({"authorization": f"Bearer {bearer_token}"} if bearer_token else {})
+    )
     async with httpx.AsyncClient(timeout=MCP_BACKEND_TIMEOUT_SECONDS) as client:
         resp = await client.post(f"{BOI_API_URL}{path}", params=params, headers=headers, json=payload or {})
     try:
@@ -698,11 +717,19 @@ async def api_get_bytes(
     employee_id: str | None = None,
     params: dict[str, Any] | None = None,
     service_token: bool = False,
+    bearer_token: str | None = None,
 ) -> dict[str, Any]:
     """Return an API export byte-for-byte with a locally verified digest."""
+    if service_token and bearer_token:
+        raise ValueError("service_token and bearer_token are mutually exclusive")
     query = dict(params or {})
-    query.setdefault("employee_id", employee_id or DEFAULT_EMPLOYEE_ID)
-    headers = {"x-service-token": SERVICE_TOKEN} if service_token else {}
+    if not bearer_token:
+        query.setdefault("employee_id", employee_id or DEFAULT_EMPLOYEE_ID)
+    headers = (
+        {"x-service-token": SERVICE_TOKEN}
+        if service_token
+        else ({"authorization": f"Bearer {bearer_token}"} if bearer_token else {})
+    )
     async with httpx.AsyncClient(timeout=MCP_BACKEND_TIMEOUT_SECONDS) as client:
         resp = await client.get(f"{BOI_API_URL}{path}", params=query, headers=headers)
     if resp.status_code >= 400:
@@ -716,10 +743,15 @@ async def api_get_bytes(
             )
         )
     content = bytes(resp.content)
+    report_digest = str(resp.headers.get("x-science-report-digest") or "").strip()
+    if not report_digest:
+        raise RuntimeError("Science report export is missing x-science-report-digest")
     return {
         "content_base64": base64.b64encode(content).decode("ascii"),
         "content_type": str(resp.headers.get("content-type") or "application/octet-stream").split(";", 1)[0],
-        "sha256": hashlib.sha256(content).hexdigest(),
+        "content_disposition": str(resp.headers.get("content-disposition") or ""),
+        "report_digest": report_digest,
+        "content_sha256": hashlib.sha256(content).hexdigest(),
     }
 
 
@@ -777,99 +809,124 @@ def require_science_confirmation(user_confirmed: bool, operation: str) -> None:
         raise ValueError(f"user_confirmed=true is required before {operation}")
 
 
+def require_science_bearer() -> str:
+    token = MCP_CALLER_BEARER_TOKEN.get()
+    if not token or token == SERVICE_TOKEN:
+        raise PermissionError("interactive_user_identity_required")
+    return token
+
+
 @mcp.tool(name="science_interpret")
 async def science_interpret(
     document: str,
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
     request_id: str = "",
+    idempotency_key: str = "",
 ) -> dict[str, Any]:
     """Interpret claim spans and ontology bindings without deciding verdicts."""
     return await api_post(
         "/api/science/interpret",
-        employee_id=employee_id,
-        payload={"document": document, "request_id": request_id},
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+        payload={
+            "document": document,
+            "request_id": request_id,
+            "idempotency_key": idempotency_key,
+        },
     )
 
 
 @mcp.tool(name="science_interpretation_confirm")
 async def science_interpretation_confirm(
     interpretation_id: str,
-    binding_id: str,
+    claim_ids: list[str],
     user_confirmed: bool,
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
-    request_id: str = "",
+    idempotency_key: str,
 ) -> dict[str, Any]:
     """Confirm one outcome-changing interpretation binding and resume only its claim."""
     require_science_confirmation(user_confirmed, "science_interpretation_confirm")
     return await api_post(
         f"/api/science/interpretations/{interpretation_id}/confirm",
-        employee_id=employee_id,
+        employee_id=None,
+        bearer_token=require_science_bearer(),
         payload={
-            "binding_id": binding_id,
+            "claim_ids": claim_ids,
             "user_confirmed": True,
-            "request_id": request_id,
+            "idempotency_key": idempotency_key,
         },
     )
 
 
 @mcp.tool(name="science_verify_claim")
 async def science_verify_claim(
+    interpretation_id: str,
     claim_id: str,
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
-    request_id: str = "",
+    release_selection: dict[str, Any],
 ) -> dict[str, Any]:
     """Ask BoI's deterministic engine to verify one interpreted claim."""
     return await api_post(
         f"/api/science/claims/{claim_id}/verify",
-        employee_id=employee_id,
-        payload={"request_id": request_id},
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+        payload={
+            "interpretation_id": interpretation_id,
+            "release_selection": release_selection,
+        },
     )
 
 
 @mcp.tool(name="science_verify_document")
 async def science_verify_document(
-    document: str,
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
-    request_id: str = "",
+    interpretation_id: str,
+    release_selection: dict[str, Any],
+    idempotency_key: str,
 ) -> dict[str, Any]:
     """Verify a document and return annotations plus the immutable report reference."""
     return await api_post(
         "/api/science/verify-document",
-        employee_id=employee_id,
-        payload={"document": document, "request_id": request_id},
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+        payload={
+            "interpretation_id": interpretation_id,
+            "release_selection": release_selection,
+            "idempotency_key": idempotency_key,
+        },
     )
 
 
 @mcp.tool(name="science_evidence_get")
 async def science_evidence_get(
     evidence_id: str,
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
 ) -> dict[str, Any]:
     """Return source-visible Evidence with integrity and applicability metadata."""
     return await api_get(
-        f"/api/science/evidence/{evidence_id}", employee_id=employee_id
+        f"/api/science/evidence/{evidence_id}",
+        employee_id=None,
+        bearer_token=require_science_bearer(),
     )
 
 
 @mcp.tool(name="science_report_get")
 async def science_report_get(
     report_id: str,
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
 ) -> dict[str, Any]:
     """Return an immutable Science verification report packet."""
-    return await api_get(f"/api/science/reports/{report_id}", employee_id=employee_id)
+    return await api_get(
+        f"/api/science/reports/{report_id}",
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+    )
 
 
 @mcp.tool(name="science_report_export")
 async def science_report_export(
     report_id: str,
     format: Literal["markdown", "pdf"] = "markdown",
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
 ) -> dict[str, Any]:
     """Export the exact report bytes and their independently computed digest."""
     return await api_get_bytes(
         f"/api/science/reports/{report_id}/export",
-        employee_id=employee_id,
+        employee_id=None,
+        bearer_token=require_science_bearer(),
         params={"format": format},
     )
 
@@ -877,105 +934,140 @@ async def science_report_export(
 @mcp.tool(name="science_proposal_create")
 async def science_proposal_create(
     proposal: dict[str, Any],
+    request_digest: str,
+    idempotency_key: str,
     user_confirmed: bool,
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
 ) -> dict[str, Any]:
     """Create a proposal only; this never changes the active Science Release."""
     require_science_confirmation(user_confirmed, "science_proposal_create")
     return await api_post(
         "/api/science/proposals",
-        employee_id=employee_id,
-        payload={"proposal": proposal, "user_confirmed": True},
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+        payload={
+            "proposal": proposal,
+            "request_digest": request_digest,
+            "idempotency_key": idempotency_key,
+            "user_confirmed": True,
+        },
     )
 
 
 @mcp.tool(name="science_source_validate")
 async def science_source_validate(
-    source: dict[str, Any], employee_id: str = DEFAULT_EMPLOYEE_ID
+    source: dict[str, Any],
 ) -> dict[str, Any]:
     """Validate a Source proposal without approving it."""
     return await api_post(
         "/api/science/admin/sources/validate",
-        employee_id=employee_id,
+        employee_id=None,
+        bearer_token=require_science_bearer(),
         payload={"source": source},
     )
 
 
 @mcp.tool(name="science_evidence_validate")
 async def science_evidence_validate(
-    evidence: dict[str, Any], employee_id: str = DEFAULT_EMPLOYEE_ID
+    evidence: dict[str, Any],
 ) -> dict[str, Any]:
     """Validate one exact Evidence span and its Source binding without approval."""
     return await api_post(
         "/api/science/admin/evidence/validate",
-        employee_id=employee_id,
+        employee_id=None,
+        bearer_token=require_science_bearer(),
         payload={"evidence": evidence},
     )
 
 
 @mcp.tool(name="science_knowledge_validate")
 async def science_knowledge_validate(
-    knowledge: dict[str, Any], employee_id: str = DEFAULT_EMPLOYEE_ID
+    knowledge: dict[str, Any],
 ) -> dict[str, Any]:
     """Validate a Knowledge proposal without approving it."""
     return await api_post(
         "/api/science/admin/knowledge/validate",
-        employee_id=employee_id,
+        employee_id=None,
+        bearer_token=require_science_bearer(),
         payload={"knowledge": knowledge},
     )
 
 
 @mcp.tool(name="science_rule_qualify")
 async def science_rule_qualify(
-    rule_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID
+    rule_id: str,
+    qualification_request: dict[str, Any],
 ) -> dict[str, Any]:
     """Run qualification cases without approving or activating the Rule."""
     return await api_post(
         f"/api/science/admin/rules/{rule_id}/qualify",
-        employee_id=employee_id,
-        payload={},
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+        payload=qualification_request,
     )
 
 
 @mcp.tool(name="science_release_validate")
 async def science_release_validate(
-    release: dict[str, Any], employee_id: str = DEFAULT_EMPLOYEE_ID
+    release_id: str,
+    release_digest: str,
+    holdout_manifest_digest: str,
 ) -> dict[str, Any]:
     """Validate an exact Release Candidate without activating it."""
     return await api_post(
         "/api/science/admin/releases/validate",
-        employee_id=employee_id,
-        payload={"release": release},
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+        payload={
+            "release_id": release_id,
+            "release_digest": release_digest,
+            "holdout_manifest_digest": holdout_manifest_digest,
+        },
     )
 
 
 @mcp.tool(name="science_release_activate")
 async def science_release_activate(
     release_id: str,
+    release_digest: str,
+    request_digest: str,
+    idempotency_key: str,
     user_confirmed: bool,
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
 ) -> dict[str, Any]:
     """Activate only after API-side authenticated science.admin enforcement."""
     require_science_confirmation(user_confirmed, "science_release_activate")
     return await api_post(
         f"/api/science/admin/releases/{release_id}/activate",
-        employee_id=employee_id,
-        payload={"user_confirmed": True},
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+        payload={
+            "release_digest": release_digest,
+            "request_digest": request_digest,
+            "idempotency_key": idempotency_key,
+            "user_confirmed": True,
+        },
     )
 
 
 @mcp.tool(name="science_release_withdraw")
 async def science_release_withdraw(
     release_id: str,
+    release_digest: str,
+    request_digest: str,
+    idempotency_key: str,
     user_confirmed: bool,
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
 ) -> dict[str, Any]:
     """Withdraw only after API-side authenticated science.admin enforcement."""
     require_science_confirmation(user_confirmed, "science_release_withdraw")
     return await api_post(
         f"/api/science/admin/releases/{release_id}/withdraw",
-        employee_id=employee_id,
-        payload={"user_confirmed": True},
+        employee_id=None,
+        bearer_token=require_science_bearer(),
+        payload={
+            "release_digest": release_digest,
+            "request_digest": request_digest,
+            "idempotency_key": idempotency_key,
+            "user_confirmed": True,
+        },
     )
 
 
@@ -3552,6 +3644,25 @@ def request_has_service_token(request: Request) -> bool:
     return bool(token and token == SERVICE_TOKEN)
 
 
+def user_bearer_from_request(request: Request) -> str | None:
+    authorization = str(request.headers.get("authorization") or "").strip()
+    if not authorization.lower().startswith("bearer "):
+        return None
+    token = authorization.split(" ", 1)[1].strip()
+    if not token or token == SERVICE_TOKEN:
+        return None
+    return token
+
+
+class McpCallerIdentityMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        context_token = MCP_CALLER_BEARER_TOKEN.set(user_bearer_from_request(request))
+        try:
+            return await call_next(request)
+        finally:
+            MCP_CALLER_BEARER_TOKEN.reset(context_token)
+
+
 class McpServiceTokenGateMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if MCP_REQUIRE_SERVICE_TOKEN and request.url.path.rstrip("/") == "/mcp":
@@ -3568,6 +3679,7 @@ class McpServiceTokenGateMiddleware(BaseHTTPMiddleware):
 
 app = mcp.streamable_http_app()
 app.add_middleware(McpServiceTokenGateMiddleware)
+app.add_middleware(McpCallerIdentityMiddleware)
 
 
 def first_forwarded_value(value: str | None) -> str:
@@ -3773,21 +3885,28 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
     tool_name = (req.tool or "").replace(".", "_").replace("-", "_")
     args = dict(req.arguments or {})
     employee_id = str(args.get("employee_id") or DEFAULT_EMPLOYEE_ID)
-    if tool_name in {"science_release_activate", "science_release_withdraw"}:
-        # A shared service token is not an Admin identity. These operations must
-        # travel through an interactive authenticated caller path.
+    science_tool_names = {
+        item["name"]
+        for item in MCP_TOOL_CAPABILITIES
+        if str(item.get("name") or "").startswith("science_")
+    }
+    science_bearer = MCP_CALLER_BEARER_TOKEN.get()
+    if tool_name in science_tool_names and (
+        not science_bearer or science_bearer == SERVICE_TOKEN
+    ):
         return JSONResponse(
-            {"detail": "interactive_admin_identity_required"}, status_code=403
+            {"detail": "interactive_user_identity_required"}, status_code=403
         )
     if tool_name == "science_interpret":
         result = await api_post(
             "/api/science/interpret",
-            employee_id=employee_id,
+            employee_id=None,
+            bearer_token=science_bearer,
             payload={
                 "document": str(args.get("document") or ""),
                 "request_id": str(args.get("request_id") or req.request_id or ""),
+                "idempotency_key": str(args.get("idempotency_key") or ""),
             },
-            service_token=True,
         )
     elif tool_name == "science_interpretation_confirm":
         if not bridge_bool(args.get("user_confirmed")):
@@ -3795,94 +3914,125 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
         interpretation_id = str(args.get("interpretation_id") or "")
         result = await api_post(
             f"/api/science/interpretations/{interpretation_id}/confirm",
-            employee_id=employee_id,
+            employee_id=None,
+            bearer_token=science_bearer,
             payload={
-                "binding_id": str(args.get("binding_id") or ""),
+                "claim_ids": bridge_list(args.get("claim_ids")),
                 "user_confirmed": True,
-                "request_id": str(args.get("request_id") or req.request_id or ""),
+                "idempotency_key": str(args.get("idempotency_key") or ""),
             },
-            service_token=True,
         )
     elif tool_name == "science_verify_claim":
         claim_id = str(args.get("claim_id") or "")
         result = await api_post(
             f"/api/science/claims/{claim_id}/verify",
-            employee_id=employee_id,
-            payload={"request_id": str(args.get("request_id") or req.request_id or "")},
-            service_token=True,
+            employee_id=None,
+            bearer_token=science_bearer,
+            payload={
+                "interpretation_id": str(args.get("interpretation_id") or ""),
+                "release_selection": args.get("release_selection") or {},
+            },
         )
     elif tool_name == "science_verify_document":
         result = await api_post(
             "/api/science/verify-document",
-            employee_id=employee_id,
+            employee_id=None,
+            bearer_token=science_bearer,
             payload={
-                "document": str(args.get("document") or ""),
-                "request_id": str(args.get("request_id") or req.request_id or ""),
+                "interpretation_id": str(args.get("interpretation_id") or ""),
+                "release_selection": args.get("release_selection") or {},
+                "idempotency_key": str(args.get("idempotency_key") or ""),
             },
-            service_token=True,
         )
     elif tool_name == "science_evidence_get":
         result = await api_get(
             f"/api/science/evidence/{str(args.get('evidence_id') or '')}",
-            employee_id=employee_id,
-            service_token=True,
+            employee_id=None,
+            bearer_token=science_bearer,
         )
     elif tool_name == "science_report_get":
         result = await api_get(
             f"/api/science/reports/{str(args.get('report_id') or '')}",
-            employee_id=employee_id,
-            service_token=True,
+            employee_id=None,
+            bearer_token=science_bearer,
         )
     elif tool_name == "science_report_export":
         result = await api_get_bytes(
             f"/api/science/reports/{str(args.get('report_id') or '')}/export",
-            employee_id=employee_id,
+            employee_id=None,
+            bearer_token=science_bearer,
             params={"format": str(args.get("format") or "markdown")},
-            service_token=True,
         )
     elif tool_name == "science_proposal_create":
         if not bridge_bool(args.get("user_confirmed")):
             return bridge_confirmation_error(req.tool)
         result = await api_post(
             "/api/science/proposals",
-            employee_id=employee_id,
-            payload={"proposal": args.get("proposal") or {}, "user_confirmed": True},
-            service_token=True,
+            employee_id=None,
+            bearer_token=science_bearer,
+            payload={
+                "proposal": args.get("proposal") or {},
+                "request_digest": str(args.get("request_digest") or ""),
+                "idempotency_key": str(args.get("idempotency_key") or ""),
+                "user_confirmed": True,
+            },
         )
     elif tool_name == "science_source_validate":
         result = await api_post(
             "/api/science/admin/sources/validate",
-            employee_id=employee_id,
+            employee_id=None,
+            bearer_token=science_bearer,
             payload={"source": args.get("source") or {}},
-            service_token=True,
         )
     elif tool_name == "science_evidence_validate":
         result = await api_post(
             "/api/science/admin/evidence/validate",
-            employee_id=employee_id,
+            employee_id=None,
+            bearer_token=science_bearer,
             payload={"evidence": args.get("evidence") or {}},
-            service_token=True,
         )
     elif tool_name == "science_knowledge_validate":
         result = await api_post(
             "/api/science/admin/knowledge/validate",
-            employee_id=employee_id,
+            employee_id=None,
+            bearer_token=science_bearer,
             payload={"knowledge": args.get("knowledge") or {}},
-            service_token=True,
         )
     elif tool_name == "science_rule_qualify":
         result = await api_post(
             f"/api/science/admin/rules/{str(args.get('rule_id') or '')}/qualify",
-            employee_id=employee_id,
-            payload={},
-            service_token=True,
+            employee_id=None,
+            bearer_token=science_bearer,
+            payload=args.get("qualification_request") or {},
         )
     elif tool_name == "science_release_validate":
         result = await api_post(
             "/api/science/admin/releases/validate",
-            employee_id=employee_id,
-            payload={"release": args.get("release") or {}},
-            service_token=True,
+            employee_id=None,
+            bearer_token=science_bearer,
+            payload={
+                "release_id": str(args.get("release_id") or ""),
+                "release_digest": str(args.get("release_digest") or ""),
+                "holdout_manifest_digest": str(
+                    args.get("holdout_manifest_digest") or ""
+                ),
+            },
+        )
+    elif tool_name in {"science_release_activate", "science_release_withdraw"}:
+        if not bridge_bool(args.get("user_confirmed")):
+            return bridge_confirmation_error(req.tool)
+        release_id = str(args.get("release_id") or "")
+        action = "activate" if tool_name.endswith("activate") else "withdraw"
+        result = await api_post(
+            f"/api/science/admin/releases/{release_id}/{action}",
+            employee_id=None,
+            bearer_token=science_bearer,
+            payload={
+                "release_digest": str(args.get("release_digest") or ""),
+                "request_digest": str(args.get("request_digest") or ""),
+                "idempotency_key": str(args.get("idempotency_key") or ""),
+                "user_confirmed": True,
+            },
         )
     elif tool_name in {"boi_search", "search_boi", "boi_search_sample"}:
         result = await boi_search_impl(query=str(args.get("query") or ""), employee_id=employee_id, service_token=True)

@@ -4,7 +4,7 @@
 
 **Goal:** Make external Codex/Claude agents use the canonical Science Verifier through REST/MCP, document safe curation workflows, and prove Web/REST/MCP/report parity without creating a BoI-owned scientific agent.
 
-**Architecture:** FastMCP tools remain thin API adapters and expose typed packets unchanged. Two small skills bootstrap user agents and curators into the API and four mirrored harnesses define Source, Knowledge, Rule, and end-to-end verification gates; final scripts exercise the running system and produce a user-readable failure report.
+**Architecture:** FastMCP tools remain thin API adapters and expose typed packets unchanged. Verification always names a server-stored, user-confirmed interpretation plus its claim ID; the client cannot submit an alternate `ClaimPacket` directly to the verdict path. Every Science call forwards an authenticated user bearer to BoI API, while the service token authenticates only the MCP service/bridge. Two small skills bootstrap user agents and curators into the API and four mirrored harnesses define Source, Knowledge, Rule, and end-to-end verification gates; final scripts exercise the running system and produce a user-readable failure report.
 
 **Tech Stack:** FastMCP, httpx, Markdown skills/harnesses, pytest, Node CDP browser checks, Python integration scripts
 
@@ -15,7 +15,8 @@
 - BoI Wiki must not provide a new autonomous Science agent; user-owned agents call REST or MCP.
 - MCP contains no rule engine, retrieval verdict, citation synthesis, or LLM fallback; it returns the API packet unchanged.
 - External-agent skills contain workflow and safety instructions, not embedded scientific truths.
-- Mutating MCP tools require explicit `user_confirmed: true` and preserve the caller identity; a service-token admin identity may not silently approve curation.
+- Every Science MCP tool requires an authenticated user bearer validated by BoI API. A service token may authenticate the MCP transport but is never a user identity, cannot be mapped to an employee, and cannot silently read, verify, curate, or release Science content.
+- Mutating MCP tools additionally require explicit `user_confirmed: true` where the REST contract requires it and preserve the authenticated caller identity.
 - User Agent output must preserve BoI verdict labels and limitations and must not upgrade `CONSISTENT` into true/safe/approved.
 - General users can retrieve decisive public original Evidence, reviewed translation, locator, and source URL.
 - Web, REST, MCP, Markdown, and PDF share claim IDs, verdicts, release pins, evidence IDs, and report digest.
@@ -42,10 +43,15 @@ async def test_science_verify_claim_is_a_thin_api_adapter(monkeypatch, mcp_modul
     expected = {"verdict": "VIOLATION", "claim_packet_digest": "sha256:a", "evidence_refs": ["sci-evidence:x"]}
     async def fake_post(path, **kwargs):
         assert path == "/api/science/claims/claim:x/verify"
-        assert kwargs["payload"]["claim_packet"]["claim_id"] == "claim:x"
+        assert kwargs["payload"] == {"interpretation_id": "interpretation:x", "release_selection": RELEASES}
+        assert kwargs["bearer_token"] == "user-bearer"
         return expected
     monkeypatch.setattr(mcp_module, "api_post", fake_post)
-    assert await mcp_module.science_verify_claim("claim:x", CLAIM_PACKET, RELEASES) == expected
+    token = mcp_module.MCP_CALLER_BEARER_TOKEN.set("user-bearer")
+    try:
+        assert await mcp_module.science_verify_claim("interpretation:x", "claim:x", RELEASES) == expected
+    finally:
+        mcp_module.MCP_CALLER_BEARER_TOKEN.reset(token)
 ```
 
 Cover all 15 tools, capability list, `Science Verifier` IA group, bridge dispatch, explicit confirmation, and identity preservation. Replace brittle exact total-count assertions with required-tool set assertions plus a minimum count.
@@ -58,11 +64,11 @@ Expected: FAIL because Science tools are absent.
 
 - [ ] **Step 3: Add capability metadata and wrappers**
 
-Each wrapper calls `api_get` or `api_post` exactly once. Export returns base64 plus content type only when the MCP transport cannot return binary content; packet metadata and digest stay unchanged.
+Each wrapper calls `api_get`, `api_post`, or `api_get_bytes` exactly once and forwards the user bearer instead of an `employee_id`. Export returns base64 plus content type, content disposition, the canonical `report_digest`, and a separately named `content_sha256` when the MCP transport cannot return binary content. The canonical report digest is never replaced by the export-byte hash.
 
 - [ ] **Step 4: Extend the HTTP MCP bridge safely**
 
-Add the Science tools to `MCP_TOOL_IA_GROUPS` and `mcp_bridge_call()`. Read-only service-token calls remain possible. Outcome-changing ambiguity uses the explicit `science_interpretation_confirm` tool; proposal review remains Web/REST-only. Release activation and withdrawal wrappers require an authenticated caller mapping and must reject a service-token-only identity. Keep `user_confirmed` visible in the payload.
+Add the Science tools to `MCP_TOOL_IA_GROUPS` and `mcp_bridge_call()`. The bridge requires both its `x-service-token` and a distinct user `Authorization: Bearer …` for every Science operation, ignores any client-supplied `employee_id`, and lets BoI API derive roles from that bearer. Native `/mcp` Science calls likewise fail without the user bearer. Outcome-changing ambiguity uses the explicit `science_interpretation_confirm` tool; proposal review remains Web/REST-only. Keep `user_confirmed` visible in the payload.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -70,7 +76,7 @@ Run: `pytest tests/test_boi_wiki_mcp.py -q`
 
 Run: `python scripts/check_boi_wiki_mcp.py`
 
-Expected: PASS and all 15 Science tools appear.
+Expected: PASS and the exact required set of all 15 Science tools appears; a missing Science tool fails even when the total MCP tool count remains above the minimum.
 
 ```bash
 git add boi_wiki_mcp/app/main.py tests/test_boi_wiki_mcp.py scripts/check_boi_wiki_mcp.py
