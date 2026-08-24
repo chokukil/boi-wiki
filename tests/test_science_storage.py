@@ -21,7 +21,15 @@ from boi_api.app.science.authorization import (
     ScienceAuthorization,
     ScienceAuthorizationError,
 )
-from boi_api.app.science.digests import canonical_json_bytes
+from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
+from boi_api.app.science.models import (
+    ClaimPacket,
+    InterpretationRecord,
+    ReleaseSelection,
+    ScienceOperationBinding,
+    VerificationReport,
+    VerdictPacket,
+)
 from boi_api.app.science.storage import (
     ImmutableScienceRecordError,
     ScienceAuditRecord,
@@ -41,8 +49,9 @@ def interpretation_payload(
     interpretation_id: str = "sci-interpretation:fixture",
     *,
     model_id: str = "fixture-model",
+    actor_id: str = "100001",
 ) -> dict[str, object]:
-    return {
+    payload = {
         "interpretation_id": interpretation_id,
         "document_digest": digest("document"),
         "candidate_claims": [],
@@ -58,27 +67,211 @@ def interpretation_payload(
         "confirmed_claim_packet_digest": None,
         "response_digest": digest("response"),
     }
+    payload["operation_binding"] = {
+        "operation": "interpret_document",
+        "idempotency_key_digest": digest(f"idempotency:{interpretation_id}"),
+        "actor_id": actor_id,
+        "request_digest": digest(f"request:{interpretation_id}"),
+        "document_digest": payload["document_digest"],
+        "claim_digest": digest("empty-claims"),
+        "release_digest": None,
+        "prompt_digest": digest("prompt"),
+        "source_interpretation_id": None,
+        "claim_ids": [],
+    }
+    payload["operation_binding"]["claim_digest"] = (
+        "sha256:" + sha256(canonical_json_bytes({"claim_packets": []})).hexdigest()
+    )
+    return payload
 
 
-def report_payload(report_id: str = "sci-report:fixture") -> dict[str, object]:
-    return {
-        "report_id": report_id,
-        "document_ref": "boi:public:science:fixture",
-        "document_digest": digest("document"),
-        "release_selection": {
-            "foundation": "sci-release:foundation:0.1.0",
-            "domains": [],
-            "applications": [],
+def _save_report_fixture(
+    store: ScienceRuntimeStore,
+    identity: AuthIdentity,
+    report_id: str = "sci-report:fixture",
+) -> VerificationReport:
+    suffix = sha256(report_id.encode("utf-8")).hexdigest()[:16]
+    proposal_id = f"sci-interpretation:proposal-{suffix}"
+    confirmation_id = f"sci-interpretation:confirmation-{suffix}"
+    document_ref = "boi:public:science:fixture"
+    document_digest = digest(f"document:{suffix}")
+    span = {
+        "start": 0,
+        "end": 3,
+        "exact": "RPM",
+        "prefix": "",
+        "suffix": "",
+    }
+    normalized_claim = {
+        "subject_concept_id": "sci:concept:rpm",
+        "relation_kind": "monotonic_direction",
+        "predicate": "increases",
+        "object_concept_id": "sci:concept:thickness",
+        "polarity": "positive",
+        "quantities": [],
+        "conditions": [],
+        "process_stage": "final_spin",
+        "material_state": "liquid_film",
+    }
+    proposal_claim = ClaimPacket.model_validate(
+        {
+            "claim_id": f"sci-claim:{suffix}",
+            "document_ref": document_ref,
+            "document_digest": document_digest,
+            "source_span": span,
+            "normalized_claim": normalized_claim,
+            "interpretation": {
+                "ontology_refs": [],
+                "proposed_ontology_refs": [],
+                "ambiguity_ids": [f"ambiguity:{suffix}"],
+                "user_confirmed": False,
+            },
+        }
+    )
+    common = {
+        "document_digest": document_digest,
+        "model_id": "fixture-model",
+        "model_settings": {"temperature": 0},
+        "prompt_version": "science-interpretation/0.1",
+        "dictionary_release_id": "dictionary:0.1",
+        "ontology_release_id": "ontology:0.1",
+        "ontology_refs": [],
+        "candidate_meanings": [],
+        "decision_impact": [
+            {
+                "claim_id": proposal_claim.claim_id,
+                "status": "requires_user_confirmation",
+                "issue_codes": ["USER_CONFIRMATION_REQUIRED"],
+            }
+        ],
+        "response_digest": digest(f"response:{suffix}"),
+    }
+    proposal_binding = {
+        "operation": "interpret_document",
+        "idempotency_key_digest": digest(f"proposal-key:{suffix}"),
+        "actor_id": identity.employee_id,
+        "request_digest": digest(f"proposal-request:{suffix}"),
+        "document_digest": document_digest,
+        "claim_digest": sha256_digest({"claim_packets": [proposal_claim]}),
+        "release_digest": None,
+        "prompt_digest": digest(f"prompt:{suffix}"),
+        "source_interpretation_id": None,
+        "claim_ids": [proposal_claim.claim_id],
+    }
+    proposal = InterpretationRecord(
+        interpretation_id=proposal_id,
+        candidate_claims=[proposal_claim],
+        user_revision_history=[],
+        confirmed_claim_packet_digest=None,
+        operation_binding=proposal_binding,
+        **common,
+    )
+    store.save_interpretation(proposal, identity=identity)
+
+    confirmed_claim = proposal_claim.model_copy(
+        update={
+            "interpretation": proposal_claim.interpretation.model_copy(
+                update={"ambiguity_ids": [], "user_confirmed": True}
+            )
         },
-        "release_digests": {"sci-release:foundation:0.1.0": "sha256:foundation"},
-        "interpretation_ids": ["sci-interpretation:fixture"],
-        "verdict_packets": [],
+        deep=True,
+    )
+    confirmed_digest = sha256_digest(confirmed_claim)
+    confirmation_binding = {
+        "operation": "confirm_interpretation",
+        "idempotency_key_digest": digest(f"confirmation-key:{suffix}"),
+        "actor_id": identity.employee_id,
+        "request_digest": digest(f"confirmation-request:{suffix}"),
+        "document_digest": document_digest,
+        "claim_digest": confirmed_digest,
+        "release_digest": None,
+        "prompt_digest": proposal.operation_binding.prompt_digest,
+        "source_interpretation_id": proposal_id,
+        "claim_ids": [proposal_claim.claim_id],
+    }
+    confirmation = InterpretationRecord(
+        interpretation_id=confirmation_id,
+        candidate_claims=[confirmed_claim],
+        user_revision_history=[
+            {
+                "action": "claim_confirmed",
+                "actor_id": identity.employee_id,
+                "source_interpretation_id": proposal_id,
+                "claim_ids": [proposal_claim.claim_id],
+                "occurred_at": datetime(2026, 8, 25, tzinfo=timezone.utc),
+            }
+        ],
+        confirmed_claim_packet_digest=confirmed_digest,
+        operation_binding=confirmation_binding,
+        **common,
+    )
+    store.save_interpretation(confirmation, identity=identity)
+
+    selection = ReleaseSelection(foundation="sci-release:foundation:0.1.0")
+    release_digests = {selection.foundation: digest("foundation")}
+    verdict = VerdictPacket(
+        claim_id=confirmed_claim.claim_id,
+        claim_packet_digest=sha256_digest(confirmed_claim),
+        verifier_version="fixture-verifier/0.1",
+        releases={
+            "selection": selection,
+            "digests": release_digests,
+            "combined_digest": digest("combined-release"),
+        },
+        verdict="VIOLATION",
+        reason_codes=["FIXTURE"],
+        condition_evaluations=[],
+        decisive_rule_ids=["sci:rule:fixture"],
+        knowledge_refs=[],
+        evidence_refs=[],
+        corrected_claim=None,
+        explanation_facts=[],
+        limitations=[],
+    )
+    request_digest = sha256_digest(
+        {
+            "operation": "verify_document",
+            "interpretation_id": confirmation_id,
+            "claim_digest": confirmed_digest,
+            "release_selection": selection,
+        }
+    )
+    binding = ScienceOperationBinding(
+        operation="verify_document",
+        idempotency_key_digest=digest(f"report-key:{suffix}"),
+        actor_id=identity.employee_id,
+        request_digest=request_digest,
+        document_digest=document_digest,
+        claim_digest=confirmed_digest,
+        release_digest=sha256_digest(selection),
+        prompt_digest=proposal.operation_binding.prompt_digest,
+        source_interpretation_id=confirmation_id,
+        claim_ids=[confirmed_claim.claim_id],
+    )
+    payload = {
+        "report_id": report_id,
+        "document_ref": document_ref,
+        "document_digest": document_digest,
+        "release_selection": selection,
+        "release_digests": release_digests,
+        "interpretation_ids": [confirmation_id],
+        "confirmed_claims": [confirmed_claim],
+        "verdict_packets": [verdict],
         "unresolved_ambiguities": [],
         "annotations": [],
         "created_at": datetime(2026, 8, 25, tzinfo=timezone.utc),
-        "created_by": "100001",
-        "report_digest": digest("report"),
+        "created_by": identity.employee_id,
+        "operation_binding": binding,
     }
+    canonical_payload = VerificationReport.model_construct(
+        **payload,
+        report_digest="sha256:pending",
+    ).model_dump(mode="json", exclude={"report_digest"})
+    report = VerificationReport(
+        **payload,
+        report_digest=sha256_digest(canonical_payload),
+    )
+    return store.save_report(report, identity=identity)
 
 
 def science_roles(identity: AuthIdentity) -> list[str]:
@@ -143,7 +336,7 @@ def test_save_report_uses_private_permissions_and_leaves_no_temp_files(
     science_admin: AuthIdentity,
 ):
     """A permissive mode or leaked temp file would expose immutable report contents."""
-    report = runtime_store.save_report(report_payload(), identity=science_admin)
+    report = _save_report_fixture(runtime_store, science_admin)
     path = runtime_store.record_path("reports", report.report_id)
 
     assert runtime_store.load_report(report.report_id) == report
@@ -162,7 +355,8 @@ def test_concurrent_different_writes_to_one_id_never_overwrite_each_other(
         barrier.wait()
         caller = AuthIdentity(employee_id=employee_id, display_name=model_id)
         return runtime_store.save_interpretation(
-            interpretation_payload(model_id=model_id), identity=caller
+            interpretation_payload(model_id=model_id, actor_id=employee_id),
+            identity=caller,
         )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -721,7 +915,7 @@ def test_record_load_rejects_final_component_symlink(
     tmp_path: Path,
 ):
     """Following a same-name symlink would let approval consume an external record."""
-    report = runtime_store.save_report(report_payload(), identity=science_admin)
+    report = _save_report_fixture(runtime_store, science_admin)
     record_path = runtime_store.record_path("reports", report.report_id)
     external = tmp_path / "external-report.json"
     shutil.copyfile(record_path, external)
@@ -739,7 +933,7 @@ def test_record_load_rejects_collection_directory_swap(
     science_admin: AuthIdentity,
 ):
     """A collection renamed and replaced after initialization must fail closed."""
-    report = runtime_store.save_report(report_payload(), identity=science_admin)
+    report = _save_report_fixture(runtime_store, science_admin)
     original = runtime_store.root / "reports"
     moved = runtime_store.root / "reports-original"
     original.rename(moved)
@@ -754,7 +948,7 @@ def test_record_load_rejects_nonprivate_existing_file(
     science_admin: AuthIdentity,
 ):
     """A group-readable replacement must not become an accepted immutable record."""
-    report = runtime_store.save_report(report_payload(), identity=science_admin)
+    report = _save_report_fixture(runtime_store, science_admin)
     path = runtime_store.record_path("reports", report.report_id)
     path.chmod(0o640)
 
@@ -1034,7 +1228,7 @@ def test_every_operation_rechecks_runtime_directory_private_mode(
     changed_path: str,
 ):
     """A post-construction chmod must invalidate both path and pinned-FD trust."""
-    report = runtime_store.save_report(report_payload(), identity=science_admin)
+    report = _save_report_fixture(runtime_store, science_admin)
     target = (
         runtime_store.root if changed_path == "root" else runtime_store.root / "reports"
     )
@@ -1050,7 +1244,7 @@ def test_every_operation_rechecks_pinned_collection_owner(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """A changed collection owner must fail even when its inode remains pinned."""
-    report = runtime_store.save_report(report_payload(), identity=science_admin)
+    report = _save_report_fixture(runtime_store, science_admin)
     reports_fd = runtime_store._dir_fds["reports"]
     real_fstat = os.fstat
 

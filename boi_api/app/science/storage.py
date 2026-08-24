@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationError, model_validator
 
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.authorization import (
@@ -603,7 +603,14 @@ class ScienceRuntimeStore:
         if canonical is None:
             raise KeyError(f"unknown Science runtime record: {record_id}")
         payload = json.loads(canonical.decode("utf-8"))
-        record = model.model_validate(payload)
+        try:
+            record = model.model_validate(payload)
+        except (ValidationError, ScienceSensitivePersistenceError):
+            if model in {InterpretationRecord, VerificationReport}:
+                raise ScienceSensitivePersistenceError(
+                    "unsafe Science runtime record rejected"
+                ) from None
+            raise
         identifier_field = {
             "interpretations": "interpretation_id",
             "reports": "report_id",
@@ -1080,18 +1087,37 @@ class ScienceRuntimeStore:
             journal = item.journal
             if not isinstance(journal, ScienceTransactionJournal):
                 continue
-            if journal.collection != "proposal-approvals":
-                continue
-            approval = ScienceProposalApproval.model_validate(item.record)
-            try:
-                proposal = self._load_locked(
-                    "proposals", approval.proposal_id, ScienceProposalRecord
-                )
-            except KeyError as exc:
-                raise ImmutableScienceRecordError(
-                    "Science approval proposal dependency is missing"
-                ) from exc
-            self._validate_approval_dependency(approval, proposal)
+            if journal.collection == "proposal-approvals":
+                approval = ScienceProposalApproval.model_validate(item.record)
+                try:
+                    proposal = self._load_locked(
+                        "proposals", approval.proposal_id, ScienceProposalRecord
+                    )
+                except KeyError as exc:
+                    raise ImmutableScienceRecordError(
+                        "Science approval proposal dependency is missing"
+                    ) from exc
+                self._validate_approval_dependency(approval, proposal)
+            elif journal.collection == "interpretations":
+                interpretation = InterpretationRecord.model_validate(item.record)
+                if (
+                    interpretation.operation_binding.operation
+                    == "confirm_interpretation"
+                ):
+                    source_id = (
+                        interpretation.operation_binding.source_interpretation_id
+                    )
+                    if source_id is None:
+                        raise ImmutableScienceRecordError(
+                            "Science confirmation proposal dependency is missing"
+                        )
+                    source = self._load_locked(
+                        "interpretations", source_id, InterpretationRecord
+                    )
+                    self._validate_confirmation_dependency(interpretation, source)
+            elif journal.collection == "reports":
+                report = VerificationReport.model_validate(item.record)
+                self._validate_report_dependency_locked(report)
 
     def _recover_pending_transactions_locked(
         self, *, record_id: str | None = None
@@ -1317,7 +1343,21 @@ class ScienceRuntimeStore:
         *,
         identity: AuthIdentity,
     ) -> InterpretationRecord:
-        interpretation = InterpretationRecord.model_validate(record)
+        try:
+            payload = (
+                record.model_dump(mode="json", exclude_none=False)
+                if isinstance(record, InterpretationRecord)
+                else record
+            )
+            interpretation = InterpretationRecord.model_validate(payload)
+        except (ValidationError, ScienceSensitivePersistenceError):
+            raise ScienceSensitivePersistenceError(
+                "unsafe Science interpretation record rejected"
+            ) from None
+        if interpretation.operation_binding.actor_id != identity.employee_id:
+            raise ScienceAuthorizationError(
+                "Science interpretation actor does not match trusted identity"
+            )
         audit = self._new_audit_event(
             identity=identity,
             action="interpretation_saved",
@@ -1325,6 +1365,16 @@ class ScienceRuntimeStore:
             details={"document_digest": interpretation.document_digest},
         )
         with self._exclusive():
+            if interpretation.operation_binding.operation == "confirm_interpretation":
+                source_id = interpretation.operation_binding.source_interpretation_id
+                if source_id is None:
+                    raise ImmutableScienceRecordError(
+                        "Science confirmation has no proposal dependency"
+                    )
+                source = self._load_locked(
+                    "interpretations", source_id, InterpretationRecord
+                )
+                self._validate_confirmation_dependency(interpretation, source)
             self._commit_record_locked(
                 collection="interpretations",
                 record_id=interpretation.interpretation_id,
@@ -1336,13 +1386,104 @@ class ScienceRuntimeStore:
     def load_interpretation(self, interpretation_id: str) -> InterpretationRecord:
         return self._load("interpretations", interpretation_id, InterpretationRecord)
 
+    @staticmethod
+    def _validate_confirmation_dependency(
+        interpretation: InterpretationRecord,
+        source: InterpretationRecord,
+    ) -> None:
+        binding = interpretation.operation_binding
+        if (
+            binding.operation != "confirm_interpretation"
+            or binding.source_interpretation_id != source.interpretation_id
+            or source.operation_binding.operation != "interpret_document"
+        ):
+            raise ImmutableScienceRecordError(
+                "Science confirmation proposal dependency is invalid"
+            )
+        selected = set(binding.claim_ids)
+        expected_claims = [
+            claim.model_copy(
+                update={
+                    "interpretation": claim.interpretation.model_copy(
+                        update={"ambiguity_ids": [], "user_confirmed": True}
+                    )
+                },
+                deep=True,
+            )
+            if claim.claim_id in selected
+            else claim.model_copy(deep=True)
+            for claim in source.candidate_claims
+        ]
+        immutable_fields = (
+            "document_digest",
+            "model_id",
+            "model_settings",
+            "prompt_version",
+            "dictionary_release_id",
+            "ontology_release_id",
+            "ontology_refs",
+            "candidate_meanings",
+            "decision_impact",
+            "response_digest",
+        )
+        if interpretation.candidate_claims != expected_claims or any(
+            getattr(interpretation, field) != getattr(source, field)
+            for field in immutable_fields
+        ):
+            raise ImmutableScienceRecordError(
+                "Science confirmation does not match its immutable proposal"
+            )
+
+    def _validate_report_dependency_locked(self, report: VerificationReport) -> None:
+        interpretation_id = report.interpretation_ids[0]
+        interpretation = self._load_locked(
+            "interpretations", interpretation_id, InterpretationRecord
+        )
+        source_id = interpretation.operation_binding.source_interpretation_id
+        if source_id is None:
+            raise ImmutableScienceRecordError(
+                "Science report confirmation has no proposal dependency"
+            )
+        source = self._load_locked("interpretations", source_id, InterpretationRecord)
+        self._validate_confirmation_dependency(interpretation, source)
+        confirmed_claims = [
+            claim
+            for claim in interpretation.candidate_claims
+            if claim.interpretation.user_confirmed
+            and not claim.interpretation.ambiguity_ids
+        ]
+        if (
+            report.operation_binding.source_interpretation_id != interpretation_id
+            or report.document_digest != interpretation.document_digest
+            or report.confirmed_claims != confirmed_claims
+            or report.operation_binding.prompt_digest
+            != interpretation.operation_binding.prompt_digest
+        ):
+            raise ImmutableScienceRecordError(
+                "Science report does not match its confirmed interpretation"
+            )
+
     def save_report(
         self,
         record: VerificationReport | Mapping[str, Any],
         *,
         identity: AuthIdentity,
     ) -> VerificationReport:
-        report = VerificationReport.model_validate(record)
+        try:
+            payload = (
+                record.model_dump(mode="json", exclude_none=False)
+                if isinstance(record, VerificationReport)
+                else record
+            )
+            report = VerificationReport.model_validate(payload)
+        except (ValidationError, ScienceSensitivePersistenceError):
+            raise ScienceSensitivePersistenceError(
+                "unsafe Science report record rejected"
+            ) from None
+        if report.operation_binding.actor_id != identity.employee_id:
+            raise ScienceAuthorizationError(
+                "Science report actor does not match trusted identity"
+            )
         audit = self._new_audit_event(
             identity=identity,
             action="report_saved",
@@ -1353,6 +1494,7 @@ class ScienceRuntimeStore:
             },
         )
         with self._exclusive():
+            self._validate_report_dependency_locked(report)
             self._commit_record_locked(
                 collection="reports",
                 record_id=report.report_id,
@@ -1362,7 +1504,10 @@ class ScienceRuntimeStore:
         return report
 
     def load_report(self, report_id: str) -> VerificationReport:
-        return self._load("reports", report_id, VerificationReport)
+        with self._exclusive():
+            report = self._load_locked("reports", report_id, VerificationReport)
+            self._validate_report_dependency_locked(report)
+            return report
 
     def save_proposal(
         self,

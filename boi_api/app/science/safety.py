@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
+from urllib.parse import parse_qsl, urlsplit
 
 
 class ScienceSensitivePersistenceError(ValueError):
@@ -94,4 +95,44 @@ def validate_model_identifier(value: str) -> str:
     ):
         raise ScienceSensitivePersistenceError("model_id is not a safe identifier")
     reject_sensitive_persistence(value, path="model_id")
+    return value
+
+
+def validate_credential_free_https_url(value: str) -> str:
+    """Admit an HTTPS locator only when it carries no credential material."""
+
+    if not isinstance(value, str):
+        raise ScienceSensitivePersistenceError("reviewed URL must be a string")
+    parsed = urlsplit(value)
+    forbidden_keys = {
+        "accesstoken",
+        "apikey",
+        "authorization",
+        "basicauth",
+        "clientsecret",
+        "credential",
+        "password",
+        "privatekey",
+        "secret",
+        "token",
+    }
+    query_items = parse_qsl(parsed.query, keep_blank_values=True)
+    fragment_items = parse_qsl(parsed.fragment, keep_blank_values=True)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or any(
+            key.lower().replace("-", "").replace("_", "") in forbidden_keys
+            for key, _item in [*query_items, *fragment_items]
+        )
+    ):
+        raise ScienceSensitivePersistenceError(
+            "reviewed URL contains credentials or is not HTTPS"
+        )
+    reject_sensitive_persistence(
+        [item for _key, item in [*query_items, *fragment_items]],
+        path="reviewed_url_parameters",
+    )
     return value

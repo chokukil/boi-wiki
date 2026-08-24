@@ -24,6 +24,7 @@ from boi_api.app.science.models import (
     ClaimInterpretation,
     ClaimPacket,
     EvidenceLink,
+    EvidenceLocator,
     GroundedAnnotation,
     InterpretationDecisionImpact,
     InterpretationRecord,
@@ -118,9 +119,10 @@ class ScienceService:
             "document_digest",
             "release_digest",
             "prompt_digest",
+            "source_interpretation_id",
         }
         if not derived_claim_digest:
-            fields.add("claim_digest")
+            fields.update({"claim_digest", "claim_ids"})
         if any(getattr(actual, field) != getattr(expected, field) for field in fields):
             raise ScienceIdempotencyConflict(
                 "idempotency key is already bound to different canonical inputs"
@@ -140,10 +142,6 @@ class ScienceService:
             record = self.runtime_store.load_interpretation(interpretation_id)
         except KeyError:
             return None
-        if record.operation_binding is None:
-            raise ScienceIdempotencyConflict(
-                "idempotency key collides with an unbound legacy record"
-            )
         self._assert_operation_retry(
             record.operation_binding,
             expected,
@@ -163,10 +161,6 @@ class ScienceService:
             report = self.runtime_store.load_report(report_id)
         except KeyError:
             return None
-        if report.operation_binding is None:
-            raise ScienceIdempotencyConflict(
-                "idempotency key collides with an unbound legacy record"
-            )
         self._assert_operation_retry(report.operation_binding, expected)
         return report
 
@@ -463,6 +457,8 @@ class ScienceService:
             claim_digest=None,
             release_digest=None,
             prompt_digest=prompt_digest,
+            source_interpretation_id=None,
+            claim_ids=[],
         )
         existing = self._existing_interpretation(
             interpretation_id,
@@ -525,7 +521,7 @@ class ScienceService:
 
         claim_digest = sha256_digest({"claim_packets": claims})
         operation_binding = pending_binding.model_copy(
-            update={"claim_digest": claim_digest}
+            update={"claim_digest": claim_digest, "claim_ids": sorted(claim_ids)}
         )
         record = InterpretationRecord(
             interpretation_id=interpretation_id,
@@ -578,6 +574,10 @@ class ScienceService:
         if source.interpretation_id != source_interpretation_id:
             raise ScienceOperationalError(
                 "stored interpretation identity does not match the requested record"
+            )
+        if source.operation_binding.operation != "interpret_document":
+            raise ScienceConfirmationRequired(
+                "confirmation requires an immutable interpretation proposal"
             )
         selected_ids = sorted(claim_ids)
         if not selected_ids or len(selected_ids) != len(set(selected_ids)):
@@ -641,16 +641,9 @@ class ScienceService:
             document_digest=source.document_digest,
             claim_digest=confirmed_digest,
             release_digest=None,
-            prompt_digest=(
-                source.operation_binding.prompt_digest
-                if source.operation_binding is not None
-                else sha256_digest(
-                    {
-                        "prompt_version": source.prompt_version,
-                        "response_digest": source.response_digest,
-                    }
-                )
-            ),
+            prompt_digest=source.operation_binding.prompt_digest,
+            source_interpretation_id=source_interpretation_id,
+            claim_ids=selected_ids,
         )
         existing = self._existing_interpretation(interpretation_id, binding)
         if existing is not None:
@@ -786,6 +779,12 @@ class ScienceService:
             raise ScienceOperationalError(
                 f"grounded Evidence has no source locator: {evidence_ref}"
             )
+        try:
+            safe_locator = EvidenceLocator.model_validate(deepcopy(dict(locator)))
+        except (ValueError, ScienceSensitivePersistenceError):
+            raise ScienceOperationalError(
+                "grounded Evidence locator failed closed safety validation"
+            ) from None
         source = self._pinned_object(
             release_set,
             ref=source_id,
@@ -891,7 +890,7 @@ class ScienceService:
             original_text_hash=original_text_hash,
             quote_hash=original_text_hash,
             url=url,
-            locator=deepcopy(dict(locator)),
+            locator=safe_locator,
             source_lookup=source_lookup,
         )
 
@@ -948,13 +947,90 @@ class ScienceService:
                 )
         return annotations
 
+    def _authoritative_confirmation(
+        self, interpretation_id: str
+    ) -> InterpretationRecord:
+        """Resolve an explicit confirmation and its immutable proposal dependency."""
+
+        try:
+            stored = self.runtime_store.load_interpretation(interpretation_id)
+            interpretation = InterpretationRecord.model_validate(
+                stored.model_dump(mode="json", exclude_none=False)
+            )
+        except (KeyError, ValueError, AttributeError):
+            raise ScienceConfirmationRequired(
+                "verification requires a valid stored confirmation"
+            ) from None
+        binding = interpretation.operation_binding
+        if (
+            interpretation.interpretation_id != interpretation_id
+            or binding.operation != "confirm_interpretation"
+            or binding.source_interpretation_id is None
+        ):
+            raise ScienceConfirmationRequired(
+                "verification requires an explicit identity-bound confirmation"
+            )
+        try:
+            source_stored = self.runtime_store.load_interpretation(
+                binding.source_interpretation_id
+            )
+            source = InterpretationRecord.model_validate(
+                source_stored.model_dump(mode="json", exclude_none=False)
+            )
+        except (KeyError, ValueError, AttributeError):
+            raise ScienceConfirmationRequired(
+                "confirmation proposal dependency is unavailable"
+            ) from None
+        if (
+            source.interpretation_id != binding.source_interpretation_id
+            or source.operation_binding.operation != "interpret_document"
+        ):
+            raise ScienceConfirmationRequired(
+                "confirmation proposal dependency is invalid"
+            )
+
+        selected = set(binding.claim_ids)
+        expected_claims = [
+            claim.model_copy(
+                update={
+                    "interpretation": claim.interpretation.model_copy(
+                        update={"ambiguity_ids": [], "user_confirmed": True}
+                    )
+                },
+                deep=True,
+            )
+            if claim.claim_id in selected
+            else claim.model_copy(deep=True)
+            for claim in source.candidate_claims
+        ]
+        immutable_fields = (
+            "document_digest",
+            "model_id",
+            "model_settings",
+            "prompt_version",
+            "dictionary_release_id",
+            "ontology_release_id",
+            "ontology_refs",
+            "candidate_meanings",
+            "decision_impact",
+            "response_digest",
+        )
+        if interpretation.candidate_claims != expected_claims or any(
+            getattr(interpretation, field) != getattr(source, field)
+            for field in immutable_fields
+        ):
+            raise ScienceConfirmationRequired(
+                "confirmation does not match its immutable proposal"
+            )
+        return interpretation
+
     def verify_claim(
         self,
         interpretation_id: str,
         claim_id: str,
         selection: ReleaseSelection,
     ) -> VerdictPacket:
-        interpretation = self.runtime_store.load_interpretation(interpretation_id)
+        interpretation = self._authoritative_confirmation(interpretation_id)
         matching = [
             claim
             for claim in interpretation.candidate_claims
@@ -998,7 +1074,7 @@ class ScienceService:
         identity: AuthIdentity,
         idempotency_key: str,
     ) -> VerificationReport:
-        interpretation = self.runtime_store.load_interpretation(interpretation_id)
+        interpretation = self._authoritative_confirmation(interpretation_id)
         if interpretation.interpretation_id != interpretation_id:
             raise ScienceOperationalError(
                 "stored interpretation identity does not match the requested record"
@@ -1056,16 +1132,9 @@ class ScienceService:
             document_digest=interpretation.document_digest,
             claim_digest=claim_digest,
             release_digest=release_digest,
-            prompt_digest=(
-                interpretation.operation_binding.prompt_digest
-                if interpretation.operation_binding is not None
-                else sha256_digest(
-                    {
-                        "prompt_version": interpretation.prompt_version,
-                        "response_digest": interpretation.response_digest,
-                    }
-                )
-            ),
+            prompt_digest=interpretation.operation_binding.prompt_digest,
+            source_interpretation_id=interpretation_id,
+            claim_ids=sorted(claim.claim_id for claim in confirmed_claims),
         )
         existing = self._existing_report(report_id, binding)
         if existing is not None:

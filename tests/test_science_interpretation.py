@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -476,7 +477,7 @@ def _release_and_rules(*, release_id: str = "sci-release:foundation-0.1"):
     release = ResolvedRelease(
         release_id=release_id,
         schema_version="sci-profile/0.1",
-        content_hash=f"sha256:{release_id}",
+        content_hash=sha256_digest(release_id),
         status="active",
         components=components,
         component_digests={item.ref: item.actual_digest for item in components},
@@ -513,6 +514,7 @@ class _Catalog:
             "Increasing angular speed decreases film thickness."
         )
         self.source_url = "https://example.test/spin-paper"
+        self.evidence_locator = {"section": "3.2", "equation": "7"}
         self.bindings = {
             "sci:binding:rpm": SimpleNamespace(
                 object_id="sci:binding:rpm",
@@ -582,7 +584,7 @@ class _Catalog:
             object_id=evidence_id,
             digest=self.evidence_digest,
             source_id="sci:source:spin-paper",
-            locator={"section": "3.2", "equation": "7"},
+            locator=self.evidence_locator,
             original_text=original_text,
             original_text_hash=self.evidence_original_text_hash,
             reviewed_translation="회전 속도가 증가하면 막 두께가 감소한다.",
@@ -1194,7 +1196,10 @@ def test_verify_document_uses_only_grounded_knowledge_and_server_evidence_links(
     )
     assert link.quote_hash == link.original_text_hash
     assert link.url == "https://example.test/spin-paper"
-    assert link.locator == {"section": "3.2", "equation": "7"}
+    assert link.locator.model_dump(exclude_none=True) == {
+        "section": "3.2",
+        "equation": "7",
+    }
     assert link.source_lookup.versioned_path == ("public/science/sources/spin-paper.md")
     assert link.source_lookup.acl_policy == "acl:public"
     assert report.report_digest == sha256_digest(
@@ -1511,3 +1516,220 @@ def test_report_retry_concurrency_and_pending_audit_are_exactly_once(
     )
     assert _audit_actions(store).count("report_saved") == 2
     assert not list((store.root / "transactions").glob("*.json"))
+
+
+def test_real_store_rejects_unbound_confirmed_interpretation_and_report(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:valid-report-before-forgery",
+    )
+
+    unbound_interpretation = confirmed.model_dump(mode="json")
+    unbound_interpretation["interpretation_id"] = "sci-interpretation:unbound"
+    unbound_interpretation["operation_binding"] = None
+    unbound_interpretation["user_revision_history"] = []
+    with pytest.raises(ValueError):
+        store.save_interpretation(
+            unbound_interpretation,
+            identity=science_identity,
+        )
+    stale_model = confirmed.model_copy(
+        update={
+            "interpretation_id": "sci-interpretation:stale-model-copy",
+            "operation_binding": confirmed.operation_binding.model_copy(
+                update={"operation": "interpret_document"}
+            ),
+        },
+        deep=True,
+    )
+    with pytest.raises(ValueError):
+        store.save_interpretation(stale_model, identity=science_identity)
+
+    unbound_report = report.model_dump(mode="json")
+    unbound_report.update(
+        {
+            "report_id": "sci-report:unbound",
+            "operation_binding": None,
+            "confirmed_claims": [],
+            "interpretation_ids": ["sci-interpretation:nonexistent"],
+            "release_digests": {"forged": "not-a-digest"},
+            "report_digest": "sha256:" + "0" * 64,
+        }
+    )
+    with pytest.raises(ValueError):
+        store.save_report(unbound_report, identity=science_identity)
+    forged_model = report.model_copy(
+        update={
+            "report_id": "sci-report:unbound-model-copy",
+            "operation_binding": None,
+        },
+        deep=True,
+    )
+    with pytest.raises(ValueError):
+        store.save_report(forged_model, identity=science_identity)
+
+
+def test_service_rejects_stale_interpret_binding_before_engine_or_report(
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _service()
+    proposal = service.interpret_document(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        idempotency_key="science-request:stale-binding-proposal",
+    )
+    claim = proposal.candidate_claims[0].model_copy(
+        update={
+            "interpretation": proposal.candidate_claims[0].interpretation.model_copy(
+                update={"ambiguity_ids": [], "user_confirmed": True}
+            )
+        },
+        deep=True,
+    )
+    stale = proposal.model_copy(
+        update={
+            "candidate_claims": [claim],
+            "confirmed_claim_packet_digest": sha256_digest(claim),
+        },
+        deep=True,
+    )
+    store.interpretations[proposal.interpretation_id] = stale
+
+    with pytest.raises(ScienceConfirmationRequired):
+        service.verify_claim(
+            proposal.interpretation_id,
+            claim.claim_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+        )
+    with pytest.raises(ScienceConfirmationRequired):
+        service.verify_document(
+            proposal.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key="science-request:stale-binding-report",
+        )
+    assert catalog.resolve_operational_calls == 0
+    assert store.reports == {}
+
+
+def test_real_store_rejects_bound_report_with_missing_interpretation_dependency(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, _store, _llm = _real_service(tmp_path / "source")
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:orphan-report",
+    )
+    empty_store = ScienceRuntimeStore(
+        tmp_path / "empty-runtime",
+        authorization=ScienceAuthorization(access_mode="pilot"),
+        roles_for=lambda _identity: ["science.admin"],
+    )
+
+    with pytest.raises((KeyError, ValueError)):
+        empty_store.save_report(report, identity=science_identity)
+
+    source_path = _store.record_path("reports", report.report_id)
+    orphan_path = empty_store.record_path("reports", report.report_id)
+    shutil.copyfile(source_path, orphan_path)
+    orphan_path.chmod(0o600)
+    with pytest.raises((KeyError, ValueError)):
+        empty_store.load_report(report.report_id)
+
+
+def test_service_rejects_secret_bearing_evidence_locator_without_echo(
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    catalog.evidence_locator = {
+        "section": "3.2",
+        "api_key": "hidden-locator-secret",
+        "resource_url": "https://user:password@internal.test/private",
+    }
+
+    with pytest.raises(ScienceOperationalError) as captured:
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key="science-request:unsafe-locator",
+        )
+
+    diagnostic = str(captured.value)
+    assert "hidden-locator-secret" not in diagnostic
+    assert "user:password" not in diagnostic
+    assert store.reports == {}
+
+
+def test_real_store_rejects_secret_locator_even_with_recomputed_report_digest(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:locator-base-report",
+    )
+    malicious = report.model_dump(mode="json")
+    malicious["report_id"] = "sci-report:malicious-locator"
+    malicious["annotations"][0]["evidence_links"][0]["locator"] = {
+        "section": "3.2",
+        "api_key": "hidden-locator-secret",
+        "resource_url": "https://user:password@internal.test/private",
+    }
+    malicious["report_digest"] = sha256_digest(
+        {key: value for key, value in malicious.items() if key != "report_digest"}
+    )
+    persisted_before = list((store.root / "reports").glob("*.json"))
+
+    with pytest.raises(ValueError) as captured:
+        store.save_report(malicious, identity=science_identity)
+
+    diagnostic = str(captured.value)
+    assert "hidden-locator-secret" not in diagnostic
+    assert "user:password" not in diagnostic
+    assert list((store.root / "reports").glob("*.json")) == persisted_before
+
+
+def test_closed_locator_accepts_reviewed_scientific_location_fields(
+    science_identity: AuthIdentity,
+):
+    service, catalog, _store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    catalog.evidence_locator = {
+        "medium": "pdf",
+        "resource_url": "https://example.test/reviewed-paper.pdf",
+        "content_hash": sha256_digest("reviewed-paper-bytes"),
+        "section": "3.2",
+        "equation": "7",
+        "pdf_page_index": 4,
+        "exact": True,
+    }
+
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:reviewed-locator",
+    )
+
+    assert (
+        report.annotations[0].evidence_links[0].locator.model_dump(exclude_none=True)
+        == catalog.evidence_locator
+    )

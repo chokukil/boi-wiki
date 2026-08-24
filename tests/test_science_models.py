@@ -14,9 +14,12 @@ from boi_api.app.science.models import (
     InterpretationRecord,
     PackDependency,
     PrimaryVerdict,
+    ReleaseSelection,
     ResolvedRelease,
     ResolvedReleaseSet,
+    ScienceOperationBinding,
     VerificationReport,
+    VerdictPacket,
 )
 
 
@@ -82,25 +85,70 @@ def test_release_and_report_preserve_tuple_components_and_json_serialization():
     release = ResolvedRelease.model_validate(
         load_named_fixture("releases/release.json", "foundation-release")
     )
+    claim = ClaimPacket.model_validate(
+        load_named_fixture("claims.json", "monotonic-increase")
+    ).model_copy(update={"document_digest": sha256_digest("document-fixture")})
+    claim_digest = sha256_digest(claim)
+    selection = ReleaseSelection(foundation=release.release_id)
+    release_digests = {release.release_id: sha256_digest("foundation-release")}
+    payload = {
+        "report_id": "sci-report:fixture",
+        "document_ref": claim.document_ref,
+        "document_digest": claim.document_digest,
+        "release_selection": selection,
+        "release_digests": release_digests,
+        "interpretation_ids": ["sci-interpretation:fixture"],
+        "confirmed_claims": [claim],
+        "verdict_packets": [
+            VerdictPacket(
+                claim_id=claim.claim_id,
+                claim_packet_digest=claim_digest,
+                verifier_version="fixture/0.1",
+                releases={
+                    "selection": selection,
+                    "digests": release_digests,
+                    "combined_digest": sha256_digest("combined-release"),
+                },
+                verdict="CONSISTENT",
+                reason_codes=["FIXTURE"],
+                condition_evaluations=[],
+                decisive_rule_ids=[],
+                knowledge_refs=[],
+                evidence_refs=[],
+                corrected_claim=None,
+                explanation_facts=[],
+                limitations=[],
+            )
+        ],
+        "unresolved_ambiguities": [],
+        "annotations": [],
+        "created_at": datetime(2026, 8, 25, tzinfo=timezone.utc),
+        "created_by": "science-admin",
+        "operation_binding": ScienceOperationBinding(
+            operation="verify_document",
+            idempotency_key_digest=sha256_digest("idempotency"),
+            actor_id="science-admin",
+            request_digest=sha256_digest(
+                {
+                    "operation": "verify_document",
+                    "interpretation_id": "sci-interpretation:fixture",
+                    "claim_digest": claim_digest,
+                    "release_selection": selection,
+                }
+            ),
+            document_digest=claim.document_digest,
+            claim_digest=claim_digest,
+            release_digest=sha256_digest(selection),
+            prompt_digest=sha256_digest("prompt"),
+            source_interpretation_id="sci-interpretation:fixture",
+            claim_ids=[claim.claim_id],
+        ),
+    }
+    canonical = VerificationReport.model_construct(
+        **payload, report_digest="sha256:pending"
+    ).model_dump(mode="json", exclude={"report_digest"})
     report = VerificationReport.model_validate(
-        {
-            "report_id": "sci-report:fixture",
-            "document_ref": "boi:public:science:document:fixture",
-            "document_digest": "sha256:document-fixture",
-            "release_selection": {
-                "foundation": release.release_id,
-                "domains": [],
-                "applications": [],
-            },
-            "release_digests": {release.release_id: release.content_hash},
-            "interpretation_ids": ["sci-interpretation:fixture"],
-            "verdict_packets": [],
-            "unresolved_ambiguities": [],
-            "annotations": [],
-            "created_at": datetime(2026, 8, 25, tzinfo=timezone.utc),
-            "created_by": "science-admin",
-            "report_digest": "sha256:report-fixture",
-        }
+        {**payload, "report_digest": sha256_digest(canonical)}
     )
 
     assert isinstance(release.components, tuple)
