@@ -1,0 +1,88 @@
+---
+title: Science Verification Harness
+type: boi/harness
+status: draft
+---
+
+# Science Verification Harness
+
+## Purpose
+
+문서 중심 Science Verifier가 해석 오류를 판정으로 승격하지 않고, 결정론적 판정·과학적 설명·원문 근거를 동일한 보고서로 제공하는지 검증한다. BoI는 새 과학 Agent가 아니라 사용자 Agent가 호출하는 Scientific Integrity Layer다.
+
+## Inputs
+
+- ACL 확인된 document bytes와 Unicode code point selection anchor
+- untrusted LLM interpretation proposal과 pinned Dictionary/Ontology Release
+- 명시적으로 확인된 Claim Packet
+- exact Foundation/Domain/Application Release selection
+- stored Verification Report와 Web/REST/MCP/Markdown/PDF 표현
+
+## Observation
+
+문서에서 정확한 source span, interpretation candidates, outcome-changing ambiguity, Rule reason codes, Knowledge/Evidence/Source identities를 관찰한다. 모델 ID와 prompt version은 provenance일 뿐 과학 권위가 아니다. endpoint·credential·transport cause는 저장하거나 표시하지 않는다.
+
+## Context
+
+AI 해석은 proposal이다. subject/object/relation binding, alias, complete relation span이 결정론적으로 일치하지 않거나 결과가 달라질 모호성이 있으면 보라색 점선으로 멈춘다. 명시적 user confirmation 뒤 exact Claim만 판정한다. deterministic Rule이 in-scope contradiction을 확정한 span만 빨간색 밑줄과 음영을 받는다.
+
+`VIOLATION`, `CONSISTENT`, `INSUFFICIENT_INFORMATION`, `OUTSIDE_VALIDITY_DOMAIN`, `EMPIRICAL_VERIFICATION_REQUIRED` 외 verdict를 만들지 않는다. CONSISTENT는 검사 범위 내 모순 미발견이며 참·안전·승인·공정 qualification을 뜻하지 않는다.
+
+## Control
+
+- 일반 User는 문서 검증과 허용된 원문 Evidence 열람만 한다.
+- domain Power User는 alias·용어·해석·concept link 제안을 승인할 수 있으나 법칙·수식·Rule·Evidence·Release는 승인할 수 없다.
+- `science.admin`만 component review와 Release activation/withdrawal을 한다.
+- proposer/reviewer self-approval을 금지한다.
+- interpretation 확인, proposal, approval, activation, withdrawal에는 `user_confirmed: true`와 actor-bound idempotency key가 필요하다.
+- AI·MCP·UI·export는 verdict/evidence/citation을 변경할 수 없다.
+
+## Action
+
+1. 서버가 canonical document와 ACL을 다시 확인하고 anchor를 resolve한다.
+2. LLM proposal을 closed schema로 검사하고 ontology refs를 pinned binding과 대조한다.
+3. 결과에 영향 없는 용어 차이는 기록만 하고, 결과가 달라질 모호성만 사용자에게 확인한다.
+4. user confirmation event로 새 immutable interpretation version을 만든다.
+5. exact active Release와 `OperationalVerification`으로 Claim을 판정한다.
+6. Rule이 허용한 Knowledge statement와 decisive Evidence만으로 충분한 과학적 설명을 구성한다.
+7. 교정 카드 바로 아래에 결정 근거 1~2개를 항상 보이고, 펼쳐보기에서 `original_text`, `reviewed_translation`, `locator`, `original_url`, ontology_refs를 제공한다.
+8. 같은 stored report에서 Markdown/PDF를 만들고 동일 digest를 반환한다.
+
+## State
+
+Interpretation, confirmation event, Verdict Packet, Report, export는 append-only immutable record다. 동일 actor·request digest·idempotency key의 재시도는 같은 bytes를 반환한다. 새 Release가 활성화되거나 이전 Release가 withdraw되어도 과거 `report_digest`와 component digests는 변하지 않는다.
+
+## Verification
+
+- stale/duplicate/missing Unicode code point anchor를 fail closed하는지 확인한다.
+- ontology mismatch, partial relation span, LLM `changes_outcome=false`가 user confirmation을 우회하지 못하는지 확인한다.
+- red annotation은 `VIOLATION`에만, purple ambiguity는 outcome-changing proposal에만 나타나는지 확인한다.
+- 각 explanation sentence가 Knowledge digest, Evidence digest, Source digest, `original_text_hash`에 묶이는지 확인한다.
+- 일반 User가 허용된 원문·번역·locator·URL을 볼 수 있고 source ACL denial은 우회되지 않는지 확인한다.
+- Web, REST, MCP, Markdown, PDF가 claim ID, verdict, Evidence ID, Release ID, `report_digest`에서 완전히 같은지 확인한다.
+- 과학적 설명이 충분하되 Rule/Evidence 범위를 넘는 권고나 종합 점수를 만들지 않는지 확인한다.
+- restart, retry, concurrent same-key request에서도 같은 report bytes와 audit count를 유지하는지 확인한다.
+
+## Failure Artifacts
+
+sanitized model ID, prompt version, document/Claim/Release/report digest, anchor context, expected/actual verdict, component digest, channel diff, ACL decision, reason code만 기록한다. endpoint, API key, user secret, chain-of-thought는 기록하지 않는다.
+
+## Release-Blocking Conditions
+
+- 미확인 또는 ontology 불일치 Claim이 verdict로 진입
+- missed violation, false-red, wrong interpretation, broken Evidence, ungrounded explanation
+- 일반 User가 원문 근거를 확인할 수 없음 또는 ACL 우회
+- Web/REST/MCP/Markdown/PDF parity 불일치
+- idempotency/restart 후 report bytes 변경
+- Admin review 부재, self-approval, inactive component 사용
+
+| Gate | 이 하네스의 통과 조건 |
+|---|---|
+| G0 | packet/profile/anchor schema와 identity가 유효하다. |
+| G1 | 원문 Evidence와 ACL 경로가 검증된다. |
+| G2 | 해석된 Knowledge와 ontology refs가 추적된다. |
+| G3 | exact Release의 deterministic verdict만 사용한다. |
+| G4 | 공개 cases에서 missed violation/false-red가 없다. |
+| G5 | 독립 holdout에서 해석·범위·판정 실패가 없다. |
+| G6 | Web/REST/MCP/export/restart/security parity가 통과한다. |
+| G7 | 별도 Admin review 후 immutable Release만 활성화된다. |
