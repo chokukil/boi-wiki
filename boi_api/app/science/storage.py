@@ -34,9 +34,10 @@ from boi_api.app.science.models import (
 )
 from boi_api.app.science.safety import (
     ScienceSensitivePersistenceError,
+)
+from boi_api.app.science.safety import (
     reject_sensitive_persistence as _reject_sensitive_scalars,
 )
-
 
 ProposalKind = Literal[
     "term_alias",
@@ -746,7 +747,16 @@ class ScienceRuntimeStore:
     def _validate_journal_semantics(
         self, journal: ScienceTransactionJournal
     ) -> ScienceModel:
-        record = self._record_model(journal.collection).model_validate(journal.record)
+        try:
+            record = self._record_model(journal.collection).model_validate(
+                journal.record
+            )
+        except (ValidationError, ScienceSensitivePersistenceError):
+            if journal.collection in {"interpretations", "reports"}:
+                raise ScienceSensitivePersistenceError(
+                    "unsafe Science transaction record rejected"
+                ) from None
+            raise
         embedded_id = self._record_identifier(journal.collection, record)
         if embedded_id != journal.record_id:
             raise ImmutableScienceRecordError(

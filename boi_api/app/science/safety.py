@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Mapping, Sequence
 from typing import Any
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 
 class ScienceSensitivePersistenceError(ValueError):
@@ -98,41 +99,124 @@ def validate_model_identifier(value: str) -> str:
     return value
 
 
+_URL_CREDENTIAL_KEYS = {
+    "accesskey",
+    "accesstoken",
+    "apikey",
+    "auth",
+    "authorization",
+    "basicauth",
+    "bearer",
+    "clientsecret",
+    "credential",
+    "password",
+    "passwd",
+    "privatekey",
+    "secret",
+    "sig",
+    "signature",
+    "token",
+}
+_STABLE_SOURCE_QUERY_ALLOWLIST = {"download": {"1", "true"}}
+
+
+def _fully_decode_url_component(value: str) -> str:
+    decoded = value
+    try:
+        for _attempt in range(8):
+            candidate = unquote(decoded, errors="strict")
+            if candidate == decoded:
+                return unicodedata.normalize("NFKC", candidate)
+            decoded = candidate
+    except UnicodeDecodeError:
+        raise ScienceSensitivePersistenceError(
+            "stable source URL contains invalid encoding"
+        ) from None
+    if unquote(decoded, errors="strict") != decoded:
+        raise ScienceSensitivePersistenceError(
+            "stable source URL contains excessive encoding"
+        )
+    return unicodedata.normalize("NFKC", decoded)
+
+
+def _credential_key(value: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", value.casefold())
+    return normalized in _URL_CREDENTIAL_KEYS or normalized.startswith("xamz")
+
+
+def _validate_stable_source_path(path: str) -> None:
+    decoded_path = _fully_decode_url_component(path)
+    if any(
+        unicodedata.category(character).startswith("C") for character in decoded_path
+    ):
+        raise ScienceSensitivePersistenceError(
+            "stable source URL path contains control characters"
+        )
+    segments = [
+        segment for segment in decoded_path.replace("\\", "/").split("/") if segment
+    ]
+    for index, segment in enumerate(segments):
+        key = re.split(r"[=:@;,]", segment, maxsplit=1)[0]
+        if _credential_key(key) and (key != segment or index + 1 < len(segments)):
+            raise ScienceSensitivePersistenceError(
+                "stable source URL path contains credential material"
+            )
+        normalized = re.sub(r"[^a-z0-9]", "", segment.casefold())
+        if normalized.startswith(("bearer", "presigned")) and normalized not in {
+            "bearer",
+            "presigned",
+        }:
+            raise ScienceSensitivePersistenceError(
+                "stable source URL path contains bearer material"
+            )
+
+
 def validate_credential_free_https_url(value: str) -> str:
-    """Admit an HTTPS locator only when it carries no credential material."""
+    """Admit one stable HTTPS source identity with no bearer material."""
 
     if not isinstance(value, str):
         raise ScienceSensitivePersistenceError("reviewed URL must be a string")
-    parsed = urlsplit(value)
-    forbidden_keys = {
-        "accesstoken",
-        "apikey",
-        "authorization",
-        "basicauth",
-        "clientsecret",
-        "credential",
-        "password",
-        "privatekey",
-        "secret",
-        "token",
-    }
-    query_items = parse_qsl(parsed.query, keep_blank_values=True)
-    fragment_items = parse_qsl(parsed.fragment, keep_blank_values=True)
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        raise ScienceSensitivePersistenceError("reviewed URL is malformed") from None
     if (
         parsed.scheme != "https"
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
-        or any(
-            key.lower().replace("-", "").replace("_", "") in forbidden_keys
-            for key, _item in [*query_items, *fragment_items]
-        )
+        or parsed.fragment
     ):
         raise ScienceSensitivePersistenceError(
             "reviewed URL contains credentials or is not HTTPS"
         )
-    reject_sensitive_persistence(
-        [item for _key, item in [*query_items, *fragment_items]],
-        path="reviewed_url_parameters",
-    )
+    _validate_stable_source_path(parsed.path)
+    try:
+        query_items = parse_qsl(
+            parsed.query, keep_blank_values=True, strict_parsing=True
+        )
+    except ValueError:
+        raise ScienceSensitivePersistenceError(
+            "stable source URL query is malformed"
+        ) from None
+    seen_query_keys: set[str] = set()
+    for raw_key, raw_value in query_items:
+        key = _fully_decode_url_component(raw_key)
+        item = _fully_decode_url_component(raw_value)
+        normalized_key = re.sub(r"[^a-z0-9]", "", key.casefold())
+        if normalized_key in seen_query_keys:
+            raise ScienceSensitivePersistenceError(
+                "stable source URL query contains duplicate keys"
+            )
+        seen_query_keys.add(normalized_key)
+        if _credential_key(key):
+            raise ScienceSensitivePersistenceError(
+                "stable source URL query contains credential material"
+            )
+        allowed_values = _STABLE_SOURCE_QUERY_ALLOWLIST.get(normalized_key)
+        if allowed_values is None or item.casefold() not in allowed_values:
+            raise ScienceSensitivePersistenceError(
+                "stable source URL query is not allowlisted"
+            )
+        reject_sensitive_persistence(item, path="stable_source_url_query")
     return value

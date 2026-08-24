@@ -6,7 +6,6 @@ from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal
-from urllib.parse import parse_qsl, urlsplit
 
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.anchors import resolve_anchor
@@ -34,13 +33,13 @@ from boi_api.app.science.models import (
     ScienceOperationBinding,
     SourceLookupIdentity,
     SourceSpan,
-    VerificationReport,
     VerdictPacket,
+    VerificationReport,
 )
 from boi_api.app.science.operational import OperationalVerification
 from boi_api.app.science.safety import (
     ScienceSensitivePersistenceError,
-    reject_sensitive_persistence,
+    validate_credential_free_https_url,
 )
 from boi_api.app.science.storage import ImmutableScienceRecordError
 
@@ -791,53 +790,12 @@ class ScienceService:
             kind="source",
         )
         url = getattr(source, "original_url", None)
-        parsed_url = urlsplit(url) if isinstance(url, str) else None
-        forbidden_query_keys = {
-            "accesstoken",
-            "apikey",
-            "authorization",
-            "basicauth",
-            "clientsecret",
-            "credential",
-            "password",
-            "privatekey",
-            "secret",
-            "token",
-        }
-        query_items = (
-            parse_qsl(parsed_url.query, keep_blank_values=True)
-            if parsed_url is not None
-            else []
-        )
-        fragment_items = (
-            parse_qsl(parsed_url.fragment, keep_blank_values=True)
-            if parsed_url is not None
-            else []
-        )
         try:
-            reject_sensitive_persistence(
-                [value for _key, value in [*query_items, *fragment_items]],
-                path="source_url_parameters",
-            )
-            safe_parameter_values = True
+            safe_source_url = validate_credential_free_https_url(url)
         except ScienceSensitivePersistenceError:
-            safe_parameter_values = False
-        if (
-            not isinstance(url, str)
-            or parsed_url is None
-            or parsed_url.scheme != "https"
-            or not parsed_url.hostname
-            or parsed_url.username is not None
-            or parsed_url.password is not None
-            or not safe_parameter_values
-            or any(
-                key.lower().replace("-", "").replace("_", "") in forbidden_query_keys
-                for key, _value in [*query_items, *fragment_items]
-            )
-        ):
             raise ScienceOperationalError(
                 f"grounded Evidence has no approved source link: {evidence_ref}"
-            )
+            ) from None
         original_text = getattr(evidence, "original_text", None)
         original_text_hash = getattr(evidence, "original_text_hash", None)
         if (
@@ -889,7 +847,7 @@ class ScienceService:
             source_digest=source.digest,
             original_text_hash=original_text_hash,
             quote_hash=original_text_hash,
-            url=url,
+            url=safe_source_url,
             locator=safe_locator,
             source_lookup=source_lookup,
         )

@@ -5,10 +5,10 @@ import os
 import shutil
 import subprocess
 import sys
-from copy import deepcopy
-from hashlib import sha256
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from threading import Barrier
 from uuid import uuid4
@@ -27,17 +27,17 @@ from boi_api.app.science.models import (
     InterpretationRecord,
     ReleaseSelection,
     ScienceOperationBinding,
-    VerificationReport,
     VerdictPacket,
+    VerificationReport,
 )
 from boi_api.app.science.storage import (
     ImmutableScienceRecordError,
     ScienceAuditRecord,
     ScienceProposalApproval,
+    ScienceRuntimeStore,
     ScienceSensitivePersistenceError,
     ScienceTransactionPendingError,
     UnsafeScienceRuntimePathError,
-    ScienceRuntimeStore,
 )
 
 
@@ -458,7 +458,7 @@ def test_power_user_approval_is_domain_scoped_and_keeps_proposal_immutable(
 def test_science_admin_can_approve_without_inheriting_boi_admin(
     runtime_store: ScienceRuntimeStore,
 ):
-    """Replacing the Science role check with boi.admin would invert the authority model."""
+    """A boi.admin role must not replace the Science authority model."""
     proposal = runtime_store.save_proposal(
         identity=AuthIdentity(employee_id="100003", display_name="proposer"),
         domain="materials",
@@ -486,7 +486,7 @@ def test_audit_rows_are_append_only_and_action_typed(
     runtime_store: ScienceRuntimeStore,
     science_admin: AuthIdentity,
 ):
-    """Audit serialization must not retain endpoint or credential values at any depth."""
+    """Audit serialization rejects nested endpoint and credential values."""
     runtime_store.append_audit(
         identity=science_admin,
         action="standalone_note_recorded",
@@ -1090,7 +1090,7 @@ def test_same_process_retry_reconciles_a_prior_audit_pending_transaction(
     science_admin: AuthIdentity,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """An exact-record retry must not report success while its journal remains unaudited."""
+    """An exact retry cannot succeed while its journal remains unaudited."""
     real_append = runtime_store._append_audit_event_locked
     failed = False
 
@@ -1202,7 +1202,7 @@ def test_tampered_existing_approval_never_uses_the_idempotent_fast_path(
     runtime_store: ScienceRuntimeStore,
     science_admin: AuthIdentity,
 ):
-    """Matching approver alone must not authorize a noncanonical or mislinked approval."""
+    """Matching approver alone cannot authorize a mislinked approval."""
     proposal = runtime_store.save_proposal(
         identity=AuthIdentity(employee_id="100003", display_name="proposer"),
         domain="lithography",
@@ -1320,7 +1320,7 @@ def test_real_process_crash_residues_are_bounded_and_reconciled(
     science_admin: AuthIdentity,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Startup must recover a journal-related partial audit and exact private temp residues."""
+    """Startup recovers partial audit and exact private temporary residues."""
     payload, _, _, journal = leave_pending_interpretation(
         runtime_store,
         science_admin,
@@ -1339,7 +1339,11 @@ root = Path(sys.argv[1])
 row = bytes.fromhex(sys.argv[2])
 for collection, marker in (("transactions", "1"), ("reports", "2")):
     name = "." + (marker * 64) + "." + (marker * 32) + ".tmp"
-    descriptor = os.open(root / collection / name, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    descriptor = os.open(
+        root / collection / name,
+        os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+        0o600,
+    )
     os.write(descriptor, b"crash-residue")
     os.fsync(descriptor)
     os.close(descriptor)

@@ -18,10 +18,9 @@ from boi_api.app.science.models import (
     ResolvedRelease,
     ResolvedReleaseSet,
     ScienceOperationBinding,
-    VerificationReport,
     VerdictPacket,
+    VerificationReport,
 )
-
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "science"
 
@@ -167,7 +166,7 @@ def test_release_and_report_preserve_tuple_components_and_json_serialization():
     ],
 )
 def test_pack_dependency_is_a_closed_typed_edge(relation: str):
-    """Removing the enum boundary would let an executable override edge enter a Pack graph."""
+    """The enum boundary must reject executable override edges in a Pack graph."""
     edge = PackDependency.model_validate(
         {"relation": relation, "ref": "sci-pack:foundation"}
     )
@@ -197,7 +196,7 @@ def test_pack_dependency_rejects_override_missing_relation_and_malformed_ref(
 def test_claim_packet_rejects_literal_nonfinite_numbers(
     nonfinite: float, location: str
 ):
-    """Removing either finite-number gate would admit non-canonical scientific inputs."""
+    """Both finite-number gates reject non-canonical scientific inputs."""
     fixture = load_named_fixture("claims.json", "monotonic-increase")
     if location == "quantity":
         fixture["normalized_claim"]["quantities"] = [
@@ -214,7 +213,7 @@ def test_claim_packet_rejects_literal_nonfinite_numbers(
 
 @pytest.mark.parametrize("nonfinite", [float("nan"), float("inf"), float("-inf")])
 def test_interpretation_model_settings_reject_nonfinite_numbers(nonfinite: float):
-    """A model setting must remain canonical even though it cannot affect the verdict engine."""
+    """Model settings remain canonical even outside the verdict engine."""
     payload = {
         "interpretation_id": "sci-interpretation:fixture",
         "document_digest": "sha256:document",
@@ -280,7 +279,7 @@ def test_canonical_json_rejects_nonfinite_literals(nonfinite: float):
 
 @pytest.mark.parametrize("mutation", ["combined_digest", "components"])
 def test_resolved_release_set_rejects_a_nonexact_combination(mutation: str):
-    """A forged digest or omitted component must not remain an exact resolved Release set."""
+    """A forged digest or omitted component cannot form an exact Release set."""
     release = ResolvedRelease.model_validate(
         load_named_fixture("releases/release.json", "foundation-release")
     )

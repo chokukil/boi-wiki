@@ -11,9 +11,9 @@ import httpx
 import pytest
 
 from boi_api.app.auth import AuthIdentity
-from boi_api.app.science.authorization import ScienceAuthorization
 from boi_api.app.science.anchors import SpanAnchorError, resolve_anchor
-from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.authorization import ScienceAuthorization
+from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
 from boi_api.app.science.llm import (
     ScienceInterpretationPayload,
@@ -41,7 +41,6 @@ from boi_api.app.science.storage import (
     ScienceRuntimeStore,
     ScienceTransactionPendingError,
 )
-
 
 SOURCE_DIGEST = sha256_digest("fixture-source-component")
 EVIDENCE_DIGEST = sha256_digest("fixture-evidence-component")
@@ -1263,13 +1262,23 @@ def test_verify_document_rejects_an_evidence_quote_hash_mismatch(
     assert store.reports == {}
 
 
-@pytest.mark.parametrize(
-    "source_url",
-    [
-        "https://user:password@example.test/spin-paper",
-        "https://example.test/spin-paper?accessToken=hidden-value",
-    ],
-)
+_CREDENTIAL_BEARING_SOURCE_URLS = [
+    "https://user:password@example.test/spin-paper",
+    "https://example.test/spin-paper?accessToken=hidden-value",
+    "https://example.test/private/api_key=hidden-value",
+    "https://example.test/private/api%5Fkey%3Dhidden-value",
+    "https://example.test/private/api%255Fkey%253Dhidden-value",
+    "https://example.test/private/bearer/hidden-value",
+    "https://example.test/paper?X-Amz-Signature=abcdef0123456789",
+    "https://example.test/paper?X%2DAmz%2DSignature=abcdef0123456789",
+    "https://example.test/paper?signature=abcdef0123456789",
+    "https://example.test/paper?sig=abcdef0123456789",
+    "https://example.test/paper?X-Amz-Credential=hidden-value",
+    "https://example.test/paper#token=hidden-value",
+]
+
+
+@pytest.mark.parametrize("source_url", _CREDENTIAL_BEARING_SOURCE_URLS)
 def test_verify_document_rejects_credential_bearing_source_urls(
     science_identity: AuthIdentity,
     source_url: str,
@@ -1284,6 +1293,91 @@ def test_verify_document_rejects_credential_bearing_source_urls(
             ReleaseSelection(foundation=catalog.release.release_id),
             identity=science_identity,
             idempotency_key=REPORT_KEY,
+        )
+
+    assert store.reports == {}
+
+
+@pytest.mark.parametrize(
+    ("locator_field", "locator_url"),
+    [
+        (field, value)
+        for field in ("resource_url", "requested_url", "resolved_url")
+        for value in _CREDENTIAL_BEARING_SOURCE_URLS
+    ],
+)
+def test_service_rejects_every_credential_bearing_locator_url_without_echo(
+    science_identity: AuthIdentity,
+    locator_field: str,
+    locator_url: str,
+):
+    service, catalog, store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    catalog.evidence_locator = {"section": "3.2", locator_field: locator_url}
+
+    with pytest.raises(ScienceOperationalError) as captured:
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key=f"science-request:unsafe-{locator_field}",
+        )
+
+    rendered = str(captured.value)
+    assert "hidden-value" not in rendered
+    assert "abcdef0123456789" not in rendered
+    assert store.reports == {}
+
+
+def test_stable_source_url_policy_allows_only_reviewed_download_query(
+    science_identity: AuthIdentity,
+):
+    service, catalog, _store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    stable_url = "https://example.test/reviewed-paper.pdf?download=true"
+    catalog.source_url = stable_url
+    catalog.evidence_locator = {
+        "resource_url": stable_url,
+        "requested_url": stable_url,
+        "resolved_url": stable_url,
+        "section": "3.2",
+    }
+
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:stable-download-query",
+    )
+
+    link = report.annotations[0].evidence_links[0]
+    assert link.url == stable_url
+    assert link.locator.resource_url == stable_url
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "utm_source=tracker",
+        "download=false",
+        "page=7",
+        "download=true&download=true",
+    ],
+)
+def test_stable_source_url_policy_rejects_unreviewed_query_keys_and_values(
+    science_identity: AuthIdentity,
+    query: str,
+):
+    service, catalog, store, _llm = _service()
+    confirmed = _confirmed_interpretation(service, science_identity)
+    catalog.source_url = f"https://example.test/paper?{query}"
+
+    with pytest.raises(ScienceOperationalError, match="approved source link"):
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key="science-request:unreviewed-source-query",
         )
 
     assert store.reports == {}
@@ -1705,6 +1799,147 @@ def test_real_store_rejects_secret_locator_even_with_recomputed_report_digest(
     assert "hidden-locator-secret" not in diagnostic
     assert "user:password" not in diagnostic
     assert list((store.root / "reports").glob("*.json")) == persisted_before
+
+
+@pytest.mark.parametrize(
+    ("target_field", "unsafe_value"),
+    [
+        ("source_url", "https://example.test/private/api_key=hidden-store-value"),
+        (
+            "resource_url",
+            "https://example.test/paper?X-Amz-Signature=hidden-store-value",
+        ),
+        (
+            "requested_url",
+            "https://example.test/private/api%5Fkey%3Dhidden-store-value",
+        ),
+        ("resolved_url", "https://example.test/private/bearer/hidden-store-value"),
+        ("section", "api_key=hidden-store-value"),
+    ],
+)
+def test_real_store_rejects_source_and_locator_credentials_with_valid_outer_digest(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+    target_field: str,
+    unsafe_value: str,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:store-url-base",
+    )
+    malicious = report.model_dump(mode="json")
+    malicious["report_id"] = f"sci-report:unsafe-{target_field}"
+    link = malicious["annotations"][0]["evidence_links"][0]
+    if target_field == "source_url":
+        link["url"] = unsafe_value
+    else:
+        link["locator"][target_field] = unsafe_value
+    malicious["report_digest"] = sha256_digest(
+        {key: value for key, value in malicious.items() if key != "report_digest"}
+    )
+    before = list((store.root / "reports").glob("*.json"))
+
+    with pytest.raises(ValueError) as captured:
+        store.save_report(malicious, identity=science_identity)
+
+    assert "hidden-store-value" not in str(captured.value)
+    assert list((store.root / "reports").glob("*.json")) == before
+
+
+def test_real_store_load_rejects_canonical_report_with_credential_source_url(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    report = service.verify_document(
+        confirmed.interpretation_id,
+        ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
+        idempotency_key="science-request:load-url-base",
+    )
+    injected = report.model_dump(mode="json")
+    injected["report_id"] = "sci-report:credential-source-file"
+    injected["annotations"][0]["evidence_links"][0]["url"] = (
+        "https://example.test/private/api%5Fkey%3Dhidden-load-value"
+    )
+    injected["report_digest"] = sha256_digest(
+        {key: value for key, value in injected.items() if key != "report_digest"}
+    )
+    path = store.record_path("reports", injected["report_id"])
+    path.write_bytes(canonical_json_bytes(injected))
+    path.chmod(0o600)
+
+    with pytest.raises(ValueError) as captured:
+        store.load_report(injected["report_id"])
+
+    assert "hidden-load-value" not in str(captured.value)
+
+
+@pytest.mark.parametrize(
+    ("target_field", "unsafe_value"),
+    [
+        ("source_url", "https://example.test/private/api_key=hidden-wal-value"),
+        (
+            "resource_url",
+            "https://example.test/paper?signature=hidden-wal-value",
+        ),
+        ("requested_url", "https://example.test/private/bearer/hidden-wal-value"),
+        ("resolved_url", "https://user:hidden-wal-value@example.test/paper"),
+        ("section", "token=hidden-wal-value"),
+    ],
+)
+def test_wal_recovery_rejects_source_and_nested_locator_credentials(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+    monkeypatch: pytest.MonkeyPatch,
+    target_field: str,
+    unsafe_value: str,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    confirmed = _confirmed_interpretation(service, science_identity)
+    real_append = store._append_audit_event_locked
+
+    def fail_report_audit(event):
+        if event.action == "report_saved":
+            raise OSError("simulated report audit interruption")
+        return real_append(event)
+
+    monkeypatch.setattr(store, "_append_audit_event_locked", fail_report_audit)
+    with pytest.raises(ScienceTransactionPendingError) as pending:
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
+            idempotency_key=f"science-request:wal-{target_field}",
+        )
+    report_id = pending.value.record_id
+    journal_paths = list((store.root / "transactions").glob("*.json"))
+    assert len(journal_paths) == 1
+    journal = json.loads(journal_paths[0].read_text(encoding="utf-8"))
+    record = journal["record"]
+    link = record["annotations"][0]["evidence_links"][0]
+    if target_field == "source_url":
+        link["url"] = unsafe_value
+    else:
+        link["locator"][target_field] = unsafe_value
+    record["report_digest"] = sha256_digest(
+        {key: value for key, value in record.items() if key != "report_digest"}
+    )
+    journal["audit"]["details"]["report_digest"] = record["report_digest"]
+    journal_paths[0].write_bytes(canonical_json_bytes(journal))
+    store.record_path("reports", report_id).unlink()
+    monkeypatch.setattr(store, "_append_audit_event_locked", real_append)
+
+    with pytest.raises(ValueError) as captured:
+        store.recover_pending_transactions()
+
+    assert "hidden-wal-value" not in str(captured.value)
+    assert not store.record_path("reports", report_id).exists()
 
 
 def test_closed_locator_accepts_reviewed_scientific_location_fields(

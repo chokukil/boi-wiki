@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from math import isfinite
-import re
 from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -407,7 +407,7 @@ class ResolvedReleaseSet(ScienceModel):
 
     @classmethod
     def from_single_foundation(cls, release: ResolvedRelease) -> "ResolvedReleaseSet":
-        """Adapt the original single-Foundation boundary without inventing other roles."""
+        """Adapt the original single-Foundation boundary without new roles."""
         selection = ReleaseSelection(foundation=release.release_id)
         components = tuple(sorted(release.components, key=lambda item: item.ref))
         compatibility = ReleaseCompatibilityResult(
@@ -811,6 +811,11 @@ class EvidenceLink(ScienceModel):
     url: str = Field(min_length=1)
     locator: EvidenceLocator
     source_lookup: SourceLookupIdentity
+
+    @field_validator("url")
+    @classmethod
+    def credential_free_source_url(cls, value: str) -> str:
+        return validate_credential_free_https_url(value)
 
     @model_validator(mode="after")
     def exact_quote_and_source_identity(self) -> "EvidenceLink":
