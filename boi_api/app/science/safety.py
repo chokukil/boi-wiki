@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Mapping, Sequence
-from typing import Any
-from urllib.parse import parse_qsl, unquote, urlsplit
+from typing import Any, NoReturn
+from urllib.parse import quote, unquote, urlsplit
 
 
 class ScienceSensitivePersistenceError(ValueError):
@@ -117,58 +117,138 @@ _URL_CREDENTIAL_KEYS = {
     "signature",
     "token",
 }
-_STABLE_SOURCE_QUERY_ALLOWLIST = {"download": {"1", "true"}}
+_VENDOR_CREDENTIAL_PREFIXES = (
+    "xamz",
+    "xgoog",
+    "xms",
+    "sharedaccess",
+    "sas",
+)
+_GENERIC_CREDENTIAL_PREFIXES = tuple(sorted(_URL_CREDENTIAL_KEYS))
+_CREDENTIAL_PATH_PREFIXES = (
+    *_GENERIC_CREDENTIAL_PREFIXES,
+    *_VENDOR_CREDENTIAL_PREFIXES,
+    "bearer",
+    "presigned",
+)
+_STABLE_SOURCE_QUERIES = {"download=1", "download=true"}
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 
 
-def _fully_decode_url_component(value: str) -> str:
-    decoded = value
+class SciencePublicValidationError(ValueError):
+    """Closed REST/UI-safe replacement for input-bearing model errors."""
+
+    diagnostic_code = "invalid_science_input"
+
+    def __init__(self) -> None:
+        super().__init__("Science input failed closed validation")
+
+
+def raise_safe_science_validation_error() -> NoReturn:
+    """Raise a closed error without accepting or retaining the raw exception."""
+
+    raise SciencePublicValidationError() from None
+
+
+def _validate_percent_syntax(value: str) -> None:
+    for index, character in enumerate(value):
+        if character != "%":
+            continue
+        if (
+            index + 2 >= len(value)
+            or value[index + 1] not in _HEX_DIGITS
+            or value[index + 2] not in _HEX_DIGITS
+        ):
+            raise ScienceSensitivePersistenceError(
+                "stable source URL has malformed percent encoding"
+            )
+
+
+def _normalize_then_fully_decode(value: str) -> str:
+    current = value
     try:
         for _attempt in range(8):
-            candidate = unquote(decoded, errors="strict")
-            if candidate == decoded:
-                return unicodedata.normalize("NFKC", candidate)
-            decoded = candidate
+            normalized = unicodedata.normalize("NFKC", current)
+            _validate_percent_syntax(normalized)
+            decoded = unquote(normalized, errors="strict")
+            candidate = unicodedata.normalize("NFKC", decoded)
+            _validate_percent_syntax(candidate)
+            if candidate == normalized:
+                return candidate
+            current = candidate
     except UnicodeDecodeError:
         raise ScienceSensitivePersistenceError(
             "stable source URL contains invalid encoding"
         ) from None
-    if unquote(decoded, errors="strict") != decoded:
+    try:
+        normalized = unicodedata.normalize("NFKC", current)
+        _validate_percent_syntax(normalized)
+        decoded = unicodedata.normalize("NFKC", unquote(normalized, errors="strict"))
+        _validate_percent_syntax(decoded)
+    except UnicodeDecodeError:
+        raise ScienceSensitivePersistenceError(
+            "stable source URL contains invalid encoding"
+        ) from None
+    if decoded != normalized:
         raise ScienceSensitivePersistenceError(
             "stable source URL contains excessive encoding"
         )
-    return unicodedata.normalize("NFKC", decoded)
+    return decoded
 
 
-def _credential_key(value: str) -> bool:
-    normalized = re.sub(r"[^a-z0-9]", "", value.casefold())
-    return normalized in _URL_CREDENTIAL_KEYS or normalized.startswith("xamz")
-
-
-def _validate_stable_source_path(path: str) -> None:
-    decoded_path = _fully_decode_url_component(path)
+def _validate_stable_source_path(path: str) -> str:
+    decoded_path = _normalize_then_fully_decode(path)
     if any(
         unicodedata.category(character).startswith("C") for character in decoded_path
     ):
         raise ScienceSensitivePersistenceError(
             "stable source URL path contains control characters"
         )
-    segments = [
-        segment for segment in decoded_path.replace("\\", "/").split("/") if segment
+    if any(delimiter in decoded_path for delimiter in ("=", "@", ":", ";", "\\")):
+        raise ScienceSensitivePersistenceError(
+            "stable source URL path contains forbidden key-value delimiters"
+        )
+    segments = [segment for segment in decoded_path.split("/") if segment]
+    compact_segments = [
+        re.sub(r"[^a-z0-9]", "", segment.casefold()) for segment in segments
     ]
-    for index, segment in enumerate(segments):
-        key = re.split(r"[=:@;,]", segment, maxsplit=1)[0]
-        if _credential_key(key) and (key != segment or index + 1 < len(segments)):
-            raise ScienceSensitivePersistenceError(
-                "stable source URL path contains credential material"
-            )
-        normalized = re.sub(r"[^a-z0-9]", "", segment.casefold())
-        if normalized.startswith(("bearer", "presigned")) and normalized not in {
-            "bearer",
-            "presigned",
-        }:
-            raise ScienceSensitivePersistenceError(
-                "stable source URL path contains bearer material"
-            )
+    for start in range(len(compact_segments)):
+        candidate = ""
+        for compact in compact_segments[start:]:
+            candidate += compact
+            if candidate.startswith(_CREDENTIAL_PATH_PREFIXES):
+                raise ScienceSensitivePersistenceError(
+                    "stable source URL path contains credential material"
+                )
+            if not any(
+                prefix.startswith(candidate) for prefix in _CREDENTIAL_PATH_PREFIXES
+            ):
+                break
+    canonical_path = quote(decoded_path, safe="/-._~!$&'()*+,")
+    if canonical_path != path:
+        raise ScienceSensitivePersistenceError(
+            "stable source URL path is not canonical"
+        )
+    return canonical_path
+
+
+def _validate_canonical_hostname(hostname: str) -> None:
+    if len(hostname) > 253 or hostname.startswith(".") or hostname.endswith("."):
+        raise ScienceSensitivePersistenceError(
+            "stable source URL hostname is not canonical"
+        )
+    labels = hostname.split(".")
+    if any(
+        not label
+        or len(label) > 63
+        or label.startswith("-")
+        or label.endswith("-")
+        or re.fullmatch(r"[a-z0-9-]+", label) is None
+        for label in labels
+    ):
+        raise ScienceSensitivePersistenceError(
+            "stable source URL hostname is not canonical"
+        )
 
 
 def validate_credential_free_https_url(value: str) -> str:
@@ -176,47 +256,56 @@ def validate_credential_free_https_url(value: str) -> str:
 
     if not isinstance(value, str):
         raise ScienceSensitivePersistenceError("reviewed URL must be a string")
+    normalized_value = unicodedata.normalize("NFKC", value)
+    if normalized_value != value or not value.isascii():
+        raise ScienceSensitivePersistenceError(
+            "reviewed URL must use one canonical ASCII representation"
+        )
+    if any(ord(character) <= 0x20 or ord(character) == 0x7F for character in value):
+        raise ScienceSensitivePersistenceError(
+            "reviewed URL contains raw control or space characters"
+        )
+    if not value.startswith("https://"):
+        raise ScienceSensitivePersistenceError("reviewed URL must use canonical HTTPS")
+    authority = re.split(r"[/#?]", value.removeprefix("https://"), maxsplit=1)[0]
+    if not authority or "%" in authority or "@" in authority:
+        raise ScienceSensitivePersistenceError(
+            "reviewed URL authority contains encoded or literal userinfo"
+        )
     try:
         parsed = urlsplit(value)
     except ValueError:
         raise ScienceSensitivePersistenceError("reviewed URL is malformed") from None
+    try:
+        port = parsed.port
+        hostname = parsed.hostname
+    except ValueError:
+        raise ScienceSensitivePersistenceError(
+            "reviewed URL authority is malformed"
+        ) from None
     if (
         parsed.scheme != "https"
-        or not parsed.hostname
+        or not hostname
         or parsed.username is not None
         or parsed.password is not None
+        or port is not None
         or parsed.fragment
+        or authority != hostname
     ):
         raise ScienceSensitivePersistenceError(
             "reviewed URL contains credentials or is not HTTPS"
         )
-    _validate_stable_source_path(parsed.path)
-    try:
-        query_items = parse_qsl(
-            parsed.query, keep_blank_values=True, strict_parsing=True
-        )
-    except ValueError:
+    _validate_canonical_hostname(hostname)
+    canonical_path = _validate_stable_source_path(parsed.path)
+    if parsed.query and parsed.query not in _STABLE_SOURCE_QUERIES:
         raise ScienceSensitivePersistenceError(
-            "stable source URL query is malformed"
-        ) from None
-    seen_query_keys: set[str] = set()
-    for raw_key, raw_value in query_items:
-        key = _fully_decode_url_component(raw_key)
-        item = _fully_decode_url_component(raw_value)
-        normalized_key = re.sub(r"[^a-z0-9]", "", key.casefold())
-        if normalized_key in seen_query_keys:
-            raise ScienceSensitivePersistenceError(
-                "stable source URL query contains duplicate keys"
-            )
-        seen_query_keys.add(normalized_key)
-        if _credential_key(key):
-            raise ScienceSensitivePersistenceError(
-                "stable source URL query contains credential material"
-            )
-        allowed_values = _STABLE_SOURCE_QUERY_ALLOWLIST.get(normalized_key)
-        if allowed_values is None or item.casefold() not in allowed_values:
-            raise ScienceSensitivePersistenceError(
-                "stable source URL query is not allowlisted"
-            )
-        reject_sensitive_persistence(item, path="stable_source_url_query")
+            "stable source URL query is not allowlisted"
+        )
+    canonical = f"https://{hostname}{canonical_path}"
+    if parsed.query:
+        canonical = f"{canonical}?{parsed.query}"
+    if canonical != value:
+        raise ScienceSensitivePersistenceError(
+            "reviewed URL does not equal its checked canonical serialization"
+        )
     return value
