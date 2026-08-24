@@ -14,17 +14,21 @@ from boi_api.app.science.models import (
     InterpretationRecord,
     PackDependency,
     PrimaryVerdict,
+    ReleaseSelection,
     ResolvedRelease,
     ResolvedReleaseSet,
+    ScienceOperationBinding,
+    VerdictPacket,
     VerificationReport,
 )
-
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures" / "science"
 
 
 def load_named_fixture(relative_path: str, name: str) -> dict[str, object]:
-    entries = json.loads(FIXTURE_ROOT.joinpath(relative_path).read_text(encoding="utf-8"))
+    entries = json.loads(
+        FIXTURE_ROOT.joinpath(relative_path).read_text(encoding="utf-8")
+    )
     return entries[name]
 
 
@@ -37,7 +41,9 @@ def test_primary_verdict_is_closed_and_claim_digest_is_stable():
         "EMPIRICAL_VERIFICATION_REQUIRED",
     }
 
-    packet = ClaimPacket.model_validate(load_named_fixture("claims.json", "monotonic-increase"))
+    packet = ClaimPacket.model_validate(
+        load_named_fixture("claims.json", "monotonic-increase")
+    )
 
     assert sha256_digest(packet) == sha256_digest(packet.model_dump(mode="json"))
     assert canonical_json_bytes({"b": 1, "a": 2}) == b'{"a":2,"b":1}'
@@ -60,7 +66,9 @@ def test_source_span_uses_unicode_code_points_and_rejects_nonmatching_text_lengt
     assert ClaimPacket.model_validate(fixture).source_span.end == 7
 
     fixture["source_span"]["end"] = 8
-    with pytest.raises(ValidationError, match="source span does not match Unicode code-point length"):
+    with pytest.raises(
+        ValidationError, match="source span does not match Unicode code-point length"
+    ):
         ClaimPacket.model_validate(fixture)
 
 
@@ -76,25 +84,70 @@ def test_release_and_report_preserve_tuple_components_and_json_serialization():
     release = ResolvedRelease.model_validate(
         load_named_fixture("releases/release.json", "foundation-release")
     )
+    claim = ClaimPacket.model_validate(
+        load_named_fixture("claims.json", "monotonic-increase")
+    ).model_copy(update={"document_digest": sha256_digest("document-fixture")})
+    claim_digest = sha256_digest(claim)
+    selection = ReleaseSelection(foundation=release.release_id)
+    release_digests = {release.release_id: sha256_digest("foundation-release")}
+    payload = {
+        "report_id": "sci-report:fixture",
+        "document_ref": claim.document_ref,
+        "document_digest": claim.document_digest,
+        "release_selection": selection,
+        "release_digests": release_digests,
+        "interpretation_ids": ["sci-interpretation:fixture"],
+        "confirmed_claims": [claim],
+        "verdict_packets": [
+            VerdictPacket(
+                claim_id=claim.claim_id,
+                claim_packet_digest=claim_digest,
+                verifier_version="fixture/0.1",
+                releases={
+                    "selection": selection,
+                    "digests": release_digests,
+                    "combined_digest": sha256_digest("combined-release"),
+                },
+                verdict="CONSISTENT",
+                reason_codes=["FIXTURE"],
+                condition_evaluations=[],
+                decisive_rule_ids=[],
+                knowledge_refs=[],
+                evidence_refs=[],
+                corrected_claim=None,
+                explanation_facts=[],
+                limitations=[],
+            )
+        ],
+        "unresolved_ambiguities": [],
+        "annotations": [],
+        "created_at": datetime(2026, 8, 25, tzinfo=timezone.utc),
+        "created_by": "science-admin",
+        "operation_binding": ScienceOperationBinding(
+            operation="verify_document",
+            idempotency_key_digest=sha256_digest("idempotency"),
+            actor_id="science-admin",
+            request_digest=sha256_digest(
+                {
+                    "operation": "verify_document",
+                    "interpretation_id": "sci-interpretation:fixture",
+                    "claim_digest": claim_digest,
+                    "release_selection": selection,
+                }
+            ),
+            document_digest=claim.document_digest,
+            claim_digest=claim_digest,
+            release_digest=sha256_digest(selection),
+            prompt_digest=sha256_digest("prompt"),
+            source_interpretation_id="sci-interpretation:fixture",
+            claim_ids=[claim.claim_id],
+        ),
+    }
+    canonical = VerificationReport.model_construct(
+        **payload, report_digest="sha256:pending"
+    ).model_dump(mode="json", exclude={"report_digest"})
     report = VerificationReport.model_validate(
-        {
-            "report_id": "sci-report:fixture",
-            "document_ref": "boi:public:science:document:fixture",
-            "document_digest": "sha256:document-fixture",
-            "release_selection": {
-                "foundation": release.release_id,
-                "domains": [],
-                "applications": [],
-            },
-            "release_digests": {release.release_id: release.content_hash},
-            "interpretation_ids": ["sci-interpretation:fixture"],
-            "verdict_packets": [],
-            "unresolved_ambiguities": [],
-            "annotations": [],
-            "created_at": datetime(2026, 8, 25, tzinfo=timezone.utc),
-            "created_by": "science-admin",
-            "report_digest": "sha256:report-fixture",
-        }
+        {**payload, "report_digest": sha256_digest(canonical)}
     )
 
     assert isinstance(release.components, tuple)
@@ -103,11 +156,20 @@ def test_release_and_report_preserve_tuple_components_and_json_serialization():
 
 @pytest.mark.parametrize(
     "relation",
-    ["depends_on", "uses", "specializes", "adds_evidence", "validated_by", "supersedes"],
+    [
+        "depends_on",
+        "uses",
+        "specializes",
+        "adds_evidence",
+        "validated_by",
+        "supersedes",
+    ],
 )
 def test_pack_dependency_is_a_closed_typed_edge(relation: str):
-    """Removing the enum boundary would let an executable override edge enter a Pack graph."""
-    edge = PackDependency.model_validate({"relation": relation, "ref": "sci-pack:foundation"})
+    """The enum boundary must reject executable override edges in a Pack graph."""
+    edge = PackDependency.model_validate(
+        {"relation": relation, "ref": "sci-pack:foundation"}
+    )
 
     assert edge.relation.value == relation
     assert edge.ref == "sci-pack:foundation"
@@ -121,7 +183,9 @@ def test_pack_dependency_is_a_closed_typed_edge(relation: str):
         {"relation": "uses", "ref": ""},
     ],
 )
-def test_pack_dependency_rejects_override_missing_relation_and_malformed_ref(payload: dict):
+def test_pack_dependency_rejects_override_missing_relation_and_malformed_ref(
+    payload: dict,
+):
     """Loosening either edge field must fail before catalog relationship resolution."""
     with pytest.raises(ValidationError):
         PackDependency.model_validate(payload)
@@ -129,8 +193,10 @@ def test_pack_dependency_rejects_override_missing_relation_and_malformed_ref(pay
 
 @pytest.mark.parametrize("nonfinite", [float("nan"), float("inf"), float("-inf")])
 @pytest.mark.parametrize("location", ["quantity", "condition"])
-def test_claim_packet_rejects_literal_nonfinite_numbers(nonfinite: float, location: str):
-    """Removing either finite-number gate would admit non-canonical scientific inputs."""
+def test_claim_packet_rejects_literal_nonfinite_numbers(
+    nonfinite: float, location: str
+):
+    """Both finite-number gates reject non-canonical scientific inputs."""
     fixture = load_named_fixture("claims.json", "monotonic-increase")
     if location == "quantity":
         fixture["normalized_claim"]["quantities"] = [
@@ -147,7 +213,7 @@ def test_claim_packet_rejects_literal_nonfinite_numbers(nonfinite: float, locati
 
 @pytest.mark.parametrize("nonfinite", [float("nan"), float("inf"), float("-inf")])
 def test_interpretation_model_settings_reject_nonfinite_numbers(nonfinite: float):
-    """A model setting must remain canonical even though it cannot affect the verdict engine."""
+    """Model settings remain canonical even outside the verdict engine."""
     payload = {
         "interpretation_id": "sci-interpretation:fixture",
         "document_digest": "sha256:document",
@@ -169,6 +235,41 @@ def test_interpretation_model_settings_reject_nonfinite_numbers(nonfinite: float
         InterpretationRecord.model_validate(payload)
 
 
+@pytest.mark.parametrize(
+    "model_settings",
+    [
+        {"api_key": "model-secret"},
+        {"apiKey": "model-secret"},
+        {"base_url": "http://internal.invalid/v1"},
+        {"endpoint": "http://internal.invalid/v1"},
+        {"note": "Bearer model-secret"},
+    ],
+)
+def test_interpretation_model_settings_use_an_explicit_nonsecret_allowlist(
+    model_settings: dict[str, object],
+):
+    """An arbitrary settings mapping would persist LLM credentials or endpoints."""
+    payload = {
+        "interpretation_id": "sci-interpretation:fixture",
+        "document_digest": "sha256:document",
+        "candidate_claims": [],
+        "model_id": "fixture-model",
+        "model_settings": model_settings,
+        "prompt_version": "0.1",
+        "dictionary_release_id": "dictionary:0.1",
+        "ontology_release_id": "ontology:0.1",
+        "ontology_refs": [],
+        "candidate_meanings": [],
+        "decision_impact": [],
+        "user_revision_history": [],
+        "confirmed_claim_packet_digest": None,
+        "response_digest": "sha256:response",
+    }
+
+    with pytest.raises(ValidationError, match="Extra inputs|valid number"):
+        InterpretationRecord.model_validate(payload)
+
+
 @pytest.mark.parametrize("nonfinite", [float("nan"), float("inf"), float("-inf")])
 def test_canonical_json_rejects_nonfinite_literals(nonfinite: float):
     """Allowing JSON NaN extensions would make digests non-canonical across runtimes."""
@@ -178,7 +279,7 @@ def test_canonical_json_rejects_nonfinite_literals(nonfinite: float):
 
 @pytest.mark.parametrize("mutation", ["combined_digest", "components"])
 def test_resolved_release_set_rejects_a_nonexact_combination(mutation: str):
-    """A forged digest or omitted component must not remain an exact resolved Release set."""
+    """A forged digest or omitted component cannot form an exact Release set."""
     release = ResolvedRelease.model_validate(
         load_named_fixture("releases/release.json", "foundation-release")
     )
@@ -190,7 +291,9 @@ def test_resolved_release_set_rejects_a_nonexact_combination(mutation: str):
         payload["components"] = []
         payload["rule_components"] = []
 
-    with pytest.raises(ValidationError, match="exact combined digest|exactly match resolved releases"):
+    with pytest.raises(
+        ValidationError, match="exact combined digest|exactly match resolved releases"
+    ):
         ResolvedReleaseSet.model_validate(payload)
 
 

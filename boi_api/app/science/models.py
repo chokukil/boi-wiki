@@ -1,18 +1,26 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 from math import isfinite
-from typing import Any, Literal, TypeAlias
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.safety import (
+    reject_sensitive_persistence,
+    validate_credential_free_https_url,
+    validate_model_identifier,
+)
 
 
 class ScienceModel(BaseModel):
     """Base model that rejects undeclared packet fields."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 _REVIEWED_UNIT_ALIASES = {
@@ -190,7 +198,9 @@ class ClaimCondition(ScienceModel):
 
     @model_validator(mode="after")
     def unit_requires_numeric_value(self) -> "ClaimCondition":
-        numeric = isinstance(self.value, (int, float)) and not isinstance(self.value, bool)
+        numeric = isinstance(self.value, (int, float)) and not isinstance(
+            self.value, bool
+        )
         if self.unit is not None and not numeric:
             raise ValueError("condition unit requires a numeric value")
         return self
@@ -240,9 +250,9 @@ class ConditionConstraint(ScienceModel):
                 or self.unit is not None
             ):
                 raise ValueError("membership condition requires only nonempty values")
-            if len({(type(value).__name__, repr(value)) for value in self.values}) != len(
-                self.values
-            ):
+            if len(
+                {(type(value).__name__, repr(value)) for value in self.values}
+            ) != len(self.values):
                 raise ValueError("membership condition values must be unique")
             kinds = {
                 "boolean"
@@ -253,7 +263,9 @@ class ConditionConstraint(ScienceModel):
                 for value in self.values
             }
             if len(kinds) != 1:
-                raise ValueError("membership condition values must have one scalar type")
+                raise ValueError(
+                    "membership condition values must have one scalar type"
+                )
             if any(
                 isinstance(value, float) and not isfinite(value)
                 for value in self.values
@@ -263,7 +275,9 @@ class ConditionConstraint(ScienceModel):
             raise ValueError("condition operator requires only a value operand")
         if isinstance(self.value, float) and not isfinite(self.value):
             raise ValueError("condition constraint value must be finite")
-        numeric = isinstance(self.value, (int, float)) and not isinstance(self.value, bool)
+        numeric = isinstance(self.value, (int, float)) and not isinstance(
+            self.value, bool
+        )
         if self.unit is not None and self.operator != "range" and not numeric:
             raise ValueError("condition unit requires a numeric value")
         if self.operator in {"lt", "lte", "gt", "gte"} and not numeric:
@@ -300,6 +314,7 @@ class NormalizedClaim(ScienceModel):
 
 class ClaimInterpretation(ScienceModel):
     ontology_refs: list[str]
+    proposed_ontology_refs: list[str] = Field(default_factory=list)
     ambiguity_ids: list[str]
     user_confirmed: bool
 
@@ -392,7 +407,7 @@ class ResolvedReleaseSet(ScienceModel):
 
     @classmethod
     def from_single_foundation(cls, release: ResolvedRelease) -> "ResolvedReleaseSet":
-        """Adapt the original single-Foundation boundary without inventing other roles."""
+        """Adapt the original single-Foundation boundary without new roles."""
         selection = ReleaseSelection(foundation=release.release_id)
         components = tuple(sorted(release.components, key=lambda item: item.ref))
         compatibility = ReleaseCompatibilityResult(
@@ -424,25 +439,27 @@ class ResolvedReleaseSet(ScienceModel):
     def exact_selection_and_combined_order(self) -> "ResolvedReleaseSet":
         if self.foundation_release.release_id != self.selection.foundation:
             raise ValueError("Foundation release does not match original selection")
-        if [release.release_id for release in self.domain_releases] != self.selection.domains:
+        if [
+            release.release_id for release in self.domain_releases
+        ] != self.selection.domains:
             raise ValueError("Domain releases do not match original selection")
-        if [release.release_id for release in self.application_releases] != self.selection.applications:
+        if [
+            release.release_id for release in self.application_releases
+        ] != self.selection.applications:
             raise ValueError("Application releases do not match original selection")
         releases = (
             self.foundation_release,
             *self.domain_releases,
             *self.application_releases,
         )
-        expected_digests = {release.release_id: release.content_hash for release in releases}
+        expected_digests = {
+            release.release_id: release.content_hash for release in releases
+        }
         if self.release_digests != expected_digests:
             raise ValueError("release digest map does not match resolved selection")
         release_components = tuple(
             sorted(
-                (
-                    component
-                    for release in releases
-                    for component in release.components
-                ),
+                (component for release in releases for component in release.components),
                 key=lambda item: item.ref,
             )
         )
@@ -450,7 +467,9 @@ class ResolvedReleaseSet(ScienceModel):
         if len(release_component_refs) != len(set(release_component_refs)):
             raise ValueError("resolved releases contain duplicate components")
         if self.components != release_components:
-            raise ValueError("combined release components must exactly match resolved releases")
+            raise ValueError(
+                "combined release components must exactly match resolved releases"
+            )
         if self.rule_components != tuple(
             component for component in self.components if component.kind == "rule"
         ):
@@ -509,30 +528,372 @@ class VerdictPacket(ScienceModel):
     limitations: list[str]
 
 
+class LLMModelSettings(ScienceModel):
+    """Persist only reviewed, non-secret generation controls."""
+
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    top_p: float | None = Field(default=None, ge=0, le=1)
+    max_tokens: int | None = Field(default=None, gt=0)
+    seed: int | None = None
+    timeout_seconds: float | None = Field(default=None, gt=0)
+
+    @field_validator("temperature", "top_p", "timeout_seconds", mode="before")
+    @classmethod
+    def finite_float_setting(cls, value):
+        if value is not None:
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("model setting must be a finite number") from exc
+            if not isfinite(numeric):
+                raise ValueError("model setting must be finite")
+        return value
+
+
+InterpretationIssueCode: TypeAlias = Literal[
+    "USER_CONFIRMATION_REQUIRED",
+    "ONTOLOGY_REFS_REQUIRED",
+    "UNKNOWN_ONTOLOGY_REF",
+    "ONTOLOGY_REF_MISMATCH",
+    "SUBJECT_BINDING_REQUIRED",
+    "RELATION_BINDING_REQUIRED",
+    "OBJECT_BINDING_REQUIRED",
+    "BINDING_CONCEPT_MISMATCH",
+    "ALIAS_BINDING_MISMATCH",
+    "COMPLETE_RELATION_SPAN_REQUIRED",
+]
+
+
+class CandidateMeaningRecord(ScienceModel):
+    claim_id: str = Field(min_length=1)
+    ambiguity_id: str | None = None
+    concept_role: Literal["subject", "relation", "object"]
+    surface_term: str = Field(min_length=1)
+    ontology_ref: str = Field(min_length=1)
+    binding_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    concept_id: str | None = None
+    meaning: str | None = None
+    domain: str | None = None
+
+
+class InterpretationDecisionImpact(ScienceModel):
+    claim_id: str = Field(min_length=1)
+    outcome_impact: Literal["unresolved"] = "unresolved"
+    status: Literal["requires_user_confirmation", "blocked_semantic_mismatch"]
+    issue_codes: list[InterpretationIssueCode] = Field(min_length=1)
+
+    @field_validator("issue_codes")
+    @classmethod
+    def unique_issue_codes(cls, value: list[InterpretationIssueCode]):
+        if len(value) != len(set(value)):
+            raise ValueError("interpretation issue codes must be unique")
+        return value
+
+
+class InterpretationRevisionEvent(ScienceModel):
+    action: Literal["claim_confirmed"]
+    actor_id: str = Field(min_length=1)
+    source_interpretation_id: str = Field(min_length=1)
+    claim_ids: list[str] = Field(min_length=1)
+    occurred_at: datetime
+
+    @field_validator("claim_ids")
+    @classmethod
+    def unique_claim_ids(cls, value: list[str]):
+        if len(value) != len(set(value)):
+            raise ValueError("revision claim IDs must be unique")
+        return value
+
+
+class ScienceOperationBinding(ScienceModel):
+    operation: Literal[
+        "interpret_document", "confirm_interpretation", "verify_document"
+    ]
+    idempotency_key_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    actor_id: str = Field(min_length=1)
+    request_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    document_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    claim_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    release_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    prompt_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    source_interpretation_id: str | None
+    claim_ids: list[str]
+
+    @model_validator(mode="after")
+    def exact_operation_shape(self) -> "ScienceOperationBinding":
+        if len(self.claim_ids) != len(set(self.claim_ids)):
+            raise ValueError("operation claim IDs must be unique")
+        if self.claim_ids != sorted(self.claim_ids):
+            raise ValueError("operation claim IDs must be canonical")
+        if self.operation == "interpret_document":
+            if (
+                self.source_interpretation_id is not None
+                or self.release_digest is not None
+            ):
+                raise ValueError("interpret operation cannot claim a source or release")
+        elif self.source_interpretation_id is None:
+            raise ValueError(
+                "authoritative operation requires an interpretation dependency"
+            )
+        return self
+
+
+def _confirmed_packet_digest(claims: list[ClaimPacket]) -> str | None:
+    if not claims:
+        return None
+    if len(claims) == 1:
+        return sha256_digest(claims[0])
+    return sha256_digest({"claim_packets": claims})
+
+
 class InterpretationRecord(ScienceModel):
     interpretation_id: str
     document_digest: str
     candidate_claims: list[ClaimPacket]
     model_id: str
-    model_settings: dict[str, str | int | float | bool]
+    model_settings: LLMModelSettings
     prompt_version: str
     dictionary_release_id: str
     ontology_release_id: str
     ontology_refs: list[str]
-    candidate_meanings: list[dict[str, Any]]
-    decision_impact: list[dict[str, Any]]
-    user_revision_history: list[dict[str, Any]]
+    candidate_meanings: list[CandidateMeaningRecord]
+    decision_impact: list[InterpretationDecisionImpact]
+    user_revision_history: list[InterpretationRevisionEvent]
     confirmed_claim_packet_digest: str | None
     response_digest: str
+    operation_binding: ScienceOperationBinding
 
-    @field_validator("model_settings")
+    @field_validator("model_id")
     @classmethod
-    def finite_model_settings(
-        cls, settings: dict[str, str | int | float | bool]
-    ) -> dict[str, str | int | float | bool]:
-        if any(isinstance(value, float) and not isfinite(value) for value in settings.values()):
-            raise ValueError("model settings must be finite")
-        return settings
+    def safe_model_id(cls, value: str) -> str:
+        return validate_model_identifier(value)
+
+    @model_validator(mode="after")
+    def safe_non_source_provenance(self) -> "InterpretationRecord":
+        payload = self.model_dump(mode="json", exclude_none=False)
+        for claim in payload["candidate_claims"]:
+            claim.pop("source_span", None)
+        for meaning in payload["candidate_meanings"]:
+            meaning.pop("surface_term", None)
+        reject_sensitive_persistence(payload, path="interpretation")
+        claim_ids = [claim.claim_id for claim in self.candidate_claims]
+        if len(claim_ids) != len(set(claim_ids)):
+            raise ValueError("interpretation claim IDs must be unique")
+        if {meaning.claim_id for meaning in self.candidate_meanings} - set(claim_ids):
+            raise ValueError("candidate meaning references an unknown claim")
+        if {impact.claim_id for impact in self.decision_impact} != set(claim_ids):
+            raise ValueError("decision impact must cover every candidate claim")
+        expected_refs = sorted(
+            {
+                ref
+                for claim in self.candidate_claims
+                for ref in claim.interpretation.ontology_refs
+            }
+        )
+        if self.ontology_refs != expected_refs:
+            raise ValueError("interpretation ontology refs do not match its claims")
+        confirmed = [
+            claim
+            for claim in self.candidate_claims
+            if claim.interpretation.user_confirmed
+            and not claim.interpretation.ambiguity_ids
+        ]
+        if self.confirmed_claim_packet_digest != _confirmed_packet_digest(confirmed):
+            raise ValueError("confirmed Claim Packet digest does not match its claims")
+        binding = self.operation_binding
+        if binding.document_digest != self.document_digest:
+            raise ValueError("operation document digest does not match interpretation")
+        if binding.operation == "interpret_document":
+            expected_claim_digest = sha256_digest(
+                {"claim_packets": self.candidate_claims}
+            )
+            if binding.claim_digest != expected_claim_digest:
+                raise ValueError("operation claim digest does not match proposals")
+            if binding.claim_ids != sorted(claim_ids):
+                raise ValueError("proposal operation claim IDs are inconsistent")
+            if confirmed or self.confirmed_claim_packet_digest is not None:
+                raise ValueError("proposal operation cannot contain confirmed claims")
+            if self.user_revision_history:
+                raise ValueError("proposal operation cannot contain user revisions")
+        elif binding.operation == "confirm_interpretation":
+            confirmed_ids = sorted(claim.claim_id for claim in confirmed)
+            if binding.claim_digest != self.confirmed_claim_packet_digest:
+                raise ValueError("operation claim digest does not match confirmation")
+            if binding.claim_ids != confirmed_ids:
+                raise ValueError("confirmation binding does not match confirmed claims")
+            if len(self.user_revision_history) != 1:
+                raise ValueError("confirmation requires exactly one explicit revision")
+            revision = self.user_revision_history[0]
+            if (
+                revision.actor_id != binding.actor_id
+                or revision.source_interpretation_id != binding.source_interpretation_id
+                or revision.claim_ids != binding.claim_ids
+            ):
+                raise ValueError("confirmation revision is not exactly identity-bound")
+        else:
+            raise ValueError("report operation cannot bind an interpretation")
+        return self
+
+
+class SourceLookupIdentity(ScienceModel):
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    boi_id: str = Field(min_length=1)
+    versioned_path: str = Field(min_length=1)
+    visibility: str = Field(min_length=1)
+    classification: str = Field(min_length=1)
+    acl_policy: str = Field(min_length=1)
+    lookup_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def exact_lookup_digest(self) -> "SourceLookupIdentity":
+        expected = sha256_digest(
+            self.model_dump(mode="json", exclude={"lookup_digest"})
+        )
+        if self.lookup_digest != expected:
+            raise ValueError("source lookup digest does not match its exact identity")
+        return self
+
+
+class EvidenceLocator(ScienceModel):
+    medium: str | None = None
+    resource_url: str | None = None
+    content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    section: str | None = None
+    equation: str | None = None
+    retrieved_at: str | None = None
+    exact: bool | None = None
+    requested_url: str | None = None
+    resolved_url: str | None = None
+    preservation_status: str | None = None
+    pdf_page_index: int | None = Field(default=None, ge=0)
+    printed_page: str | None = None
+    hash_scope: str | None = None
+    heading: str | None = None
+    sentence_ordinal: int | None = Field(default=None, ge=0)
+    prefix: str | None = None
+    suffix: str | None = None
+    retrieved_resource_hash: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
+    sentence_label: str | None = None
+    field_path: str | None = None
+    figure: str | None = None
+    record_path: str | None = None
+    transcription_method: str | None = None
+    visual_transcription_scope: str | None = None
+
+    @field_validator("resource_url", "requested_url", "resolved_url")
+    @classmethod
+    def credential_free_url(cls, value: str | None) -> str | None:
+        return validate_credential_free_https_url(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def recursively_non_secret(self) -> "EvidenceLocator":
+        payload = self.model_dump(mode="json", exclude_none=True)
+        for field_name in ("resource_url", "requested_url", "resolved_url"):
+            payload.pop(field_name, None)
+        reject_sensitive_persistence(payload, path="evidence_locator")
+        if not payload and not any(
+            (self.resource_url, self.requested_url, self.resolved_url)
+        ):
+            raise ValueError("Evidence locator must contain a reviewed location")
+        return self
+
+
+class ReviewedSourceURLProfile(ScienceModel):
+    schema_version: Literal["science-reviewed-source-url/0.1"] = (
+        "science-reviewed-source-url/0.1"
+    )
+    qualification_state: Literal["candidate", "active"]
+    release_set_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    evidence_id: str = Field(min_length=1)
+    evidence_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    canonical_source_url: str = Field(min_length=1)
+    canonical_source_url_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    locator: EvidenceLocator
+    locator_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    locator_url_digests: dict[str, str]
+    profile_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @field_validator("canonical_source_url")
+    @classmethod
+    def canonical_public_source_url(cls, value: str) -> str:
+        return validate_credential_free_https_url(value)
+
+    @model_validator(mode="after")
+    def exact_qualification_digests(self) -> "ReviewedSourceURLProfile":
+        if self.canonical_source_url_digest != sha256_digest(self.canonical_source_url):
+            raise ValueError("reviewed Source URL digest is not exact")
+        if self.locator_digest != sha256_digest(self.locator):
+            raise ValueError("reviewed Evidence locator digest is not exact")
+        expected_url_digests = {
+            field_name: sha256_digest(value)
+            for field_name in ("resource_url", "requested_url", "resolved_url")
+            if (value := getattr(self.locator, field_name)) is not None
+        }
+        if self.locator_url_digests != expected_url_digests:
+            raise ValueError("reviewed Evidence locator URL digests are not exact")
+        expected_profile_digest = sha256_digest(
+            self.model_dump(mode="json", exclude={"profile_digest"})
+        )
+        if self.profile_digest != expected_profile_digest:
+            raise ValueError("reviewed Source URL profile digest is not exact")
+        return self
+
+
+class EvidenceLink(ScienceModel):
+    evidence_id: str = Field(min_length=1)
+    evidence_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    original_text_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    quote_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    url: str = Field(min_length=1)
+    locator: EvidenceLocator
+    source_lookup: SourceLookupIdentity
+    reviewed_source: ReviewedSourceURLProfile
+
+    @field_validator("url")
+    @classmethod
+    def credential_free_source_url(cls, value: str) -> str:
+        return validate_credential_free_https_url(value)
+
+    @model_validator(mode="after")
+    def exact_quote_and_source_identity(self) -> "EvidenceLink":
+        if self.quote_hash != self.original_text_hash:
+            raise ValueError("Evidence quote hash must match original_text_hash")
+        if (
+            self.source_lookup.source_id != self.source_id
+            or self.source_lookup.source_digest != self.source_digest
+        ):
+            raise ValueError("Evidence Source lookup identity does not match its link")
+        reviewed = self.reviewed_source
+        if reviewed.qualification_state != "active":
+            raise ValueError("Evidence link requires an active reviewed Source URL")
+        if (
+            reviewed.source_id != self.source_id
+            or reviewed.source_digest != self.source_digest
+            or reviewed.evidence_id != self.evidence_id
+            or reviewed.evidence_digest != self.evidence_digest
+            or reviewed.canonical_source_url != self.url
+            or reviewed.locator != self.locator
+        ):
+            raise ValueError(
+                "Evidence link does not match its reviewed Source identity"
+            )
+        return self
+
+
+class GroundedAnnotation(ScienceModel):
+    claim_id: str = Field(min_length=1)
+    fact_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    knowledge_id: str = Field(min_length=1)
+    knowledge_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    evidence_links: list[EvidenceLink] = Field(min_length=1)
 
 
 class VerificationReport(ScienceModel):
@@ -541,10 +902,126 @@ class VerificationReport(ScienceModel):
     document_digest: str
     release_selection: ReleaseSelection
     release_digests: dict[str, str]
-    interpretation_ids: list[str]
-    verdict_packets: list[VerdictPacket]
-    unresolved_ambiguities: list[dict[str, Any]]
-    annotations: list[dict[str, Any]]
+    interpretation_ids: list[str] = Field(min_length=1)
+    confirmed_claims: list[ClaimPacket] = Field(min_length=1)
+    verdict_packets: list[VerdictPacket] = Field(min_length=1)
+    unresolved_ambiguities: list[InterpretationDecisionImpact]
+    annotations: list[GroundedAnnotation]
     created_at: datetime
     created_by: str
-    report_digest: str
+    report_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    operation_binding: ScienceOperationBinding
+
+    @model_validator(mode="after")
+    def safe_non_source_provenance(self) -> "VerificationReport":
+        payload = self.model_dump(mode="json", exclude_none=False)
+        for claim in payload["confirmed_claims"]:
+            claim.pop("source_span", None)
+        for verdict in payload["verdict_packets"]:
+            verdict.pop("corrected_claim", None)
+            verdict.pop("limitations", None)
+        for annotation in payload["annotations"]:
+            annotation.pop("text", None)
+            for link in annotation["evidence_links"]:
+                link.pop("url", None)
+                for locator in (
+                    link["locator"],
+                    link["reviewed_source"]["locator"],
+                ):
+                    for field_name in (
+                        "resource_url",
+                        "requested_url",
+                        "resolved_url",
+                    ):
+                        locator.pop(field_name, None)
+                link["reviewed_source"].pop("canonical_source_url", None)
+                link["reviewed_source"].pop("locator_url_digests", None)
+        reject_sensitive_persistence(payload, path="report")
+        binding = self.operation_binding
+        if binding.operation != "verify_document":
+            raise ValueError("report requires a verify_document operation binding")
+        if binding.actor_id != self.created_by:
+            raise ValueError("report actor does not match its operation binding")
+        if binding.document_digest != self.document_digest:
+            raise ValueError("report document digest does not match its operation")
+        if len(self.interpretation_ids) != 1:
+            raise ValueError("report requires one exact interpretation identity")
+        if binding.source_interpretation_id != self.interpretation_ids[0]:
+            raise ValueError("report dependency does not match its interpretation")
+        if self.unresolved_ambiguities:
+            raise ValueError("authoritative report cannot contain unresolved claims")
+        if any(
+            not claim.interpretation.user_confirmed
+            or claim.interpretation.ambiguity_ids
+            for claim in self.confirmed_claims
+        ):
+            raise ValueError("report contains an unconfirmed claim")
+        claim_digest = _confirmed_packet_digest(self.confirmed_claims)
+        claim_ids = sorted(claim.claim_id for claim in self.confirmed_claims)
+        if binding.claim_digest != claim_digest or binding.claim_ids != claim_ids:
+            raise ValueError("report operation claim identity is inconsistent")
+        if binding.release_digest != sha256_digest(self.release_selection):
+            raise ValueError("report operation release digest is inconsistent")
+        expected_release_ids = {
+            self.release_selection.foundation,
+            *self.release_selection.domains,
+            *self.release_selection.applications,
+        }
+        if set(self.release_digests) != expected_release_ids or any(
+            not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+            for digest in self.release_digests.values()
+        ):
+            raise ValueError("report release digest map is not exact")
+        expected_request_digest = sha256_digest(
+            {
+                "operation": "verify_document",
+                "interpretation_id": self.interpretation_ids[0],
+                "claim_digest": claim_digest,
+                "release_selection": self.release_selection,
+            }
+        )
+        if binding.request_digest != expected_request_digest:
+            raise ValueError("report operation request digest is inconsistent")
+        verdict_ids = [verdict.claim_id for verdict in self.verdict_packets]
+        if len(verdict_ids) != len(set(verdict_ids)) or set(verdict_ids) != set(
+            claim_ids
+        ):
+            raise ValueError("report verdicts do not cover exact confirmed claims")
+        claims_by_id = {claim.claim_id: claim for claim in self.confirmed_claims}
+        for verdict in self.verdict_packets:
+            claim = claims_by_id[verdict.claim_id]
+            if verdict.claim_packet_digest != sha256_digest(claim):
+                raise ValueError("report verdict Claim Packet digest is inconsistent")
+            if (
+                verdict.releases.selection != self.release_selection
+                or verdict.releases.digests != self.release_digests
+            ):
+                raise ValueError("report verdict release linkage is inconsistent")
+        if any(
+            claim.document_digest != self.document_digest
+            or claim.document_ref != self.document_ref
+            for claim in self.confirmed_claims
+        ):
+            raise ValueError("report claims do not match its document")
+        if any(
+            annotation.claim_id not in set(claim_ids) for annotation in self.annotations
+        ):
+            raise ValueError("report annotation references an unknown claim")
+        verdict_release_set_digests = {
+            verdict.releases.combined_digest for verdict in self.verdict_packets
+        }
+        if len(verdict_release_set_digests) != 1:
+            raise ValueError("report verdicts do not share one release-set digest")
+        release_set_digest = next(iter(verdict_release_set_digests))
+        if any(
+            link.reviewed_source.release_set_digest != release_set_digest
+            for annotation in self.annotations
+            for link in annotation.evidence_links
+        ):
+            raise ValueError("report Evidence profile does not match its release set")
+        expected_report_digest = sha256_digest(
+            self.model_dump(mode="json", exclude={"report_digest"})
+        )
+        if self.report_digest != expected_report_digest:
+            raise ValueError("report digest does not match immutable report bytes")
+        return self

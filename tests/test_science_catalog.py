@@ -9,7 +9,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-
 EXPECTED_FOUNDATION_RELEASE_HASH = "sha256:e0f12bb1b3547d7df22da6738087f72470412161213e258bf4cf646a4eb9465b"
 
 
@@ -1618,3 +1617,67 @@ def test_catalog_to_engine_cross_task_proof_uses_exact_full_release_selection(
     assert packet.releases.selection == selection
     assert packet.releases.digests == release_set.release_digests
     assert packet.releases.combined_digest == release_set.combined_digest
+
+
+def test_catalog_issues_release_bound_reviewed_source_url_identity(
+    science_tree: Path,
+):
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.models import ReleaseSelection
+    from boi_api.app.science.source_identity import (
+        ReviewedSourceURLIdentity,
+        _open_reviewed_source_url_identity,
+    )
+
+    _fully_approved_operational_fixture(science_tree)
+    catalog = ScienceCatalog(
+        science_tree,
+        reviewer_role_resolver=_trusted_admin_roles,
+        trusted_clock=_trusted_clock,
+    )
+    release_set = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:0.1.0")
+    )
+
+    identity = catalog.resolve_reviewed_source_url_identity(
+        release_set, "sci:evidence:fixture"
+    )
+    profile = _open_reviewed_source_url_identity(identity)
+
+    assert type(identity) is ReviewedSourceURLIdentity
+    assert profile.qualification_state == "active"
+    assert profile.release_set_digest == release_set.combined_digest
+    assert profile.source_id == "sci:source:fixture"
+    assert profile.evidence_id == "sci:evidence:fixture"
+    assert profile.canonical_source_url == "https://example.test/source"
+
+
+def test_catalog_candidate_source_url_preview_has_no_operational_authority(
+    science_tree: Path,
+):
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.models import ReleaseSelection
+    from boi_api.app.science.source_identity import _issue_reviewed_source_url_identity
+
+    _replace_release_components(
+        science_tree,
+        "sci-release:0.1.0",
+        {
+            "sci:source:fixture": _component_digest(science_tree, "sources/source.md"),
+            "sci:evidence:fixture": _component_digest(
+                science_tree, "evidence/evidence.md"
+            ),
+        },
+    )
+    catalog = ScienceCatalog(science_tree)
+    release_set = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:0.1.0")
+    )
+
+    preview = catalog.preview_reviewed_source_url_profile(
+        release_set, "sci:evidence:fixture"
+    )
+
+    assert preview.qualification_state == "candidate"
+    with pytest.raises(TypeError, match="issued only"):
+        _issue_reviewed_source_url_identity(preview)

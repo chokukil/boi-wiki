@@ -26,7 +26,6 @@ from boi_api.app.science.rules import (
     evaluate_rule,
 )
 
-
 GateStatus = Literal["PASS", "FAIL", "PENDING"]
 
 
