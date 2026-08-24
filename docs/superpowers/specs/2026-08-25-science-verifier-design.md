@@ -769,7 +769,9 @@ release:
 
 ### 일반 검증
 
-- `science_interpret`: 문서에서 Claim Packet 후보와 모호성 반환
+- `science_aliases_detect`: 문서에서 등록된 별칭과 정확한 text span을 결정론적으로 반환
+- `science_claim_submit`: 사용자·Codex·Claude·Qwen 등이 만든 구조화 Claim 후보를 untrusted proposal로 제출; 서버가 span·개념 역할·ontology refs·조건을 재검증
+- `science_interpret`: 선택적·실험적 Qwen 해석 어댑터. 실패 시 어떤 Claim·판정·빨간 표시도 만들지 않음
 - `science_verify_claim`: 확정 Claim Packet을 결정적으로 검증
 - `science_verify_document`: 여러 Claim의 검증 작업 조정
 - `science_evidence_get`: 사용자가 볼 수 있는 원문·번역·locator 반환
@@ -861,7 +863,7 @@ skills/
 
 ## 20. LLM 구성
 
-Science Verifier 웹 경로는 기존 OpenAI-compatible `BOI_LLM_BASE_URL`, `BOI_LLM_MODEL`, `BOI_LLM_API_KEY` 계약을 재사용한다. Science 전용 설정은 기존 값을 기본으로 상속할 수 있다.
+Science Verifier 웹 경로의 기본 동작은 LLM을 요구하지 않는다. 결정론적 별칭 탐지와 사용자가 확인·수정한 구조화 Claim만으로 검증을 완료할 수 있다. Qwen은 기존 OpenAI-compatible 설정을 재사용할 수 있는 선택적·실험적 해석 어댑터로만 보존한다.
 
 ```text
 BOI_SCIENCE_LLM_BASE_URL → BOI_LLM_BASE_URL 상속
@@ -871,10 +873,10 @@ BOI_SCIENCE_LLM_API_KEY → BOI_LLM_API_KEY 상속
 
 Pilot 배포에서는 사용자가 지정한 사내 LM Studio endpoint와 `qwen/qwen3.8-27b`를 추적되지 않는 `.env` overlay로 설정한다. 내부 endpoint를 저장소 문서·코드·fixture에 하드코딩하지 않는다.
 
-LLM 장애 시 검증기가 임의 해석이나 짧은 대체 답변을 만들지 않는다.
+실험적 어댑터는 기본값이 비활성이다. 연결 실패, timeout, 빈 content, invalid JSON, schema mismatch를 모두 fail-closed 처리한다. 이 경우 Claim, Evidence, Rule, verdict, 빨간 표시를 만들지 않으며 모델 재시도·튜닝을 운영 검증의 전제 조건으로 삼지 않는다.
 
 - Claim Packet이 확정돼 있으면 결정적 검증은 계속할 수 있다.
-- 새 자연어 해석이 필요하면 해석 서비스 장애를 표시하고 중단한다.
+- 새 자연어 해석은 결정론적 별칭 탐지 뒤 사용자가 직접 작성하거나 Codex·Claude 등 외부 Agent가 후보를 제출할 수 있다.
 - Evidence·Verdict는 LLM 가용성과 무관하게 보존한다.
 
 ## 21. Spin Coating 응용 증명

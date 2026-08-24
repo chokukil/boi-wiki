@@ -5,7 +5,7 @@ description: Use when a user asks to scientifically fact check a document, passa
 
 # BoI Science Verifier
 
-BoI, not the client Agent, owns scientific verdicts. The Agent helps the user inspect the claim, interpretation, explanation, and evidence without upgrading or rewriting BoI's result.
+BoI's active, human-approved Science Release and deterministic Rule engine—not the client Agent—own scientific verdicts. The Agent may only propose a structured Claim interpretation and help the user inspect the claim, explanation, and evidence without upgrading or rewriting BoI's result.
 
 Read `harness/science-verification-harness.md` before verifying.
 
@@ -13,12 +13,15 @@ Use an **authenticated user bearer** for every Science MCP call. A `service toke
 
 ## Verification contract
 
-1. Call `science_interpret` with the exact document. Keep returned claim spans, bindings, `ontology_refs`, and Release identity unchanged.
-2. When BoI marks **결과가 달라지는 모호성**, show the affected span and alternatives. Get **명시적 사용자 확인**, then call `science_interpretation_confirm`. Set `user_confirmed: true` only for that immediate user action and preserve the authenticated actor; never infer or manufacture confirmation. Re-run only the affected claim. Never choose the likely meaning for the user.
-3. Call `science_verify_document`; use `science_verify_claim` only when resuming one claim.
-4. Render BoI's annotations in the document. Red underline/shading is only for a deterministic `VIOLATION`; a pending ambiguity is purple dotted, not red.
-5. Show the scientific explanation and 1–2 source links under every verdict/explanation, including non-corrections. Use `science_evidence_get` for the expanded **원문**, translation, `locator`, source URL, applicability, and integrity state. Accept eligibility only from the API contract; an unknown or unverifiable state stops that result.
-6. Call `science_report_get` before presenting a final report. Preserve its `release`, component digests, quote hashes, and `report_digest`. Use `science_report_export` for the exact Markdown or PDF packet.
+1. Call `science_aliases_detect` with the exact document. Use only exact alias matches returned by BoI when proposing `subject`, `relation`, `object`, conditions, spans, and `ontology_refs`.
+2. Submit the structured candidate through `science_claim_submit`. Do not include or attempt to choose a verdict, Rule, Evidence, citation, correction, or Release. BoI re-resolves the text span and validates every concept role and ontology reference; an Agent-provided value is never trusted merely because it is well formed.
+3. When BoI marks **결과가 달라지는 모호성**, show the affected span and alternatives. Get **명시적 사용자 확인**, then call `science_interpretation_confirm`. Set `user_confirmed: true` only for that immediate user action and preserve the authenticated actor; never infer or manufacture confirmation. Re-run only the affected claim. Never choose the likely meaning for the user.
+4. Call `science_verify_document`; use `science_verify_claim` only when resuming one claim. The same confirmed Claim and active Release must produce the same result for user, Codex, Claude, Qwen, Web, REST, and MCP clients.
+5. Render BoI's annotations in the document. Red underline/shading is only for a deterministic `VIOLATION` whose active Rule, satisfied applicability conditions, and exact eligible Evidence locator are present. A pending ambiguity is purple dotted, not red.
+6. Show the scientific explanation and 1–2 source links under every verdict/explanation, including non-corrections. Use `science_evidence_get` for the expanded **원문**, translation, `locator`, source URL, applicability, and integrity state. Accept eligibility only from the API contract; an unknown or unverifiable state stops that result.
+7. Call `science_report_get` before presenting a final report. Preserve its `release`, component digests, quote hashes, and `report_digest`. Use `science_report_export` for the exact Markdown or PDF packet.
+
+`science_interpret` is an optional, experimental Qwen adapter for the Web pilot. It is not the default path, authority, or fallback. A connection failure, timeout, empty response, invalid JSON, or schema mismatch produces no Claim, verdict, Evidence, Rule, or red annotation. Continue with deterministic alias detection and user/Agent candidate submission instead of retry-tuning the model.
 
 ## Verdict boundary
 
@@ -32,7 +35,7 @@ Return exactly the BoI verdict:
 
 **BoI가 반환한 Verdict를 변경하지 않는다.** `CONSISTENT` means no conflict was found under the selected Release, rules, evidence, bindings, and conditions. It does not mean **참·안전·승인** or recommend an operational change.
 
-If interpretation, active Release, Evidence, locator, or report integrity cannot be verified, stop the affected result and say `verification unavailable`. Do not complete the Truth Path with an Agent guess, **자체 지식으로 Citation**, a web citation, or a familiar formula. External research may be submitted only as a separate curation proposal. **Agent 기억으로 대체하지 않는다.**
+If interpretation, active Release, Evidence, locator, applicability, or report integrity cannot be verified, stop the affected result and say `verification unavailable`. Draft/pending knowledge and inactive Releases never enter an operational verdict. Do not complete the Truth Path with an Agent guess, **자체 지식으로 Citation**, a web citation, or a familiar formula. External research may be submitted only as a separate curation proposal. **Agent 기억으로 대체하지 않는다.**
 
 ## Result shape
 

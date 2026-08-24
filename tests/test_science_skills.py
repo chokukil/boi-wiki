@@ -37,7 +37,8 @@ def test_verifier_skill_preserves_boi_authority_and_the_confirmation_loop():
     _metadata, body = _skill(VERIFIER)
 
     for tool in (
-        "science_interpret",
+        "science_aliases_detect",
+        "science_claim_submit",
         "science_interpretation_confirm",
         "science_verify_document",
         "science_evidence_get",
@@ -45,7 +46,10 @@ def test_verifier_skill_preserves_boi_authority_and_the_confirmation_loop():
         "science_report_export",
     ):
         assert tool in body
-    assert body.index("science_interpret") < body.index("science_interpretation_confirm")
+    assert body.index("science_aliases_detect") < body.index("science_claim_submit")
+    assert body.index("science_claim_submit") < body.index(
+        "science_interpretation_confirm"
+    )
     assert body.index("science_interpretation_confirm") < body.index(
         "science_verify_document"
     )
@@ -60,6 +64,8 @@ def test_verifier_skill_preserves_boi_authority_and_the_confirmation_loop():
         "locator",
         "release",
         "report_digest",
+        "optional, experimental",
+        "no Claim, verdict, Evidence, Rule, or red annotation",
     ):
         assert required in body
     assert "authenticated user bearer" in body
@@ -144,7 +150,9 @@ def test_parent_boi_skill_routes_science_work_without_copying_the_full_contract(
 
     assert "boi-science-verifier" in body
     assert "boi-science-curator" in body
-    assert "science_interpret" in body
+    assert "science_aliases_detect" in body
+    assert "science_claim_submit" in body
+    assert "science_interpret" in body and "optional experimental" in body
     assert "과학적 팩트 체크" in body
     assert "Science Verifier" in body
     assert "외부 사용자 Agent" in body
