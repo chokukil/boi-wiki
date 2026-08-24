@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
@@ -20,6 +21,7 @@ from boi_api.app.science.models import (
     ReleaseSelection,
     ScienceModel,
 )
+from boi_api.app.science.profile import validate_evidence_locator
 from boi_api.app.science.rules import (
     QualifiedObservation,
     VerificationRule,
@@ -133,6 +135,7 @@ def _structurally_broken_evidence(catalog: ScienceCatalog) -> list[str]:
         source_id = getattr(evidence, "source_id", None)
         source = catalog._objects["source"].get(source_id)
         original_url = getattr(source, "original_url", None) if source else None
+        source_content_hash = getattr(source, "content_hash", None) if source else None
         original_text = getattr(evidence, "original_text", None)
         original_text_hash = getattr(evidence, "original_text_hash", None)
         exact_hash = (
@@ -141,10 +144,11 @@ def _structurally_broken_evidence(catalog: ScienceCatalog) -> list[str]:
             else None
         )
         if (
-            not isinstance(locator, Mapping)
-            or not locator
+            validate_evidence_locator(locator)
             or not isinstance(original_url, str)
             or not original_url.startswith("https://")
+            or not isinstance(source_content_hash, str)
+            or not re.fullmatch(r"sha256:[0-9a-f]{64}", source_content_hash)
             or original_text_hash != exact_hash
         ):
             broken.append(evidence_id)

@@ -108,12 +108,12 @@ def _object_metadata() -> dict[str, tuple[str, dict, str]]:
     return {
         "source": (
             "boi/science-source",
-            {"source_id": "sci:source:fixture", "source_role": "normative_definition", "original_url": "https://example.test/source", "content_hash": "sha256:source", "retrieval_status": "verified", "retrieved_at": "2026-08-25T09:05:00+09:00", "curated_at": "2026-08-25T09:10:00+09:00", "release_eligibility": "blocked_pending_authorized_admin_review"},
+            {"source_id": "sci:source:fixture", "source_role": "normative_definition", "original_url": "https://example.test/source", "content_hash": "sha256:" + "1" * 64, "retrieval_status": "verified", "retrieved_at": "2026-08-25T09:05:00+09:00", "curated_at": "2026-08-25T09:10:00+09:00", "release_eligibility": "blocked_pending_authorized_admin_review"},
             "sources/source.md",
         ),
         "evidence": (
             "boi/science-evidence",
-            {"evidence_id": "sci:evidence:fixture", "source_id": "sci:source:fixture", "locator": {"section": "1", "retrieved_at": "2026-08-25T09:05:00+09:00"}, "original_text": "Source text.", "original_text_hash": "sha256:" + hashlib.sha256(b"Source text.").hexdigest(), "reviewed_translation": "원문", "decision_eligibility": "pending_review", "curated_at": "2026-08-25T09:10:00+09:00", "release_eligibility": "blocked_pending_authorized_admin_review", "claim_scope": claim_scope, "claim_scope_hash": "sha256:" + hashlib.sha256(json.dumps(claim_scope, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()},
+            {"evidence_id": "sci:evidence:fixture", "source_id": "sci:source:fixture", "locator": {"medium": "pdf", "resource_url": "https://example.test/source.pdf", "requested_url": "https://example.test/source.pdf", "resolved_url": "https://example.test/source.pdf", "content_hash": "sha256:" + "2" * 64, "retrieved_at": "2026-08-25T09:05:00+09:00", "exact": True, "hash_scope": "retrieved_pdf_bytes", "section": "1", "pdf_page_index": 0, "printed_page": "1"}, "original_text": "Source text.", "original_text_hash": "sha256:" + hashlib.sha256(b"Source text.").hexdigest(), "reviewed_translation": "원문", "decision_eligibility": "pending_review", "curated_at": "2026-08-25T09:10:00+09:00", "release_eligibility": "blocked_pending_authorized_admin_review", "claim_scope": claim_scope, "claim_scope_hash": "sha256:" + hashlib.sha256(json.dumps(claim_scope, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()},
             "evidence/evidence.md",
         ),
         "knowledge": (

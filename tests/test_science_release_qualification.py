@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +12,6 @@ import yaml
 from boi_api.app.okf import split_frontmatter
 from boi_api.app.science.catalog import ScienceCatalog
 from boi_api.app.science.qualification import qualify_release_candidate
-
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BOI_ROOT = REPO_ROOT / "data" / "boi"
@@ -195,3 +195,86 @@ def test_release_frontmatter_is_canonical_json_not_yaml_implicit_types() -> None
 
     assert json.loads(frontmatter) == parsed
     assert parsed["science"]["status"] == "release_candidate"
+
+
+def _rewrite_json_frontmatter(path: Path, mutate) -> None:
+    metadata, body = split_frontmatter(path.read_text(encoding="utf-8"))
+    mutate(metadata)
+    path.write_text(
+        "---\n"
+        + json.dumps(metadata, ensure_ascii=False, indent=2)
+        + "\n---\n"
+        + body.lstrip("\n"),
+        encoding="utf-8",
+    )
+
+
+def test_candidate_builder_rejects_malformed_locator_before_repinning(
+    tmp_path: Path,
+) -> None:
+    copied_root = tmp_path / "boi"
+    shutil.copytree(BOI_ROOT, copied_root)
+    evidence_path = (
+        copied_root
+        / "public"
+        / "science"
+        / "evidence"
+        / "common"
+        / "quantity-unit-dimension.md"
+    )
+    _rewrite_json_frontmatter(
+        evidence_path,
+        lambda metadata: metadata["science"].update({"locator": {"junk": "x"}}),
+    )
+
+    run = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "build_science_release_candidate.py"),
+            "--boi-root",
+            str(copied_root),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert run.returncode != 0
+    assert "closed medium-specific Evidence locator" in run.stderr
+
+
+def test_candidate_builder_rejects_short_source_hash_before_repinning(
+    tmp_path: Path,
+) -> None:
+    copied_root = tmp_path / "boi"
+    shutil.copytree(BOI_ROOT, copied_root)
+    source_path = (
+        copied_root
+        / "public"
+        / "science"
+        / "sources"
+        / "bipm-si-brochure-9-v4-01.md"
+    )
+    _rewrite_json_frontmatter(
+        source_path,
+        lambda metadata: metadata["science"].update(
+            {"content_hash": "sha256:deadbeef"}
+        ),
+    )
+
+    run = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "build_science_release_candidate.py"),
+            "--boi-root",
+            str(copied_root),
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert run.returncode != 0
+    assert "exact SHA-256 digest" in run.stderr

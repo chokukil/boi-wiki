@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
@@ -10,8 +11,7 @@ from urllib.parse import urlparse
 from pydantic import ValidationError
 
 from boi_api.app.science.digests import sha256_digest
-from boi_api.app.science.models import ConditionConstraint
-
+from boi_api.app.science.models import ConditionConstraint, EvidenceLocator
 
 SCIENCE_TYPE_REQUIREMENTS = {
     "boi/science-source": {"source_id", "source_role", "original_url", "content_hash"},
@@ -121,6 +121,26 @@ _EVIDENCE_USE_FIELDS = {
     "evidence_ref",
     "claim_family",
     "purpose",
+}
+_SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
+_LOCATOR_COMMON_FIELDS = (
+    "resource_url",
+    "requested_url",
+    "resolved_url",
+    "content_hash",
+    "retrieved_at",
+    "hash_scope",
+)
+_LOCATOR_FIELDS_BY_MEDIUM = {
+    "pdf": ("section", "pdf_page_index", "printed_page"),
+    "html": (
+        "heading",
+        "sentence_ordinal",
+        "prefix",
+        "suffix",
+        "retrieved_resource_hash",
+    ),
+    "api_json": ("section", "field_path", "record_path"),
 }
 
 
@@ -282,6 +302,36 @@ def _validate_evidence_uses(science: Mapping[str, Any]) -> list[str]:
     return errors
 
 
+def validate_evidence_locator(value: Any) -> list[str]:
+    """Validate the closed, medium-specific locator used by stored Evidence."""
+
+    try:
+        locator = EvidenceLocator.model_validate(value)
+    except (ValidationError, ValueError):
+        return [
+            "science.locator must be a closed medium-specific Evidence locator"
+        ]
+    required = _LOCATOR_FIELDS_BY_MEDIUM.get(locator.medium or "")
+    if required is None:
+        return [
+            "science.locator must be a closed medium-specific Evidence locator"
+        ]
+    missing = [
+        field_name
+        for field_name in (*_LOCATOR_COMMON_FIELDS, *required)
+        if getattr(locator, field_name) in (None, "")
+    ]
+    if locator.exact is not True:
+        missing.append("exact=true")
+    if locator.resource_url != locator.resolved_url:
+        missing.append("resource_url=resolved_url")
+    if missing:
+        return [
+            "science.locator must be a closed medium-specific Evidence locator"
+        ]
+    return []
+
+
 def validate_sci_profile_metadata(metadata: dict[str, Any]) -> list[str]:
     """Validate only recognized Science documents, preserving normal OKF behavior."""
     if not is_science_document(metadata):
@@ -315,8 +365,14 @@ def validate_sci_profile_metadata(metadata: dict[str, Any]) -> list[str]:
         parsed_url = urlparse(original_url) if isinstance(original_url, str) else None
         if parsed_url is None or parsed_url.scheme != "https" or not parsed_url.netloc:
             errors.append("science.original_url must use HTTPS for public sources")
+        content_hash = science.get("content_hash")
+        if not isinstance(content_hash, str) or not _SHA256_PATTERN.fullmatch(
+            content_hash
+        ):
+            errors.append("science.content_hash must be an exact SHA-256 digest")
 
     if metadata["type"] == "boi/science-evidence":
+        errors.extend(validate_evidence_locator(science.get("locator")))
         original_text = science.get("original_text")
         original_text_hash = science.get("original_text_hash")
         if not isinstance(original_text, str):
