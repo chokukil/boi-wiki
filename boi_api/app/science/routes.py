@@ -17,8 +17,12 @@ from boi_api.app.science.authorization import (
 )
 from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
-from boi_api.app.science.llm import ScienceInterpretationUnavailable
+from boi_api.app.science.llm import (
+    LLMClaimCandidate,
+    ScienceInterpretationUnavailable,
+)
 from boi_api.app.science.models import (
+    ClaimSubmissionClientKind,
     ReleaseSelection,
     ScienceModel,
     SourceSpan,
@@ -74,6 +78,35 @@ class InterpretRequest(_RequestModel):
 
     @model_validator(mode="after")
     def exact_source(self) -> "InterpretRequest":
+        if bool(self.document) == bool(self.document_ref):
+            raise ValueError("exactly one document or document_ref is required")
+        return self
+
+
+class DetectAliasesRequest(_RequestModel):
+    document: str | None = None
+    document_ref: str | None = None
+    selection: SourceSpan | None = None
+    request_id: str = Field(min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def exact_source(self) -> "DetectAliasesRequest":
+        if bool(self.document) == bool(self.document_ref):
+            raise ValueError("exactly one document or document_ref is required")
+        return self
+
+
+class SubmitClaimRequest(_RequestModel):
+    document: str | None = None
+    document_ref: str | None = None
+    selection: SourceSpan | None = None
+    client_kind: ClaimSubmissionClientKind
+    candidate: LLMClaimCandidate
+    idempotency_key: str = Field(min_length=8, max_length=256)
+    supersedes_claim_id: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def exact_source(self) -> "SubmitClaimRequest":
         if bool(self.document) == bool(self.document_ref):
             raise ValueError("exactly one document or document_ref is required")
         return self
@@ -309,6 +342,58 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
                 identity=identity,
                 idempotency_key=request.idempotency_key,
                 selection_anchor=request.selection,
+            )
+        )
+        return _json_model(result)
+
+    @router.post("/api/science/aliases/detect")
+    def detect_aliases(
+        request: DetectAliasesRequest,
+        identity: AuthIdentity = Depends(science_identity),
+    ) -> dict[str, Any]:
+        if request.document_ref:
+            document = dependencies.load_document(identity, request.document_ref)
+            if document is None:
+                _closed_http_error(ScienceAuthorizationError("document unavailable"))
+            document_ref = request.document_ref
+        else:
+            document = request.document or ""
+            document_ref = f"boi:submitted:{request.request_id}"
+        result = _invoke(
+            lambda: service().detect_aliases(
+                document,
+                document_ref=document_ref,
+                selection_anchor=request.selection,
+            )
+        )
+        return _json_model(result)
+
+    @router.post("/api/science/claims/submit")
+    def submit_claim(
+        request: SubmitClaimRequest,
+        identity: AuthIdentity = Depends(science_identity),
+    ) -> dict[str, Any]:
+        if request.document_ref:
+            document = dependencies.load_document(identity, request.document_ref)
+            if document is None:
+                _closed_http_error(ScienceAuthorizationError("document unavailable"))
+            document_ref = request.document_ref
+        else:
+            document = request.document or ""
+            submitted_id = sha256_digest(request.idempotency_key).removeprefix(
+                "sha256:"
+            )
+            document_ref = f"boi:submitted:{submitted_id}"
+        result = _invoke(
+            lambda: service().submit_claim_candidate(
+                document,
+                document_ref=document_ref,
+                identity=identity,
+                client_kind=request.client_kind,
+                candidate=request.candidate,
+                idempotency_key=request.idempotency_key,
+                selection_anchor=request.selection,
+                supersedes_claim_id=request.supersedes_claim_id,
             )
         )
         return _json_model(result)

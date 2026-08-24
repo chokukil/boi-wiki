@@ -1501,7 +1501,8 @@ class ScienceRuntimeStore:
         if (
             binding.operation != "confirm_interpretation"
             or binding.source_interpretation_id != source.interpretation_id
-            or source.operation_binding.operation != "interpret_document"
+            or source.operation_binding.operation
+            not in {"interpret_document", "submit_claim_candidate"}
         ):
             raise ImmutableScienceRecordError(
                 "Science confirmation proposal dependency is invalid"
@@ -1531,6 +1532,8 @@ class ScienceRuntimeStore:
             "candidate_meanings",
             "decision_impact",
             "response_digest",
+            "submission_client_kind",
+            "supersedes_claim_id",
         )
         if interpretation.candidate_claims != expected_claims or any(
             getattr(interpretation, field) != getattr(source, field)

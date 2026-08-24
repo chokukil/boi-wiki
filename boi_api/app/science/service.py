@@ -20,14 +20,18 @@ from boi_api.app.science.llm import (
     ScienceLLMClient,
 )
 from boi_api.app.science.models import (
+    AliasDetectionResult,
     CandidateMeaningRecord,
+    ClaimSubmissionClientKind,
     ClaimInterpretation,
     ClaimPacket,
+    DetectedAlias,
     EvidenceLink,
     GroundedAnnotation,
     InterpretationDecisionImpact,
     InterpretationRecord,
     InterpretationRevisionEvent,
+    LLMModelSettings,
     ReleaseSelection,
     ResolvedReleaseSet,
     ScienceOperationBinding,
@@ -51,6 +55,9 @@ class ScienceConfirmationRequired(ScienceOperationalError):
 
 class ScienceIdempotencyConflict(ScienceOperationalError):
     """A trusted idempotency key was already bound to another operation."""
+
+
+CLAIM_SUBMISSION_VERSION = "science-claim-submission/0.1.0"
 
 
 class ScienceService:
@@ -359,7 +366,13 @@ class ScienceService:
                 concept_id = None
                 canonical_meaning = None
                 domain = None
-            occurrence_count = resolved.exact.count(meaning.surface_term)
+            occurrence_count = sum(
+                1
+                for offset in range(
+                    0, len(resolved.exact) - len(meaning.surface_term) + 1
+                )
+                if resolved.exact.startswith(meaning.surface_term, offset)
+            )
             position = resolved.exact.find(meaning.surface_term)
             if occurrence_count != 1:
                 issues.add("COMPLETE_RELATION_SPAN_REQUIRED")
@@ -442,6 +455,201 @@ class ScienceService:
             issue_codes=ordered_issues,
         )
         return claim, meanings, impact
+
+    def detect_aliases(
+        self,
+        document_text: str,
+        *,
+        document_ref: str,
+        selection_anchor: SourceSpan | None = None,
+    ) -> AliasDetectionResult:
+        """Find exact registered aliases without creating a Claim or verdict."""
+
+        if not document_text:
+            raise ScienceInterpretationUnavailable("document text must be nonempty")
+        document_digest = sha256_digest(document_text)
+        search_text = document_text
+        selection_start = 0
+        if selection_anchor is not None:
+            selection = resolve_anchor(
+                document_text,
+                selection_anchor,
+                document_digest=document_digest,
+            )
+            search_text = selection.exact
+            selection_start = selection.start
+
+        matches: list[DetectedAlias] = []
+        for ontology_ref, binding in self._ontology_index().items():
+            for alias in binding["aliases"]:
+                if not isinstance(alias, str) or not alias:
+                    continue
+                offset = 0
+                while (position := search_text.find(alias, offset)) >= 0:
+                    start = selection_start + position
+                    matches.append(
+                        DetectedAlias(
+                            binding_id=ontology_ref,
+                            ontology_ref=ontology_ref,
+                            concept_id=str(binding["concept_id"]),
+                            surface_term=alias,
+                            start=start,
+                            end=start + len(alias),
+                            meaning=str(binding["meaning"]),
+                            domain=str(binding["domain"]),
+                            binding_digest=str(binding["binding_digest"]),
+                        )
+                    )
+                    offset = position + 1
+        matches.sort(
+            key=lambda match: (
+                match.start,
+                -len(match.surface_term),
+                match.ontology_ref,
+                match.surface_term,
+            )
+        )
+        return AliasDetectionResult(
+            document_ref=document_ref,
+            document_digest=document_digest,
+            matches=matches,
+        )
+
+    def _claim_submission_prompt_digest(self) -> str:
+        return sha256_digest(
+            {
+                "contract_version": CLAIM_SUBMISSION_VERSION,
+                "dictionary_release_id": self.dictionary_release_id,
+                "ontology_release_id": self.ontology_release_id,
+                "ontology_binding_ids": self.ontology_binding_ids,
+            }
+        )
+
+    def submit_claim_candidate(
+        self,
+        document_text: str,
+        *,
+        document_ref: str,
+        identity: AuthIdentity,
+        client_kind: ClaimSubmissionClientKind,
+        candidate: LLMClaimCandidate,
+        idempotency_key: str,
+        selection_anchor: SourceSpan | None = None,
+        supersedes_claim_id: str | None = None,
+    ) -> InterpretationRecord:
+        """Revalidate one untrusted external Claim candidate and pause for confirmation."""
+
+        if not document_text:
+            raise ScienceInterpretationUnavailable("document text must be nonempty")
+        candidate = validate_with_closed_error(
+            lambda: LLMClaimCandidate.model_validate(
+                candidate.model_dump(mode="json", exclude_none=False)
+            ),
+            caught=(ValidationError, ValueError, AttributeError),
+            closed_error=ScienceInterpretationUnavailable(
+                "Claim candidate failed closed schema validation"
+            ),
+        )
+        document_digest = sha256_digest(document_text)
+        prompt_digest = self._claim_submission_prompt_digest()
+        interpretation_id = self._record_id("interpretation", idempotency_key)
+        request_digest = sha256_digest(
+            {
+                "operation": "submit_claim_candidate",
+                "document_ref": document_ref,
+                "document_digest": document_digest,
+                "selection_anchor": selection_anchor,
+                "client_kind": client_kind,
+                "candidate": candidate,
+                "supersedes_claim_id": supersedes_claim_id,
+                "dictionary_release_id": self.dictionary_release_id,
+                "ontology_release_id": self.ontology_release_id,
+            }
+        )
+        pending_binding = ScienceOperationBinding(
+            operation="submit_claim_candidate",
+            idempotency_key_digest=self._idempotency_digest(idempotency_key),
+            actor_id=identity.employee_id,
+            request_digest=request_digest,
+            document_digest=document_digest,
+            claim_digest=None,
+            release_digest=None,
+            prompt_digest=prompt_digest,
+            source_interpretation_id=None,
+            claim_ids=[],
+        )
+        existing = self._existing_interpretation(
+            interpretation_id,
+            pending_binding,
+            derived_claim_digest=True,
+        )
+        if existing is not None:
+            return existing
+
+        interpreted_text = document_text
+        selection_start = 0
+        if selection_anchor is not None:
+            selection = resolve_anchor(
+                document_text,
+                selection_anchor,
+                document_digest=document_digest,
+            )
+            interpreted_text = selection.exact
+            selection_start = selection.start
+
+        claim, meanings, impact = self._claim_from_candidate(
+            candidate,
+            document_text=document_text,
+            interpreted_text=interpreted_text,
+            document_ref=document_ref,
+            document_digest=document_digest,
+            selection_start=selection_start,
+            ontology_index=self._ontology_index(),
+        )
+        claims = [claim]
+        operation_binding = pending_binding.model_copy(
+            update={
+                "claim_digest": sha256_digest({"claim_packets": claims}),
+                "claim_ids": [claim.claim_id],
+            }
+        )
+        response_digest = sha256_digest({"candidate": candidate})
+        record = validate_with_closed_error(
+            lambda: InterpretationRecord(
+                interpretation_id=interpretation_id,
+                document_digest=document_digest,
+                candidate_claims=claims,
+                model_id=f"claim-client/{client_kind}",
+                model_settings=LLMModelSettings(),
+                prompt_version=CLAIM_SUBMISSION_VERSION,
+                dictionary_release_id=self.dictionary_release_id,
+                ontology_release_id=self.ontology_release_id,
+                ontology_refs=claim.interpretation.ontology_refs,
+                candidate_meanings=meanings,
+                decision_impact=[impact],
+                user_revision_history=[],
+                confirmed_claim_packet_digest=None,
+                response_digest=response_digest,
+                operation_binding=operation_binding,
+                submission_client_kind=client_kind,
+                supersedes_claim_id=supersedes_claim_id,
+            ),
+            caught=(ValidationError, ValueError),
+            closed_error=ScienceInterpretationUnavailable(
+                "Claim submission record failed closed validation"
+            ),
+        )
+        try:
+            return self.runtime_store.save_interpretation(record, identity=identity)
+        except ImmutableScienceRecordError:
+            winner = self._existing_interpretation(
+                interpretation_id,
+                pending_binding,
+                derived_claim_digest=True,
+            )
+            if winner is None:
+                raise
+            return winner
 
     def interpret_document(
         self,
@@ -611,7 +819,10 @@ class ScienceService:
             raise ScienceOperationalError(
                 "stored interpretation identity does not match the requested record"
             )
-        if source.operation_binding.operation != "interpret_document":
+        if source.operation_binding.operation not in {
+            "interpret_document",
+            "submit_claim_candidate",
+        }:
             raise ScienceConfirmationRequired(
                 "confirmation requires an immutable interpretation proposal"
             )
@@ -1021,7 +1232,8 @@ class ScienceService:
         )
         if (
             source.interpretation_id != binding.source_interpretation_id
-            or source.operation_binding.operation != "interpret_document"
+            or source.operation_binding.operation
+            not in {"interpret_document", "submit_claim_candidate"}
         ):
             raise ScienceConfirmationRequired(
                 "confirmation proposal dependency is invalid"
@@ -1052,6 +1264,8 @@ class ScienceService:
             "candidate_meanings",
             "decision_impact",
             "response_digest",
+            "submission_client_kind",
+            "supersedes_claim_id",
         )
         if interpretation.candidate_claims != expected_claims or any(
             getattr(interpretation, field) != getattr(source, field)
