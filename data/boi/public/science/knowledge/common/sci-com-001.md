@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "definition",
     "assurance_basis": "hypothesis",
-    "statement": "A physical quantity, its numerical value, its measurement unit, and its dimension are distinct semantic roles; a stated unit must be dimensionally compatible with the identified quantity kind.",
+    "statement": "This executable example checks that a sample-length quantity is represented with length dimensionality; it is not a universal equation solver.",
     "definitions": [
       "quantity: a property represented by a number and a reference",
       "quantity value: the number-reference pair expressing a quantity",
@@ -77,8 +77,8 @@
 }
 ---
 
-# SCI-COM-001 — Quantity, value, unit, and dimension
+# SCI-COM-001 — Narrow reviewed Foundation statement
 
-A physical quantity, its numerical value, its measurement unit, and its dimension are distinct semantic roles; a stated unit must be dimensionally compatible with the identified quantity kind.
+This executable example checks that a sample-length quantity is represented with length dimensionality; it is not a universal equation solver.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

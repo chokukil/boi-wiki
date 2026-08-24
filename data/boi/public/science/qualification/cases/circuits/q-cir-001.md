@@ -408,8 +408,8 @@
                 "value": "bound_node_reference"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_node_current_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "balance_context",
@@ -522,12 +522,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:001:unit_variation",
           "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:e3fe5d834de4ae0a98d830289e134f5854bdc0faaa0f24f13cf42a277d3dc787",
+          "document_digest": "sha256:bd6d5979673fef1bf2f3095f421a6da82a96af0dee7472ad233e952a96af6a00",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 128,
-            "exact": "The algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1000 milliampere.",
+            "end": 178,
+            "exact": "The algebraic current sum at the identified lumped-circuit node is 0 amperes. The current scale is recorded as 1000 milliampere. The same current scale is referenced as 1 ampere.",
             "prefix": "",
             "suffix": ""
           },
@@ -551,6 +551,11 @@
               {
                 "quantity_kind": "zero_current",
                 "value": 0,
+                "unit": "ampere"
+              },
+              {
+                "quantity_kind": "current_scale_reference",
+                "value": 1,
                 "unit": "ampere"
               }
             ],
@@ -848,12 +853,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:001:false_red_prevention",
           "document_ref": "qualification:circuits:001",
-          "document_digest": "sha256:fc97636c4ba66def931d57dce041de25c07dc9889e055c042890d47dbadacb63",
+          "document_digest": "sha256:a9b196c82d3e1337c2ffbe011d0a02f098444664a1045aa39c3c49d81c5370a4",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 232,
-            "exact": "When the node identity is outside this rule's required scope, the document states: The algebraic current sum at the identified lumped-circuit node is 1 ampere but is asserted to equal zero. The current scale is recorded as 1 ampere.",
+            "end": 149,
+            "exact": "Currents taken from multiple circuit nodes cannot be combined as the algebraic sum at one identified node. The current scale is recorded as 1 ampere.",
             "prefix": "",
             "suffix": ""
           },
@@ -895,7 +900,7 @@
               },
               {
                 "condition_id": "node_identity",
-                "value": "outside_bound_node_reference"
+                "value": "multiple_nodes"
               },
               {
                 "condition_id": "balance_context",

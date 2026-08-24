@@ -303,8 +303,8 @@
                 "value": "vacancy_dislocation_or_grain_boundary"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_defect_classification_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "material_structure",
@@ -395,12 +395,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:001:unit_variation",
           "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:b8197c7136375fcc271398c401a663eeef0821a72ad0fbe40849501a7f2f17e5",
+          "document_digest": "sha256:5f638470a4ec04228d8f63d7b380278181f207fd4e343d7a64fb93ff6ecdd007",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 155,
-            "exact": "Vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 0.001 micrometer.",
+            "end": 215,
+            "exact": "Vacancies, dislocation lines, and grain boundaries occupy distinct defect-dimensionality classes. The film thickness scale is recorded as 0.001 micrometer. The same film thickness scale is referenced as 1 nanometer.",
             "prefix": "",
             "suffix": ""
           },
@@ -415,6 +415,11 @@
                 "quantity_kind": "film_thickness_scale",
                 "value": "0.001",
                 "unit": "micrometer"
+              },
+              {
+                "quantity_kind": "film_thickness_scale_reference",
+                "value": 1,
+                "unit": "nanometer"
               }
             ],
             "conditions": [
@@ -633,12 +638,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:001:false_red_prevention",
           "document_ref": "qualification:materials:001",
-          "document_digest": "sha256:e71c2331480dbe3b7b431bdc6a5d339b8b16155eac9ef02af3a5e48a459bff04",
+          "document_digest": "sha256:a54b8664b596d2847d4559c71894d9d13aaa3f7c1efbbe44dc61228d0dfa9985",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 186,
-            "exact": "When the defect type is outside this rule's required scope, the document denies that crystal defect applies to defect dimensionality. The film thickness scale is recorded as 1 nanometer.",
+            "end": 141,
+            "exact": "A surface step is not classified here as a vacancy, dislocation line, or grain boundary. The film thickness scale is recorded as 1 nanometer.",
             "prefix": "",
             "suffix": ""
           },
@@ -658,7 +663,7 @@
             "conditions": [
               {
                 "condition_id": "defect_type",
-                "value": "outside_vacancy_dislocation_or_grain_boundary"
+                "value": "surface_step"
               },
               {
                 "condition_id": "material_structure",

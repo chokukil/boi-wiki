@@ -68,9 +68,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_work_energy_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -97,7 +97,14 @@
         "kinetic_energy_change"
       ],
       "operator": "equal"
-    }
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "energy_scale",
+        "quantity_kind": "energy_scale",
+        "reference_quantity_kind": "energy_scale_reference"
+      }
+    ]
   }
 }
 ---

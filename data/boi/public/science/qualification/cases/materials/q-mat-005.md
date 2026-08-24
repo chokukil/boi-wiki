@@ -343,8 +343,8 @@
                 "value": "same"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_thin_film_property_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "film_origin",
@@ -443,12 +443,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:005:unit_variation",
           "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:3d4562621da92891d6aedfacc03bd7ab90c3e2720c5179121df9eb1c4718345e",
+          "document_digest": "sha256:fe499b33d0750c953c8e721f177950557e632778b37bd3f745213f20997facc7",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 219,
-            "exact": "Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior. The film thickness scale is recorded as 0.001 micrometer.",
+            "end": 279,
+            "exact": "Even at the same chemical composition, a thin film's mechanical properties need not equal bulk properties because deposition conditions can change film behavior. The film thickness scale is recorded as 0.001 micrometer. The same film thickness scale is referenced as 1 nanometer.",
             "prefix": "",
             "suffix": ""
           },
@@ -463,6 +463,11 @@
                 "quantity_kind": "film_thickness_scale",
                 "value": "0.001",
                 "unit": "micrometer"
+              },
+              {
+                "quantity_kind": "film_thickness_scale_reference",
+                "value": 1,
+                "unit": "nanometer"
               }
             ],
             "conditions": [
@@ -713,12 +718,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:005:false_red_prevention",
           "document_ref": "qualification:materials:005",
-          "document_digest": "sha256:4caba1bb8e68936886e55ba28be3704444ebd15b0b86439ea080e8db2da89037",
+          "document_digest": "sha256:e7fd4292ac1854d9cb77ce13473c551d0a7d39f140288a1b0f951197efc55e09",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 211,
-            "exact": "When the comparison composition is outside this rule's required scope, the document states that bulk property transfer automatically equal thin film property. The film thickness scale is recorded as 1 nanometer.",
+            "end": 167,
+            "exact": "A bulk specimen and deposited thin film of different composition are reported to have equal mechanical properties. The film thickness scale is recorded as 1 nanometer.",
             "prefix": "",
             "suffix": ""
           },
@@ -746,7 +751,7 @@
               },
               {
                 "condition_id": "comparison_composition",
-                "value": "outside_same"
+                "value": "different"
               },
               {
                 "condition_id": "film_origin",

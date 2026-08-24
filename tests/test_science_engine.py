@@ -6,11 +6,9 @@ import pytest
 from pydantic import ValidationError
 
 from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
-from boi_api.app.science.engine import (
-    UnresolvedAmbiguityError,
-    _verify_resolved_claim as verify_claim,
-    verify_claim as verify_operational_claim,
-)
+from boi_api.app.science.engine import UnresolvedAmbiguityError
+from boi_api.app.science.engine import _verify_resolved_claim as verify_claim
+from boi_api.app.science.engine import verify_claim as verify_operational_claim
 from boi_api.app.science.exceptions import ScienceOperationalError
 from boi_api.app.science.models import (
     ClaimPacket,
@@ -33,7 +31,6 @@ from boi_api.app.science.units import (
     ureg,
     validate_quantity,
 )
-
 
 KNOWLEDGE_REF = "sci:knowledge:fixture"
 EVIDENCE_REF = "sci:evidence:fixture"
@@ -115,6 +112,7 @@ def rule_fixture(
     validity_conditions: dict[str, object] | list[dict[str, object]] | None = None,
     empirical_trigger_conditions: list[dict[str, object]] | None = None,
     context_dimensions: dict[str, str] | None = None,
+    quantity_equivalence_constraints: list[dict[str, object]] | None = None,
     expected_dimensions: dict[str, str] | None = None,
     equation: dict[str, object] | None = None,
     corrected_claim: str | None = None,
@@ -144,6 +142,7 @@ def rule_fixture(
         ),
         "empirical_trigger_conditions": empirical_trigger_conditions or [],
         "context_dimensions": context_dimensions or {},
+        "quantity_equivalence_constraints": quantity_equivalence_constraints or [],
         "expected_dimensions": expected_dimensions or {},
         "equation": equation,
         "knowledge_refs": [KNOWLEDGE_REF],
@@ -154,6 +153,42 @@ def rule_fixture(
     if kind == "directional_relation" or contradiction_predicates is not None:
         payload["contradiction_predicates"] = contradiction_predicates or []
     return VerificationRule.model_validate(payload)
+
+
+def test_rule_quantity_equivalence_rejects_unregistered_same_dimension_conversion_safely():
+    """An unreviewed conversion must not escape as an evaluator exception."""
+    rule = rule_fixture(
+        "sci:rule:closed-quantity-equivalence",
+        "directional_relation",
+        subject="sci:concept:input",
+        object_="sci:concept:response",
+        relation="monotonic_direction",
+        expected_predicate="decreases",
+        contradiction_predicates=["increases"],
+        quantity_equivalence_constraints=[
+            {
+                "scientific_role": "travel_distance",
+                "quantity_kind": "travel_distance",
+                "reference_quantity_kind": "travel_distance_reference",
+            }
+        ],
+    )
+    packet = claim_fixture(
+        "claim:unregistered-equivalent-unit",
+        subject="sci:concept:input",
+        relation="monotonic_direction",
+        predicate="decreases",
+        object_="sci:concept:response",
+        quantities=[
+            {"quantity_kind": "travel_distance", "value": 1000, "unit": "millimeter"},
+            {"quantity_kind": "travel_distance_reference", "value": 1, "unit": "meter"},
+        ],
+    )
+
+    evaluation = evaluate_rule(rule, packet.normalized_claim)
+
+    assert evaluation.applicability == "OUTSIDE_DOMAIN"
+    assert evaluation.reason_codes == ["UNREGISTERED_QUANTITY_EQUIVALENCE"]
 
 
 def test_rule_local_empirical_trigger_requires_measurement_instead_of_reusing_another_rule():
@@ -198,7 +233,15 @@ def test_rule_local_empirical_trigger_requires_measurement_instead_of_reusing_an
     assert empirical_evaluation.rule_id == rule.rule_id
     assert empirical_evaluation.applicability == "EMPIRICAL_ONLY"
     assert empirical_evaluation.outcome == "UNDECIDED"
-    assert empirical_evaluation.reason_codes == ["EMPIRICAL_TRIGGER_MATCHED"]
+    assert empirical_evaluation.reason_codes == ["QUALIFIED_OBSERVATION_REQUIRED"]
+
+    contradicted = equipment_specific.normalized_claim.model_copy(
+        update={"predicate": "increases"}
+    )
+    contradiction = evaluate_rule(rule, contradicted)
+    assert contradiction.applicability == "IN_SCOPE"
+    assert contradiction.outcome == "CONTRADICTS"
+    assert contradiction.reason_codes == ["RULE_CONTRADICTS"]
     assert empirical_evaluation.evidence_refs == [EVIDENCE_REF]
 
 
@@ -2326,8 +2369,8 @@ def test_logarithmic_and_unregistered_procedure_conversions_fail_explicitly():
     """Removing the kind gate would let Pint or an arbitrary procedure invent a conversion."""
     from boi_api.app.science.models import ConversionKind
     from boi_api.app.science.units import (
-        UnsupportedConversionError,
         UnregisteredConversionError,
+        UnsupportedConversionError,
         convert_value,
     )
 

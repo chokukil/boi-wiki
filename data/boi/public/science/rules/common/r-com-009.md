@@ -4,7 +4,7 @@
   "boi_profile_version": "0.1",
   "sci_profile_version": "0.1",
   "type": "boi/science-rule",
-  "title": "R-COM-009 Open-system balance",
+  "title": "R-COM-009 Material-particle mass invariance",
   "description": "AI-authored General Science Foundation draft; pending authorized Admin review",
   "tags": [
     "ScienceVerifier",
@@ -39,8 +39,8 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "rule_kind": "directional_relation",
     "inputs": [
-      "sci:concept:open-system-inventory",
-      "sci:concept:boundary-flow"
+      "sci:concept:material-particle-mass",
+      "sci:concept:material-particle-motion"
     ],
     "outcomes": [
       "VIOLATION",
@@ -48,26 +48,21 @@
       "INSUFFICIENT_INFORMATION",
       "OUTSIDE_VALIDITY_DOMAIN"
     ],
-    "subject_concept_id": "sci:concept:open-system-inventory",
-    "object_concept_id": "sci:concept:boundary-flow",
+    "subject_concept_id": "sci:concept:material-particle-mass",
+    "object_concept_id": "sci:concept:material-particle-motion",
     "relation_kind": "causal_relation",
     "required_conditions": [
       {
-        "key": "system_boundary_defined",
+        "key": "particle_identity",
         "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "balance_quantity",
-        "operator": "eq",
-        "value": "total_mass"
+        "value": "bounded_material_particle"
       }
     ],
     "validity_conditions": [
       {
-        "key": "flow_terms_accounted",
+        "key": "statement_scope",
         "operator": "eq",
-        "value": true
+        "value": "lagrangian_mass_invariance"
       }
     ],
     "knowledge_refs": [
@@ -84,16 +79,32 @@
       }
     ],
     "deterministic_evaluator": true,
-    "expected_predicate": "can_change_with_flow",
-    "contradiction_predicates": [
-      "must_remain_constant"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_009_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
     ],
-    "expected_polarity": "positive",
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "context_dimensions": {
+      "material_particle_mass": "kilogram"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "material_particle_mass",
+        "quantity_kind": "material_particle_mass",
+        "reference_quantity_kind": "material_particle_mass_reference"
+      }
+    ],
+    "expected_predicate": "remains_invariant",
+    "contradiction_predicates": [
+      "changes_with_motion"
+    ],
+    "expected_polarity": "positive"
   }
 }
 ---
-
-# R-COM-009 — Open-system balance
+# R-COM-009 — Material-particle mass invariance
 
 Closed evaluator: `directional_relation`. Candidate qualification only.

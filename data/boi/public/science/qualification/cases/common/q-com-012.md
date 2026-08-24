@@ -44,28 +44,34 @@
         "case_kind": "clear_violation",
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
-          "claim_id": "claim:common:012:clear-violation",
+          "claim_id": "claim:common:012:clear_violation",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-clear-violation",
+          "document_digest": "sha256:69e40e7757225a6c7b56250deb98e80ec9d770b7aa39adcccd98cd0b26624880",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 37,
-            "exact": "Foundation topic 012 clear-violation.",
+            "end": 121,
+            "exact": "An observed correlation by itself proves that one variable causes the other. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
             "relation_kind": "causal_relation",
-            "predicate": "proves",
+            "predicate": "implies",
             "object_concept_id": "sci:concept:causation",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "correlation_coefficient",
+                "value": 0.5,
+                "unit": "dimensionless"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "association_observed",
-                "value": true
+                "condition_id": "observed_relation_basis",
+                "value": "correlation_only"
               },
               {
                 "condition_id": "causal_evidence_basis",
@@ -85,24 +91,25 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises clear_violation for SCI-COM-012.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:correlation-causation"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:012"
       },
       {
         "case_id": "sci-case:common:012:in_scope_consistency",
         "case_kind": "in_scope_consistency",
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
-          "claim_id": "claim:common:012:in-scope-consistency",
+          "claim_id": "claim:common:012:in_scope_consistency",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-in-scope-consistency",
+          "document_digest": "sha256:2dafe7b3af66fa180e15914ff562324441df7023bacc619abd6465ca69aace62",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 012 in-scope-consistency.",
+            "end": 119,
+            "exact": "An observed correlation does not imply that one variable causes the other. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
@@ -112,11 +119,17 @@
             "predicate": "does_not_imply",
             "object_concept_id": "sci:concept:causation",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "correlation_coefficient",
+                "value": 0.5,
+                "unit": "dimensionless"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "association_observed",
-                "value": true
+                "condition_id": "observed_relation_basis",
+                "value": "correlation_only"
               },
               {
                 "condition_id": "causal_evidence_basis",
@@ -136,24 +149,25 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises in_scope_consistency for SCI-COM-012.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:correlation-causation"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:012"
       },
       {
         "case_id": "sci-case:common:012:missing_required_condition",
         "case_kind": "missing_required_condition",
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
-          "claim_id": "claim:common:012:missing-required-condition",
+          "claim_id": "claim:common:012:missing_required_condition",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-missing-required-condition",
+          "document_digest": "sha256:4b2d27df327f9105b88ae12f47ffd687f9684e2a68cc01de8fa7392c7bbd2c89",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 48,
-            "exact": "Foundation topic 012 missing-required-condition.",
+            "end": 186,
+            "exact": "Without specifying observed relation basis, the report states that an observed correlation does not imply that one variable causes the other. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
@@ -163,7 +177,13 @@
             "predicate": "does_not_imply",
             "object_concept_id": "sci:concept:causation",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "correlation_coefficient",
+                "value": 0.5,
+                "unit": "dimensionless"
+              }
+            ],
             "conditions": [
               {
                 "condition_id": "causal_evidence_basis",
@@ -183,24 +203,25 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "Exercises missing_required_condition for SCI-COM-012.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:correlation-causation"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:012"
       },
       {
         "case_id": "sci-case:common:012:outside_validity_domain",
         "case_kind": "outside_validity_domain",
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
-          "claim_id": "claim:common:012:outside-validity-domain",
+          "claim_id": "claim:common:012:outside_validity_domain",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-outside-validity-domain",
+          "document_digest": "sha256:3db5d45dbb69d71d8566185c07b5cd8688029cd5b90c1fa63c8f382e48145f2c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 45,
-            "exact": "Foundation topic 012 outside-validity-domain.",
+            "end": 190,
+            "exact": "In a different scientific context, the report nevertheless states that an observed correlation does not imply that one variable causes the other. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
@@ -210,15 +231,21 @@
             "predicate": "does_not_imply",
             "object_concept_id": "sci:concept:causation",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "correlation_coefficient",
+                "value": 0.5,
+                "unit": "dimensionless"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "association_observed",
-                "value": true
+                "condition_id": "observed_relation_basis",
+                "value": "correlation_only"
               },
               {
                 "condition_id": "causal_evidence_basis",
-                "value": "__outside__"
+                "value": "different_scientific_context"
               }
             ],
             "process_stage": null,
@@ -234,46 +261,53 @@
           }
         },
         "expected_verdict": "OUTSIDE_VALIDITY_DOMAIN",
-        "rationale": "Exercises outside_validity_domain for SCI-COM-012.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:correlation-causation"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:012"
       },
       {
         "case_id": "sci-case:common:012:empirical_verification_required",
         "case_kind": "empirical_verification_required",
-        "evaluation_rule_id": "sci-rule:common:008",
+        "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
-          "claim_id": "claim:common:012:empirical-verification-required",
+          "claim_id": "claim:common:012:empirical_verification_required",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-empirical-verification-required",
+          "document_digest": "sha256:4ea9852c5f198729417594d7a5cf78e5c4c74919d95da1bd5418cbff2901334b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 53,
-            "exact": "Foundation topic 012 empirical-verification-required.",
+            "end": 203,
+            "exact": "For a named realization, the report asserts that an observed correlation does not imply that one variable causes the other. No qualified observation is bound. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
-            "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "subject_concept_id": "sci:concept:correlation",
+            "relation_kind": "causal_relation",
+            "predicate": "does_not_imply",
+            "object_concept_id": "sci:concept:causation",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "correlation_coefficient",
+                "value": 0.5,
+                "unit": "dimensionless"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
+                "condition_id": "observed_relation_basis",
+                "value": "correlation_only"
               },
               {
-                "condition_id": "model_basis",
-                "value": "theoretical"
+                "condition_id": "causal_evidence_basis",
+                "value": "correlation_only"
               },
               {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "condition_id": "requested_foundation_012_qualified_observation",
+                "value": "unqualified_observation"
               }
             ],
             "process_stage": null,
@@ -288,10 +322,11 @@
           }
         },
         "expected_verdict": "EMPIRICAL_VERIFICATION_REQUIRED",
-        "rationale": "A topic-specific application claim stops for a qualified empirical observation.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
-          "sci-evidence:common:model-validity"
-        ]
+          "sci-evidence:common:correlation-causation"
+        ],
+        "matrix_rule_id": "sci-rule:common:012"
       },
       {
         "case_id": "sci-case:common:012:negation",
@@ -300,12 +335,12 @@
         "claim_packet": {
           "claim_id": "claim:common:012:negation",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-negation",
+          "document_digest": "sha256:89d58b7fbcb3e0c4da2f551e9cb5da132cbfbd042b341239cdd87686defe3ec4",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 30,
-            "exact": "Foundation topic 012 negation.",
+            "end": 139,
+            "exact": "It is not true that an observed correlation does not imply that one variable causes the other. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
@@ -315,11 +350,17 @@
             "predicate": "does_not_imply",
             "object_concept_id": "sci:concept:causation",
             "polarity": "negative",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "correlation_coefficient",
+                "value": 0.5,
+                "unit": "dimensionless"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "association_observed",
-                "value": true
+                "condition_id": "observed_relation_basis",
+                "value": "correlation_only"
               },
               {
                 "condition_id": "causal_evidence_basis",
@@ -339,24 +380,25 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises negation for SCI-COM-012.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:correlation-causation"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:012"
       },
       {
         "case_id": "sci-case:common:012:unit_variation",
         "case_kind": "unit_variation",
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
-          "claim_id": "claim:common:012:unit-variation",
+          "claim_id": "claim:common:012:unit_variation",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-unit-variation",
+          "document_digest": "sha256:c022c77dd232f8334a77b56dfc51f93894e7ca71bcfac595082a3b1a5beecc06",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 36,
-            "exact": "Foundation topic 012 unit-variation.",
+            "end": 155,
+            "exact": "An observed correlation does not imply that one variable causes the other. The same correlation coefficient is written as 50 percent and 0.5 dimensionless.",
             "prefix": "",
             "suffix": ""
           },
@@ -368,15 +410,20 @@
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "unit_probe",
-                "value": 100,
-                "unit": "cm"
+                "quantity_kind": "correlation_coefficient",
+                "value": 50,
+                "unit": "percent"
+              },
+              {
+                "quantity_kind": "correlation_coefficient_reference",
+                "value": 0.5,
+                "unit": "dimensionless"
               }
             ],
             "conditions": [
               {
-                "condition_id": "association_observed",
-                "value": true
+                "condition_id": "observed_relation_basis",
+                "value": "correlation_only"
               },
               {
                 "condition_id": "causal_evidence_basis",
@@ -396,36 +443,37 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises unit_variation for SCI-COM-012.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:correlation-causation"
         ],
         "unit_equivalence": [
           {
-            "quantity_kind": "unit_probe",
-            "value": 1,
-            "unit": "m"
+            "quantity_kind": "correlation_coefficient",
+            "value": 0.5,
+            "unit": "dimensionless"
           },
           {
-            "quantity_kind": "unit_probe",
-            "value": 100,
-            "unit": "cm"
+            "quantity_kind": "correlation_coefficient",
+            "value": 50,
+            "unit": "percent"
           }
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:012"
       },
       {
         "case_id": "sci-case:common:012:decision_changing_ambiguity",
         "case_kind": "decision_changing_ambiguity",
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
-          "claim_id": "claim:common:012:decision-changing-ambiguity",
+          "claim_id": "claim:common:012:decision_changing_ambiguity",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-decision-changing-ambiguity",
+          "document_digest": "sha256:faf728d6a8c0076d0e43ed65657dadc78f4d76080e65ac6de96e272d33b85caf",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 49,
-            "exact": "Foundation topic 012 decision-changing-ambiguity.",
+            "end": 250,
+            "exact": "The wording leaves unresolved whether 'An observed correlation does not imply that one variable causes the other.' or instead 'An observed correlation by itself proves that one variable causes the other.'. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
@@ -435,11 +483,17 @@
             "predicate": "does_not_imply",
             "object_concept_id": "sci:concept:causation",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "correlation_coefficient",
+                "value": 0.5,
+                "unit": "dimensionless"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "association_observed",
-                "value": true
+                "condition_id": "observed_relation_basis",
+                "value": "correlation_only"
               },
               {
                 "condition_id": "causal_evidence_basis",
@@ -461,33 +515,39 @@
           }
         },
         "expected_gate": "ambiguity_gate",
-        "rationale": "Two interpretations produce different candidate verdicts, so interpretation stops.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:correlation-causation"
         ],
         "alternative_claim_packet": {
-          "claim_id": "claim:common:012:decision-changing-alternative",
+          "claim_id": "claim:common:012:decision_changing_ambiguity:alternative",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-decision-changing-alternative",
+          "document_digest": "sha256:faf728d6a8c0076d0e43ed65657dadc78f4d76080e65ac6de96e272d33b85caf",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 51,
-            "exact": "Foundation topic 012 decision-changing-alternative.",
+            "end": 250,
+            "exact": "The wording leaves unresolved whether 'An observed correlation does not imply that one variable causes the other.' or instead 'An observed correlation by itself proves that one variable causes the other.'. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:correlation",
             "relation_kind": "causal_relation",
-            "predicate": "proves",
+            "predicate": "implies",
             "object_concept_id": "sci:concept:causation",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "correlation_coefficient",
+                "value": 0.5,
+                "unit": "dimensionless"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "association_observed",
-                "value": true
+                "condition_id": "observed_relation_basis",
+                "value": "correlation_only"
               },
               {
                 "condition_id": "causal_evidence_basis",
@@ -507,7 +567,9 @@
             ],
             "user_confirmed": false
           }
-        }
+        },
+        "matrix_rule_id": "sci-rule:common:012",
+        "expected_verdict": "INSUFFICIENT_INFORMATION"
       },
       {
         "case_id": "sci-case:common:012:paraphrase",
@@ -516,12 +578,12 @@
         "claim_packet": {
           "claim_id": "claim:common:012:paraphrase",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-paraphrase",
+          "document_digest": "sha256:a3a28e797da649bd8f68e860e1376d2914f6a1ae8b18b9df345875ffb33a23f0",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 32,
-            "exact": "Foundation topic 012 paraphrase.",
+            "end": 167,
+            "exact": "In equivalent wording, the document states that an observed correlation does not imply that one variable causes the other. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
@@ -531,11 +593,17 @@
             "predicate": "does_not_imply",
             "object_concept_id": "sci:concept:causation",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "correlation_coefficient",
+                "value": 0.5,
+                "unit": "dimensionless"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "association_observed",
-                "value": true
+                "condition_id": "observed_relation_basis",
+                "value": "correlation_only"
               },
               {
                 "condition_id": "causal_evidence_basis",
@@ -555,38 +623,45 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises paraphrase for SCI-COM-012.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:correlation-causation"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:012"
       },
       {
         "case_id": "sci-case:common:012:false_red_prevention",
         "case_kind": "false_red_prevention",
         "evaluation_rule_id": "sci-rule:common:012",
         "claim_packet": {
-          "claim_id": "claim:common:012:false-red-prevention",
+          "claim_id": "claim:common:012:false_red_prevention",
           "document_ref": "qualification:common:012",
-          "document_digest": "sha256:task2-012-false-red-prevention",
+          "document_digest": "sha256:06d893984467a9b046c449e5bcfdd6d9a9b3449a22dee52f2637df5ef1737425",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 012 false-red-prevention.",
+            "end": 162,
+            "exact": "A broad association without a quantified correlation is not silently treated as the correlation premise of this rule. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:unsupported:12",
+            "subject_concept_id": "sci:concept:correlation",
             "relation_kind": "causal_relation",
-            "predicate": "does_not_imply",
+            "predicate": "implies",
             "object_concept_id": "sci:concept:causation",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "correlation_coefficient",
+                "value": 0.5,
+                "unit": "dimensionless"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "association_observed",
-                "value": true
+                "condition_id": "observed_relation_basis",
+                "value": "association_without_quantified_correlation"
               },
               {
                 "condition_id": "causal_evidence_basis",
@@ -606,17 +681,17 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "A neighboring unsupported concept remains nondecisive.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:correlation-causation"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:012"
       }
     ],
     "release_eligibility": "blocked_pending_authorized_admin_review"
   }
 }
 ---
-
 # Q-COM-012
 
 Ten public cases exercise the required qualification kinds against candidate rules only. Synthetic observation fixtures are labeled and never enter operational evidence.

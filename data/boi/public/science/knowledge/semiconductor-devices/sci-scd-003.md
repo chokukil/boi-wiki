@@ -4,7 +4,7 @@
   "boi_profile_version": "0.1",
   "sci_profile_version": "0.1",
   "type": "boi/science-knowledge",
-  "title": "SCI-SCD-003 Doping, mobility, and conductivity",
+  "title": "SCI-SCD-003 Low-field carrier conductivity",
   "description": "Atomic domain Knowledge draft pending authorized Admin review",
   "tags": [
     "ScienceVerifier",
@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:semiconductor-devices/0.1.0",
     "knowledge_kind": "conditional_relation",
     "assurance_basis": "hypothesis",
-    "statement": "In the low-field relation, conductivity depends on carrier concentrations and mobilities, so doping alone does not determine the direction of conductivity change unless those state parameters are known.",
+    "statement": "In the cited low-field relation, semiconductor conductivity is σ = qnµn + qpµp and therefore depends on the bound electron and hole concentrations and mobilities.",
     "assumptions": [
       "All Rule conditions for sci-rule:semiconductor-devices:003 are checked before any decision."
     ],
@@ -68,8 +68,8 @@
 }
 ---
 
-# SCI-SCD-003 — Doping, mobility, and conductivity
+# SCI-SCD-003 Low-field carrier conductivity
 
-In the low-field relation, conductivity depends on carrier concentrations and mobilities, so doping alone does not determine the direction of conductivity change unless those state parameters are known.
+In the cited low-field relation, semiconductor conductivity is σ = qnµn + qpµp and therefore depends on the bound electron and hole concentrations and mobilities.
 
 Candidate-only draft; authorized Admin review is absent.

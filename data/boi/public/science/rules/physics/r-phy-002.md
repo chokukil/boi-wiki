@@ -73,9 +73,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_momentum_response_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -91,7 +91,7 @@
       {
         "evidence_ref": "sci-evidence:physics:force-momentum",
         "claim_family": "locator_bound.physics.force_momentum",
-        "purpose": "We conclude that the external force causes the momentum of the system to change, and we thus restate and generalize Newton’s Second Law for a system of objects."
+        "purpose": "We conclude that the external force causes the momentum of the system to change, and we thus restate and generalize Newton’s Second Law for a system of objects as"
       }
     ],
     "deterministic_evaluator": true,
@@ -100,11 +100,17 @@
     "contradiction_predicates": [
       "cannot_change"
     ],
-    "expected_polarity": "positive"
+    "expected_polarity": "positive",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "net_force",
+        "quantity_kind": "net_force",
+        "reference_quantity_kind": "net_force_reference"
+      }
+    ]
   }
 }
 ---
-
 # R-PHY-002 — External force changes system momentum
 
 Closed evaluator: `directional_relation`. Candidate qualification only.

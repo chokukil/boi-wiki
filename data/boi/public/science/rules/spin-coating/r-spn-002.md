@@ -4,7 +4,7 @@
   "boi_profile_version": "0.1",
   "sci_profile_version": "0.1",
   "type": "boi/science-rule",
-  "title": "R-SPN-002 Emslie-style ideal-model assumptions",
+  "title": "R-SPN-002 Model validation-domain record requirement",
   "description": "Closed deterministic Rule draft pending authorized Admin review",
   "tags": [
     "ScienceVerifier",
@@ -39,8 +39,8 @@
     "pack_id": "sci-pack:spin-coating/0.1.0",
     "rule_kind": "validity_domain",
     "inputs": [
-      "sci:concept:emslie-style-spin-model",
-      "sci:concept:intended-use"
+      "sci:concept:model-validation-domain-record",
+      "sci:concept:record-maintenance"
     ],
     "outcomes": [
       "VIOLATION",
@@ -49,37 +49,37 @@
       "OUTSIDE_VALIDITY_DOMAIN",
       "EMPIRICAL_VERIFICATION_REQUIRED"
     ],
-    "subject_concept_id": "sci:concept:emslie-style-spin-model",
-    "object_concept_id": "sci:concept:intended-use",
-    "relation_kind": "equation",
+    "subject_concept_id": "sci:concept:model-validation-domain-record",
+    "object_concept_id": "sci:concept:record-maintenance",
+    "relation_kind": "empirical_relation",
     "required_conditions": [
       {
-        "key": "model_assumption_set",
+        "key": "model_identity",
         "operator": "eq",
-        "value": "bound_assumption_record"
+        "value": "named_model"
       },
       {
-        "key": "validation_domain_ref",
+        "key": "validation_record_scope",
         "operator": "eq",
-        "value": "bound_science_knowledge"
+        "value": "same_model"
       }
     ],
     "validity_conditions": [
       {
-        "key": "intended_use",
+        "key": "record_maintenance_context",
         "operator": "eq",
-        "value": "inside_recorded_domain"
+        "value": "model_validation"
       }
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_model_validation_record_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
-      "film_thickness_scale": "nanometer"
+      "validation_domain_temperature_limit": "kelvin"
     },
     "knowledge_refs": [
       "sci:spin-coating:002"
@@ -91,15 +91,22 @@
       {
         "evidence_ref": "sci-evidence:common:model-validity",
         "claim_family": "locator_bound.common.model_validity",
-        "purpose": "A record of the domain of validation of the M&S shall be maintained."
+        "purpose": "A record of the domain of validation of the validated M&S shall be maintained."
       }
     ],
     "deterministic_evaluator": true,
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "validation_domain_temperature_limit",
+        "quantity_kind": "validation_domain_temperature_limit",
+        "reference_quantity_kind": "validation_domain_temperature_limit_reference"
+      }
+    ]
   }
 }
 ---
 
-# R-SPN-002 — Emslie-style ideal-model assumptions
+# R-SPN-002 — Model validation-domain record requirement
 
 Closed evaluator: `validity_domain`. Candidate qualification only.

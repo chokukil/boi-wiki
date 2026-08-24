@@ -368,8 +368,8 @@
                 "value": "bound_closed_path"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_loop_voltage_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "circuit_context",
@@ -474,12 +474,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:002:unit_variation",
           "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:d9e6914f5971b44889efd830e334109a1e0a3c927e06adfedc10ec8efa8ac35e",
+          "document_digest": "sha256:b6e2e246d7bf81b7f28e8c4ddd531587c3811679ae409ccd4221f264a9ee0ed6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 125,
-            "exact": "The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1000 millivolt.",
+            "end": 173,
+            "exact": "The algebraic voltage sum around the defined lumped-circuit loop is 0 volts. The voltage scale is recorded as 1000 millivolt. The same voltage scale is referenced as 1 volt.",
             "prefix": "",
             "suffix": ""
           },
@@ -503,6 +503,11 @@
               {
                 "quantity_kind": "zero_voltage",
                 "value": 0,
+                "unit": "volt"
+              },
+              {
+                "quantity_kind": "voltage_scale_reference",
+                "value": 1,
                 "unit": "volt"
               }
             ],
@@ -768,12 +773,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:002:false_red_prevention",
           "document_ref": "qualification:circuits:002",
-          "document_digest": "sha256:f0cd514624c86e4b015cce5933eb436c3eded775da6f639c4fdd7b0b264ae7ae",
+          "document_digest": "sha256:89b714baf7e0bc170d4eb16eaadd9efe00e62c83eb0e40e049d159b38934c57a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 226,
-            "exact": "When the loop path is outside this rule's required scope, the document states: The algebraic voltage sum around the defined lumped-circuit loop is 2 volts but is asserted to equal zero. The voltage scale is recorded as 1 volt.",
+            "end": 132,
+            "exact": "Voltages along an open circuit path are not the algebraic sum around a defined closed loop. The voltage scale is recorded as 1 volt.",
             "prefix": "",
             "suffix": ""
           },
@@ -807,7 +812,7 @@
               },
               {
                 "condition_id": "loop_path",
-                "value": "outside_bound_closed_path"
+                "value": "open_path"
               },
               {
                 "condition_id": "circuit_context",

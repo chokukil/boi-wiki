@@ -303,8 +303,8 @@
                 "value": "angular_speed"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_angular_speed_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "motion_context",
@@ -395,12 +395,12 @@
         "claim_packet": {
           "claim_id": "claim:physics:001:unit_variation",
           "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:d4347822a049eb81946ab58a950142fe93dffa4bb63b99b04e608c7a825cfd50",
+          "document_digest": "sha256:fcbcf555b5aa4d4dd47f37bfdc9797615b10a17ebaa5226267b11b4f399ae52d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 130,
-            "exact": "Angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 0.001 radian / millisecond.",
+            "end": 188,
+            "exact": "Angular speed is the magnitude of an angle's rate of change with time. The angular rate is recorded as 0.001 radian / millisecond. The same angular rate is referenced as 1 radian / second.",
             "prefix": "",
             "suffix": ""
           },
@@ -415,6 +415,11 @@
                 "quantity_kind": "angular_rate",
                 "value": "0.001",
                 "unit": "radian / millisecond"
+              },
+              {
+                "quantity_kind": "angular_rate_reference",
+                "value": 1,
+                "unit": "radian / second"
               }
             ],
             "conditions": [
@@ -633,12 +638,12 @@
         "claim_packet": {
           "claim_id": "claim:physics:001:false_red_prevention",
           "document_ref": "qualification:physics:001",
-          "document_digest": "sha256:fa1fd0ca85de6dfeee705e666f79c1505811d9abde626e5dd0ada2260eafcf49",
+          "document_digest": "sha256:8bad95045be4a3447e43fb23674e33e45bba198c07b5f01b1cefae99d7918513",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 174,
-            "exact": "When the quantity role is outside this rule's required scope, the document denies that angular speed applies to angle rate. The angular rate is recorded as 1 radian / second.",
+            "end": 135,
+            "exact": "A linear-velocity quantity along a straight path is not an angular-speed angle rate. The angular rate is recorded as 1 radian / second.",
             "prefix": "",
             "suffix": ""
           },
@@ -658,7 +663,7 @@
             "conditions": [
               {
                 "condition_id": "quantity_role",
-                "value": "outside_angular_speed"
+                "value": "linear_velocity"
               },
               {
                 "condition_id": "motion_context",

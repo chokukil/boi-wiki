@@ -4,7 +4,7 @@
   "boi_profile_version": "0.1",
   "sci_profile_version": "0.1",
   "type": "boi/science-knowledge",
-  "title": "SCI-SPN-002 Emslie-style ideal-model assumptions",
+  "title": "SCI-SPN-002 Model validation-domain record",
   "description": "Atomic domain Knowledge draft pending authorized Admin review",
   "tags": [
     "ScienceVerifier",
@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:spin-coating/0.1.0",
     "knowledge_kind": "conditional_relation",
     "assurance_basis": "hypothesis",
-    "statement": "An Emslie-style ideal spin model may be considered only after its assumptions and validation domain are explicitly recorded; the inaccessible abstract is excluded from decision evidence.",
+    "statement": "A record of the validation domain of the validated model or simulation shall be maintained; this requirement does not itself establish validity for a proposed use.",
     "assumptions": [
       "All Rule conditions for sci-rule:spin-coating:002 are checked before any decision."
     ],
@@ -67,13 +67,13 @@
     "excluded_evidence_refs": [
       "sci-evidence:spin-coating:emslie-model"
     ],
-    "exclusion_reason": "The cited historical source is inactive because only an access-limited abstract was reviewed; it cannot support a decision."
+    "exclusion_reason": "The cited historical source remains inactive because only an access-limited abstract was reviewed; the narrowed record-maintenance rule does not use it as decision evidence."
   }
 }
 ---
 
-# SCI-SPN-002 — Emslie-style ideal-model assumptions
+# SCI-SPN-002 Model validation-domain record
 
-An Emslie-style ideal spin model may be considered only after its assumptions and validation domain are explicitly recorded; the inaccessible abstract is excluded from decision evidence.
+A record of the validation domain of the validated model or simulation shall be maintained; this requirement does not itself establish validity for a proposed use.
 
 Candidate-only draft; authorized Admin review is absent.

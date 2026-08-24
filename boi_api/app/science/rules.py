@@ -20,13 +20,13 @@ from boi_api.app.science.models import (
 )
 from boi_api.app.science.units import (
     IncompatibleDimensionsError,
+    UnregisteredConversionError,
     canonical_unit_token,
-    compare_quantities,
     comparable_values,
+    compare_quantities,
     expected_dimensionality,
     validate_quantity,
 )
-
 
 ConditionValue: TypeAlias = str | int | float | bool | None
 
@@ -45,6 +45,42 @@ class EquationConstraint(ScienceModel):
         if len(self.right_quantity_kinds) != expected:
             raise ValueError(f"{self.operator} requires {expected} right quantities")
         return self
+
+
+class QuantityEquivalenceConstraint(ScienceModel):
+    """Two claim operands that must express one scientific quantity."""
+
+    scientific_role: str = Field(min_length=1)
+    quantity_kind: str = Field(min_length=1)
+    reference_quantity_kind: str = Field(min_length=1)
+    interval: bool = False
+
+    @model_validator(mode="after")
+    def distinct_operands(self) -> "QuantityEquivalenceConstraint":
+        if self.quantity_kind == self.reference_quantity_kind:
+            raise ValueError("quantity equivalence operands must be distinct")
+        return self
+
+
+class ArrheniusDirectionConstraint(ScienceModel):
+    """Typed operands for the positive-activation-energy temperature direction."""
+
+    activation_energy_kind: str
+    temperature_before_kind: str
+    temperature_after_kind: str
+    diffusivity_before_kind: str
+    diffusivity_after_kind: str
+
+
+class CarrierConductivityConstraint(ScienceModel):
+    """Typed operands for sigma = q(n mu_n + p mu_p)."""
+
+    electron_concentration_kind: str
+    hole_concentration_kind: str
+    electron_mobility_kind: str
+    hole_mobility_kind: str
+    conductivity_kind: str
+    relative_tolerance: Decimal = Field(default=Decimal("1e-12"), ge=0)
 
 
 class QualifiedObservation(ScienceModel):
@@ -87,6 +123,11 @@ class VerificationRule(ScienceModel):
     validity_conditions: list[ConditionConstraint] = Field(default_factory=list)
     empirical_trigger_conditions: list[ConditionConstraint] = Field(default_factory=list)
     context_dimensions: dict[str, str] = Field(default_factory=dict)
+    quantity_equivalence_constraints: list[QuantityEquivalenceConstraint] = Field(
+        default_factory=list
+    )
+    arrhenius_direction_constraint: ArrheniusDirectionConstraint | None = None
+    carrier_conductivity_constraint: CarrierConductivityConstraint | None = None
     expected_dimensions: dict[str, str] = Field(default_factory=dict)
     equation: EquationConstraint | None = None
     knowledge_refs: list[str] = Field(min_length=1)
@@ -118,6 +159,16 @@ class VerificationRule(ScienceModel):
         ]
         if len(condition_keys) != len(set(condition_keys)):
             raise ValueError("condition constraint keys must be unique across a rule")
+        equivalence_operands = [
+            operand
+            for constraint in self.quantity_equivalence_constraints
+            for operand in (
+                constraint.quantity_kind,
+                constraint.reference_quantity_kind,
+            )
+        ]
+        if len(equivalence_operands) != len(set(equivalence_operands)):
+            raise ValueError("quantity equivalence operands must be unique across a rule")
         if (
             self.rule_kind is not RuleKind.DIRECTIONAL_RELATION
             and "expected_polarity" in self.model_fields_set
@@ -414,6 +465,196 @@ def _base_evaluation(
     )
 
 
+def _missing_quantity_evaluation(
+    rule: VerificationRule,
+    claim: NormalizedClaim,
+    reason_code: str,
+    conditions: list[ConditionEvaluation],
+) -> DetailedRuleEvaluation:
+    return _base_evaluation(
+        rule,
+        claim,
+        applicability="MISSING_CONDITIONS",
+        outcome="UNDECIDED",
+        reason_codes=[reason_code],
+        conditions=conditions,
+    )
+
+
+def _outside_quantity_evaluation(
+    rule: VerificationRule,
+    claim: NormalizedClaim,
+    reason_code: str,
+    conditions: list[ConditionEvaluation],
+) -> DetailedRuleEvaluation:
+    return _base_evaluation(
+        rule,
+        claim,
+        applicability="OUTSIDE_DOMAIN",
+        outcome="UNDECIDED",
+        reason_codes=[reason_code],
+        conditions=conditions,
+    )
+
+
+def _quantity_constraint_gate(
+    rule: VerificationRule,
+    claim: NormalizedClaim,
+    conditions: list[ConditionEvaluation],
+) -> DetailedRuleEvaluation | None:
+    quantities = {quantity.quantity_kind: quantity for quantity in claim.quantities}
+
+    for constraint in rule.quantity_equivalence_constraints:
+        reference = quantities.get(constraint.reference_quantity_kind)
+        if reference is None:
+            continue
+        quantity = quantities.get(constraint.quantity_kind)
+        if quantity is None:
+            return _missing_quantity_evaluation(
+                rule,
+                claim,
+                "INCOMPLETE_QUANTITY_EQUIVALENCE",
+                conditions,
+            )
+        try:
+            equivalent = compare_quantities(
+                quantity,
+                reference,
+                interval=constraint.interval,
+            ) == 0
+        except UnregisteredConversionError:
+            return _outside_quantity_evaluation(
+                rule,
+                claim,
+                "UNREGISTERED_QUANTITY_EQUIVALENCE",
+                conditions,
+            )
+        except IncompatibleDimensionsError:
+            equivalent = False
+        if not equivalent:
+            return _outside_quantity_evaluation(
+                rule,
+                claim,
+                "QUANTITY_EQUIVALENCE_MISMATCH",
+                conditions,
+            )
+
+    if rule.arrhenius_direction_constraint is not None:
+        constraint = rule.arrhenius_direction_constraint
+        kinds = (
+            constraint.activation_energy_kind,
+            constraint.temperature_before_kind,
+            constraint.temperature_after_kind,
+            constraint.diffusivity_before_kind,
+            constraint.diffusivity_after_kind,
+        )
+        if any(kind not in quantities for kind in kinds):
+            return _missing_quantity_evaluation(
+                rule,
+                claim,
+                "MISSING_ARRHENIUS_QUANTITIES",
+                conditions,
+            )
+        activation_energy = quantities[constraint.activation_energy_kind]
+        temperature_before = quantities[constraint.temperature_before_kind]
+        temperature_after = quantities[constraint.temperature_after_kind]
+        diffusivity_before = quantities[constraint.diffusivity_before_kind]
+        diffusivity_after = quantities[constraint.diffusivity_after_kind]
+        try:
+            activation_is_positive = compare_quantities(
+                activation_energy,
+                {
+                    "quantity_kind": constraint.activation_energy_kind,
+                    "value": 0,
+                    "unit": activation_energy.unit,
+                },
+            ) > 0
+            temperature_increases = compare_quantities(
+                temperature_after, temperature_before
+            ) > 0
+            diffusivity_increases = compare_quantities(
+                diffusivity_after, diffusivity_before
+            ) > 0
+        except IncompatibleDimensionsError:
+            activation_is_positive = temperature_increases = diffusivity_increases = False
+        if not (
+            activation_is_positive and temperature_increases and diffusivity_increases
+        ):
+            return _outside_quantity_evaluation(
+                rule,
+                claim,
+                "ARRHENIUS_CROSS_FIELD_MISMATCH",
+                conditions,
+            )
+
+    if rule.carrier_conductivity_constraint is not None:
+        constraint = rule.carrier_conductivity_constraint
+        kinds = (
+            constraint.electron_concentration_kind,
+            constraint.hole_concentration_kind,
+            constraint.electron_mobility_kind,
+            constraint.hole_mobility_kind,
+            constraint.conductivity_kind,
+        )
+        if any(kind not in quantities for kind in kinds):
+            return _missing_quantity_evaluation(
+                rule,
+                claim,
+                "MISSING_CARRIER_CONDUCTIVITY_QUANTITIES",
+                conditions,
+            )
+        normalized = {
+            kind: validate_quantity(quantities[kind])
+            for kind in kinds
+        }
+        required_dimensions = {
+            constraint.electron_concentration_kind: expected_dimensionality(
+                "1 / meter ** 3"
+            ),
+            constraint.hole_concentration_kind: expected_dimensionality(
+                "1 / meter ** 3"
+            ),
+            constraint.electron_mobility_kind: expected_dimensionality(
+                "meter ** 2 / volt / second"
+            ),
+            constraint.hole_mobility_kind: expected_dimensionality(
+                "meter ** 2 / volt / second"
+            ),
+            constraint.conductivity_kind: expected_dimensionality(
+                "siemens / meter"
+            ),
+        }
+        if any(
+            normalized[kind].dimensionality != dimension
+            for kind, dimension in required_dimensions.items()
+        ):
+            return _outside_quantity_evaluation(
+                rule,
+                claim,
+                "CARRIER_CONDUCTIVITY_DIMENSION_MISMATCH",
+                conditions,
+            )
+        elementary_charge = Decimal("1.602176634e-19")
+        expected_conductivity = elementary_charge * (
+            normalized[constraint.electron_concentration_kind].magnitude
+            * normalized[constraint.electron_mobility_kind].magnitude
+            + normalized[constraint.hole_concentration_kind].magnitude
+            * normalized[constraint.hole_mobility_kind].magnitude
+        )
+        actual_conductivity = normalized[constraint.conductivity_kind].magnitude
+        scale = max(abs(expected_conductivity), Decimal("1e-30"))
+        if abs(actual_conductivity - expected_conductivity) > (
+            constraint.relative_tolerance * scale
+        ):
+            return _outside_quantity_evaluation(
+                rule,
+                claim,
+                "CARRIER_CONDUCTIVITY_MISMATCH",
+                conditions,
+            )
+    return None
+
+
 def _applicability_gate(
     rule: VerificationRule, claim: NormalizedClaim
 ) -> DetailedRuleEvaluation | tuple[list[ConditionEvaluation], list[ConditionEvaluation]]:
@@ -515,33 +756,9 @@ def _applicability_gate(
             reason_codes=["CONTEXT_DIMENSION_MISMATCH"],
             conditions=required + validity,
         )
-    if rule.empirical_trigger_conditions:
-        actual = _claim_values(claim)
-        provided = [
-            constraint.key
-            for constraint in rule.empirical_trigger_conditions
-            if constraint.key in actual and actual[constraint.key].value is not None
-        ]
-        if provided:
-            empirical = _condition_evaluations(rule.empirical_trigger_conditions, claim)
-            if len(provided) != len(rule.empirical_trigger_conditions):
-                return _base_evaluation(
-                    rule,
-                    claim,
-                    applicability="MISSING_CONDITIONS",
-                    outcome="UNDECIDED",
-                    reason_codes=["INCOMPLETE_EMPIRICAL_TRIGGER"],
-                    conditions=required + validity + empirical,
-                )
-            if all(item.satisfied for item in empirical):
-                return _base_evaluation(
-                    rule,
-                    claim,
-                    applicability="EMPIRICAL_ONLY",
-                    outcome="UNDECIDED",
-                    reason_codes=["EMPIRICAL_TRIGGER_MATCHED"],
-                    conditions=required + validity + empirical,
-                )
+    quantity_gate = _quantity_constraint_gate(rule, claim, required + validity)
+    if quantity_gate is not None:
+        return quantity_gate
     return required, validity
 
 
@@ -757,6 +974,58 @@ RULE_EVALUATORS: dict[RuleKind, RuleEvaluator] = {
 }
 
 
+def _apply_empirical_requirement(
+    rule: VerificationRule,
+    claim: NormalizedClaim,
+    evaluation: DetailedRuleEvaluation,
+    qualified_observations: tuple[QualifiedObservation, ...],
+) -> DetailedRuleEvaluation:
+    """Require a bound observation only after deterministic contradictions survive."""
+
+    if (
+        not rule.empirical_trigger_conditions
+        or evaluation.applicability != "IN_SCOPE"
+        or evaluation.outcome == "CONTRADICTS"
+    ):
+        return evaluation
+    actual = _claim_values(claim)
+    provided = [
+        constraint.key
+        for constraint in rule.empirical_trigger_conditions
+        if constraint.key in actual and actual[constraint.key].value is not None
+    ]
+    if not provided:
+        return evaluation
+    empirical = _condition_evaluations(rule.empirical_trigger_conditions, claim)
+    if len(provided) != len(rule.empirical_trigger_conditions):
+        return _base_evaluation(
+            rule,
+            claim,
+            applicability="MISSING_CONDITIONS",
+            outcome="UNDECIDED",
+            reason_codes=["INCOMPLETE_EMPIRICAL_TRIGGER"],
+            conditions=[*evaluation.condition_evaluations, *empirical],
+        )
+    if not all(item.satisfied for item in empirical):
+        return evaluation
+    qualified = any(
+        observation.rule_id == rule.rule_id
+        and observation.verified
+        and observation.evidence_ref in rule.evidence_refs
+        for observation in qualified_observations
+    )
+    if qualified:
+        return evaluation
+    return _base_evaluation(
+        rule,
+        claim,
+        applicability="EMPIRICAL_ONLY",
+        outcome="UNDECIDED",
+        reason_codes=["QUALIFIED_OBSERVATION_REQUIRED"],
+        conditions=[*evaluation.condition_evaluations, *empirical],
+    )
+
+
 def evaluate_rule(
     rule: VerificationRule,
     claim: NormalizedClaim,
@@ -769,4 +1038,12 @@ def evaluate_rule(
         evaluator = RULE_EVALUATORS[rule.rule_kind]
     except KeyError as exc:  # Defensive boundary if an invalid object bypasses Pydantic.
         raise ValueError(f"unsupported rule kind: {rule.rule_kind}") from exc
-    return evaluator(rule, claim, qualified_observations)
+    evaluation = evaluator(rule, claim, qualified_observations)
+    if rule.rule_kind is RuleKind.EMPIRICAL_BOUNDARY:
+        return evaluation
+    return _apply_empirical_requirement(
+        rule,
+        claim,
+        evaluation,
+        qualified_observations,
+    )

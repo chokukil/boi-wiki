@@ -73,9 +73,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_phase_transformation_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -100,7 +100,14 @@
     "contradiction_predicates": [
       "remains_indefinitely"
     ],
-    "expected_polarity": "positive"
+    "expected_polarity": "positive",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "context_temperature",
+        "quantity_kind": "context_temperature",
+        "reference_quantity_kind": "context_temperature_reference"
+      }
+    ]
   }
 }
 ---

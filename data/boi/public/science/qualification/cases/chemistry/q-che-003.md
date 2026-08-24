@@ -47,12 +47,12 @@
         "claim_packet": {
           "claim_id": "claim:chemistry:003:clear_violation",
           "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:8e91d2a88948d4cf084e9b6ddbe7f5bb84eae66128f7aaa20cdcad1f49413f9c",
+          "document_digest": "sha256:8f14b35dbb68f90b3a8d6e505519b6c5b1144336b6dac20c89e294986d699307",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 126,
-            "exact": "Vapor pressure by itself fixes the evaporation rate of every open flowing process. The pressure scale is recorded as 1 pascal.",
+            "end": 146,
+            "exact": "Vapor pressure does not measure the molecular escaping tendency of the identified condensed substance. The pressure scale is recorded as 1 pascal.",
             "prefix": "",
             "suffix": ""
           },
@@ -303,8 +303,8 @@
                 "value": "named_liquid_or_solid"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_vapor_pressure_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "claim_scope",
@@ -395,12 +395,12 @@
         "claim_packet": {
           "claim_id": "claim:chemistry:003:unit_variation",
           "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:36368a14e82eed16f560328928bd00efd86e3fd48239737998d9c7fd20d888c6",
+          "document_digest": "sha256:ea52a7e818300c075f6f49f2f6346b4a0be3f8b764955a9a7543c6f6fda5554c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 151,
-            "exact": "Vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1000 millipascal.",
+            "end": 202,
+            "exact": "Vapor pressure measures the escaping tendency of molecules from the identified condensed substance. The pressure scale is recorded as 1000 millipascal. The same pressure scale is referenced as 1 pascal.",
             "prefix": "",
             "suffix": ""
           },
@@ -415,6 +415,11 @@
                 "quantity_kind": "pressure_scale",
                 "value": 1000,
                 "unit": "millipascal"
+              },
+              {
+                "quantity_kind": "pressure_scale_reference",
+                "value": 1,
+                "unit": "pascal"
               }
             ],
             "conditions": [
@@ -633,12 +638,12 @@
         "claim_packet": {
           "claim_id": "claim:chemistry:003:false_red_prevention",
           "document_ref": "qualification:chemistry:003",
-          "document_digest": "sha256:afe2850dbec912985e715ba34c0f9a1b1d029a4980e5b22614fbded4ca4955e2",
+          "document_digest": "sha256:5b0e9556390922cb4fb5051c829893e294e3267463d34399a442a140bbbc0880",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 191,
-            "exact": "When the condensed substance is outside this rule's required scope, the document denies that vapor pressure applies to molecular escaping tendency. The pressure scale is recorded as 1 pascal.",
+            "end": 147,
+            "exact": "A gas-phase sample is not the named liquid or solid to which this vapor-pressure definition is applied. The pressure scale is recorded as 1 pascal.",
             "prefix": "",
             "suffix": ""
           },
@@ -658,7 +663,7 @@
             "conditions": [
               {
                 "condition_id": "condensed_substance",
-                "value": "outside_named_liquid_or_solid"
+                "value": "gas_phase"
               },
               {
                 "condition_id": "claim_scope",

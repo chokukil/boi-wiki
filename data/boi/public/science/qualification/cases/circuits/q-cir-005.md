@@ -303,8 +303,8 @@
                 "value": "capacitor_or_inductor"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_storage_state_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "device_model",
@@ -395,12 +395,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:005:unit_variation",
           "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:f8c78815a77aaf67dbe28261624255191b6b44c1322a11a0afbd54c509551442",
+          "document_digest": "sha256:4f4b2badce31ce68ba4007e27c5a989eaf092cb4c5bc3975ee484038a302efee",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 147,
-            "exact": "The capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1000 millifarad.",
+            "end": 200,
+            "exact": "The capacitor voltage and inductor current are their respective lumped-model state variables. The capacitance scale is recorded as 1000 millifarad. The same capacitance scale is referenced as 1 farad.",
             "prefix": "",
             "suffix": ""
           },
@@ -415,6 +415,11 @@
                 "quantity_kind": "capacitance_scale",
                 "value": 1000,
                 "unit": "millifarad"
+              },
+              {
+                "quantity_kind": "capacitance_scale_reference",
+                "value": 1,
+                "unit": "farad"
               }
             ],
             "conditions": [
@@ -633,12 +638,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:005:false_red_prevention",
           "document_ref": "qualification:circuits:005",
-          "document_digest": "sha256:8457a479177c3c50c856a3a61fcaea999a87580852a7e2689ba97c049f1cee10",
+          "document_digest": "sha256:e88505836d39bc4210b82217591d82f6a2799f4d89bc7b5a9bfaf866c37a5387",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 181,
-            "exact": "When the element type is outside this rule's required scope, the document denies that energy storage element applies to state variable. The capacitance scale is recorded as 1 farad.",
+            "end": 149,
+            "exact": "A resistor is not a capacitor or inductor whose state variable is covered by this storage-element rule. The capacitance scale is recorded as 1 farad.",
             "prefix": "",
             "suffix": ""
           },
@@ -658,7 +663,7 @@
             "conditions": [
               {
                 "condition_id": "element_type",
-                "value": "outside_capacitor_or_inductor"
+                "value": "resistor"
               },
               {
                 "condition_id": "device_model",

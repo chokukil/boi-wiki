@@ -53,16 +53,16 @@
     "relation_kind": "dimensional_relation",
     "required_conditions": [
       {
-        "key": "semantic_roles_identified",
+        "key": "quantity_role",
         "operator": "eq",
-        "value": true
+        "value": "sample_length"
       }
     ],
     "validity_conditions": [
       {
-        "key": "scientific_quantity_context",
+        "key": "coverage_scope",
         "operator": "eq",
-        "value": true
+        "value": "sample_length_example"
       }
     ],
     "knowledge_refs": [
@@ -79,14 +79,28 @@
       }
     ],
     "deterministic_evaluator": true,
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_001_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
+    ],
+    "context_dimensions": {},
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "sample_length",
+        "quantity_kind": "sample_length",
+        "reference_quantity_kind": "sample_length_reference"
+      }
+    ],
     "expected_dimensions": {
-      "sample_length": "m"
-    },
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+      "sample_length": "meter"
+    }
   }
 }
 ---
-
 # R-COM-001 — Quantity, value, unit, and dimension
 
 Closed evaluator: `dimension_constraint`. Candidate qualification only.

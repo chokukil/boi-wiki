@@ -303,8 +303,8 @@
                 "value": "explicit_closed_surface"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_control_volume_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "flux_accounting",
@@ -395,12 +395,12 @@
         "claim_packet": {
           "claim_id": "claim:physics:005:unit_variation",
           "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:ca2d63979554d0f5640d1eb7d41d95f3efb430fa89e9a7e877b403fb77210cda",
+          "document_digest": "sha256:ab64244e997f8ff0cee66aa9ef22aaa6b818db75d537b58c6022e629af2a911d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 168,
-            "exact": "The control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1000 millipascal.",
+            "end": 219,
+            "exact": "The control-volume form remains applicable to moving, deforming, and unsteady flow when its flux terms are included. The pressure scale is recorded as 1000 millipascal. The same pressure scale is referenced as 1 pascal.",
             "prefix": "",
             "suffix": ""
           },
@@ -415,6 +415,11 @@
                 "quantity_kind": "pressure_scale",
                 "value": 1000,
                 "unit": "millipascal"
+              },
+              {
+                "quantity_kind": "pressure_scale_reference",
+                "value": 1,
+                "unit": "pascal"
               }
             ],
             "conditions": [
@@ -633,12 +638,12 @@
         "claim_packet": {
           "claim_id": "claim:physics:005:false_red_prevention",
           "document_ref": "qualification:physics:005",
-          "document_digest": "sha256:fe82c5b7f111a9fa014691cd4b7bc541d1b1ce458dfbb72829efe66957673b33",
+          "document_digest": "sha256:c49fc45436183a383b789e1c6e9e9d834b93d469ea1f1e4def8212b7144aa1e9",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 188,
-            "exact": "When the control surface is outside this rule's required scope, the document denies that control volume balance applies to moving unsteady flow. The pressure scale is recorded as 1 pascal.",
+            "end": 149,
+            "exact": "Across an open surface that does not bound a control volume, the stated closed-surface balance is denied. The pressure scale is recorded as 1 pascal.",
             "prefix": "",
             "suffix": ""
           },
@@ -658,7 +663,7 @@
             "conditions": [
               {
                 "condition_id": "control_surface",
-                "value": "outside_explicit_closed_surface"
+                "value": "open_surface"
               },
               {
                 "condition_id": "flux_accounting",

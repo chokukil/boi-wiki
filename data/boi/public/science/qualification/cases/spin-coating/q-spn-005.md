@@ -371,8 +371,8 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_coater_transfer_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "claim_scope",
@@ -479,12 +479,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:unit_variation",
           "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:ef19d6be4c052e5d6ebd2caa124b089a8735d1845f426bd28c2d641059998812",
+          "document_digest": "sha256:1c2cfa1da797611d2049c9dce9b4359b31f8d4e6c37d8730e7212f48ef1991ae",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 165,
-            "exact": "An exact equipment-specific spin result requires qualified measurement inside a recorded validation domain. The film thickness scale is recorded as 0.001 micrometer.",
+            "end": 225,
+            "exact": "An exact equipment-specific spin result requires qualified measurement inside a recorded validation domain. The film thickness scale is recorded as 0.001 micrometer. The same film thickness scale is referenced as 1 nanometer.",
             "prefix": "",
             "suffix": ""
           },
@@ -499,6 +499,11 @@
                 "quantity_kind": "film_thickness_scale",
                 "value": "0.001",
                 "unit": "micrometer"
+              },
+              {
+                "quantity_kind": "film_thickness_scale_reference",
+                "value": 1,
+                "unit": "nanometer"
               }
             ],
             "conditions": [
@@ -772,12 +777,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:005:false_red_prevention",
           "document_ref": "qualification:spin-coating:005",
-          "document_digest": "sha256:0fd0d733a2c98d4665f856e646e9aa0cd90faf4893e9fe7ed44fcf87ff5e8c2a",
+          "document_digest": "sha256:da0fb137dbbb71d74c107cd1f5d2eb2cd2a66f3058bb298d687f522cdd97a481",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 215,
-            "exact": "When the thinning continues until is outside this rule's required scope, the document denies that equipment specific spin result applies to qualified observation. The film thickness scale is recorded as 1 nanometer.",
+            "end": 186,
+            "exact": "When radial flow is interrupted before drying stops it, the equipment-specific result is not transferred by this drying-limited rule. The film thickness scale is recorded as 1 nanometer.",
             "prefix": "",
             "suffix": ""
           },
@@ -809,7 +814,7 @@
               },
               {
                 "condition_id": "thinning_continues_until",
-                "value": "outside_drying_stops_flow"
+                "value": "flow_interrupted_before_drying"
               },
               {
                 "condition_id": "claim_scope",

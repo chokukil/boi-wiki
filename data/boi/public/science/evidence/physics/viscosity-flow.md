@@ -39,9 +39,11 @@ science:
     requested_url: https://ocw.mit.edu/courses/2-25-advanced-fluid-mechanics-fall-2013/83aa0d8fd395e8e7d9bc8b236ab4bfe7_MIT2_25F13_Equat_of_Motio.pdf
     resolved_url: https://ocw.mit.edu/courses/2-25-advanced-fluid-mechanics-fall-2013/83aa0d8fd395e8e7d9bc8b236ab4bfe7_MIT2_25F13_Equat_of_Motio.pdf
     preservation_status: checksum_only_no_archived_copy
-    pdf_page_index: 12
-    printed_page: printed/PDF page 13
+    pdf_page_index: 11
+    printed_page: printed/PDF page 12
     hash_scope: retrieved_pdf_bytes
+    transcription_method: manual verification against the rendered PDF; line-wrap whitespace reflowed without changing wording
+      or punctuation
   original_text: The defining attribute of a simple fluid, however, is that it keeps deforming, or straining, as long as any
     shear stress, no matter how small, is applied to it.
   original_text_hash: sha256:14050b6414fe334508cef8b37c343c3447066254b7566f28e2faebe68c2f7235

@@ -327,8 +327,8 @@
                 "value": "forward"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_junction_barrier_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "device_model",
@@ -425,12 +425,12 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:unit_variation",
           "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:272b7b4fd2fba310c1114f37f65560baf156b10f59e9fd81c7971400470a50c3",
+          "document_digest": "sha256:054f79832182ae0c0cd0ecddd2af8e8a2965e6565efe0e967b38502cc254ba5e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 190,
-            "exact": "Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1000 millivolt.",
+            "end": 238,
+            "exact": "Applying forward bias to a pn junction reduces its barrier height from the built-in value and disturbs the zero-bias drift-diffusion balance. The voltage scale is recorded as 1000 millivolt. The same voltage scale is referenced as 1 volt.",
             "prefix": "",
             "suffix": ""
           },
@@ -445,6 +445,11 @@
                 "quantity_kind": "voltage_scale",
                 "value": 1000,
                 "unit": "millivolt"
+              },
+              {
+                "quantity_kind": "voltage_scale_reference",
+                "value": 1,
+                "unit": "volt"
               }
             ],
             "conditions": [
@@ -683,12 +688,12 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:004:false_red_prevention",
           "document_ref": "qualification:semiconductor-devices:004",
-          "document_digest": "sha256:c59910b045efc090c66521a196b44e0c99180038e45a580459aaecc16e76cfd0",
+          "document_digest": "sha256:30794c824eaae3d3e5199330d70f992f2d5313fe4251125822c949a720e59b83",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 171,
-            "exact": "When the bias polarity is outside this rule's required scope, the document states that forward bias increases pn junction barrier. The voltage scale is recorded as 1 volt.",
+            "end": 149,
+            "exact": "Under reverse bias, the junction-barrier response is not the forward-bias comparison addressed by this rule. The voltage scale is recorded as 1 volt.",
             "prefix": "",
             "suffix": ""
           },
@@ -712,7 +717,7 @@
               },
               {
                 "condition_id": "bias_polarity",
-                "value": "outside_forward"
+                "value": "reverse"
               },
               {
                 "condition_id": "device_model",

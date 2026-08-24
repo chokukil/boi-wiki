@@ -4,7 +4,7 @@
   "boi_profile_version": "0.1",
   "sci_profile_version": "0.1",
   "type": "boi/science-rule",
-  "title": "R-SPN-004 Product-scoped spin-speed direction",
+  "title": "R-SPN-004 Drying-limited spin-speed direction",
   "description": "Closed deterministic Rule draft pending authorized Admin review",
   "tags": [
     "ScienceVerifier",
@@ -23,10 +23,6 @@
   "acl_policy": "acl:public",
   "status": "draft",
   "source_refs": [
-    {
-      "type": "boi",
-      "ref": "sci-evidence:spin-coating:vendor-spin-curve-observation"
-    },
     {
       "type": "boi",
       "ref": "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
@@ -58,38 +54,6 @@
     "relation_kind": "monotonic_direction",
     "required_conditions": [
       {
-        "key": "product_family",
-        "operator": "eq",
-        "value": "AZ 125nXT"
-      },
-      {
-        "key": "product_grade",
-        "operator": "in",
-        "values": [
-          "AZ 125nXT-10 B",
-          "AZ 125nXT-7 B"
-        ]
-      },
-      {
-        "key": "source_revision",
-        "operator": "eq",
-        "value": "01/24"
-      },
-      {
-        "key": "spin_speed_rpm",
-        "operator": "range",
-        "range": {
-          "minimum": 600,
-          "maximum": 2300
-        },
-        "unit": "rpm"
-      },
-      {
-        "key": "evidence_use_mode",
-        "operator": "eq",
-        "value": "plotted_markers_only"
-      },
-      {
         "key": "material_class",
         "operator": "eq",
         "value": "photoresist"
@@ -105,36 +69,6 @@
         "value": "drying_stops_flow"
       },
       {
-        "key": "resist_identity",
-        "operator": "eq",
-        "value": "same"
-      },
-      {
-        "key": "viscosity",
-        "operator": "eq",
-        "value": "same"
-      },
-      {
-        "key": "solids_fraction",
-        "operator": "eq",
-        "value": "same"
-      },
-      {
-        "key": "spin_time",
-        "operator": "eq",
-        "value": "same"
-      },
-      {
-        "key": "environment",
-        "operator": "eq",
-        "value": "same"
-      },
-      {
-        "key": "measurement_state",
-        "operator": "eq",
-        "value": "dry_post_bake"
-      },
-      {
         "key": "process_stage",
         "operator": "eq",
         "value": "final_coat_spin"
@@ -142,16 +76,16 @@
     ],
     "validity_conditions": [
       {
-        "key": "comparison_domain",
+        "key": "claim_scope",
         "operator": "eq",
-        "value": "inside_bound_product_curve"
+        "value": "qualitative_direction_only"
       }
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_spin_thickness_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -161,15 +95,9 @@
       "sci:spin-coating:004"
     ],
     "evidence_refs": [
-      "sci-evidence:spin-coating:vendor-spin-curve-observation",
       "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
     ],
     "evidence_uses": [
-      {
-        "evidence_ref": "sci-evidence:spin-coating:vendor-spin-curve-observation",
-        "claim_family": "spin_coating.rpm_thickness_direction.product_scoped_figure_observation",
-        "purpose": "Both plotted AZ 125nXT grades show decreasing thickness as spin speed increases across their displayed markers."
-      },
       {
         "evidence_ref": "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
         "claim_family": "spin_coating.spin_speed_thickness_direction.drying_limited_process",
@@ -182,11 +110,18 @@
     "contradiction_predicates": [
       "increases"
     ],
-    "expected_polarity": "positive"
+    "expected_polarity": "positive",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "spin_rate",
+        "quantity_kind": "spin_rate",
+        "reference_quantity_kind": "spin_rate_reference"
+      }
+    ]
   }
 }
 ---
 
-# R-SPN-004 — Product-scoped spin-speed direction
+# R-SPN-004 — Drying-limited spin-speed direction
 
 Closed evaluator: `directional_relation`. Candidate qualification only.

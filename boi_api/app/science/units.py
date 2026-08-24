@@ -455,6 +455,54 @@ conversion_registry = ConversionRegistry(
                 Decimal("1"),
                 Decimal("0"),
             ),
+            (
+                "sci-conversion:kilogram-gram",
+                ConversionKind.MULTIPLICATIVE,
+                "kilogram",
+                "gram",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:gram-kilogram",
+                ConversionKind.MULTIPLICATIVE,
+                "gram",
+                "kilogram",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:second-millisecond",
+                ConversionKind.MULTIPLICATIVE,
+                "second",
+                "millisecond",
+                Decimal("1000"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:millisecond-second",
+                ConversionKind.MULTIPLICATIVE,
+                "millisecond",
+                "second",
+                Decimal("0.001"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:dimensionless-percent",
+                ConversionKind.MULTIPLICATIVE,
+                "dimensionless",
+                "percent",
+                Decimal("100"),
+                Decimal("0"),
+            ),
+            (
+                "sci-conversion:percent-dimensionless",
+                ConversionKind.MULTIPLICATIVE,
+                "percent",
+                "dimensionless",
+                Decimal("0.01"),
+                Decimal("0"),
+            ),
         )
     )
 )
@@ -595,6 +643,8 @@ def comparable_values(
     left_unit: str,
     right_value: Decimal | int | str,
     right_unit: str,
+    *,
+    interval: bool = False,
 ) -> tuple[Decimal, Decimal]:
     """Return magnitudes in one unit using only an exact reviewed conversion."""
 
@@ -619,10 +669,20 @@ def comparable_values(
     if left_unit == right_unit:
         return left, right
     try:
-        return left, conversion_registry.convert_registered(right, right_unit, left_unit)
+        return left, conversion_registry.convert_registered(
+            right,
+            right_unit,
+            left_unit,
+            interval=interval,
+        )
     except UnregisteredConversionError:
         try:
-            return conversion_registry.convert_registered(left, left_unit, right_unit), right
+            return conversion_registry.convert_registered(
+                left,
+                left_unit,
+                right_unit,
+                interval=interval,
+            ), right
         except UnregisteredConversionError as exc:
             raise UnregisteredConversionError(
                 f"unregistered conversion: {left_unit} <-> {right_unit}"
@@ -632,6 +692,8 @@ def comparable_values(
 def compare_quantities(
     left: ClaimQuantity | dict[str, object],
     right: ClaimQuantity | dict[str, object],
+    *,
+    interval: bool = False,
 ) -> int:
     """Compare compatible quantities, returning ``-1``, ``0``, or ``1``."""
 
@@ -642,5 +704,6 @@ def compare_quantities(
         left_quantity.unit,
         right_quantity.value,
         right_quantity.unit,
+        interval=interval,
     )
     return (left_value > right_value) - (left_value < right_value)

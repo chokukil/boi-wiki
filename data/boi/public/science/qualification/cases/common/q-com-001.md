@@ -44,38 +44,38 @@
         "case_kind": "clear_violation",
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
-          "claim_id": "claim:common:001:clear-violation",
+          "claim_id": "claim:common:001:clear_violation",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-clear-violation",
+          "document_digest": "sha256:6d84e49161e3e52e511757cb35884dd1846b301b5614118ca4fbecf2a4c20afc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 37,
-            "exact": "Foundation topic 001 clear-violation.",
+            "end": 135,
+            "exact": "A sample length may be represented by a time unit without changing its scientific meaning. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
             "relation_kind": "dimensional_relation",
-            "predicate": "dimensionally_incompatible",
+            "predicate": "applies",
             "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "sample_length",
                 "value": 1,
-                "unit": "A"
+                "unit": "second"
               }
             ],
             "conditions": [
               {
-                "condition_id": "semantic_roles_identified",
-                "value": true
+                "condition_id": "quantity_role",
+                "value": "sample_length"
               },
               {
-                "condition_id": "scientific_quantity_context",
-                "value": true
+                "condition_id": "coverage_scope",
+                "value": "sample_length_example"
               }
             ],
             "process_stage": null,
@@ -92,48 +92,49 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises clear_violation for SCI-COM-001.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:quantity-unit-dimension"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:001"
       },
       {
         "case_id": "sci-case:common:001:in_scope_consistency",
         "case_kind": "in_scope_consistency",
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
-          "claim_id": "claim:common:001:in-scope-consistency",
+          "claim_id": "claim:common:001:in_scope_consistency",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-in-scope-consistency",
+          "document_digest": "sha256:a0e1e00673b7da4f6c2d215b7c0f91a147d6d2698785bab0d8daba2afa8cfd5f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 001 in-scope-consistency.",
+            "end": 127,
+            "exact": "A sample length is represented by a quantity whose unit has length dimensionality. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
             "relation_kind": "dimensional_relation",
-            "predicate": "dimensionally_compatible",
+            "predicate": "applies",
             "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "sample_length",
                 "value": 1,
-                "unit": "m"
+                "unit": "meter"
               }
             ],
             "conditions": [
               {
-                "condition_id": "semantic_roles_identified",
-                "value": true
+                "condition_id": "quantity_role",
+                "value": "sample_length"
               },
               {
-                "condition_id": "scientific_quantity_context",
-                "value": true
+                "condition_id": "coverage_scope",
+                "value": "sample_length_example"
               }
             ],
             "process_stage": null,
@@ -150,44 +151,45 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises in_scope_consistency for SCI-COM-001.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:quantity-unit-dimension"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:001"
       },
       {
         "case_id": "sci-case:common:001:missing_required_condition",
         "case_kind": "missing_required_condition",
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
-          "claim_id": "claim:common:001:missing-required-condition",
+          "claim_id": "claim:common:001:missing_required_condition",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-missing-required-condition",
+          "document_digest": "sha256:83bfd3d69be0613c9717f598bc1d3dec09b7f11b165fb5cefeed04a1fc641c99",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 48,
-            "exact": "Foundation topic 001 missing-required-condition.",
+            "end": 184,
+            "exact": "Without specifying quantity role, the report states that a sample length is represented by a quantity whose unit has length dimensionality. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
             "relation_kind": "dimensional_relation",
-            "predicate": "dimensionally_compatible",
+            "predicate": "applies",
             "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "sample_length",
                 "value": 1,
-                "unit": "m"
+                "unit": "meter"
               }
             ],
             "conditions": [
               {
-                "condition_id": "scientific_quantity_context",
-                "value": true
+                "condition_id": "coverage_scope",
+                "value": "sample_length_example"
               }
             ],
             "process_stage": null,
@@ -204,48 +206,49 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "Exercises missing_required_condition for SCI-COM-001.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:quantity-unit-dimension"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:001"
       },
       {
         "case_id": "sci-case:common:001:outside_validity_domain",
         "case_kind": "outside_validity_domain",
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
-          "claim_id": "claim:common:001:outside-validity-domain",
+          "claim_id": "claim:common:001:outside_validity_domain",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-outside-validity-domain",
+          "document_digest": "sha256:d3cf358de08b3ef3873dc3308a7e981eba6308b1d5887c4d3b3162477899420e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 45,
-            "exact": "Foundation topic 001 outside-validity-domain.",
+            "end": 198,
+            "exact": "In a different scientific context, the report nevertheless states that a sample length is represented by a quantity whose unit has length dimensionality. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
             "relation_kind": "dimensional_relation",
-            "predicate": "dimensionally_compatible",
+            "predicate": "applies",
             "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "sample_length",
                 "value": 1,
-                "unit": "m"
+                "unit": "meter"
               }
             ],
             "conditions": [
               {
-                "condition_id": "semantic_roles_identified",
-                "value": true
+                "condition_id": "quantity_role",
+                "value": "sample_length"
               },
               {
-                "condition_id": "scientific_quantity_context",
-                "value": false
+                "condition_id": "coverage_scope",
+                "value": "different_scientific_context"
               }
             ],
             "process_stage": null,
@@ -262,46 +265,53 @@
           }
         },
         "expected_verdict": "OUTSIDE_VALIDITY_DOMAIN",
-        "rationale": "Exercises outside_validity_domain for SCI-COM-001.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:quantity-unit-dimension"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:001"
       },
       {
         "case_id": "sci-case:common:001:empirical_verification_required",
         "case_kind": "empirical_verification_required",
-        "evaluation_rule_id": "sci-rule:common:008",
+        "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
-          "claim_id": "claim:common:001:empirical-verification-required",
+          "claim_id": "claim:common:001:empirical_verification_required",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-empirical-verification-required",
+          "document_digest": "sha256:7495926995b6d1faf9cdac6ff80ff801c12f9570cf3d35353947cb1c96af35ef",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 53,
-            "exact": "Foundation topic 001 empirical-verification-required.",
+            "end": 211,
+            "exact": "For a named realization, the report asserts that a sample length is represented by a quantity whose unit has length dimensionality. No qualified observation is bound. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
-            "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "subject_concept_id": "sci:concept:sample-length",
+            "relation_kind": "dimensional_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "sample_length",
+                "value": 1,
+                "unit": "meter"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
+                "condition_id": "quantity_role",
+                "value": "sample_length"
               },
               {
-                "condition_id": "model_basis",
-                "value": "theoretical"
+                "condition_id": "coverage_scope",
+                "value": "sample_length_example"
               },
               {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "condition_id": "requested_foundation_001_qualified_observation",
+                "value": "unqualified_observation"
               }
             ],
             "process_stage": null,
@@ -316,10 +326,11 @@
           }
         },
         "expected_verdict": "EMPIRICAL_VERIFICATION_REQUIRED",
-        "rationale": "A topic-specific application claim is routed to the Foundation model-validation rule and stops for empirical evidence.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
-          "sci-evidence:common:model-validity"
-        ]
+          "sci-evidence:common:quantity-unit-dimension"
+        ],
+        "matrix_rule_id": "sci-rule:common:001"
       },
       {
         "case_id": "sci-case:common:001:negation",
@@ -328,36 +339,36 @@
         "claim_packet": {
           "claim_id": "claim:common:001:negation",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-negation",
+          "document_digest": "sha256:0438ff79baf7109380374a63a29bab8f91bad83806df86a53b2e31ebe900b515",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 30,
-            "exact": "Foundation topic 001 negation.",
+            "end": 147,
+            "exact": "It is not true that a sample length is represented by a quantity whose unit has length dimensionality. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
             "relation_kind": "dimensional_relation",
-            "predicate": "dimensionally_compatible",
+            "predicate": "applies",
             "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "negative",
             "quantities": [
               {
                 "quantity_kind": "sample_length",
                 "value": 1,
-                "unit": "m"
+                "unit": "meter"
               }
             ],
             "conditions": [
               {
-                "condition_id": "semantic_roles_identified",
-                "value": true
+                "condition_id": "quantity_role",
+                "value": "sample_length"
               },
               {
-                "condition_id": "scientific_quantity_context",
-                "value": true
+                "condition_id": "coverage_scope",
+                "value": "sample_length_example"
               }
             ],
             "process_stage": null,
@@ -374,48 +385,54 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises negation for SCI-COM-001.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:quantity-unit-dimension"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:001"
       },
       {
         "case_id": "sci-case:common:001:unit_variation",
         "case_kind": "unit_variation",
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
-          "claim_id": "claim:common:001:unit-variation",
+          "claim_id": "claim:common:001:unit_variation",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-unit-variation",
+          "document_digest": "sha256:ec4a007c071ebda15e68b1bfc22580204391d8cd2d86d8176a59135a992df761",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 36,
-            "exact": "Foundation topic 001 unit-variation.",
+            "end": 147,
+            "exact": "A sample length is represented by a quantity whose unit has length dimensionality. The same sample length is written as 100 centimeter and 1 meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
             "relation_kind": "dimensional_relation",
-            "predicate": "dimensionally_compatible",
+            "predicate": "applies",
             "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "sample_length",
                 "value": 100,
-                "unit": "cm"
+                "unit": "centimeter"
+              },
+              {
+                "quantity_kind": "sample_length_reference",
+                "value": 1,
+                "unit": "meter"
               }
             ],
             "conditions": [
               {
-                "condition_id": "semantic_roles_identified",
-                "value": true
+                "condition_id": "quantity_role",
+                "value": "sample_length"
               },
               {
-                "condition_id": "scientific_quantity_context",
-                "value": true
+                "condition_id": "coverage_scope",
+                "value": "sample_length_example"
               }
             ],
             "process_stage": null,
@@ -432,60 +449,61 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises unit_variation for SCI-COM-001.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:quantity-unit-dimension"
         ],
         "unit_equivalence": [
           {
-            "quantity_kind": "unit_probe",
+            "quantity_kind": "sample_length",
             "value": 1,
-            "unit": "m"
+            "unit": "meter"
           },
           {
-            "quantity_kind": "unit_probe",
+            "quantity_kind": "sample_length",
             "value": 100,
-            "unit": "cm"
+            "unit": "centimeter"
           }
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:001"
       },
       {
         "case_id": "sci-case:common:001:decision_changing_ambiguity",
         "case_kind": "decision_changing_ambiguity",
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
-          "claim_id": "claim:common:001:decision-changing-ambiguity",
+          "claim_id": "claim:common:001:decision_changing_ambiguity",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-decision-changing-ambiguity",
+          "document_digest": "sha256:05f06567ba831b7844467bc66416d4798da3d8b509a2030ecba048e0687a86b5",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 49,
-            "exact": "Foundation topic 001 decision-changing-ambiguity.",
+            "end": 272,
+            "exact": "The wording leaves unresolved whether 'A sample length is represented by a quantity whose unit has length dimensionality.' or instead 'A sample length may be represented by a time unit without changing its scientific meaning.'. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
             "relation_kind": "dimensional_relation",
-            "predicate": "dimensionally_compatible",
+            "predicate": "applies",
             "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "sample_length",
                 "value": 1,
-                "unit": "m"
+                "unit": "meter"
               }
             ],
             "conditions": [
               {
-                "condition_id": "semantic_roles_identified",
-                "value": true
+                "condition_id": "quantity_role",
+                "value": "sample_length"
               },
               {
-                "condition_id": "scientific_quantity_context",
-                "value": true
+                "condition_id": "coverage_scope",
+                "value": "sample_length_example"
               }
             ],
             "process_stage": null,
@@ -504,43 +522,43 @@
           }
         },
         "expected_gate": "ambiguity_gate",
-        "rationale": "Two permitted interpretations produce different candidate verdicts, so interpretation must stop at the ambiguity gate.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:quantity-unit-dimension"
         ],
         "alternative_claim_packet": {
-          "claim_id": "claim:common:001:decision-changing-alternative",
+          "claim_id": "claim:common:001:decision_changing_ambiguity:alternative",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-decision-changing-alternative",
+          "document_digest": "sha256:05f06567ba831b7844467bc66416d4798da3d8b509a2030ecba048e0687a86b5",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 51,
-            "exact": "Foundation topic 001 decision-changing-alternative.",
+            "end": 272,
+            "exact": "The wording leaves unresolved whether 'A sample length is represented by a quantity whose unit has length dimensionality.' or instead 'A sample length may be represented by a time unit without changing its scientific meaning.'. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
             "relation_kind": "dimensional_relation",
-            "predicate": "dimensionally_incompatible",
+            "predicate": "applies",
             "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "sample_length",
                 "value": 1,
-                "unit": "A"
+                "unit": "second"
               }
             ],
             "conditions": [
               {
-                "condition_id": "semantic_roles_identified",
-                "value": true
+                "condition_id": "quantity_role",
+                "value": "sample_length"
               },
               {
-                "condition_id": "scientific_quantity_context",
-                "value": true
+                "condition_id": "coverage_scope",
+                "value": "sample_length_example"
               }
             ],
             "process_stage": null,
@@ -557,7 +575,9 @@
             ],
             "user_confirmed": false
           }
-        }
+        },
+        "matrix_rule_id": "sci-rule:common:001",
+        "expected_verdict": "INSUFFICIENT_INFORMATION"
       },
       {
         "case_id": "sci-case:common:001:paraphrase",
@@ -566,36 +586,36 @@
         "claim_packet": {
           "claim_id": "claim:common:001:paraphrase",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-paraphrase",
+          "document_digest": "sha256:dccebcdbcc8412e7b9b71ee85810281b3b5e7704c67afcc413854ba7150ebfb3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 32,
-            "exact": "Foundation topic 001 paraphrase.",
+            "end": 175,
+            "exact": "In equivalent wording, the document states that a sample length is represented by a quantity whose unit has length dimensionality. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
             "subject_concept_id": "sci:concept:sample-length",
             "relation_kind": "dimensional_relation",
-            "predicate": "dimensionally_compatible",
+            "predicate": "applies",
             "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "sample_length",
                 "value": 1,
-                "unit": "m"
+                "unit": "meter"
               }
             ],
             "conditions": [
               {
-                "condition_id": "semantic_roles_identified",
-                "value": true
+                "condition_id": "quantity_role",
+                "value": "sample_length"
               },
               {
-                "condition_id": "scientific_quantity_context",
-                "value": true
+                "condition_id": "coverage_scope",
+                "value": "sample_length_example"
               }
             ],
             "process_stage": null,
@@ -612,48 +632,49 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises paraphrase for SCI-COM-001.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:quantity-unit-dimension"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:001"
       },
       {
         "case_id": "sci-case:common:001:false_red_prevention",
         "case_kind": "false_red_prevention",
         "evaluation_rule_id": "sci-rule:common:001",
         "claim_packet": {
-          "claim_id": "claim:common:001:false-red-prevention",
+          "claim_id": "claim:common:001:false_red_prevention",
           "document_ref": "qualification:common:001",
-          "document_digest": "sha256:task2-001-false-red-prevention",
+          "document_digest": "sha256:92a052753b5094670475ca96a9b3b408873f0b2fadc9acb7955b2f616390a8bc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 001 false-red-prevention.",
+            "end": 131,
+            "exact": "A time interval is not the sample-length quantity covered by this dimensional example. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:unsupported:1",
+            "subject_concept_id": "sci:concept:sample-length",
             "relation_kind": "dimensional_relation",
-            "predicate": "dimensionally_compatible",
+            "predicate": "applies",
             "object_concept_id": "sci:concept:measurement-unit",
             "polarity": "positive",
             "quantities": [
               {
                 "quantity_kind": "sample_length",
                 "value": 1,
-                "unit": "m"
+                "unit": "second"
               }
             ],
             "conditions": [
               {
-                "condition_id": "semantic_roles_identified",
-                "value": true
+                "condition_id": "quantity_role",
+                "value": "time_interval"
               },
               {
-                "condition_id": "scientific_quantity_context",
-                "value": true
+                "condition_id": "coverage_scope",
+                "value": "sample_length_example"
               }
             ],
             "process_stage": null,
@@ -670,17 +691,17 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "A neighboring unsupported concept must remain nondecisive instead of producing a red violation.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:quantity-unit-dimension"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:001"
       }
     ],
     "release_eligibility": "blocked_pending_authorized_admin_review"
   }
 }
 ---
-
 # Q-COM-001
 
 Ten public cases exercise the required qualification kinds against candidate rules only. Synthetic observation fixtures are labeled and never enter operational evidence.

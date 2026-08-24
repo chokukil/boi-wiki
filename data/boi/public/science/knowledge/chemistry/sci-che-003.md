@@ -4,7 +4,7 @@
   "boi_profile_version": "0.1",
   "sci_profile_version": "0.1",
   "type": "boi/science-knowledge",
-  "title": "SCI-CHE-003 Vapor pressure and escaping tendency",
+  "title": "SCI-CHE-003 Vapor pressure as escaping tendency",
   "description": "Atomic domain Knowledge draft pending authorized Admin review",
   "tags": [
     "ScienceVerifier",
@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:chemical-principles/0.1.0",
     "knowledge_kind": "conditional_relation",
     "assurance_basis": "hypothesis",
-    "statement": "For a condensed substance at a stated temperature, vapor pressure is a measure of molecular escaping tendency, not by itself an open-process evaporation rate.",
+    "statement": "Vapor pressure characterizes the escaping tendency of molecules from an identified liquid or solid.",
     "assumptions": [
       "All Rule conditions for sci-rule:chemistry:003 are checked before any decision."
     ],
@@ -68,8 +68,8 @@
 }
 ---
 
-# SCI-CHE-003 — Vapor pressure and escaping tendency
+# SCI-CHE-003 Vapor pressure as escaping tendency
 
-For a condensed substance at a stated temperature, vapor pressure is a measure of molecular escaping tendency, not by itself an open-process evaporation rate.
+Vapor pressure characterizes the escaping tendency of molecules from an identified liquid or solid.
 
 Candidate-only draft; authorized Admin review is absent.

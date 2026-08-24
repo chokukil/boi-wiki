@@ -307,8 +307,8 @@
                 "value": "bound_available_state"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_fermi_occupation_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "statistics_model",
@@ -401,12 +401,12 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:unit_variation",
           "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:5c5166aaf12b79a414f72b9e7696bcf7c7a62a30e849afdfc678cc9e60c563b2",
+          "document_digest": "sha256:6caea008143ea453c3b17a9764498f0a48a3e2f00b4322094002658462eb49c2",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 160,
-            "exact": "The Fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1000 millielectron_volt.",
+            "end": 218,
+            "exact": "The Fermi function is an electron occupation probability for an available state at the stated energy. The carrier energy is recorded as 1000 millielectron_volt. The same carrier energy is referenced as 1 electron_volt.",
             "prefix": "",
             "suffix": ""
           },
@@ -421,6 +421,11 @@
                 "quantity_kind": "carrier_energy",
                 "value": 1000,
                 "unit": "millielectron_volt"
+              },
+              {
+                "quantity_kind": "carrier_energy_reference",
+                "value": 1,
+                "unit": "electron_volt"
               }
             ],
             "conditions": [
@@ -643,12 +648,12 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:001:false_red_prevention",
           "document_ref": "qualification:semiconductor-devices:001",
-          "document_digest": "sha256:aa87753898b66a4970335e7780bb03c8ac8e561a3c5c738558221ee8d7fe6475",
+          "document_digest": "sha256:7840dcc383c3e92f6eb619c91e4d9fba3398d9da16987277f94c835348826729",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 192,
-            "exact": "When the energy state is outside this rule's required scope, the document denies that fermi function applies to state occupation probability. The carrier energy is recorded as 1 electron_volt.",
+            "end": 168,
+            "exact": "A continuum energy interval is not a single bound available state whose occupation probability is given by this rule. The carrier energy is recorded as 1 electron_volt.",
             "prefix": "",
             "suffix": ""
           },
@@ -668,7 +673,7 @@
             "conditions": [
               {
                 "condition_id": "energy_state",
-                "value": "outside_bound_available_state"
+                "value": "continuum_energy_interval"
               },
               {
                 "condition_id": "statistics_model",

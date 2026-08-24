@@ -303,8 +303,8 @@
                 "value": "explicit_bounded_region"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_phase_uniformity_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "definition_context",
@@ -395,12 +395,12 @@
         "claim_packet": {
           "claim_id": "claim:chemistry:002:unit_variation",
           "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:3ac693bdc2bebcfad956b5b75ebea63afdda5882eb11e0fdf19a1c3723298d9a",
+          "document_digest": "sha256:1c2731bc22b05f52cf44840f9b62cd2b2dcd02a4515648858876cc1dbe0fc1cf",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 147,
-            "exact": "A single thermodynamic phase has uniform intensive properties throughout the identified region. The pressure scale is recorded as 1000 millipascal.",
+            "end": 198,
+            "exact": "A single thermodynamic phase has uniform intensive properties throughout the identified region. The pressure scale is recorded as 1000 millipascal. The same pressure scale is referenced as 1 pascal.",
             "prefix": "",
             "suffix": ""
           },
@@ -415,6 +415,11 @@
                 "quantity_kind": "pressure_scale",
                 "value": 1000,
                 "unit": "millipascal"
+              },
+              {
+                "quantity_kind": "pressure_scale_reference",
+                "value": 1,
+                "unit": "pascal"
               }
             ],
             "conditions": [
@@ -633,12 +638,12 @@
         "claim_packet": {
           "claim_id": "claim:chemistry:002:false_red_prevention",
           "document_ref": "qualification:chemistry:002",
-          "document_digest": "sha256:5c258bfb4ecc3d6c99c876140d2962e80b2e350789337744b187d86f65ad5985",
+          "document_digest": "sha256:3aababeb6c8acd681f4990629b7ecd41ac0073d295644dcd01887ffbe9eb8827",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 186,
-            "exact": "When the region of matter is outside this rule's required scope, the document denies that thermodynamic phase applies to intensive properties. The pressure scale is recorded as 1 pascal.",
+            "end": 142,
+            "exact": "A temperature-gradient region spanning multiple phases need not have uniform intensive properties. The pressure scale is recorded as 1 pascal.",
             "prefix": "",
             "suffix": ""
           },
@@ -658,7 +663,7 @@
             "conditions": [
               {
                 "condition_id": "region_of_matter",
-                "value": "outside_explicit_bounded_region"
+                "value": "unbounded_gradient_region"
               },
               {
                 "condition_id": "definition_context",

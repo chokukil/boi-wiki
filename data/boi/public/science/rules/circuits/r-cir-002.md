@@ -73,9 +73,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_loop_voltage_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -102,7 +102,14 @@
         "zero_voltage"
       ],
       "operator": "equal"
-    }
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "voltage_scale",
+        "quantity_kind": "voltage_scale",
+        "reference_quantity_kind": "voltage_scale_reference"
+      }
+    ]
   }
 }
 ---

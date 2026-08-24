@@ -323,8 +323,8 @@
                 "value": "void_or_precipitate"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_defect_strength_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "claim_resolution",
@@ -419,12 +419,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:002:unit_variation",
           "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:f6fc670c610561b5f39163d85e4b8b2fdbf6f8deeba3994e639754863c7eef52",
+          "document_digest": "sha256:56a3df5c2b829d7d2757ed938703cb61e6c7bd1b63249bf23f6c13704af68b4b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 152,
-            "exact": "The strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1000 millipascal.",
+            "end": 203,
+            "exact": "The strength effect depends on the identified defect-cluster type in the cited qualitative examples. The pressure scale is recorded as 1000 millipascal. The same pressure scale is referenced as 1 pascal.",
             "prefix": "",
             "suffix": ""
           },
@@ -439,6 +439,11 @@
                 "quantity_kind": "pressure_scale",
                 "value": 1000,
                 "unit": "millipascal"
+              },
+              {
+                "quantity_kind": "pressure_scale_reference",
+                "value": 1,
+                "unit": "pascal"
               }
             ],
             "conditions": [
@@ -673,12 +678,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:002:false_red_prevention",
           "document_ref": "qualification:materials:002",
-          "document_digest": "sha256:665d4f4bc1f8194764fb72f66dff01e182af9357052d8e86426b438aaa9d005e",
+          "document_digest": "sha256:496828ef431ba724ddeea2d9c2044071347795382798ec0f29481ae5ea2d508b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 183,
-            "exact": "When the defect cluster type is outside this rule's required scope, the document denies that defect cluster applies to mechanical strength. The pressure scale is recorded as 1 pascal.",
+            "end": 139,
+            "exact": "An isolated solute atom is not the void or precipitate cluster addressed by this strength rule. The pressure scale is recorded as 1 pascal.",
             "prefix": "",
             "suffix": ""
           },
@@ -702,7 +707,7 @@
               },
               {
                 "condition_id": "defect_cluster_type",
-                "value": "outside_void_or_precipitate"
+                "value": "solute_atom"
               },
               {
                 "condition_id": "claim_resolution",

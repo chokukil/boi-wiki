@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "definition",
     "assurance_basis": "hypothesis",
-    "statement": "Measurement accuracy, trueness, and precision must not be treated as interchangeable metrology terms; manufacturer uses of accuracy require their stated definition before judgment.",
+    "statement": "Measurement accuracy and measurement precision are related but are not interchangeable metrology terms.",
     "definitions": [
       "accuracy: agreement considered with trueness and precision",
       "trueness: agreement of a replicate mean with a reference",
@@ -76,8 +76,8 @@
 }
 ---
 
-# SCI-COM-006 — Accuracy, precision, and trueness
+# SCI-COM-006 — Narrow reviewed Foundation statement
 
-Measurement accuracy, trueness, and precision must not be treated as interchangeable metrology terms; manufacturer uses of accuracy require their stated definition before judgment.
+Measurement accuracy and measurement precision are related but are not interchangeable metrology terms.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

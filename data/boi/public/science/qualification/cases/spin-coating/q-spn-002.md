@@ -47,40 +47,40 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:clear_violation",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:3aa4e33824f1af69b574cbd9382998ecf34604c8bc84317c76a35be1a3583454",
+          "document_digest": "sha256:9f64e068b3803703f6f633842686504da75d833f9014cfdf42bbbbba2b4fbca2",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 149,
-            "exact": "The Emslie-style model is universally valid without recorded assumptions or a validation domain. The film thickness scale is recorded as 1 nanometer.",
+            "end": 153,
+            "exact": "A validation-domain record need not be maintained for a validated model or simulation. The validation domain temperature limit is recorded as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "negative",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": 1,
-                "unit": "nanometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "model_assumption_set",
-                "value": "bound_assumption_record"
+                "condition_id": "model_identity",
+                "value": "named_model"
               },
               {
-                "condition_id": "validation_domain_ref",
-                "value": "bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "same_model"
               },
               {
-                "condition_id": "intended_use",
-                "value": "inside_recorded_domain"
+                "condition_id": "record_maintenance_context",
+                "value": "model_validation"
               }
             ],
             "process_stage": null,
@@ -110,40 +110,40 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:in_scope_consistency",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:b4d526230301118b6568940aee2d65796b69061b033e09a2831d5ae07f6714bd",
+          "document_digest": "sha256:226c680c87fcdc4b3fce4e83ead2c606019cf1f497592f7e9f3fd8aff024fac1",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 159,
-            "exact": "The Emslie-style model is used only inside a recorded validation domain with its ideal assumptions stated. The film thickness scale is recorded as 1 nanometer.",
+            "end": 161,
+            "exact": "A record of the domain of validation of the validated model or simulation shall be maintained. The validation domain temperature limit is recorded as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": 1,
-                "unit": "nanometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "model_assumption_set",
-                "value": "bound_assumption_record"
+                "condition_id": "model_identity",
+                "value": "named_model"
               },
               {
-                "condition_id": "validation_domain_ref",
-                "value": "bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "same_model"
               },
               {
-                "condition_id": "intended_use",
-                "value": "inside_recorded_domain"
+                "condition_id": "record_maintenance_context",
+                "value": "model_validation"
               }
             ],
             "process_stage": null,
@@ -173,36 +173,36 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:missing_required_condition",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:8a73417329e0c924d1d3b5fc701fe872b82fbee950572f91e4b76e61a7f728ff",
+          "document_digest": "sha256:d4cad244121099319226567351bca691c4636f6b79a3d0d5ddc4bc4c4d3268e7",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 228,
-            "exact": "Without one required scientific condition, the document asserts that the emslie-style model is used only inside a recorded validation domain with its ideal assumptions stated. The film thickness scale is recorded as 1 nanometer.",
+            "end": 173,
+            "exact": "The report states that a validation-domain record shall be maintained, but it does not identify the model. The validation domain temperature limit is recorded as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": 1,
-                "unit": "nanometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "validation_domain_ref",
-                "value": "bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "same_model"
               },
               {
-                "condition_id": "intended_use",
-                "value": "inside_recorded_domain"
+                "condition_id": "record_maintenance_context",
+                "value": "model_validation"
               }
             ],
             "process_stage": null,
@@ -232,40 +232,40 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:outside_validity_domain",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:7ea8ac71bdd5661d0a5776935407d4185509d9c625723cd83391edcdec0dedb5",
+          "document_digest": "sha256:d8d7225b7578012a9ad7de22120745ff89a10bd6a403a8500f28eecf85a8db68",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 246,
-            "exact": "For an intended use outside the recorded ideal-model domain, the document asserts that the emslie-style model is used only inside a recorded validation domain with its ideal assumptions stated. The film thickness scale is recorded as 1 nanometer.",
+            "end": 161,
+            "exact": "A record used for configuration management is asserted to be a model-validation-domain record. The validation domain temperature limit is recorded as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": 1,
-                "unit": "nanometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "model_assumption_set",
-                "value": "bound_assumption_record"
+                "condition_id": "model_identity",
+                "value": "named_model"
               },
               {
-                "condition_id": "validation_domain_ref",
-                "value": "bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "same_model"
               },
               {
-                "condition_id": "intended_use",
-                "value": "outside_inside_recorded_domain"
+                "condition_id": "record_maintenance_context",
+                "value": "configuration_management"
               }
             ],
             "process_stage": null,
@@ -295,44 +295,44 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:empirical_verification_required",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:7ba6d153e1fd7b91896a35605bd8d9dc99dfc83bfe5e89818ad8a1248999740e",
+          "document_digest": "sha256:44e0f1dd92ef8183ce8e8b5bdb0f9f777da0b203d300173baf2cb6f78cb5a2f7",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 285,
-            "exact": "For a named resist and coater compared with the ideal model, the document asserts that the emslie-style model is used only inside a recorded validation domain with its ideal assumptions stated; the named result requires measurement. The film thickness scale is recorded as 1 nanometer.",
+            "end": 192,
+            "exact": "The report claims that a named model has a maintained validation-domain record, but no qualified record observation is bound. The validation domain temperature limit is recorded as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": 1,
-                "unit": "nanometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "model_assumption_set",
-                "value": "bound_assumption_record"
+                "condition_id": "model_identity",
+                "value": "named_model"
               },
               {
-                "condition_id": "validation_domain_ref",
-                "value": "bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "same_model"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "record_maintenance_context",
+                "value": "model_validation"
               },
               {
-                "condition_id": "intended_use",
-                "value": "inside_recorded_domain"
+                "condition_id": "requested_model_validation_record_observation",
+                "value": "unqualified_observation"
               }
             ],
             "process_stage": null,
@@ -362,40 +362,40 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:negation",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:b9fd3e4987e4e1fa6248e9139c0a566e128852ea5e83de0c1126a54d7443d90e",
+          "document_digest": "sha256:04aa0817fac0b17b3445cdddbd0e15387ffdf5a9850b501337996048d6defed8",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 179,
-            "exact": "It is not true that the Emslie-style model is used only inside a recorded validation domain with its ideal assumptions stated. The film thickness scale is recorded as 1 nanometer.",
+            "end": 164,
+            "exact": "It is not true that a validation-domain record shall be maintained for the named validated model. The validation domain temperature limit is recorded as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "negative",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": 1,
-                "unit": "nanometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "model_assumption_set",
-                "value": "bound_assumption_record"
+                "condition_id": "model_identity",
+                "value": "named_model"
               },
               {
-                "condition_id": "validation_domain_ref",
-                "value": "bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "same_model"
               },
               {
-                "condition_id": "intended_use",
-                "value": "inside_recorded_domain"
+                "condition_id": "record_maintenance_context",
+                "value": "model_validation"
               }
             ],
             "process_stage": null,
@@ -425,40 +425,45 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:unit_variation",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:884fef78c2101f5ce216e59d1b3f035e20ad87dbade0551dc200a01d3b967563",
+          "document_digest": "sha256:539f7af255f817cb2765059c438727bc1fc17091f414d1a5532c69a17d42996a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 164,
-            "exact": "The Emslie-style model is used only inside a recorded validation domain with its ideal assumptions stated. The film thickness scale is recorded as 0.001 micrometer.",
+            "end": 233,
+            "exact": "A record of the domain of validation of the validated model or simulation shall be maintained. The validation domain temperature limit is recorded as 26.85 °C. The same validation domain temperature limit is referenced as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": "0.001",
-                "unit": "micrometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 26.85,
+                "unit": "°C"
+              },
+              {
+                "quantity_kind": "validation_domain_temperature_limit_reference",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "model_assumption_set",
-                "value": "bound_assumption_record"
+                "condition_id": "model_identity",
+                "value": "named_model"
               },
               {
-                "condition_id": "validation_domain_ref",
-                "value": "bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "same_model"
               },
               {
-                "condition_id": "intended_use",
-                "value": "inside_recorded_domain"
+                "condition_id": "record_maintenance_context",
+                "value": "model_validation"
               }
             ],
             "process_stage": null,
@@ -481,14 +486,14 @@
         ],
         "unit_equivalence": [
           {
-            "quantity_kind": "film_thickness_scale",
-            "value": 1,
-            "unit": "nanometer"
+            "quantity_kind": "validation_domain_temperature_limit",
+            "value": 300,
+            "unit": "kelvin"
           },
           {
-            "quantity_kind": "film_thickness_scale",
-            "value": "0.001",
-            "unit": "micrometer"
+            "quantity_kind": "validation_domain_temperature_limit",
+            "value": 26.85,
+            "unit": "°C"
           }
         ]
       },
@@ -500,40 +505,40 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:decision_changing_ambiguity",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:96836368be091558b1f0bc312442b7a58d1f4b22b8afaae93978e0508345a891",
+          "document_digest": "sha256:47abbca49b88127c818303aec2b694d5a27e359921ca57016ad84b33bea5d714",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 197,
-            "exact": "The document calls the proposition 'Emslie-style ideal-model assumptions' valid without resolving whether it affirms or denies that proposition. The film thickness scale is recorded as 1 nanometer.",
+            "end": 184,
+            "exact": "The wording leaves unresolved whether a validation-domain record is or is not required for the named validated model. The validation domain temperature limit is recorded as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": 1,
-                "unit": "nanometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "model_assumption_set",
-                "value": "bound_assumption_record"
+                "condition_id": "model_identity",
+                "value": "named_model"
               },
               {
-                "condition_id": "validation_domain_ref",
-                "value": "bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "same_model"
               },
               {
-                "condition_id": "intended_use",
-                "value": "inside_recorded_domain"
+                "condition_id": "record_maintenance_context",
+                "value": "model_validation"
               }
             ],
             "process_stage": null,
@@ -559,40 +564,40 @@
         "alternative_claim_packet": {
           "claim_id": "claim:spin-coating:002:decision_changing_ambiguity:alternative",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:96836368be091558b1f0bc312442b7a58d1f4b22b8afaae93978e0508345a891",
+          "document_digest": "sha256:47abbca49b88127c818303aec2b694d5a27e359921ca57016ad84b33bea5d714",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 197,
-            "exact": "The document calls the proposition 'Emslie-style ideal-model assumptions' valid without resolving whether it affirms or denies that proposition. The film thickness scale is recorded as 1 nanometer.",
+            "end": 184,
+            "exact": "The wording leaves unresolved whether a validation-domain record is or is not required for the named validated model. The validation domain temperature limit is recorded as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "negative",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": 1,
-                "unit": "nanometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "model_assumption_set",
-                "value": "bound_assumption_record"
+                "condition_id": "model_identity",
+                "value": "named_model"
               },
               {
-                "condition_id": "validation_domain_ref",
-                "value": "bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "same_model"
               },
               {
-                "condition_id": "intended_use",
-                "value": "inside_recorded_domain"
+                "condition_id": "record_maintenance_context",
+                "value": "model_validation"
               }
             ],
             "process_stage": null,
@@ -620,40 +625,40 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:paraphrase",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:17146d301f33d5d9fd6d9dd7afbec3f30d05ace82c7fa5df2f579ee4521ad9b4",
+          "document_digest": "sha256:344dd6164faae68b737263f038a85a9995bb9655822984f3e4202cea6e6784e7",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 182,
-            "exact": "In equivalent wording, the emslie-style model is used only inside a recorded validation domain with its ideal assumptions stated. The film thickness scale is recorded as 1 nanometer.",
+            "end": 141,
+            "exact": "The validated model must retain a record describing its validation domain. The validation domain temperature limit is recorded as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": 1,
-                "unit": "nanometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "model_assumption_set",
-                "value": "bound_assumption_record"
+                "condition_id": "model_identity",
+                "value": "named_model"
               },
               {
-                "condition_id": "validation_domain_ref",
-                "value": "bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "same_model"
               },
               {
-                "condition_id": "intended_use",
-                "value": "inside_recorded_domain"
+                "condition_id": "record_maintenance_context",
+                "value": "model_validation"
               }
             ],
             "process_stage": null,
@@ -683,40 +688,40 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:002:false_red_prevention",
           "document_ref": "qualification:spin-coating:002",
-          "document_digest": "sha256:01a6d4ea0462691b8d683d045baf8bbdedda0515461d1bc982ea3d1f3db8405c",
+          "document_digest": "sha256:1256ca731a934eac5a6a4b84b08fadf63f04ce55df07d425b4e50b8636322682",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 196,
-            "exact": "When the validation domain ref is outside this rule's required scope, the document denies that emslie style spin model applies to intended use. The film thickness scale is recorded as 1 nanometer.",
+            "end": 179,
+            "exact": "A validation-domain record maintained for a different model does not satisfy the named model record requirement. The validation domain temperature limit is recorded as 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:emslie-style-spin-model",
-            "relation_kind": "equation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
-            "object_concept_id": "sci:concept:intended-use",
+            "object_concept_id": "sci:concept:record-maintenance",
             "polarity": "negative",
             "quantities": [
               {
-                "quantity_kind": "film_thickness_scale",
-                "value": 1,
-                "unit": "nanometer"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "model_assumption_set",
-                "value": "bound_assumption_record"
+                "condition_id": "model_identity",
+                "value": "named_model"
               },
               {
-                "condition_id": "validation_domain_ref",
-                "value": "outside_bound_science_knowledge"
+                "condition_id": "validation_record_scope",
+                "value": "different_model"
               },
               {
-                "condition_id": "intended_use",
-                "value": "inside_recorded_domain"
+                "condition_id": "record_maintenance_context",
+                "value": "model_validation"
               }
             ],
             "process_stage": null,

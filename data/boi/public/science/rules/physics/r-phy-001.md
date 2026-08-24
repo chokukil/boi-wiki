@@ -68,9 +68,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_angular_speed_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -90,7 +90,14 @@
       }
     ],
     "deterministic_evaluator": true,
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "angular_rate",
+        "quantity_kind": "angular_rate",
+        "reference_quantity_kind": "angular_rate_reference"
+      }
+    ]
   }
 }
 ---

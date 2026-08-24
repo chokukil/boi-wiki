@@ -73,9 +73,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_fluid_deformation_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -100,7 +100,14 @@
     "contradiction_predicates": [
       "stops"
     ],
-    "expected_polarity": "positive"
+    "expected_polarity": "positive",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "dynamic_viscosity",
+        "quantity_kind": "dynamic_viscosity",
+        "reference_quantity_kind": "dynamic_viscosity_reference"
+      }
+    ]
   }
 }
 ---

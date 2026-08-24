@@ -47,12 +47,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:clear_violation",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:d54a165f75a26337250b3ed4fdfc861ae9e3a0a4d4672fce869c75a25b812ca2",
+          "document_digest": "sha256:41bd8064035eb68a130d40d2afba65e0b7cfbd8e93d7c64276ba22bae7a48e97",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 248,
-            "exact": "During final coat spin, increasing spin speed while the bound photoresist, viscosity, solids, spin time, environment, and dry post-bake measurement state are held constant increases attainable dry film thickness. The spin rate is recorded as 1 rpm.",
+            "end": 168,
+            "exact": "During final coat spin, increasing spin speed increases attainable resist film thickness in drying-limited photoresist spin coating. The spin rate is recorded as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -71,27 +71,6 @@
             ],
             "conditions": [
               {
-                "condition_id": "product_family",
-                "value": "AZ 125nXT"
-              },
-              {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
-              {
                 "condition_id": "material_class",
                 "value": "photoresist"
               },
@@ -104,32 +83,8 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
-              },
-              {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "inside_bound_product_curve"
+                "condition_id": "claim_scope",
+                "value": "qualitative_direction_only"
               }
             ],
             "process_stage": "final_coat_spin",
@@ -148,8 +103,7 @@
         "expected_verdict": "VIOLATION",
         "rationale": "This natural-language claim exercises product-scoped spin-speed direction through the target Rule's own typed conditions and Evidence scope.",
         "expected_evidence_path": [
-          "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
-          "sci-evidence:spin-coating:vendor-spin-curve-observation"
+          "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
         ]
       },
       {
@@ -160,12 +114,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:in_scope_consistency",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:e1ee650526f87217ea815f69af75eec6932fd1b73b71fe6505c36de048e9de73",
+          "document_digest": "sha256:65cc9a279cb1b7cf627dc3247ae63094460eb729f46ab461620ee33b104de8d0",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 223,
-            "exact": "For final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows. The spin rate is recorded as 1 rpm.",
+            "end": 195,
+            "exact": "During final coat spin, attainable photoresist film thickness decreases approximately with the reciprocal square root of spin speed when drying stops the flow. The spin rate is recorded as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -184,27 +138,6 @@
             ],
             "conditions": [
               {
-                "condition_id": "product_family",
-                "value": "AZ 125nXT"
-              },
-              {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
-              {
                 "condition_id": "material_class",
                 "value": "photoresist"
               },
@@ -217,32 +150,8 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
-              },
-              {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "inside_bound_product_curve"
+                "condition_id": "claim_scope",
+                "value": "qualitative_direction_only"
               }
             ],
             "process_stage": "final_coat_spin",
@@ -261,8 +170,7 @@
         "expected_verdict": "CONSISTENT",
         "rationale": "This natural-language claim exercises product-scoped spin-speed direction through the target Rule's own typed conditions and Evidence scope.",
         "expected_evidence_path": [
-          "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
-          "sci-evidence:spin-coating:vendor-spin-curve-observation"
+          "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
         ]
       },
       {
@@ -273,12 +181,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:missing_required_condition",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:4a4f20bd4144fa9730625c291edc3f41505c8e577b1cbe58ad56f3f47eb7d936",
+          "document_digest": "sha256:5e1d3dad98c1b0c184281b0f11f6e5840a7ad705cfba04f103eb1d39971ebf87",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 282,
-            "exact": "Without specifying the product family, the report asserts: For final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows. The spin rate is recorded as 1 rpm.",
+            "end": 125,
+            "exact": "The report states a spin-speed direction without identifying the material as photoresist. The spin rate is recorded as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -297,27 +205,6 @@
             ],
             "conditions": [
               {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
-              {
-                "condition_id": "material_class",
-                "value": "photoresist"
-              },
-              {
                 "condition_id": "process_method",
                 "value": "spin_coating"
               },
@@ -326,32 +213,8 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
-              },
-              {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "inside_bound_product_curve"
+                "condition_id": "claim_scope",
+                "value": "qualitative_direction_only"
               }
             ],
             "process_stage": "final_coat_spin",
@@ -370,8 +233,7 @@
         "expected_verdict": "INSUFFICIENT_INFORMATION",
         "rationale": "This natural-language claim exercises product-scoped spin-speed direction through the target Rule's own typed conditions and Evidence scope.",
         "expected_evidence_path": [
-          "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
-          "sci-evidence:spin-coating:vendor-spin-curve-observation"
+          "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
         ]
       },
       {
@@ -382,12 +244,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:outside_validity_domain",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:2dfbe53ef815f53d39a59210c67d12c3c791f6fd459c8a77b684e4edfc0a06f1",
+          "document_digest": "sha256:3524a96caa367410ada34b64b960539303579be57ae989aad5cc6521c1cf2c74",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 302,
-            "exact": "Outside the bound product revision or plotted speed range, the report asserts: For final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows. The spin rate is recorded as 1 rpm.",
+            "end": 125,
+            "exact": "The qualitative drying-limited relation is asserted to provide an exact equipment recipe. The spin rate is recorded as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -406,27 +268,6 @@
             ],
             "conditions": [
               {
-                "condition_id": "product_family",
-                "value": "AZ 125nXT"
-              },
-              {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
-              {
                 "condition_id": "material_class",
                 "value": "photoresist"
               },
@@ -439,32 +280,8 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
-              },
-              {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "outside_inside_bound_product_curve"
+                "condition_id": "claim_scope",
+                "value": "exact_equipment_recipe"
               }
             ],
             "process_stage": "final_coat_spin",
@@ -483,8 +300,7 @@
         "expected_verdict": "OUTSIDE_VALIDITY_DOMAIN",
         "rationale": "This natural-language claim exercises product-scoped spin-speed direction through the target Rule's own typed conditions and Evidence scope.",
         "expected_evidence_path": [
-          "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
-          "sci-evidence:spin-coating:vendor-spin-curve-observation"
+          "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
         ]
       },
       {
@@ -495,12 +311,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:empirical_verification_required",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:8f8bc9bd1b05d1ed90cb940ea49502ac96f27d9f18c00f3a833476b82c79bdec",
+          "document_digest": "sha256:fbdaefb0134d2e8739b25d625a2761fd5cc8296379dd7ac223a026f6132e99dc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 338,
-            "exact": "For a named production coater using the bound product, the report asserts: For final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows. This named result requires measurement. The spin rate is recorded as 1 rpm.",
+            "end": 155,
+            "exact": "The report claims a measured spin-speed and thickness result for a named coater, but no qualified observation is bound. The spin rate is recorded as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -519,27 +335,6 @@
             ],
             "conditions": [
               {
-                "condition_id": "product_family",
-                "value": "AZ 125nXT"
-              },
-              {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
-              {
                 "condition_id": "material_class",
                 "value": "photoresist"
               },
@@ -552,36 +347,12 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
+                "condition_id": "claim_scope",
+                "value": "qualitative_direction_only"
               },
               {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "inside_bound_product_curve"
+                "condition_id": "requested_spin_thickness_observation",
+                "value": "unqualified_observation"
               }
             ],
             "process_stage": "final_coat_spin",
@@ -600,8 +371,7 @@
         "expected_verdict": "EMPIRICAL_VERIFICATION_REQUIRED",
         "rationale": "This natural-language claim exercises product-scoped spin-speed direction through the target Rule's own typed conditions and Evidence scope.",
         "expected_evidence_path": [
-          "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
-          "sci-evidence:spin-coating:vendor-spin-curve-observation"
+          "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
         ]
       },
       {
@@ -612,12 +382,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:negation",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:fe9cebb71f312de1408a4f40e500da77d5139bd17f2a9f5d742b03884b21c81b",
+          "document_digest": "sha256:391b72b77eb3bbd37511a5ceb1433a0b48f8d198656ed1bbffabe15aa8c1fdfe",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 283,
-            "exact": "Under the stated scientific conditions, it is not true that for final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows. The spin rate is recorded as 1 rpm.",
+            "end": 161,
+            "exact": "It is not true that attainable resist film thickness decreases as spin speed increases during drying-limited final coat spin. The spin rate is recorded as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -636,27 +406,6 @@
             ],
             "conditions": [
               {
-                "condition_id": "product_family",
-                "value": "AZ 125nXT"
-              },
-              {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
-              {
                 "condition_id": "material_class",
                 "value": "photoresist"
               },
@@ -669,32 +418,8 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
-              },
-              {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "inside_bound_product_curve"
+                "condition_id": "claim_scope",
+                "value": "qualitative_direction_only"
               }
             ],
             "process_stage": "final_coat_spin",
@@ -713,8 +438,7 @@
         "expected_verdict": "VIOLATION",
         "rationale": "This natural-language claim exercises product-scoped spin-speed direction through the target Rule's own typed conditions and Evidence scope.",
         "expected_evidence_path": [
-          "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
-          "sci-evidence:spin-coating:vendor-spin-curve-observation"
+          "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
         ]
       },
       {
@@ -725,12 +449,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:unit_variation",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:1e5b5fbb617c19aae3c0437f2a0371349eb65c44045082be34158f1cce83072a",
+          "document_digest": "sha256:24720826df1840fb11059812bff66eb63d5a39d4a00441398e0ebad18321fb4e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 239,
-            "exact": "For final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows. The spin rate is recorded as 1 revolution / minute.",
+            "end": 218,
+            "exact": "During final coat spin, attainable photoresist film thickness decreases as spin speed increases when drying stops the flow. The spin rate is recorded as 1 revolution / minute. The same spin rate is referenced as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -745,30 +469,14 @@
                 "quantity_kind": "spin_rate",
                 "value": 1,
                 "unit": "revolution / minute"
+              },
+              {
+                "quantity_kind": "spin_rate_reference",
+                "value": 1,
+                "unit": "rpm"
               }
             ],
             "conditions": [
-              {
-                "condition_id": "product_family",
-                "value": "AZ 125nXT"
-              },
-              {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
               {
                 "condition_id": "material_class",
                 "value": "photoresist"
@@ -782,32 +490,8 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
-              },
-              {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "inside_bound_product_curve"
+                "condition_id": "claim_scope",
+                "value": "qualitative_direction_only"
               }
             ],
             "process_stage": "final_coat_spin",
@@ -826,8 +510,7 @@
         "expected_verdict": "CONSISTENT",
         "rationale": "This natural-language claim exercises product-scoped spin-speed direction through the target Rule's own typed conditions and Evidence scope.",
         "expected_evidence_path": [
-          "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
-          "sci-evidence:spin-coating:vendor-spin-curve-observation"
+          "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
         ],
         "unit_equivalence": [
           {
@@ -850,12 +533,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:decision_changing_ambiguity",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:c2aa071969a7cc3031b0a75799c414ac3e3f7f1acdeebd71de30e6023b436f31",
+          "document_digest": "sha256:d4be7c57fd5c9aa769a9adbe01971e7d3033e7593dffe2437ac1ab6720d50f5e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 489,
-            "exact": "The wording leaves unresolved whether 'For final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows.' or instead 'During final coat spin, increasing spin speed while the bound photoresist, viscosity, solids, spin time, environment, and dry post-bake measurement state are held constant increases attainable dry film thickness'. The spin rate is recorded as 1 rpm.",
+            "end": 163,
+            "exact": "The wording leaves unresolved whether increasing spin speed makes the attainable drying-limited resist film thinner or thicker. The spin rate is recorded as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -874,27 +557,6 @@
             ],
             "conditions": [
               {
-                "condition_id": "product_family",
-                "value": "AZ 125nXT"
-              },
-              {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
-              {
                 "condition_id": "material_class",
                 "value": "photoresist"
               },
@@ -907,32 +569,8 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
-              },
-              {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "inside_bound_product_curve"
+                "condition_id": "claim_scope",
+                "value": "qualitative_direction_only"
               }
             ],
             "process_stage": "final_coat_spin",
@@ -953,18 +591,17 @@
         "expected_verdict": "INSUFFICIENT_INFORMATION",
         "rationale": "This natural-language claim exercises product-scoped spin-speed direction through the target Rule's own typed conditions and Evidence scope.",
         "expected_evidence_path": [
-          "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
-          "sci-evidence:spin-coating:vendor-spin-curve-observation"
+          "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
         ],
         "alternative_claim_packet": {
           "claim_id": "claim:spin-coating:004:decision_changing_ambiguity:alternative",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:c2aa071969a7cc3031b0a75799c414ac3e3f7f1acdeebd71de30e6023b436f31",
+          "document_digest": "sha256:d4be7c57fd5c9aa769a9adbe01971e7d3033e7593dffe2437ac1ab6720d50f5e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 489,
-            "exact": "The wording leaves unresolved whether 'For final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows.' or instead 'During final coat spin, increasing spin speed while the bound photoresist, viscosity, solids, spin time, environment, and dry post-bake measurement state are held constant increases attainable dry film thickness'. The spin rate is recorded as 1 rpm.",
+            "end": 163,
+            "exact": "The wording leaves unresolved whether increasing spin speed makes the attainable drying-limited resist film thinner or thicker. The spin rate is recorded as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -983,27 +620,6 @@
             ],
             "conditions": [
               {
-                "condition_id": "product_family",
-                "value": "AZ 125nXT"
-              },
-              {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
-              {
                 "condition_id": "material_class",
                 "value": "photoresist"
               },
@@ -1016,32 +632,8 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
-              },
-              {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "inside_bound_product_curve"
+                "condition_id": "claim_scope",
+                "value": "qualitative_direction_only"
               }
             ],
             "process_stage": "final_coat_spin",
@@ -1069,12 +661,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:paraphrase",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:cc9a0b98232b13fd74b3ad7b5cae56410c8acdefee0984453d42a29070028463",
+          "document_digest": "sha256:d4e606100637c52ae49c00e4f71a38e27d920deda3c85dd3ed36163f3f06a9fd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 267,
-            "exact": "In equivalent wording, the document states: For final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows. The spin rate is recorded as 1 rpm.",
+            "end": 146,
+            "exact": "Faster final coat spin produces a thinner attainable photoresist film while drying terminates the radial flow. The spin rate is recorded as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -1093,27 +685,6 @@
             ],
             "conditions": [
               {
-                "condition_id": "product_family",
-                "value": "AZ 125nXT"
-              },
-              {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
-              {
                 "condition_id": "material_class",
                 "value": "photoresist"
               },
@@ -1126,32 +697,8 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
-              },
-              {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "inside_bound_product_curve"
+                "condition_id": "claim_scope",
+                "value": "qualitative_direction_only"
               }
             ],
             "process_stage": "final_coat_spin",
@@ -1170,8 +717,7 @@
         "expected_verdict": "CONSISTENT",
         "rationale": "This natural-language claim exercises product-scoped spin-speed direction through the target Rule's own typed conditions and Evidence scope.",
         "expected_evidence_path": [
-          "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
-          "sci-evidence:spin-coating:vendor-spin-curve-observation"
+          "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
         ]
       },
       {
@@ -1182,12 +728,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:004:false_red_prevention",
           "document_ref": "qualification:spin-coating:004",
-          "document_digest": "sha256:5012f92b1c09461fbb5e639167aa0f0ce393db441e6e790228fb27cdc68961b5",
+          "document_digest": "sha256:7628ac76a3426c4703fe7f7641a6fa74321783c8682eea2a99627a1c97ef150d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 159,
-            "exact": "When the process stage is outside this rule's required scope, the document states that spin speed increases film thickness. The spin rate is recorded as 1 rpm.",
+            "end": 171,
+            "exact": "During the dispense stage before rotation, a thicker liquid puddle does not contradict the spin-speed direction during final coat spin. The spin rate is recorded as 1 rpm.",
             "prefix": "",
             "suffix": ""
           },
@@ -1206,27 +752,6 @@
             ],
             "conditions": [
               {
-                "condition_id": "product_family",
-                "value": "AZ 125nXT"
-              },
-              {
-                "condition_id": "product_grade",
-                "value": "AZ 125nXT-10 B"
-              },
-              {
-                "condition_id": "source_revision",
-                "value": "01/24"
-              },
-              {
-                "condition_id": "spin_speed_rpm",
-                "value": 1450.0,
-                "unit": "rpm"
-              },
-              {
-                "condition_id": "evidence_use_mode",
-                "value": "plotted_markers_only"
-              },
-              {
                 "condition_id": "material_class",
                 "value": "photoresist"
               },
@@ -1239,35 +764,11 @@
                 "value": "drying_stops_flow"
               },
               {
-                "condition_id": "resist_identity",
-                "value": "same"
-              },
-              {
-                "condition_id": "viscosity",
-                "value": "same"
-              },
-              {
-                "condition_id": "solids_fraction",
-                "value": "same"
-              },
-              {
-                "condition_id": "spin_time",
-                "value": "same"
-              },
-              {
-                "condition_id": "environment",
-                "value": "same"
-              },
-              {
-                "condition_id": "measurement_state",
-                "value": "dry_post_bake"
-              },
-              {
-                "condition_id": "comparison_domain",
-                "value": "inside_bound_product_curve"
+                "condition_id": "claim_scope",
+                "value": "qualitative_direction_only"
               }
             ],
-            "process_stage": "outside_final_coat_spin",
+            "process_stage": "dispense_stage",
             "material_state": null
           },
           "interpretation": {
@@ -1283,8 +784,7 @@
         "expected_verdict": "INSUFFICIENT_INFORMATION",
         "rationale": "This natural-language claim exercises product-scoped spin-speed direction through the target Rule's own typed conditions and Evidence scope.",
         "expected_evidence_path": [
-          "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
-          "sci-evidence:spin-coating:vendor-spin-curve-observation"
+          "sci-evidence:spin-coating:microchemicals-spin-speed-direction"
         ]
       }
     ],
@@ -1292,7 +792,6 @@
   }
 }
 ---
-
 # Q-SPN-004
 
 Ten public natural-claim fixtures qualify only `sci-rule:spin-coating:004`. No operational authority is created.

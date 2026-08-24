@@ -54,10 +54,11 @@ mappings:
         molecules from a condensed state of matter.
       required_conditions: []
     forbidden_claim_families:
+    - chemistry.open_process_evaporation_rate
     - unbounded_or_unqualified_claims
     limitations:
     - This does not alone determine an evaporation rate in an open, flowing process.
-  claim_scope_hash: sha256:7633dfe6a04f9f85467319bb5b34002537b5856e73bc7669faa1d8dc4c13638c
+  claim_scope_hash: sha256:d984af5121c1da944a5e09fc5a0d5f309d284dbbe9a99e631475169b7c59d4e8
   allowed_original_text_hash: sha256:dbce87703720dbd37d2cd451ccf39ea5547984ae233724116e1ae2a6aca8e281
 - evidence_id: sci-evidence:chemistry:reaction-equilibrium
   qualification_status: pending_review
@@ -66,7 +67,7 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.chemistry.reaction_equilibrium
-      purpose: K is the equilibrium constant. It has the same form as Q, but only
+      purpose: K = is the equilibrium constant. It has the same form as Q, but only
         uses the amounts of products and reactants at equilibrium.
       required_conditions: []
     forbidden_claim_families:
@@ -74,8 +75,8 @@ mappings:
     limitations:
     - Activities, standard states, and the balanced reaction remain necessary for
       quantitative use.
-  claim_scope_hash: sha256:c97f3ce59553972bbe4dbe962eb784aad17028f1c93bf25caff448adaf2a6e37
-  allowed_original_text_hash: sha256:3c87533763158c16b87c99f21cd4405d09385c03b2a066ab29457c568f6f5a77
+  claim_scope_hash: sha256:137bed48aef7679022772cba58deca4e53c17cb0f78dd9081ae2a3a4e0f797bb
+  allowed_original_text_hash: sha256:58372fc42d88ec04a728829489c4c6cdcf29f47d1580757e5b37d7499f80828d
 - evidence_id: sci-evidence:chemistry:substance-phase
   qualification_status: pending_review
   may_enter_active_release: false
@@ -320,15 +321,17 @@ mappings:
     schema_version: '0.1'
     allowed_claims:
     - claim_family: locator_bound.common.model_validity
-      purpose: A record of the domain of validation of the M&S shall be maintained.
+      purpose: A record of the domain of validation of the validated M&S shall be
+        maintained.
       required_conditions: []
     forbidden_claim_families:
+    - common.particular_model_validation_for_intended_use
     - unbounded_or_unqualified_claims
     limitations:
     - This assurance requirement does not prove that a particular model is valid for
       a proposed use.
-  claim_scope_hash: sha256:4bb9675835586691cd37e8cd9e9786d652c71c3168878a3e31deebfe99c9f172
-  allowed_original_text_hash: sha256:b7d8094ac4ccb94bc6ed8d409c289482662df68044ec243bc26797ee9b439e00
+  claim_scope_hash: sha256:dbe72adcbb4a8ef1d3bd843bc2e70f15c9a37f65dfdc63bc218a1f03a398d98e
+  allowed_original_text_hash: sha256:5ee64e6678c5e96d71305f48a65acf1267bf3dc66f671389aedcc43949cea6f0
 - evidence_id: sci-evidence:common:quantity-unit-dimension
   qualification_status: pending_review
   may_enter_active_release: false
@@ -463,15 +466,12 @@ mappings:
       - key: diffusion_model
         operator: eq
         value: arrhenius
-      - key: material_parameters_known
-        operator: eq
-        value: true
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - The equation states an Arrhenius model; D₀, Eₐ, mechanism, temperature range,
       and material phase must be supplied for quantitative use.
-  claim_scope_hash: sha256:088113758323abae0d305711e75041cf6cf38c1dd4eb39f124c59cec162b2257
+  claim_scope_hash: sha256:0c83d40de943b4e1f3b555b42f13f47c9939a544e0006eab1488990324ebc742
   allowed_original_text_hash: sha256:5dcaf1d7d06a198aceaaacc838bf5c0231692b6ec6f06ab6062a98cd8c7ea040
 - evidence_id: sci-evidence:materials:phase-transformation
   qualification_status: pending_review
@@ -535,14 +535,14 @@ mappings:
     - claim_family: locator_bound.physics.force_momentum
       purpose: We conclude that the external force causes the momentum of the system
         to change, and we thus restate and generalize Newton’s Second Law for a system
-        of objects.
+        of objects as
       required_conditions: []
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - Applicability requires a defined system and reference frame.
-  claim_scope_hash: sha256:b59c3176673af7c832d52e5bcec869d86a89a2eae2dd26d5bc5d10cc88e97b2c
-  allowed_original_text_hash: sha256:d9e683681f17bb8f4e804dca5a6e52e473af3b6fceb3cdff00058a1d7d505837
+  claim_scope_hash: sha256:df8a86c3056e919c88210f734aea150b2f7b3e0284b4bf30843b4fa16013174f
+  allowed_original_text_hash: sha256:5d80a2f657106aa4cb788eeb4b8b298759c3bbe506689eb74f09b290662be2cc
 - evidence_id: sci-evidence:physics:rotation-angular-speed
   qualification_status: pending_review
   may_enter_active_release: false
@@ -623,16 +623,13 @@ mappings:
       - key: transport_regime
         operator: eq
         value: low_field
-      - key: carrier_state_parameters_known
-        operator: eq
-        value: true
     forbidden_claim_families:
     - unbounded_or_unqualified_claims
     limitations:
     - This low-field drift conductivity relation requires carrier concentrations and
       mobilities under the model conditions; it is not a universal high-field transport
       law.
-  claim_scope_hash: sha256:fafcb18e95b4b1387449025036dc2fbddb89ed6708fb0155886b220dd3c602ca
+  claim_scope_hash: sha256:e9496ec9e637423f0a2eb739a5d2af1f027f11158041c76ebfc2491e9632ab57
   allowed_original_text_hash: sha256:a7f286856b6d4fc93a51bd0d52a3888674e44d3b74a23e7901f9e68529c2e925
 - evidence_id: sci-evidence:semiconductor-devices:drift-diffusion
   qualification_status: pending_review
@@ -783,38 +780,19 @@ mappings:
   claim_scope:
     schema_version: '0.1'
     allowed_claims:
-    - claim_family: spin_coating.rpm_thickness_direction.product_scoped_figure_observation
-      purpose: Both plotted AZ 125nXT grades show decreasing thickness as spin speed
-        increases across their displayed markers.
-      required_conditions:
-      - key: product_family
-        operator: eq
-        value: AZ 125nXT
-      - key: product_grade
-        operator: in
-        values:
-        - AZ 125nXT-10 B
-        - AZ 125nXT-7 B
-      - key: source_revision
-        operator: eq
-        value: 01/24
-      - key: spin_speed_rpm
-        operator: range
-        range:
-          minimum: 600
-          maximum: 2300
-        unit: rpm
-      - key: evidence_use_mode
-        operator: eq
-        value: plotted_markers_only
+    - claim_family: locator_bound.spin_coating.vendor_figure_labels
+      purpose: Film Thickness (µm) Spin Speed (rpm) AZ 125nXT-10 B AZ 125nXT-7 B
+      required_conditions: []
     forbidden_claim_families:
+    - spin_coating.rpm_thickness_direction
+    - spin_coating.numeric_curve_or_recipe
     - unbounded_or_unqualified_claims
     limitations:
     - Product-scoped to AZ 125nXT revision 01/24 and the displayed figure; it is not
       a universal spin-coating law.
-    - Approximate visual ranges are not digitized data and cannot authorize a numeric
-      recipe or extrapolation.
-  claim_scope_hash: sha256:efd7b7ea531ec0c6538f87cb63d262ddf76ccb669b922957b2375c8c99f8607d
+    - The pinned exact span records only axis and series labels; it does not assert
+      curve direction, numeric data points, range, or recipe.
+  claim_scope_hash: sha256:4387e1b8ce07b9fa276619b852c0f36dd88c240c67f1c7935615df67f09211c2
   allowed_original_text_hash: sha256:7c156fb15f79237d9172fd263bc232e5a42ef78a7838d884d4f594313280bbe0
 - evidence_id: sci-evidence:spin-coating:vendor-spin-time-guidance
   qualification_status: pending_review

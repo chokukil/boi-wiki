@@ -43,7 +43,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "definition",
     "assurance_basis": "hypothesis",
-    "statement": "Steady state means specified macroscopic quantities are time independent, whereas equilibrium addresses the relevant balance of opposing processes; a steady state can remain nonequilibrium with nonzero flows.",
+    "statement": "Steady state means time independent in the cited diffusion context, while dynamic equilibrium has equal forward and reverse reaction rates and no net composition change.",
     "definitions": [
       "steady state: selected state variables do not change with time",
       "equilibrium: no net driving tendency for the specified process",
@@ -88,8 +88,8 @@
 }
 ---
 
-# SCI-COM-010 — Steady state and equilibrium
+# SCI-COM-010 — Narrow reviewed Foundation statement
 
-Steady state means specified macroscopic quantities are time independent, whereas equilibrium addresses the relevant balance of opposing processes; a steady state can remain nonequilibrium with nonzero flows.
+Steady state means time independent in the cited diffusion context, while dynamic equilibrium has equal forward and reverse reaction rates and no net composition change.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

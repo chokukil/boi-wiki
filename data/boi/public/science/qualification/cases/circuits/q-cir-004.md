@@ -347,8 +347,8 @@
                 "value": "linear_resistor"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_fixed_current_power_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "operating_regime",
@@ -449,12 +449,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:004:unit_variation",
           "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:0e35b881b1962cb4d15819b1d892aafe76fc29864cc6d80209844cd73ce40c05",
+          "document_digest": "sha256:4e067c62a38c73470c45162c33be60ce21f74ce1c9d64737812a14601a522979",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 188,
-            "exact": "For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1000 milliampere.",
+            "end": 238,
+            "exact": "For a linear resistor at fixed current under the passive sign convention, increasing resistance increases consumed power through P = I²R. The current scale is recorded as 1000 milliampere. The same current scale is referenced as 1 ampere.",
             "prefix": "",
             "suffix": ""
           },
@@ -469,6 +469,11 @@
                 "quantity_kind": "current_scale",
                 "value": 1000,
                 "unit": "milliampere"
+              },
+              {
+                "quantity_kind": "current_scale_reference",
+                "value": 1,
+                "unit": "ampere"
               }
             ],
             "conditions": [
@@ -722,12 +727,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:004:false_red_prevention",
           "document_ref": "qualification:circuits:004",
-          "document_digest": "sha256:d2b9fe83c6122d2a1694117376a285d365af49d299a76d6359cee5ad31b2e6e2",
+          "document_digest": "sha256:7d1d544165316fb7dad75fae716f77356443a27da849b4cf0e4d5f323ce4bdc4",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 166,
-            "exact": "When the element model is outside this rule's required scope, the document states that resistance decreases electric power. The current scale is recorded as 1 ampere.",
+            "end": 149,
+            "exact": "An active current-controlled element is reported to draw less power when its effective resistance changes. The current scale is recorded as 1 ampere.",
             "prefix": "",
             "suffix": ""
           },
@@ -755,7 +760,7 @@
               },
               {
                 "condition_id": "element_model",
-                "value": "outside_linear_resistor"
+                "value": "active_current_controlled_element"
               },
               {
                 "condition_id": "operating_regime",

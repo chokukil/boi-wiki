@@ -52,42 +52,24 @@ science:
   access_limitation: ''
   contextual_limitations:
   - Product-scoped to AZ 125nXT revision 01/24 and the displayed figure; it is not a universal spin-coating law.
-  - Approximate visual ranges are not digitized data and cannot authorize a numeric recipe or extrapolation.
+  - The pinned exact span records only axis and series labels; it does not assert curve direction, numeric data points, range,
+    or recipe.
   claim_scope:
     schema_version: '0.1'
     allowed_claims:
-    - claim_family: spin_coating.rpm_thickness_direction.product_scoped_figure_observation
-      purpose: Both plotted AZ 125nXT grades show decreasing thickness as spin speed
-        increases across their displayed markers.
-      required_conditions:
-      - key: product_family
-        operator: eq
-        value: AZ 125nXT
-      - key: product_grade
-        operator: in
-        values:
-        - AZ 125nXT-10 B
-        - AZ 125nXT-7 B
-      - key: source_revision
-        operator: eq
-        value: 01/24
-      - key: spin_speed_rpm
-        operator: range
-        range:
-          minimum: 600
-          maximum: 2300
-        unit: rpm
-      - key: evidence_use_mode
-        operator: eq
-        value: plotted_markers_only
+    - claim_family: locator_bound.spin_coating.vendor_figure_labels
+      purpose: Film Thickness (µm) Spin Speed (rpm) AZ 125nXT-10 B AZ 125nXT-7 B
+      required_conditions: []
     forbidden_claim_families:
+    - spin_coating.rpm_thickness_direction
+    - spin_coating.numeric_curve_or_recipe
     - unbounded_or_unqualified_claims
     limitations:
     - Product-scoped to AZ 125nXT revision 01/24 and the displayed figure; it is not
       a universal spin-coating law.
-    - Approximate visual ranges are not digitized data and cannot authorize a numeric
-      recipe or extrapolation.
-  claim_scope_hash: sha256:efd7b7ea531ec0c6538f87cb63d262ddf76ccb669b922957b2375c8c99f8607d
+    - The pinned exact span records only axis and series labels; it does not assert
+      curve direction, numeric data points, range, or recipe.
+  claim_scope_hash: sha256:4387e1b8ce07b9fa276619b852c0f36dd88c240c67f1c7935615df67f09211c2
   supports_knowledge: []
   translation:
     status: agent_draft_pending_admin_review
@@ -106,42 +88,18 @@ science:
     x_axis:
       label: Spin Speed
       unit: rpm
-      labeled_tick_range:
-        from: 200
-        to: 2600
-      plot_boundary_extends_beyond_labeled_max: true
     y_axis:
       label: Film Thickness
       unit: µm
-      labeled_tick_range:
-        from: 0
-        to: 120
-      plot_boundary_extends_above_labeled_max: true
-    series:
-    - label: AZ 125nXT-10 B
-      visually_observed_plotted_range:
-        spin_speed_rpm:
-          approximately_from: 600
-          approximately_to: 2500
-        film_thickness_um:
-          approximately_from: 37
-          approximately_to: 120
-      observed_direction: thickness decreases as spin speed increases across the plotted markers
-    - label: AZ 125nXT-7 B
-      visually_observed_plotted_range:
-        spin_speed_rpm:
-          approximately_from: 600
-          approximately_to: 2300
-        film_thickness_um:
-          approximately_from: 15
-          approximately_to: 57
-      observed_direction: thickness decreases as spin speed increases across the plotted markers
-    extraction_method: manual visual inspection of PDF page 10 and its raster rendering; no curve digitization or interpolation
+    series_labels:
+    - AZ 125nXT-10 B
+    - AZ 125nXT-7 B
+    extraction_method: manual visual transcription of axis and legend labels from PDF page 10; no curve interpretation or
+      digitization
     review_method: agent visual transcription pending authorized Admin review
     limits:
-    - axis and series ranges are approximate visual bounds
-    - no individual point values are asserted
-    - no extrapolation outside plotted markers
+    - the exact span stores labels only
+    - no curve direction, range, individual point, interpolation, or extrapolation is asserted
 ---
 
 # Review scope

@@ -68,9 +68,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_solution_concentration_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -98,7 +98,14 @@
         "solution_volume"
       ],
       "operator": "quotient"
-    }
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "concentration_scale",
+        "quantity_kind": "concentration_scale",
+        "reference_quantity_kind": "concentration_scale_reference"
+      }
+    ]
   }
 }
 ---

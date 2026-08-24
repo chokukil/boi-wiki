@@ -348,8 +348,8 @@
                 "value": "explicit_bounded_object"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_work_energy_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "work_accounting",
@@ -450,12 +450,12 @@
         "claim_packet": {
           "claim_id": "claim:physics:003:unit_variation",
           "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:86cbf818cd810480effb13278858e56582838590327c2a8b6c875764bd29d211",
+          "document_digest": "sha256:7a4760d8a1fa982534207eb01bda34527123e7883533f0689925003e1b81fb21",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 136,
-            "exact": "The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1000 millijoule.",
+            "end": 184,
+            "exact": "The applied work is 10 joules and the object's kinetic-energy change is also 10 joules. The energy scale is recorded as 1000 millijoule. The same energy scale is referenced as 1 joule.",
             "prefix": "",
             "suffix": ""
           },
@@ -479,6 +479,11 @@
               {
                 "quantity_kind": "kinetic_energy_change",
                 "value": 10,
+                "unit": "joule"
+              },
+              {
+                "quantity_kind": "energy_scale_reference",
+                "value": 1,
                 "unit": "joule"
               }
             ],
@@ -728,12 +733,12 @@
         "claim_packet": {
           "claim_id": "claim:physics:003:false_red_prevention",
           "document_ref": "qualification:physics:003",
-          "document_digest": "sha256:cdf387be7c6d78c8dbc4779cc224444b9217a12c07ab0f2fd80aec47d8958777",
+          "document_digest": "sha256:9a09595cffb31ad05de3851af717d3ec6cf167f09fbcb76e3735b1f1d314eeba",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 219,
-            "exact": "When the object system is outside this rule's required scope, the document states: The applied work is 8 joules while the object's kinetic-energy change is reported as 10 joules. The energy scale is recorded as 1 joule.",
+            "end": 159,
+            "exact": "With no defined object boundary, the report compares work on one collection with the kinetic-energy change of another. The energy scale is recorded as 1 joule.",
             "prefix": "",
             "suffix": ""
           },
@@ -763,7 +768,7 @@
             "conditions": [
               {
                 "condition_id": "object_system",
-                "value": "outside_explicit_bounded_object"
+                "value": "unbounded_collection"
               },
               {
                 "condition_id": "work_accounting",

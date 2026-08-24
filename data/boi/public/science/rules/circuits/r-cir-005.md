@@ -68,9 +68,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_storage_state_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -90,7 +90,14 @@
       }
     ],
     "deterministic_evaluator": true,
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "capacitance_scale",
+        "quantity_kind": "capacitance_scale",
+        "reference_quantity_kind": "capacitance_scale_reference"
+      }
+    ]
   }
 }
 ---

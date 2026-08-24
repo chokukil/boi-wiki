@@ -59,16 +59,6 @@
         "value": "arrhenius"
       },
       {
-        "key": "material_parameters_known",
-        "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "activation_energy_sign",
-        "operator": "eq",
-        "value": "positive"
-      },
-      {
         "key": "mechanism_comparison",
         "operator": "eq",
         "value": "unchanged"
@@ -83,9 +73,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_diffusivity_temperature_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -110,7 +100,21 @@
     "contradiction_predicates": [
       "decreases"
     ],
-    "expected_polarity": "positive"
+    "expected_polarity": "positive",
+    "arrhenius_direction_constraint": {
+      "activation_energy_kind": "activation_energy",
+      "temperature_before_kind": "temperature_before",
+      "temperature_after_kind": "temperature_after",
+      "diffusivity_before_kind": "diffusivity_before",
+      "diffusivity_after_kind": "diffusivity_after"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "diffusivity_scale",
+        "quantity_kind": "diffusivity_scale",
+        "reference_quantity_kind": "diffusivity_scale_reference"
+      }
+    ]
   }
 }
 ---

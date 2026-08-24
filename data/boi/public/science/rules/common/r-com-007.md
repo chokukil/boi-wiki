@@ -37,7 +37,7 @@
     "rule_id": "sci-rule:common:007",
     "standard_id": "R-COM-007",
     "pack_id": "sci-pack:science-foundation/0.1.0",
-    "rule_kind": "directional_relation",
+    "rule_kind": "validity_domain",
     "inputs": [
       "sci:concept:repeatability-condition",
       "sci:concept:reproducibility-condition"
@@ -48,21 +48,21 @@
       "INSUFFICIENT_INFORMATION",
       "OUTSIDE_VALIDITY_DOMAIN"
     ],
-    "subject_concept_id": "sci:concept:repeatability-condition",
-    "object_concept_id": "sci:concept:reproducibility-condition",
+    "subject_concept_id": "sci:concept:reproducibility-condition",
+    "object_concept_id": "sci:concept:varied-measurement-conditions",
     "relation_kind": "empirical_relation",
     "required_conditions": [
       {
-        "key": "changed_conditions_identified",
+        "key": "changed_condition_set",
         "operator": "eq",
-        "value": true
+        "value": "locations_operators_systems_and_replicates"
       }
     ],
     "validity_conditions": [
       {
-        "key": "comparison_scope",
+        "key": "definition_context",
         "operator": "eq",
-        "value": "precision_conditions"
+        "value": "vim_reproducibility_condition"
       }
     ],
     "knowledge_refs": [
@@ -79,16 +79,27 @@
       }
     ],
     "deterministic_evaluator": true,
-    "expected_predicate": "distinct_from",
-    "contradiction_predicates": [
-      "interchangeable_with"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_007_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
     ],
-    "expected_polarity": "positive",
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "context_dimensions": {
+      "location_separation": "meter"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "location_separation",
+        "quantity_kind": "location_separation",
+        "reference_quantity_kind": "location_separation_reference"
+      }
+    ]
   }
 }
 ---
-
 # R-COM-007 — Repeatability and reproducibility conditions
 
 Closed evaluator: `directional_relation`. Candidate qualification only.

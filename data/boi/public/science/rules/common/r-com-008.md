@@ -37,7 +37,7 @@
     "rule_id": "sci-rule:common:008",
     "standard_id": "R-COM-008",
     "pack_id": "sci-pack:science-foundation/0.1.0",
-    "rule_kind": "empirical_boundary",
+    "rule_kind": "validity_domain",
     "inputs": [
       "sci:concept:model",
       "sci:concept:intended-use"
@@ -49,30 +49,26 @@
       "OUTSIDE_VALIDITY_DOMAIN",
       "EMPIRICAL_VERIFICATION_REQUIRED"
     ],
-    "subject_concept_id": "sci:concept:model",
-    "object_concept_id": "sci:concept:intended-use",
+    "subject_concept_id": "sci:concept:model-validation-domain-record",
+    "object_concept_id": "sci:concept:record-maintenance",
     "relation_kind": "empirical_relation",
     "required_conditions": [
       {
-        "key": "validation_domain_documented",
+        "key": "model_identity",
         "operator": "eq",
-        "value": true
+        "value": "named_model"
       },
       {
-        "key": "model_basis",
-        "operator": "in",
-        "values": [
-          "theoretical",
-          "semi_empirical",
-          "empirical_fit"
-        ]
+        "key": "validation_record_scope",
+        "operator": "eq",
+        "value": "same_model"
       }
     ],
     "validity_conditions": [
       {
-        "key": "intended_use_within_recorded_domain",
+        "key": "record_maintenance_context",
         "operator": "eq",
-        "value": true
+        "value": "model_validation"
       }
     ],
     "knowledge_refs": [
@@ -85,15 +81,31 @@
       {
         "evidence_ref": "sci-evidence:common:model-validity",
         "claim_family": "locator_bound.common.model_validity",
-        "purpose": "A record of the domain of validation of the M&S shall be maintained."
+        "purpose": "A record of the domain of validation of the validated M&S shall be maintained."
       }
     ],
     "deterministic_evaluator": true,
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_008_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
+    ],
+    "context_dimensions": {
+      "validation_domain_length_limit": "meter"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "validation_domain_length_limit",
+        "quantity_kind": "validation_domain_length_limit",
+        "reference_quantity_kind": "validation_domain_length_limit_reference"
+      }
+    ]
   }
 }
 ---
-
 # R-COM-008 — Model assumptions and validity domain
 
 Closed evaluator: `empirical_boundary`. Candidate qualification only.

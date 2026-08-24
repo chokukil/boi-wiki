@@ -47,12 +47,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:004:clear_violation",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:4f253df72d7814ad5b4b90dfa08966d0b796cb2b186a1619954b32b4a3489211",
+          "document_digest": "sha256:a14ca0d223ced2a99d4938d8591395076811a0f3ac6d0498c5a71c21d1dc4c92",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 206,
-            "exact": "Increasing absolute temperature decreases the Arrhenius diffusion coefficient while its positive activation energy and mechanism remain unchanged. The diffusivity scale is recorded as 1 meter ** 2 / second.",
+            "end": 366,
+            "exact": "Increasing absolute temperature decreases the Arrhenius diffusion coefficient while its positive activation energy and mechanism remain unchanged. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.",
             "prefix": "",
             "suffix": ""
           },
@@ -67,20 +67,37 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 1,
                 "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
               {
                 "condition_id": "diffusion_model",
                 "value": "arrhenius"
-              },
-              {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
               },
               {
                 "condition_id": "mechanism_comparison",
@@ -117,12 +134,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:004:in_scope_consistency",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:bd6b0c469aae06f168db78b4223c86c3a8cdfa09baf816f78e7914a2a5ed46e8",
+          "document_digest": "sha256:cb668c2eba142716721681af76c2179e90a832d119aa174699ca0223e91b4972",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 219,
-            "exact": "For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second.",
+            "end": 379,
+            "exact": "For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.",
             "prefix": "",
             "suffix": ""
           },
@@ -137,20 +154,37 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 1,
                 "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
               {
                 "condition_id": "diffusion_model",
                 "value": "arrhenius"
-              },
-              {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
               },
               {
                 "condition_id": "mechanism_comparison",
@@ -187,12 +221,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:004:missing_required_condition",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:3699d819c6be850e55eab384dd318cea169d45f4f2a95545a082b575334cbf38",
+          "document_digest": "sha256:a7b7912e3dfe15be23f6a055fd49ea1d146638eae9163cabf1ffd0c5806619ae",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 279,
-            "exact": "Without specifying the diffusion model, the report asserts: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second.",
+            "end": 439,
+            "exact": "Without specifying the diffusion model, the report asserts: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.",
             "prefix": "",
             "suffix": ""
           },
@@ -207,17 +241,34 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 1,
                 "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
-              {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
-              },
               {
                 "condition_id": "mechanism_comparison",
                 "value": "unchanged"
@@ -253,12 +304,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:004:outside_validity_domain",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:c3f6716d3b66b1f436cd22288882b3a2df38983edcfbfd0624c8d6064c322e35",
+          "document_digest": "sha256:f3c8665185a4906952056428f2273baeeebd97b4a5f6bdcd94e290c5c33342ad",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 318,
-            "exact": "After the diffusion mechanism changes outside the qualified temperature range, the report asserts: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second.",
+            "end": 478,
+            "exact": "After the diffusion mechanism changes outside the qualified temperature range, the report asserts: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.",
             "prefix": "",
             "suffix": ""
           },
@@ -273,20 +324,37 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 1,
                 "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
               {
                 "condition_id": "diffusion_model",
                 "value": "arrhenius"
-              },
-              {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
               },
               {
                 "condition_id": "mechanism_comparison",
@@ -323,12 +391,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:004:empirical_verification_required",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:11cd32adce3ee88cdb6cd7c7ba080b5f7c5ea5339e9388a70252c0b214740956",
+          "document_digest": "sha256:370330cea6b78cc2a6f2f1b229ecd9087f842cf90374385ae0ca24804bd7f13e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 317,
-            "exact": "For a named material and furnace run, the report asserts: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. This named result requires measurement. The diffusivity scale is recorded as 1 meter ** 2 / second.",
+            "end": 477,
+            "exact": "For a named material and furnace run, the report asserts: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. This named result requires measurement. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.",
             "prefix": "",
             "suffix": ""
           },
@@ -343,6 +411,31 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 1,
                 "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
@@ -351,20 +444,12 @@
                 "value": "arrhenius"
               },
               {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
-              },
-              {
                 "condition_id": "mechanism_comparison",
                 "value": "unchanged"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_diffusivity_temperature_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "temperature_domain",
@@ -397,12 +482,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:004:negation",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:475c15aed59b6df5275bb1ca9eb5564dc6d8f64f382df901d5ae84ecb1ea7eb0",
+          "document_digest": "sha256:61b43fec6d0f392eabcd22363ed4cf6183349b2bfe842fe45a69beaa2ae94fd4",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 279,
-            "exact": "Under the stated scientific conditions, it is not true that for positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second.",
+            "end": 439,
+            "exact": "Under the stated scientific conditions, it is not true that for positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.",
             "prefix": "",
             "suffix": ""
           },
@@ -417,20 +502,37 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 1,
                 "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
               {
                 "condition_id": "diffusion_model",
                 "value": "arrhenius"
-              },
-              {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
               },
               {
                 "condition_id": "mechanism_comparison",
@@ -467,12 +569,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:004:unit_variation",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:c6542a30dfcec34d75f28138b6fee62444f1cd35a68073eb46e4b39bcb5cf23b",
+          "document_digest": "sha256:d372c975dc34240921acced01b5858dd4d54dbd8a5fec45a79cc329d40e743bc",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 228,
-            "exact": "For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 10000 centimeter ** 2 / second.",
+            "end": 455,
+            "exact": "For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 10000 centimeter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second. The same diffusivity scale is referenced as 1 meter ** 2 / second.",
             "prefix": "",
             "suffix": ""
           },
@@ -487,20 +589,42 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 10000,
                 "unit": "centimeter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_scale_reference",
+                "value": 1,
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
               {
                 "condition_id": "diffusion_model",
                 "value": "arrhenius"
-              },
-              {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
               },
               {
                 "condition_id": "mechanism_comparison",
@@ -549,12 +673,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:004:decision_changing_ambiguity",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:4681e1b3054a57d2732a09c4cc225aee3238c37e4e116d3752f6d1a8b7e2b3e5",
+          "document_digest": "sha256:128b835a181d07982f5bd727a6edaa3a1d99db21102ce4aeb6ab25acb80fb8aa",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 419,
-            "exact": "The wording leaves unresolved whether 'For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient.' or instead 'Increasing absolute temperature decreases the Arrhenius diffusion coefficient while its positive activation energy and mechanism remain unchanged'. The diffusivity scale is recorded as 1 meter ** 2 / second.",
+            "end": 579,
+            "exact": "The wording leaves unresolved whether 'For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient.' or instead 'Increasing absolute temperature decreases the Arrhenius diffusion coefficient while its positive activation energy and mechanism remain unchanged'. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.",
             "prefix": "",
             "suffix": ""
           },
@@ -569,20 +693,37 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 1,
                 "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
               {
                 "condition_id": "diffusion_model",
                 "value": "arrhenius"
-              },
-              {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
               },
               {
                 "condition_id": "mechanism_comparison",
@@ -615,12 +756,12 @@
         "alternative_claim_packet": {
           "claim_id": "claim:materials:004:decision_changing_ambiguity:alternative",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:4681e1b3054a57d2732a09c4cc225aee3238c37e4e116d3752f6d1a8b7e2b3e5",
+          "document_digest": "sha256:128b835a181d07982f5bd727a6edaa3a1d99db21102ce4aeb6ab25acb80fb8aa",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 419,
-            "exact": "The wording leaves unresolved whether 'For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient.' or instead 'Increasing absolute temperature decreases the Arrhenius diffusion coefficient while its positive activation energy and mechanism remain unchanged'. The diffusivity scale is recorded as 1 meter ** 2 / second.",
+            "end": 579,
+            "exact": "The wording leaves unresolved whether 'For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient.' or instead 'Increasing absolute temperature decreases the Arrhenius diffusion coefficient while its positive activation energy and mechanism remain unchanged'. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.",
             "prefix": "",
             "suffix": ""
           },
@@ -635,20 +776,37 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 1,
                 "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
               {
                 "condition_id": "diffusion_model",
                 "value": "arrhenius"
-              },
-              {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
               },
               {
                 "condition_id": "mechanism_comparison",
@@ -683,12 +841,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:004:paraphrase",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:ba19540b50f8645adbe05261a249dedf86530f7a7feab3e957dc96dea3216042",
+          "document_digest": "sha256:376a50b53a51b06f82b49f855adbde5aac6f1f08414c66525e755987ccc2e8f0",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 263,
-            "exact": "In equivalent wording, the document states: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second.",
+            "end": 423,
+            "exact": "In equivalent wording, the document states: For positive activation energy and unchanged Arrhenius diffusion parameters and mechanism, increasing absolute temperature increases the diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.",
             "prefix": "",
             "suffix": ""
           },
@@ -703,20 +861,37 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 1,
                 "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
               {
                 "condition_id": "diffusion_model",
                 "value": "arrhenius"
-              },
-              {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
               },
               {
                 "condition_id": "mechanism_comparison",
@@ -753,12 +928,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:004:false_red_prevention",
           "document_ref": "qualification:materials:004",
-          "document_digest": "sha256:06a40cc0824a0c653bcd761f6ceb6bc154ee2be4eabda6ac3e26c8bc2279a533",
+          "document_digest": "sha256:de1c2cc0f324985ea5f0f1f941e6e14f106b5dda318953e37ce8364512991d4f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 207,
-            "exact": "When the mechanism comparison is outside this rule's required scope, the document states that absolute temperature decreases diffusion coefficient. The diffusivity scale is recorded as 1 meter ** 2 / second.",
+            "end": 329,
+            "exact": "After the diffusion mechanism changed, the measured diffusion coefficient decreased as temperature increased. The diffusivity scale is recorded as 1 meter ** 2 / second. The bound Arrhenius operands are activation energy 1 electron volt, temperatures 300 and 350 kelvin, and diffusivities 1e-15 and 5e-15 square meter per second.",
             "prefix": "",
             "suffix": ""
           },
@@ -773,6 +948,31 @@
                 "quantity_kind": "diffusivity_scale",
                 "value": 1,
                 "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "activation_energy",
+                "value": 1,
+                "unit": "electron_volt"
+              },
+              {
+                "quantity_kind": "temperature_before",
+                "value": 300,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "temperature_after",
+                "value": 350,
+                "unit": "kelvin"
+              },
+              {
+                "quantity_kind": "diffusivity_before",
+                "value": "1e-15",
+                "unit": "meter ** 2 / second"
+              },
+              {
+                "quantity_kind": "diffusivity_after",
+                "value": "5e-15",
+                "unit": "meter ** 2 / second"
               }
             ],
             "conditions": [
@@ -781,16 +981,8 @@
                 "value": "arrhenius"
               },
               {
-                "condition_id": "material_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "activation_energy_sign",
-                "value": "positive"
-              },
-              {
                 "condition_id": "mechanism_comparison",
-                "value": "outside_unchanged"
+                "value": "changed"
               },
               {
                 "condition_id": "temperature_domain",
@@ -820,7 +1012,6 @@
   }
 }
 ---
-
 # Q-MAT-004
 
 Ten public natural-claim fixtures qualify only `sci-rule:materials:004`. No operational authority is created.

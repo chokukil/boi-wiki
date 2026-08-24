@@ -323,8 +323,8 @@
                 "value": "resolved_nonzero_vector"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_momentum_response_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "reference_frame",
@@ -419,12 +419,12 @@
         "claim_packet": {
           "claim_id": "claim:physics:002:unit_variation",
           "document_ref": "qualification:physics:002",
-          "document_digest": "sha256:1d551bcea0be49b0b3ee22242670fcbe6762b85d75115527b65aed3ac0679655",
+          "document_digest": "sha256:789f85912c343604c1c95c1d435dbe016a58bb334ef2170f787e48b8dd5c2c86",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 168,
-            "exact": "For a defined system, a nonzero net external force causes the system momentum to change according to Newton's second law. The net force is recorded as 1000 millinewton.",
+            "end": 214,
+            "exact": "For a defined system, a nonzero net external force causes the system momentum to change according to Newton's second law. The net force is recorded as 1000 millinewton. The same net force is referenced as 1 newton.",
             "prefix": "",
             "suffix": ""
           },
@@ -439,6 +439,11 @@
                 "quantity_kind": "net_force",
                 "value": 1000,
                 "unit": "millinewton"
+              },
+              {
+                "quantity_kind": "net_force_reference",
+                "value": 1,
+                "unit": "newton"
               }
             ],
             "conditions": [
@@ -673,12 +678,12 @@
         "claim_packet": {
           "claim_id": "claim:physics:002:false_red_prevention",
           "document_ref": "qualification:physics:002",
-          "document_digest": "sha256:a1e2aa4c950efb66579dcd81e808eadd82b76ce8b9c53f76c2376c4881511d73",
+          "document_digest": "sha256:8b0d6cbee318ca2cf6d88c68dc6089b58afd7d2438eec4f970a92baac1ef896e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 176,
-            "exact": "When the net external force is outside this rule's required scope, the document states that external force cannot change system momentum. The net force is recorded as 1 newton.",
+            "end": 114,
+            "exact": "A zero net external force cannot change the momentum of the defined system. The net force is recorded as 1 newton.",
             "prefix": "",
             "suffix": ""
           },
@@ -702,7 +707,7 @@
               },
               {
                 "condition_id": "net_external_force",
-                "value": "outside_resolved_nonzero_vector"
+                "value": "zero_vector"
               },
               {
                 "condition_id": "reference_frame",

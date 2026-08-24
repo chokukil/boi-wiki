@@ -373,8 +373,8 @@
                 "value": "moles_of_named_solute"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_solution_concentration_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "concentration_convention",
@@ -480,12 +480,12 @@
         "claim_packet": {
           "claim_id": "claim:chemistry:001:unit_variation",
           "document_ref": "qualification:chemistry:001",
-          "document_digest": "sha256:9a549b8c809bd99ce87ab05637804adb67510235ad08d3ab2a4a5f0e487e9480",
+          "document_digest": "sha256:2304e8733d8b5afda90cc559a1e1bef1b299e0dc39d585ca831eee75b9a18c00",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 142,
-            "exact": "Two moles of solute in one litre of solution are reported as 2 moles per litre. The concentration scale is recorded as 1000 mole / meter ** 3.",
+            "end": 204,
+            "exact": "Two moles of solute in one litre of solution are reported as 2 moles per litre. The concentration scale is recorded as 1000 mole / meter ** 3. The same concentration scale is referenced as 1 mole / liter.",
             "prefix": "",
             "suffix": ""
           },
@@ -515,6 +515,11 @@
                 "quantity_kind": "solution_volume",
                 "value": 1,
                 "unit": "liter"
+              },
+              {
+                "quantity_kind": "concentration_scale_reference",
+                "value": 1,
+                "unit": "mole / liter"
               }
             ],
             "conditions": [
@@ -778,12 +783,12 @@
         "claim_packet": {
           "claim_id": "claim:chemistry:001:false_red_prevention",
           "document_ref": "qualification:chemistry:001",
-          "document_digest": "sha256:d22ab1f29ba66d1893b4a8c9d59a453bca97fe6d14cddccf739bebbcbfe99ed1",
+          "document_digest": "sha256:8a4100e14dfc373ecf6cc2b05b60961b2c8ad1a499bce59aa7b76c6a6ff96d02",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 223,
-            "exact": "When the solute amount basis is outside this rule's required scope, the document states: Two moles of solute in one litre of solution are reported as 3 moles per litre. The concentration scale is recorded as 1 mole / liter.",
+            "end": 157,
+            "exact": "A mass concentration is not numerically equal to a molar concentration without molar-mass information. The concentration scale is recorded as 1 mole / liter.",
             "prefix": "",
             "suffix": ""
           },
@@ -818,7 +823,7 @@
             "conditions": [
               {
                 "condition_id": "solute_amount_basis",
-                "value": "outside_moles_of_named_solute"
+                "value": "mass_of_named_solute"
               },
               {
                 "condition_id": "concentration_convention",

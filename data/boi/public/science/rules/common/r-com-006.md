@@ -79,16 +79,32 @@
       }
     ],
     "deterministic_evaluator": true,
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_006_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
+    ],
+    "context_dimensions": {
+      "accuracy_assessment_error": "meter"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "accuracy_assessment_error",
+        "quantity_kind": "accuracy_assessment_error",
+        "reference_quantity_kind": "accuracy_assessment_error_reference"
+      }
+    ],
     "expected_predicate": "distinct_from",
     "contradiction_predicates": [
       "interchangeable_with"
     ],
-    "expected_polarity": "positive",
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "expected_polarity": "positive"
   }
 }
 ---
-
 # R-COM-006 — Accuracy, precision, and trueness
 
 Closed evaluator: `directional_relation`. Candidate qualification only.

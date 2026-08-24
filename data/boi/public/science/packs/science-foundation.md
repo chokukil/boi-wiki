@@ -91,6 +91,7 @@
       "sci:binding:common:model",
       "sci:binding:common:steady-state",
       "sci:binding:common:equilibrium",
+      "sci:binding:common:association",
       "sci:binding:common:correlation",
       "sci:binding:common:causation"
     ],
@@ -99,11 +100,16 @@
       "authorized Admin reviews absent",
       "release activation absent"
     ],
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "executable_coverage": "narrow_reviewed_examples",
+    "coverage_limitations": [
+      "R-COM-001 covers only a sample-length dimensional example.",
+      "R-COM-002 covers only equality between two length terms.",
+      "Other quantity kinds, products, quotients, and arbitrary equation structures require additional reviewed Rules."
+    ]
   }
 }
 ---
-
 # General Science Foundation
 
 This draft pack groups twelve common scientific-reasoning Knowledge objects, deterministic Rules, interpretation-only ontology bindings, and 120 public qualification cases. It is not an active Science Release.

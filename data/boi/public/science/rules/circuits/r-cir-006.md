@@ -73,9 +73,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_instrument_loading_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -100,7 +100,14 @@
     "contradiction_predicates": [
       "cannot_change"
     ],
-    "expected_polarity": "positive"
+    "expected_polarity": "positive",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "resistance_scale",
+        "quantity_kind": "resistance_scale",
+        "reference_quantity_kind": "resistance_scale_reference"
+      }
+    ]
   }
 }
 ---

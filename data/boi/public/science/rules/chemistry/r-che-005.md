@@ -77,9 +77,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_catalyst_equilibrium_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -101,7 +101,7 @@
       {
         "evidence_ref": "sci-evidence:chemistry:reaction-equilibrium",
         "claim_family": "locator_bound.chemistry.reaction_equilibrium",
-        "purpose": "K is the equilibrium constant. It has the same form as Q, but only uses the amounts of products and reactants at equilibrium."
+        "purpose": "K = is the equilibrium constant. It has the same form as Q, but only uses the amounts of products and reactants at equilibrium."
       }
     ],
     "deterministic_evaluator": true,
@@ -110,11 +110,17 @@
     "contradiction_predicates": [
       "increases"
     ],
-    "expected_polarity": "positive"
+    "expected_polarity": "positive",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "context_temperature",
+        "quantity_kind": "context_temperature",
+        "reference_quantity_kind": "context_temperature_reference"
+      }
+    ]
   }
 }
 ---
-
 # R-CHE-005 — Catalyst does not set equilibrium constant
 
 Closed evaluator: `directional_relation`. Candidate qualification only.

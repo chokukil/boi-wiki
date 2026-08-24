@@ -368,8 +368,8 @@
                 "value": "specified_standard_state"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_equilibrium_composition_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "reaction_state",
@@ -474,12 +474,12 @@
         "claim_packet": {
           "claim_id": "claim:chemistry:004:unit_variation",
           "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:2789e42ed82a5407110e78fc2eaac2df7b7969ea286094221039420a0d440b0b",
+          "document_digest": "sha256:ee866b5aac7c56afd6ff57dc22fa27916b716000ce570f1cbc1fda1051b25ad1",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 148,
-            "exact": "At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The concentration scale is recorded as 1000 mole / meter ** 3.",
+            "end": 210,
+            "exact": "At equilibrium the reaction quotient Q is 4 and the equilibrium constant K is also 4. The concentration scale is recorded as 1000 mole / meter ** 3. The same concentration scale is referenced as 1 mole / liter.",
             "prefix": "",
             "suffix": ""
           },
@@ -504,6 +504,11 @@
                 "quantity_kind": "equilibrium_constant",
                 "value": 4,
                 "unit": "dimensionless"
+              },
+              {
+                "quantity_kind": "concentration_scale_reference",
+                "value": 1,
+                "unit": "mole / liter"
               }
             ],
             "conditions": [
@@ -768,12 +773,12 @@
         "claim_packet": {
           "claim_id": "claim:chemistry:004:false_red_prevention",
           "document_ref": "qualification:chemistry:004",
-          "document_digest": "sha256:17a98a5613f998b2a7b9bad506a8b8f4d9371c41384b0c8faad8a9bd2b2bb2d0",
+          "document_digest": "sha256:1a82565b9a49e75bae28c115dd494a902fb97f7aab6216590228be8fa2e1789c",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 221,
-            "exact": "When the activity basis is outside this rule's required scope, the document states: At equilibrium the reaction quotient Q is 2 while the equilibrium constant K is 4. The concentration scale is recorded as 1 mole / liter.",
+            "end": 180,
+            "exact": "With an unspecified concentration basis, the reported reaction quotient and equilibrium constant are not directly comparable. The concentration scale is recorded as 1 mole / liter.",
             "prefix": "",
             "suffix": ""
           },
@@ -807,7 +812,7 @@
               },
               {
                 "condition_id": "activity_basis",
-                "value": "outside_specified_standard_state"
+                "value": "unspecified_concentration_basis"
               },
               {
                 "condition_id": "reaction_state",

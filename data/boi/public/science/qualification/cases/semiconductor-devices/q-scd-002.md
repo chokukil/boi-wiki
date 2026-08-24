@@ -307,8 +307,8 @@
                 "value": "electron_or_hole"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_carrier_transport_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "transport_decomposition",
@@ -401,12 +401,12 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:unit_variation",
           "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:409c049f9cefad879839a35b9b9e5cc2d5f2095f713b0fad3f14fa5e08338010",
+          "document_digest": "sha256:25e48f44f037ea0bc5a09d3642148c74b91d54b2234e8d19bc94759b8116a487",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 128,
-            "exact": "Carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1000 milliampere.",
+            "end": 178,
+            "exact": "Carrier current can contain both a drift component and a diffusion component. The current scale is recorded as 1000 milliampere. The same current scale is referenced as 1 ampere.",
             "prefix": "",
             "suffix": ""
           },
@@ -421,6 +421,11 @@
                 "quantity_kind": "current_scale",
                 "value": 1000,
                 "unit": "milliampere"
+              },
+              {
+                "quantity_kind": "current_scale_reference",
+                "value": 1,
+                "unit": "ampere"
               }
             ],
             "conditions": [
@@ -643,12 +648,12 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:002:false_red_prevention",
           "document_ref": "qualification:semiconductor-devices:002",
-          "document_digest": "sha256:91f8a18f23f9d0ce69f31a7d93ec0475be35e99498cd0c0ba768962a4030a393",
+          "document_digest": "sha256:9111ed28010d70a499ac800fca3ed0a15727f2cfce7dd8f31bf1cf3848bb40ae",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 183,
-            "exact": "When the carrier type is outside this rule's required scope, the document denies that carrier current applies to drift diffusion components. The current scale is recorded as 1 ampere.",
+            "end": 139,
+            "exact": "Ionic-species current is not the electron-or-hole current decomposed by this semiconductor rule. The current scale is recorded as 1 ampere.",
             "prefix": "",
             "suffix": ""
           },
@@ -668,7 +673,7 @@
             "conditions": [
               {
                 "condition_id": "carrier_type",
-                "value": "outside_electron_or_hole"
+                "value": "ionic_species"
               },
               {
                 "condition_id": "transport_decomposition",

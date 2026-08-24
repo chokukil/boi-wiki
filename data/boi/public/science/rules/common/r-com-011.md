@@ -48,61 +48,21 @@
       "INSUFFICIENT_INFORMATION",
       "OUTSIDE_VALIDITY_DOMAIN"
     ],
-    "subject_concept_id": "sci:concept:conditional-directional-claim",
-    "object_concept_id": "sci:concept:controlled-relation",
-    "relation_kind": "monotonic_direction",
+    "subject_concept_id": "sci:concept:model-validation-domain-record",
+    "object_concept_id": "sci:concept:validation-domain",
+    "relation_kind": "empirical_relation",
     "required_conditions": [
       {
-        "key": "input_quantity_identified",
+        "key": "record_identity",
         "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "response_quantity_identified",
-        "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "relation_form_identified",
-        "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "held_constant_variables_identified",
-        "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "process_stage_identified",
-        "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "material_state_identified",
-        "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "temporal_basis_identified",
-        "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "evidence_basis_identified",
-        "operator": "eq",
-        "value": true
+        "value": "bound_validation_record"
       }
     ],
     "validity_conditions": [
       {
-        "key": "valid_range_identified",
+        "key": "record_content",
         "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "regime_transition_checked",
-        "operator": "eq",
-        "value": true
+        "value": "validation_domain"
       }
     ],
     "knowledge_refs": [
@@ -115,15 +75,31 @@
       {
         "evidence_ref": "sci-evidence:common:model-validity",
         "claim_family": "locator_bound.common.model_validity",
-        "purpose": "A record of the domain of validation of the M&S shall be maintained."
+        "purpose": "A record of the domain of validation of the validated M&S shall be maintained."
       }
     ],
     "deterministic_evaluator": true,
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "empirical_trigger_conditions": [
+      {
+        "key": "requested_foundation_011_qualified_observation",
+        "operator": "eq",
+        "value": "unqualified_observation"
+      }
+    ],
+    "context_dimensions": {
+      "validation_domain_temperature_limit": "kelvin"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "validation_domain_temperature_limit",
+        "quantity_kind": "validation_domain_temperature_limit",
+        "reference_quantity_kind": "validation_domain_temperature_limit_reference"
+      }
+    ]
   }
 }
 ---
-
 # R-COM-011 — Controlled directional claim
 
 Closed evaluator: `validity_domain`. Candidate qualification only.

@@ -323,8 +323,8 @@
                 "value": "nonzero_applied"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_fluid_deformation_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "description_regime",
@@ -419,12 +419,12 @@
         "claim_packet": {
           "claim_id": "claim:physics:004:unit_variation",
           "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:9841625ca1864e2a791875f0fd3b59b190e4ea3966acb0118971e152655ac28a",
+          "document_digest": "sha256:e4183081a00c33a6d088f804f060427776e1367d92d0caf35befd3facf63c42e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 192,
-            "exact": "A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1000 millipascal * second.",
+            "end": 255,
+            "exact": "A simple fluid continues to deform while any shear stress is applied; a finite static shear strain is not its defining response. The dynamic viscosity is recorded as 1000 millipascal * second. The same dynamic viscosity is referenced as 1 pascal * second.",
             "prefix": "",
             "suffix": ""
           },
@@ -439,6 +439,11 @@
                 "quantity_kind": "dynamic_viscosity",
                 "value": 1000,
                 "unit": "millipascal * second"
+              },
+              {
+                "quantity_kind": "dynamic_viscosity_reference",
+                "value": 1,
+                "unit": "pascal * second"
               }
             ],
             "conditions": [
@@ -673,12 +678,12 @@
         "claim_packet": {
           "claim_id": "claim:physics:004:false_red_prevention",
           "document_ref": "qualification:physics:004",
-          "document_digest": "sha256:f9ea6ec6dd9ca73e5cae45b2399cbfda6c49c2946560e189b8a23fd787c2aaa6",
+          "document_digest": "sha256:df481d924974492d187b13a18073e6773748f16b53d05d9921ccd93283225336",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 192,
-            "exact": "When the shear stress state is outside this rule's required scope, the document states that shear stress stops simple fluid deformation. The dynamic viscosity is recorded as 1 pascal * second.",
+            "end": 129,
+            "exact": "With zero applied shear stress, the sample is reported to stop deforming. The dynamic viscosity is recorded as 1 pascal * second.",
             "prefix": "",
             "suffix": ""
           },
@@ -702,7 +707,7 @@
               },
               {
                 "condition_id": "shear_stress_state",
-                "value": "outside_nonzero_applied"
+                "value": "zero_applied"
               },
               {
                 "condition_id": "description_regime",

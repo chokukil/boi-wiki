@@ -323,8 +323,8 @@
                 "value": "available"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_phase_transformation_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "process_context",
@@ -419,12 +419,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:003:unit_variation",
           "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:eec0ba609a6baa7eab47b3b3da6855bd414b472022039b3fec3021e129f17944",
+          "document_digest": "sha256:b60c0ece6761574fd3bb9157fe64fa8fb2cc3a9b7197612fa2aaef39f96803bd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 186,
-            "exact": "A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 25 °C.",
+            "end": 247,
+            "exact": "A supercooled or superheated metastable phase can readily transform toward the equilibrium state when a transformation pathway is available. The context temperature is recorded as 25 °C. The same context temperature is referenced as 298.15 kelvin.",
             "prefix": "",
             "suffix": ""
           },
@@ -439,6 +439,11 @@
                 "quantity_kind": "context_temperature",
                 "value": 25,
                 "unit": "°C"
+              },
+              {
+                "quantity_kind": "context_temperature_reference",
+                "value": "298.15",
+                "unit": "kelvin"
               }
             ],
             "conditions": [
@@ -673,12 +678,12 @@
         "claim_packet": {
           "claim_id": "claim:materials:003:false_red_prevention",
           "document_ref": "qualification:materials:003",
-          "document_digest": "sha256:434b37aad6b1d7d2a149ecbcbe475756ed839011001c77a4c32b761b69dadc47",
+          "document_digest": "sha256:301eb3bbdfad0ac8d6473295834811d3d40562272ea52c172ea140e06b03e016",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 206,
-            "exact": "When the transformation pathway is outside this rule's required scope, the document states that metastable phase remains indefinitely equilibrium state. The context temperature is recorded as 298.15 kelvin.",
+            "end": 163,
+            "exact": "A metastable phase with a kinetically blocked pathway is reported to persist during the observation interval. The context temperature is recorded as 298.15 kelvin.",
             "prefix": "",
             "suffix": ""
           },
@@ -702,7 +707,7 @@
               },
               {
                 "condition_id": "transformation_pathway",
-                "value": "outside_available"
+                "value": "kinetically_blocked"
               },
               {
                 "condition_id": "process_context",

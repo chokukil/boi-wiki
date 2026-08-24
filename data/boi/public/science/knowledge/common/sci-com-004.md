@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "definition",
     "assurance_basis": "hypothesis",
-    "statement": "A measurement result is interpretable only with an identified measurand and the conditions and procedure under which the result was obtained.",
+    "statement": "A measurement result is generally expressed as a measured quantity value together with a measurement uncertainty.",
     "definitions": [
       "measurand: quantity intended to be measured",
       "measurement result: reported measured value with accompanying information",
@@ -77,8 +77,8 @@
 }
 ---
 
-# SCI-COM-004 — Measurand and measurement result
+# SCI-COM-004 — Narrow reviewed Foundation statement
 
-A measurement result is interpretable only with an identified measurand and the conditions and procedure under which the result was obtained.
+A measurement result is generally expressed as a measured quantity value together with a measurement uncertainty.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

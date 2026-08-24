@@ -347,8 +347,8 @@
                 "value": "linear_resistor"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_fixed_voltage_power_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "operating_regime",
@@ -449,12 +449,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:003:unit_variation",
           "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:563c69e92a5c48510dd357e9f03d5eb2cbfabcc35275029c78b9204051e1f3c8",
+          "document_digest": "sha256:eac69c8a91a312cbd3119e3e479534ad4b0abfd118f4a6920cd5f5484e102848",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 187,
-            "exact": "For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1000 millivolt.",
+            "end": 235,
+            "exact": "For a linear resistor at fixed voltage under the passive sign convention, increasing resistance decreases consumed power through P = V²/R. The voltage scale is recorded as 1000 millivolt. The same voltage scale is referenced as 1 volt.",
             "prefix": "",
             "suffix": ""
           },
@@ -469,6 +469,11 @@
                 "quantity_kind": "voltage_scale",
                 "value": 1000,
                 "unit": "millivolt"
+              },
+              {
+                "quantity_kind": "voltage_scale_reference",
+                "value": 1,
+                "unit": "volt"
               }
             ],
             "conditions": [
@@ -722,12 +727,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:003:false_red_prevention",
           "document_ref": "qualification:circuits:003",
-          "document_digest": "sha256:ec94e849b40a43706adcebdb18e8a239dc1f7f2e39c33055430d80d8e23f5723",
+          "document_digest": "sha256:3753c4ed9e4a14a3308f945b81dfc701e0e36082a72bf9318138d33c3915e1b2",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 164,
-            "exact": "When the element model is outside this rule's required scope, the document states that resistance increases electric power. The voltage scale is recorded as 1 volt.",
+            "end": 166,
+            "exact": "A nonlinear resistor outside the linear-resistor model is reported to draw more power after its operating resistance changes. The voltage scale is recorded as 1 volt.",
             "prefix": "",
             "suffix": ""
           },
@@ -755,7 +760,7 @@
               },
               {
                 "condition_id": "element_model",
-                "value": "outside_linear_resistor"
+                "value": "nonlinear_resistor"
               },
               {
                 "condition_id": "operating_regime",

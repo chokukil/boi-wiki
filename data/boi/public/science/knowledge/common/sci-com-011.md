@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:science-foundation/0.1.0",
     "knowledge_kind": "conditional_relation",
     "assurance_basis": "hypothesis",
-    "statement": "A directional scientific claim is decision-eligible only when its input, response, relation form, held variables, stage, state, temporal basis, valid range, regime transitions, and evidence basis are explicit.",
+    "statement": "A model-validation record is a record of the validation domain; this narrow rule does not infer additional process metadata from the one-sentence requirement.",
     "definitions": [
       "controlled variable: variable held fixed for comparison",
       "conditional relation: relation bounded by declared conditions",
@@ -77,8 +77,8 @@
 }
 ---
 
-# SCI-COM-011 — Controlled directional claim
+# SCI-COM-011 — Narrow reviewed Foundation statement
 
-A directional scientific claim is decision-eligible only when its input, response, relation form, held variables, stage, state, temporal basis, valid range, regime transitions, and evidence basis are explicit.
+A model-validation record is a record of the validation domain; this narrow rule does not infer additional process metadata from the one-sentence requirement.
 
-This candidate draft requires authorized Admin review before active decision use.
+Candidate-only draft; authorized Admin review is absent.

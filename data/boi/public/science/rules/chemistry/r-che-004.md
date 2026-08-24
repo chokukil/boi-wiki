@@ -73,9 +73,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_equilibrium_composition_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -91,7 +91,7 @@
       {
         "evidence_ref": "sci-evidence:chemistry:reaction-equilibrium",
         "claim_family": "locator_bound.chemistry.reaction_equilibrium",
-        "purpose": "K is the equilibrium constant. It has the same form as Q, but only uses the amounts of products and reactants at equilibrium."
+        "purpose": "K = is the equilibrium constant. It has the same form as Q, but only uses the amounts of products and reactants at equilibrium."
       }
     ],
     "deterministic_evaluator": true,
@@ -102,11 +102,17 @@
         "equilibrium_constant"
       ],
       "operator": "equal"
-    }
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "concentration_scale",
+        "quantity_kind": "concentration_scale",
+        "reference_quantity_kind": "concentration_scale_reference"
+      }
+    ]
   }
 }
 ---
-
 # R-CHE-004 — Reaction quotient at equilibrium
 
 Closed evaluator: `equation_constraint`. Candidate qualification only.

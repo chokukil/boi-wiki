@@ -44,64 +44,38 @@
         "case_kind": "clear_violation",
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
-          "claim_id": "claim:common:011:clear-violation",
+          "claim_id": "claim:common:011:clear_violation",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-clear-violation",
+          "document_digest": "sha256:1c34fe66fcf5f01c78d6335c1ec1a3270aad8a1964af7a0cd72be8e56cef6519",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 37,
-            "exact": "Foundation topic 011 clear-violation.",
+            "end": 118,
+            "exact": "A model-validation-domain record need not identify any validation domain. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:conditional-directional-claim",
-            "relation_kind": "monotonic_direction",
-            "predicate": "structurally_qualified",
-            "object_concept_id": "sci:concept:controlled-relation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
             "polarity": "negative",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "input_quantity_identified",
-                "value": true
+                "condition_id": "record_identity",
+                "value": "bound_validation_record"
               },
               {
-                "condition_id": "response_quantity_identified",
-                "value": true
-              },
-              {
-                "condition_id": "relation_form_identified",
-                "value": true
-              },
-              {
-                "condition_id": "held_constant_variables_identified",
-                "value": true
-              },
-              {
-                "condition_id": "process_stage_identified",
-                "value": true
-              },
-              {
-                "condition_id": "material_state_identified",
-                "value": true
-              },
-              {
-                "condition_id": "temporal_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "evidence_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "valid_range_identified",
-                "value": true
-              },
-              {
-                "condition_id": "regime_transition_checked",
-                "value": true
+                "condition_id": "record_content",
+                "value": "validation_domain"
               }
             ],
             "process_stage": null,
@@ -116,74 +90,49 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises clear_violation for SCI-COM-011.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:011"
       },
       {
         "case_id": "sci-case:common:011:in_scope_consistency",
         "case_kind": "in_scope_consistency",
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
-          "claim_id": "claim:common:011:in-scope-consistency",
+          "claim_id": "claim:common:011:in_scope_consistency",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-in-scope-consistency",
+          "document_digest": "sha256:2b2c6640013f66ff56b989c1b029c7caff1595747d800bf762516c330e137f8f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 011 in-scope-consistency.",
+            "end": 152,
+            "exact": "The bound model-validation record identifies the domain of validation of the validated model or simulation. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:conditional-directional-claim",
-            "relation_kind": "monotonic_direction",
-            "predicate": "structurally_qualified",
-            "object_concept_id": "sci:concept:controlled-relation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "input_quantity_identified",
-                "value": true
+                "condition_id": "record_identity",
+                "value": "bound_validation_record"
               },
               {
-                "condition_id": "response_quantity_identified",
-                "value": true
-              },
-              {
-                "condition_id": "relation_form_identified",
-                "value": true
-              },
-              {
-                "condition_id": "held_constant_variables_identified",
-                "value": true
-              },
-              {
-                "condition_id": "process_stage_identified",
-                "value": true
-              },
-              {
-                "condition_id": "material_state_identified",
-                "value": true
-              },
-              {
-                "condition_id": "temporal_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "evidence_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "valid_range_identified",
-                "value": true
-              },
-              {
-                "condition_id": "regime_transition_checked",
-                "value": true
+                "condition_id": "record_content",
+                "value": "validation_domain"
               }
             ],
             "process_stage": null,
@@ -198,70 +147,45 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises in_scope_consistency for SCI-COM-011.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:011"
       },
       {
         "case_id": "sci-case:common:011:missing_required_condition",
         "case_kind": "missing_required_condition",
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
-          "claim_id": "claim:common:011:missing-required-condition",
+          "claim_id": "claim:common:011:missing_required_condition",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-missing-required-condition",
+          "document_digest": "sha256:194df5530f647515050f336b4f934e43268c52ea861eec2e2c02019a8a426a06",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 48,
-            "exact": "Foundation topic 011 missing-required-condition.",
+            "end": 211,
+            "exact": "Without specifying record identity, the report states that the bound model-validation record identifies the domain of validation of the validated model or simulation. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:conditional-directional-claim",
-            "relation_kind": "monotonic_direction",
-            "predicate": "structurally_qualified",
-            "object_concept_id": "sci:concept:controlled-relation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "response_quantity_identified",
-                "value": true
-              },
-              {
-                "condition_id": "relation_form_identified",
-                "value": true
-              },
-              {
-                "condition_id": "held_constant_variables_identified",
-                "value": true
-              },
-              {
-                "condition_id": "process_stage_identified",
-                "value": true
-              },
-              {
-                "condition_id": "material_state_identified",
-                "value": true
-              },
-              {
-                "condition_id": "temporal_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "evidence_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "valid_range_identified",
-                "value": true
-              },
-              {
-                "condition_id": "regime_transition_checked",
-                "value": true
+                "condition_id": "record_content",
+                "value": "validation_domain"
               }
             ],
             "process_stage": null,
@@ -276,74 +200,49 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "Exercises missing_required_condition for SCI-COM-011.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:011"
       },
       {
         "case_id": "sci-case:common:011:outside_validity_domain",
         "case_kind": "outside_validity_domain",
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
-          "claim_id": "claim:common:011:outside-validity-domain",
+          "claim_id": "claim:common:011:outside_validity_domain",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-outside-validity-domain",
+          "document_digest": "sha256:234be0b9b7050f528930b41d03d3dfdf48a2c54b0ddd55acae0cdb5b8bb9b46d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 45,
-            "exact": "Foundation topic 011 outside-validity-domain.",
+            "end": 223,
+            "exact": "In a different scientific context, the report nevertheless states that the bound model-validation record identifies the domain of validation of the validated model or simulation. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:conditional-directional-claim",
-            "relation_kind": "monotonic_direction",
-            "predicate": "structurally_qualified",
-            "object_concept_id": "sci:concept:controlled-relation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "input_quantity_identified",
-                "value": true
+                "condition_id": "record_identity",
+                "value": "bound_validation_record"
               },
               {
-                "condition_id": "response_quantity_identified",
-                "value": true
-              },
-              {
-                "condition_id": "relation_form_identified",
-                "value": true
-              },
-              {
-                "condition_id": "held_constant_variables_identified",
-                "value": true
-              },
-              {
-                "condition_id": "process_stage_identified",
-                "value": true
-              },
-              {
-                "condition_id": "material_state_identified",
-                "value": true
-              },
-              {
-                "condition_id": "temporal_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "evidence_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "valid_range_identified",
-                "value": false
-              },
-              {
-                "condition_id": "regime_transition_checked",
-                "value": true
+                "condition_id": "record_content",
+                "value": "different_scientific_context"
               }
             ],
             "process_stage": null,
@@ -358,46 +257,53 @@
           }
         },
         "expected_verdict": "OUTSIDE_VALIDITY_DOMAIN",
-        "rationale": "Exercises outside_validity_domain for SCI-COM-011.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:011"
       },
       {
         "case_id": "sci-case:common:011:empirical_verification_required",
         "case_kind": "empirical_verification_required",
-        "evaluation_rule_id": "sci-rule:common:008",
+        "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
-          "claim_id": "claim:common:011:empirical-verification-required",
+          "claim_id": "claim:common:011:empirical_verification_required",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-empirical-verification-required",
+          "document_digest": "sha256:f8e6f26972bd207e674feefac7cc360e04c1a54dcaa5205a0776b2fdecbd7df3",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 53,
-            "exact": "Foundation topic 011 empirical-verification-required.",
+            "end": 236,
+            "exact": "For a named realization, the report asserts that the bound model-validation record identifies the domain of validation of the validated model or simulation. No qualified observation is bound. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:model",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
             "relation_kind": "empirical_relation",
-            "predicate": "valid_for_use",
-            "object_concept_id": "sci:concept:intended-use",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "validation_domain_documented",
-                "value": true
+                "condition_id": "record_identity",
+                "value": "bound_validation_record"
               },
               {
-                "condition_id": "model_basis",
-                "value": "theoretical"
+                "condition_id": "record_content",
+                "value": "validation_domain"
               },
               {
-                "condition_id": "intended_use_within_recorded_domain",
-                "value": true
+                "condition_id": "requested_foundation_011_qualified_observation",
+                "value": "unqualified_observation"
               }
             ],
             "process_stage": null,
@@ -412,10 +318,11 @@
           }
         },
         "expected_verdict": "EMPIRICAL_VERIFICATION_REQUIRED",
-        "rationale": "A topic-specific application claim stops for a qualified empirical observation.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:011"
       },
       {
         "case_id": "sci-case:common:011:negation",
@@ -424,62 +331,36 @@
         "claim_packet": {
           "claim_id": "claim:common:011:negation",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-negation",
+          "document_digest": "sha256:8ca7f4f1ba0fc4128a93872aee685233715788afc43c143165596f3004beca06",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 30,
-            "exact": "Foundation topic 011 negation.",
+            "end": 172,
+            "exact": "It is not true that the bound model-validation record identifies the domain of validation of the validated model or simulation. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:conditional-directional-claim",
-            "relation_kind": "monotonic_direction",
-            "predicate": "structurally_qualified",
-            "object_concept_id": "sci:concept:controlled-relation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
             "polarity": "negative",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "input_quantity_identified",
-                "value": true
+                "condition_id": "record_identity",
+                "value": "bound_validation_record"
               },
               {
-                "condition_id": "response_quantity_identified",
-                "value": true
-              },
-              {
-                "condition_id": "relation_form_identified",
-                "value": true
-              },
-              {
-                "condition_id": "held_constant_variables_identified",
-                "value": true
-              },
-              {
-                "condition_id": "process_stage_identified",
-                "value": true
-              },
-              {
-                "condition_id": "material_state_identified",
-                "value": true
-              },
-              {
-                "condition_id": "temporal_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "evidence_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "valid_range_identified",
-                "value": true
-              },
-              {
-                "condition_id": "regime_transition_checked",
-                "value": true
+                "condition_id": "record_content",
+                "value": "validation_domain"
               }
             ],
             "process_stage": null,
@@ -494,80 +375,54 @@
           }
         },
         "expected_verdict": "VIOLATION",
-        "rationale": "Exercises negation for SCI-COM-011.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:011"
       },
       {
         "case_id": "sci-case:common:011:unit_variation",
         "case_kind": "unit_variation",
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
-          "claim_id": "claim:common:011:unit-variation",
+          "claim_id": "claim:common:011:unit_variation",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-unit-variation",
+          "document_digest": "sha256:da3bcd77e589784852dc39ad6c8a8151c3c3d563df50116334f79a1879b9be96",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 36,
-            "exact": "Foundation topic 011 unit-variation.",
+            "end": 191,
+            "exact": "The bound model-validation record identifies the domain of validation of the validated model or simulation. The same validation domain temperature limit is written as 26.85 °C and 300 kelvin.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:conditional-directional-claim",
-            "relation_kind": "monotonic_direction",
-            "predicate": "structurally_qualified",
-            "object_concept_id": "sci:concept:controlled-relation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
             "quantities": [
               {
-                "quantity_kind": "unit_probe",
-                "value": 100,
-                "unit": "cm"
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 26.85,
+                "unit": "°C"
+              },
+              {
+                "quantity_kind": "validation_domain_temperature_limit_reference",
+                "value": 300,
+                "unit": "kelvin"
               }
             ],
             "conditions": [
               {
-                "condition_id": "input_quantity_identified",
-                "value": true
+                "condition_id": "record_identity",
+                "value": "bound_validation_record"
               },
               {
-                "condition_id": "response_quantity_identified",
-                "value": true
-              },
-              {
-                "condition_id": "relation_form_identified",
-                "value": true
-              },
-              {
-                "condition_id": "held_constant_variables_identified",
-                "value": true
-              },
-              {
-                "condition_id": "process_stage_identified",
-                "value": true
-              },
-              {
-                "condition_id": "material_state_identified",
-                "value": true
-              },
-              {
-                "condition_id": "temporal_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "evidence_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "valid_range_identified",
-                "value": true
-              },
-              {
-                "condition_id": "regime_transition_checked",
-                "value": true
+                "condition_id": "record_content",
+                "value": "validation_domain"
               }
             ],
             "process_stage": null,
@@ -582,86 +437,61 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises unit_variation for SCI-COM-011.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
         ],
         "unit_equivalence": [
           {
-            "quantity_kind": "unit_probe",
-            "value": 1,
-            "unit": "m"
+            "quantity_kind": "validation_domain_temperature_limit",
+            "value": 300,
+            "unit": "kelvin"
           },
           {
-            "quantity_kind": "unit_probe",
-            "value": 100,
-            "unit": "cm"
+            "quantity_kind": "validation_domain_temperature_limit",
+            "value": 26.85,
+            "unit": "°C"
           }
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:011"
       },
       {
         "case_id": "sci-case:common:011:decision_changing_ambiguity",
         "case_kind": "decision_changing_ambiguity",
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
-          "claim_id": "claim:common:011:decision-changing-ambiguity",
+          "claim_id": "claim:common:011:decision_changing_ambiguity",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-decision-changing-ambiguity",
+          "document_digest": "sha256:11c5cf88c3a959a6db243c7be0c0fe5374e88bc23aade8fb29390ffcf5863f29",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 49,
-            "exact": "Foundation topic 011 decision-changing-ambiguity.",
+            "end": 280,
+            "exact": "The wording leaves unresolved whether 'The bound model-validation record identifies the domain of validation of the validated model or simulation.' or instead 'A model-validation-domain record need not identify any validation domain.'. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:conditional-directional-claim",
-            "relation_kind": "monotonic_direction",
-            "predicate": "structurally_qualified",
-            "object_concept_id": "sci:concept:controlled-relation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "input_quantity_identified",
-                "value": true
+                "condition_id": "record_identity",
+                "value": "bound_validation_record"
               },
               {
-                "condition_id": "response_quantity_identified",
-                "value": true
-              },
-              {
-                "condition_id": "relation_form_identified",
-                "value": true
-              },
-              {
-                "condition_id": "held_constant_variables_identified",
-                "value": true
-              },
-              {
-                "condition_id": "process_stage_identified",
-                "value": true
-              },
-              {
-                "condition_id": "material_state_identified",
-                "value": true
-              },
-              {
-                "condition_id": "temporal_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "evidence_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "valid_range_identified",
-                "value": true
-              },
-              {
-                "condition_id": "regime_transition_checked",
-                "value": true
+                "condition_id": "record_content",
+                "value": "validation_domain"
               }
             ],
             "process_stage": null,
@@ -678,69 +508,43 @@
           }
         },
         "expected_gate": "ambiguity_gate",
-        "rationale": "Two interpretations produce different candidate verdicts, so interpretation stops.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
         ],
         "alternative_claim_packet": {
-          "claim_id": "claim:common:011:decision-changing-alternative",
+          "claim_id": "claim:common:011:decision_changing_ambiguity:alternative",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-decision-changing-alternative",
+          "document_digest": "sha256:11c5cf88c3a959a6db243c7be0c0fe5374e88bc23aade8fb29390ffcf5863f29",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 51,
-            "exact": "Foundation topic 011 decision-changing-alternative.",
+            "end": 280,
+            "exact": "The wording leaves unresolved whether 'The bound model-validation record identifies the domain of validation of the validated model or simulation.' or instead 'A model-validation-domain record need not identify any validation domain.'. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:conditional-directional-claim",
-            "relation_kind": "monotonic_direction",
-            "predicate": "structurally_qualified",
-            "object_concept_id": "sci:concept:controlled-relation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
             "polarity": "negative",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "input_quantity_identified",
-                "value": true
+                "condition_id": "record_identity",
+                "value": "bound_validation_record"
               },
               {
-                "condition_id": "response_quantity_identified",
-                "value": true
-              },
-              {
-                "condition_id": "relation_form_identified",
-                "value": true
-              },
-              {
-                "condition_id": "held_constant_variables_identified",
-                "value": true
-              },
-              {
-                "condition_id": "process_stage_identified",
-                "value": true
-              },
-              {
-                "condition_id": "material_state_identified",
-                "value": true
-              },
-              {
-                "condition_id": "temporal_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "evidence_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "valid_range_identified",
-                "value": true
-              },
-              {
-                "condition_id": "regime_transition_checked",
-                "value": true
+                "condition_id": "record_content",
+                "value": "validation_domain"
               }
             ],
             "process_stage": null,
@@ -755,7 +559,9 @@
             ],
             "user_confirmed": false
           }
-        }
+        },
+        "matrix_rule_id": "sci-rule:common:011",
+        "expected_verdict": "INSUFFICIENT_INFORMATION"
       },
       {
         "case_id": "sci-case:common:011:paraphrase",
@@ -764,62 +570,36 @@
         "claim_packet": {
           "claim_id": "claim:common:011:paraphrase",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-paraphrase",
+          "document_digest": "sha256:64c9b7eec4c4241b997e51a63299df745ef4b7ce3fed9a99b714c2ede48bcd80",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 32,
-            "exact": "Foundation topic 011 paraphrase.",
+            "end": 200,
+            "exact": "In equivalent wording, the document states that the bound model-validation record identifies the domain of validation of the validated model or simulation. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:conditional-directional-claim",
-            "relation_kind": "monotonic_direction",
-            "predicate": "structurally_qualified",
-            "object_concept_id": "sci:concept:controlled-relation",
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
             "polarity": "positive",
-            "quantities": [],
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "input_quantity_identified",
-                "value": true
+                "condition_id": "record_identity",
+                "value": "bound_validation_record"
               },
               {
-                "condition_id": "response_quantity_identified",
-                "value": true
-              },
-              {
-                "condition_id": "relation_form_identified",
-                "value": true
-              },
-              {
-                "condition_id": "held_constant_variables_identified",
-                "value": true
-              },
-              {
-                "condition_id": "process_stage_identified",
-                "value": true
-              },
-              {
-                "condition_id": "material_state_identified",
-                "value": true
-              },
-              {
-                "condition_id": "temporal_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "evidence_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "valid_range_identified",
-                "value": true
-              },
-              {
-                "condition_id": "regime_transition_checked",
-                "value": true
+                "condition_id": "record_content",
+                "value": "validation_domain"
               }
             ],
             "process_stage": null,
@@ -834,74 +614,49 @@
           }
         },
         "expected_verdict": "CONSISTENT",
-        "rationale": "Exercises paraphrase for SCI-COM-011.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:011"
       },
       {
         "case_id": "sci-case:common:011:false_red_prevention",
         "case_kind": "false_red_prevention",
         "evaluation_rule_id": "sci-rule:common:011",
         "claim_packet": {
-          "claim_id": "claim:common:011:false-red-prevention",
+          "claim_id": "claim:common:011:false_red_prevention",
           "document_ref": "qualification:common:011",
-          "document_digest": "sha256:task2-011-false-red-prevention",
+          "document_digest": "sha256:a52d8cb2a6874f4ac1d59c4d2c12a67f44c4c909d3711bc74ec6e309b0a9f7cd",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 42,
-            "exact": "Foundation topic 011 false-red-prevention.",
+            "end": 136,
+            "exact": "A configuration log is not the bound model-validation-domain record addressed by this rule. The quantity kind is recorded as value unit.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:unsupported:11",
-            "relation_kind": "monotonic_direction",
-            "predicate": "structurally_qualified",
-            "object_concept_id": "sci:concept:controlled-relation",
-            "polarity": "positive",
-            "quantities": [],
+            "subject_concept_id": "sci:concept:model-validation-domain-record",
+            "relation_kind": "empirical_relation",
+            "predicate": "applies",
+            "object_concept_id": "sci:concept:validation-domain",
+            "polarity": "negative",
+            "quantities": [
+              {
+                "quantity_kind": "validation_domain_temperature_limit",
+                "value": 300,
+                "unit": "kelvin"
+              }
+            ],
             "conditions": [
               {
-                "condition_id": "input_quantity_identified",
-                "value": true
+                "condition_id": "record_identity",
+                "value": "configuration_log"
               },
               {
-                "condition_id": "response_quantity_identified",
-                "value": true
-              },
-              {
-                "condition_id": "relation_form_identified",
-                "value": true
-              },
-              {
-                "condition_id": "held_constant_variables_identified",
-                "value": true
-              },
-              {
-                "condition_id": "process_stage_identified",
-                "value": true
-              },
-              {
-                "condition_id": "material_state_identified",
-                "value": true
-              },
-              {
-                "condition_id": "temporal_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "evidence_basis_identified",
-                "value": true
-              },
-              {
-                "condition_id": "valid_range_identified",
-                "value": true
-              },
-              {
-                "condition_id": "regime_transition_checked",
-                "value": true
+                "condition_id": "record_content",
+                "value": "validation_domain"
               }
             ],
             "process_stage": null,
@@ -916,17 +671,17 @@
           }
         },
         "expected_verdict": "INSUFFICIENT_INFORMATION",
-        "rationale": "A neighboring unsupported concept remains nondecisive.",
+        "rationale": "Natural, source-anchored candidate qualification document for the target Foundation Rule.",
         "expected_evidence_path": [
           "sci-evidence:common:model-validity"
-        ]
+        ],
+        "matrix_rule_id": "sci-rule:common:011"
       }
     ],
     "release_eligibility": "blocked_pending_authorized_admin_review"
   }
 }
 ---
-
 # Q-COM-011
 
 Ten public cases exercise the required qualification kinds against candidate rules only. Synthetic observation fixtures are labeled and never enter operational evidence.

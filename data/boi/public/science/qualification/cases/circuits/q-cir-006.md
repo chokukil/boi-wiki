@@ -323,8 +323,8 @@
                 "value": "finite"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_instrument_loading_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "coupling_path",
@@ -419,12 +419,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:006:unit_variation",
           "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:878b3e7c14f93cd2c569b7cf24768bfafb6c614d7fefbb77b59030aca461d093",
+          "document_digest": "sha256:480540c0607b7248b45c027a865ed80c9e3b027ae831aaee0fa8d828ec56fd9a",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 171,
-            "exact": "Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1000 milliohm.",
+            "end": 221,
+            "exact": "Connecting a finite-impedance measuring instrument can change the external circuit behavior through measurement loading. The resistance scale is recorded as 1000 milliohm. The same resistance scale is referenced as 1 ohm.",
             "prefix": "",
             "suffix": ""
           },
@@ -439,6 +439,11 @@
                 "quantity_kind": "resistance_scale",
                 "value": 1000,
                 "unit": "milliohm"
+              },
+              {
+                "quantity_kind": "resistance_scale_reference",
+                "value": 1,
+                "unit": "ohm"
               }
             ],
             "conditions": [
@@ -673,12 +678,12 @@
         "claim_packet": {
           "claim_id": "claim:circuits:006:false_red_prevention",
           "document_ref": "qualification:circuits:006",
-          "document_digest": "sha256:6833c9478368ae80321c0712bc933b26e2d8a690fbe3451431b743a9872c679c",
+          "document_digest": "sha256:673d43894380e973dbd77267e9bab04bc1a5121419d98834c9bd2984c2550251",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 197,
-            "exact": "When the input impedance is outside this rule's required scope, the document states that measurement instrument connection cannot change circuit behavior. The resistance scale is recorded as 1 ohm.",
+            "end": 135,
+            "exact": "An ideal voltmeter with infinite input impedance is stated not to load the measured circuit. The resistance scale is recorded as 1 ohm.",
             "prefix": "",
             "suffix": ""
           },
@@ -702,7 +707,7 @@
               },
               {
                 "condition_id": "input_impedance",
-                "value": "outside_finite"
+                "value": "infinite_ideal"
               },
               {
                 "condition_id": "coupling_path",

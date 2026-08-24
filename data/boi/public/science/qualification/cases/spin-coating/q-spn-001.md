@@ -355,8 +355,8 @@
                 "value": "spin_coating"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_film_state_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "comparison_target",
@@ -459,12 +459,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:unit_variation",
           "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:62406fedc72d3a27dd331f49566aabfb34ed841135da2bc4df1771a7c8fac3f6",
+          "document_digest": "sha256:30505675b796002408377f2bd4e6ebb89af5aa46e56fc117226eb7848c2d10be",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 170,
-            "exact": "A photoresist film-thickness result identifies its measurement state and uncertainty before states are compared. The film thickness scale is recorded as 0.001 micrometer.",
+            "end": 230,
+            "exact": "A photoresist film-thickness result identifies its measurement state and uncertainty before states are compared. The film thickness scale is recorded as 0.001 micrometer. The same film thickness scale is referenced as 1 nanometer.",
             "prefix": "",
             "suffix": ""
           },
@@ -479,6 +479,11 @@
                 "quantity_kind": "film_thickness_scale",
                 "value": "0.001",
                 "unit": "micrometer"
+              },
+              {
+                "quantity_kind": "film_thickness_scale_reference",
+                "value": 1,
+                "unit": "nanometer"
               }
             ],
             "conditions": [
@@ -736,12 +741,12 @@
         "claim_packet": {
           "claim_id": "claim:spin-coating:001:false_red_prevention",
           "document_ref": "qualification:spin-coating:001",
-          "document_digest": "sha256:d0e869ce7ed75e507fcf0910b95b9c038c716e369c1d5c1c530f05c07d0138f9",
+          "document_digest": "sha256:712cc2319d462c0d700200a047787534cd46725a6e4efbf494f5a7412165d64e",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 192,
-            "exact": "When the process method is outside this rule's required scope, the document denies that film thickness result applies to measurement state. The film thickness scale is recorded as 1 nanometer.",
+            "end": 157,
+            "exact": "A slot-die coating result is not a spin-coated film-thickness result covered by this process-state rule. The film thickness scale is recorded as 1 nanometer.",
             "prefix": "",
             "suffix": ""
           },
@@ -769,7 +774,7 @@
               },
               {
                 "condition_id": "process_method",
-                "value": "outside_spin_coating"
+                "value": "slot_die_coating"
               },
               {
                 "condition_id": "comparison_target",

@@ -73,9 +73,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_junction_barrier_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -100,7 +100,14 @@
     "contradiction_predicates": [
       "increases"
     ],
-    "expected_polarity": "positive"
+    "expected_polarity": "positive",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "voltage_scale",
+        "quantity_kind": "voltage_scale",
+        "reference_quantity_kind": "voltage_scale_reference"
+      }
+    ]
   }
 }
 ---

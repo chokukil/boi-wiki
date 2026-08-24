@@ -87,9 +87,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_evaporation_model_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -111,15 +111,21 @@
       {
         "evidence_ref": "sci-evidence:common:model-validity",
         "claim_family": "locator_bound.common.model_validity",
-        "purpose": "A record of the domain of validation of the M&S shall be maintained."
+        "purpose": "A record of the domain of validation of the validated M&S shall be maintained."
       }
     ],
     "deterministic_evaluator": true,
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "dynamic_viscosity",
+        "quantity_kind": "dynamic_viscosity",
+        "reference_quantity_kind": "dynamic_viscosity_reference"
+      }
+    ]
   }
 }
 ---
-
 # R-SPN-003 — Evaporation-aware spin-model limits
 
 Closed evaluator: `validity_domain`. Candidate qualification only.

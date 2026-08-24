@@ -4,7 +4,7 @@
   "boi_profile_version": "0.1",
   "sci_profile_version": "0.1",
   "type": "boi/science-rule",
-  "title": "R-SCD-003 Doping, mobility, and conductivity",
+  "title": "R-SCD-003 Carrier-state conductivity relation",
   "description": "Closed deterministic Rule draft pending authorized Admin review",
   "tags": [
     "ScienceVerifier",
@@ -39,7 +39,7 @@
     "pack_id": "sci-pack:semiconductor-devices/0.1.0",
     "rule_kind": "validity_domain",
     "inputs": [
-      "sci:concept:doping-change",
+      "sci:concept:carrier-state-parameters",
       "sci:concept:conductivity"
     ],
     "outcomes": [
@@ -49,9 +49,9 @@
       "OUTSIDE_VALIDITY_DOMAIN",
       "EMPIRICAL_VERIFICATION_REQUIRED"
     ],
-    "subject_concept_id": "sci:concept:doping-change",
+    "subject_concept_id": "sci:concept:carrier-state-parameters",
     "object_concept_id": "sci:concept:conductivity",
-    "relation_kind": "causal_relation",
+    "relation_kind": "empirical_relation",
     "required_conditions": [
       {
         "key": "transport_regime",
@@ -59,14 +59,9 @@
         "value": "low_field"
       },
       {
-        "key": "carrier_state_parameters_known",
+        "key": "carrier_parameter_scope",
         "operator": "eq",
-        "value": true
-      },
-      {
-        "key": "doping_change",
-        "operator": "eq",
-        "value": "specified_before_after_state"
+        "value": "electron_and_hole_concentrations_and_mobilities"
       }
     ],
     "validity_conditions": [
@@ -78,9 +73,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_carrier_conductivity_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -100,11 +95,26 @@
       }
     ],
     "deterministic_evaluator": true,
-    "release_eligibility": "blocked_pending_authorized_admin_review"
+    "release_eligibility": "blocked_pending_authorized_admin_review",
+    "carrier_conductivity_constraint": {
+      "electron_concentration_kind": "electron_concentration",
+      "hole_concentration_kind": "hole_concentration",
+      "electron_mobility_kind": "electron_mobility",
+      "hole_mobility_kind": "hole_mobility",
+      "conductivity_kind": "conductivity",
+      "relative_tolerance": "1e-12"
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "conductivity_scale",
+        "quantity_kind": "conductivity_scale",
+        "reference_quantity_kind": "conductivity_scale_reference"
+      }
+    ]
   }
 }
 ---
 
-# R-SCD-003 — Doping, mobility, and conductivity
+# R-SCD-003 — Carrier-state conductivity relation
 
-Closed evaluator: `validity_domain`. Candidate qualification only.
+Closed evaluator: `validity_domain` with a typed carrier-conductivity cross-field check. Candidate qualification only.

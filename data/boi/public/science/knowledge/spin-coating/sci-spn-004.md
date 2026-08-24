@@ -4,7 +4,7 @@
   "boi_profile_version": "0.1",
   "sci_profile_version": "0.1",
   "type": "boi/science-knowledge",
-  "title": "SCI-SPN-004 Product-scoped spin-speed direction",
+  "title": "SCI-SPN-004 Drying-limited spin-speed direction",
   "description": "Atomic domain Knowledge draft pending authorized Admin review",
   "tags": [
     "ScienceVerifier",
@@ -43,7 +43,7 @@
     "pack_id": "sci-pack:spin-coating/0.1.0",
     "knowledge_kind": "conditional_relation",
     "assurance_basis": "derived_model",
-    "statement": "For final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows.",
+    "statement": "When photoresist spin-off continues until drying stops the flow, attainable resist film thickness decreases approximately with the reciprocal square root of spin speed.",
     "assumptions": [
       "All Rule conditions for sci-rule:spin-coating:004 are checked before any decision."
     ],
@@ -78,8 +78,8 @@
 }
 ---
 
-# SCI-SPN-004 — Product-scoped spin-speed direction
+# SCI-SPN-004 Drying-limited spin-speed direction
 
-For final coat spin under the bound resist, process, measurement-state, and plotted-range conditions, increasing spin speed decreases attainable film thickness; no numeric recipe follows.
+When photoresist spin-off continues until drying stops the flow, attainable resist film thickness decreases approximately with the reciprocal square root of spin speed.
 
 Candidate-only draft; authorized Admin review is absent.

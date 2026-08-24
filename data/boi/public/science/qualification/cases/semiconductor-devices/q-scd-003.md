@@ -47,18 +47,18 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:clear_violation",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:552ac30350947466a26dce214848d2c7d9e9e4e2418feea8b559fede88beab32",
+          "document_digest": "sha256:0071decce73c14fc539195e636ece6974a72a5ed3e146adec824a895fff1a697",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 145,
-            "exact": "Increasing doping always increases conductivity regardless of mobility or carrier state. The conductivity scale is recorded as 1 siemens / meter.",
+            "end": 358,
+            "exact": "Low-field semiconductor conductivity is independent of electron and hole concentrations and mobilities. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "negative",
@@ -66,6 +66,31 @@
               {
                 "quantity_kind": "conductivity_scale",
                 "value": 1,
+                "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
                 "unit": "siemens / meter"
               }
             ],
@@ -75,12 +100,8 @@
                 "value": "low_field"
               },
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "specified_before_after_state"
+                "condition_id": "carrier_parameter_scope",
+                "value": "electron_and_hole_concentrations_and_mobilities"
               },
               {
                 "condition_id": "relation_context",
@@ -114,18 +135,18 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:in_scope_consistency",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:4f64e028643c58552d4addd349a7641c8f515a0d38f9ee4f0575694f58e2a7bc",
+          "document_digest": "sha256:29d554af9fc3fbe3b9be0954de179f05db4831d48406b92d85fc4a64145eafea",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 175,
-            "exact": "A doping change must be evaluated with carrier concentration and mobility before assigning the conductivity direction. The conductivity scale is recorded as 1 siemens / meter.",
+            "end": 361,
+            "exact": "Low-field semiconductor conductivity depends on the bound electron and hole concentrations and mobilities. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "positive",
@@ -133,6 +154,31 @@
               {
                 "quantity_kind": "conductivity_scale",
                 "value": 1,
+                "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
                 "unit": "siemens / meter"
               }
             ],
@@ -142,12 +188,8 @@
                 "value": "low_field"
               },
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "specified_before_after_state"
+                "condition_id": "carrier_parameter_scope",
+                "value": "electron_and_hole_concentrations_and_mobilities"
               },
               {
                 "condition_id": "relation_context",
@@ -181,18 +223,18 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:missing_required_condition",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:42486f4d9bd8e3eb0221eece8af89a3a9288f84622cfdeae129e4be01a749e92",
+          "document_digest": "sha256:1cc4a1ffdc0ce96144008b6a6d0f078c953828e78ce5e85754b60bc137313f1d",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 244,
-            "exact": "Without one required scientific condition, the document asserts that a doping change must be evaluated with carrier concentration and mobility before assigning the conductivity direction. The conductivity scale is recorded as 1 siemens / meter.",
+            "end": 355,
+            "exact": "Carrier concentrations and mobilities are listed without identifying the low-field transport regime. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "positive",
@@ -201,16 +243,37 @@
                 "quantity_kind": "conductivity_scale",
                 "value": 1,
                 "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
+                "unit": "siemens / meter"
               }
             ],
             "conditions": [
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "specified_before_after_state"
+                "condition_id": "carrier_parameter_scope",
+                "value": "electron_and_hole_concentrations_and_mobilities"
               },
               {
                 "condition_id": "relation_context",
@@ -244,18 +307,18 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:outside_validity_domain",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:87f8017b1882ecb434a7279c09c736d3bfbdf8e0379c98652fcc568239b59df6",
+          "document_digest": "sha256:cae6c810fca75e4c4d3b60f00525a9cf364c9853e81dfcba060b286138083294",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 236,
-            "exact": "For a high-field transport regime, the document asserts that a doping change must be evaluated with carrier concentration and mobility before assigning the conductivity direction. The conductivity scale is recorded as 1 siemens / meter.",
+            "end": 352,
+            "exact": "The low-field carrier-conductivity equation is asserted as an unchanged high-field transport law. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "positive",
@@ -263,6 +326,31 @@
               {
                 "quantity_kind": "conductivity_scale",
                 "value": 1,
+                "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
                 "unit": "siemens / meter"
               }
             ],
@@ -272,16 +360,12 @@
                 "value": "low_field"
               },
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "specified_before_after_state"
+                "condition_id": "carrier_parameter_scope",
+                "value": "electron_and_hole_concentrations_and_mobilities"
               },
               {
                 "condition_id": "relation_context",
-                "value": "outside_carrier_conductivity"
+                "value": "high_field_transport"
               }
             ],
             "process_stage": null,
@@ -311,18 +395,18 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:empirical_verification_required",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:338cfdfc6854dc5f0e535414b69eea59adae128dbfe52d95dbf80485bda39010",
+          "document_digest": "sha256:451d649fe056488451efa5e37afa4b308057c9e067f405bf64f848bb9cdd99d7",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 286,
-            "exact": "For a named implanted wafer after activation, the document asserts that a doping change must be evaluated with carrier concentration and mobility before assigning the conductivity direction; the named result requires measurement. The conductivity scale is recorded as 1 siemens / meter.",
+            "end": 364,
+            "exact": "The report claims a measured low-field conductivity for a named wafer, but no qualified observation is bound. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "positive",
@@ -330,6 +414,31 @@
               {
                 "quantity_kind": "conductivity_scale",
                 "value": 1,
+                "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
                 "unit": "siemens / meter"
               }
             ],
@@ -339,20 +448,16 @@
                 "value": "low_field"
               },
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "specified_before_after_state"
-              },
-              {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "carrier_parameter_scope",
+                "value": "electron_and_hole_concentrations_and_mobilities"
               },
               {
                 "condition_id": "relation_context",
                 "value": "carrier_conductivity"
+              },
+              {
+                "condition_id": "requested_carrier_conductivity_observation",
+                "value": "unqualified_observation"
               }
             ],
             "process_stage": null,
@@ -382,18 +487,18 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:negation",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:1e91780c8e11afe12a6e9179f401b77dd523f580e178ad22242c6635daa5a6a4",
+          "document_digest": "sha256:e2714520eeba87a207bc2374f7d7648db98cdcc8650603320b2525db8862859f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 195,
-            "exact": "It is not true that a doping change must be evaluated with carrier concentration and mobility before assigning the conductivity direction. The conductivity scale is recorded as 1 siemens / meter.",
+            "end": 357,
+            "exact": "It is not true that low-field conductivity depends on electron and hole concentrations and mobilities. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "negative",
@@ -401,6 +506,31 @@
               {
                 "quantity_kind": "conductivity_scale",
                 "value": 1,
+                "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
                 "unit": "siemens / meter"
               }
             ],
@@ -410,12 +540,8 @@
                 "value": "low_field"
               },
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "specified_before_after_state"
+                "condition_id": "carrier_parameter_scope",
+                "value": "electron_and_hole_concentrations_and_mobilities"
               },
               {
                 "condition_id": "relation_context",
@@ -449,18 +575,18 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:unit_variation",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:684c433ece3a9e91909bed4d7c0c47d4d4874bd46154164e437677f4d08ad20f",
+          "document_digest": "sha256:e6c8a457594a65dbd411c81157808f2200ccd05f53ecdd1a035188e6613e6631",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 186,
-            "exact": "A doping change must be evaluated with carrier concentration and mobility before assigning the conductivity direction. The conductivity scale is recorded as 10 millisiemens / centimeter.",
+            "end": 436,
+            "exact": "Low-field semiconductor conductivity depends on the bound electron and hole concentrations and mobilities. The conductivity scale is recorded as 10 millisiemens / centimeter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter. The same conductivity scale is referenced as 1 siemens / meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "positive",
@@ -469,6 +595,36 @@
                 "quantity_kind": "conductivity_scale",
                 "value": 10,
                 "unit": "millisiemens / centimeter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
+                "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "conductivity_scale_reference",
+                "value": 1,
+                "unit": "siemens / meter"
               }
             ],
             "conditions": [
@@ -477,12 +633,8 @@
                 "value": "low_field"
               },
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "specified_before_after_state"
+                "condition_id": "carrier_parameter_scope",
+                "value": "electron_and_hole_concentrations_and_mobilities"
               },
               {
                 "condition_id": "relation_context",
@@ -528,18 +680,18 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:decision_changing_ambiguity",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:a2bcc2c7c6503485d7f2e65beed0df2310371fd5b964c730914f06f3cd344d4f",
+          "document_digest": "sha256:41f7273260454eb40122a6342c479bdefe98708f34dd1aed522a053bd672d600",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 199,
-            "exact": "The document calls the proposition 'Doping, mobility, and conductivity' valid without resolving whether it affirms or denies that proposition. The conductivity scale is recorded as 1 siemens / meter.",
+            "end": 371,
+            "exact": "The wording leaves unresolved whether carrier concentrations and mobilities do or do not contribute to conductivity. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "positive",
@@ -547,6 +699,31 @@
               {
                 "quantity_kind": "conductivity_scale",
                 "value": 1,
+                "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
                 "unit": "siemens / meter"
               }
             ],
@@ -556,12 +733,8 @@
                 "value": "low_field"
               },
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "specified_before_after_state"
+                "condition_id": "carrier_parameter_scope",
+                "value": "electron_and_hole_concentrations_and_mobilities"
               },
               {
                 "condition_id": "relation_context",
@@ -591,18 +764,18 @@
         "alternative_claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:decision_changing_ambiguity:alternative",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:a2bcc2c7c6503485d7f2e65beed0df2310371fd5b964c730914f06f3cd344d4f",
+          "document_digest": "sha256:41f7273260454eb40122a6342c479bdefe98708f34dd1aed522a053bd672d600",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 199,
-            "exact": "The document calls the proposition 'Doping, mobility, and conductivity' valid without resolving whether it affirms or denies that proposition. The conductivity scale is recorded as 1 siemens / meter.",
+            "end": 371,
+            "exact": "The wording leaves unresolved whether carrier concentrations and mobilities do or do not contribute to conductivity. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "negative",
@@ -610,6 +783,31 @@
               {
                 "quantity_kind": "conductivity_scale",
                 "value": 1,
+                "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
                 "unit": "siemens / meter"
               }
             ],
@@ -619,12 +817,8 @@
                 "value": "low_field"
               },
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "specified_before_after_state"
+                "condition_id": "carrier_parameter_scope",
+                "value": "electron_and_hole_concentrations_and_mobilities"
               },
               {
                 "condition_id": "relation_context",
@@ -656,18 +850,18 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:paraphrase",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:991c34d6887d4a65d1f43fe4a24247b90db4105220189dca271d4408afb8189f",
+          "document_digest": "sha256:9f4c008353f7921ab9dfd9d36d539770f5151322dad6237f7b7667f2308dd82f",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 198,
-            "exact": "In equivalent wording, a doping change must be evaluated with carrier concentration and mobility before assigning the conductivity direction. The conductivity scale is recorded as 1 siemens / meter.",
+            "end": 365,
+            "exact": "Electron and hole populations and their mobilities jointly contribute to low-field semiconductor conductivity. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "positive",
@@ -675,6 +869,31 @@
               {
                 "quantity_kind": "conductivity_scale",
                 "value": 1,
+                "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
                 "unit": "siemens / meter"
               }
             ],
@@ -684,12 +903,8 @@
                 "value": "low_field"
               },
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "specified_before_after_state"
+                "condition_id": "carrier_parameter_scope",
+                "value": "electron_and_hole_concentrations_and_mobilities"
               },
               {
                 "condition_id": "relation_context",
@@ -723,18 +938,18 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:003:false_red_prevention",
           "document_ref": "qualification:semiconductor-devices:003",
-          "document_digest": "sha256:1c32bd018797f2f8254d7c9507ee898a21d0a7143dc537b79e98fb483395ecd3",
+          "document_digest": "sha256:ba080d6ce404d3242ceab7b11063b610ea0b9530cbb52a3eb6686ca8d65f2b9b",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 182,
-            "exact": "When the doping change is outside this rule's required scope, the document denies that doping change applies to conductivity. The conductivity scale is recorded as 1 siemens / meter.",
+            "end": 375,
+            "exact": "A doping label with no before-and-after carrier concentrations or mobilities cannot establish the conductivity relation. The conductivity scale is recorded as 1 siemens / meter. The bound state gives n = 1e21 per cubic meter, p = 2e20 per cubic meter, electron mobility 0.1 and hole mobility 0.05 square meter per volt-second, and conductivity 17.623942974 siemens per meter.",
             "prefix": "",
             "suffix": ""
           },
           "normalized_claim": {
-            "subject_concept_id": "sci:concept:doping-change",
-            "relation_kind": "causal_relation",
+            "subject_concept_id": "sci:concept:carrier-state-parameters",
+            "relation_kind": "empirical_relation",
             "predicate": "applies",
             "object_concept_id": "sci:concept:conductivity",
             "polarity": "negative",
@@ -742,6 +957,31 @@
               {
                 "quantity_kind": "conductivity_scale",
                 "value": 1,
+                "unit": "siemens / meter"
+              },
+              {
+                "quantity_kind": "electron_concentration",
+                "value": "1e21",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "hole_concentration",
+                "value": "2e20",
+                "unit": "1 / meter ** 3"
+              },
+              {
+                "quantity_kind": "electron_mobility",
+                "value": "0.1",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "hole_mobility",
+                "value": "0.05",
+                "unit": "meter ** 2 / volt / second"
+              },
+              {
+                "quantity_kind": "conductivity",
+                "value": "17.623942974",
                 "unit": "siemens / meter"
               }
             ],
@@ -751,12 +991,8 @@
                 "value": "low_field"
               },
               {
-                "condition_id": "carrier_state_parameters_known",
-                "value": true
-              },
-              {
-                "condition_id": "doping_change",
-                "value": "outside_specified_before_after_state"
+                "condition_id": "carrier_parameter_scope",
+                "value": "single_doping_label"
               },
               {
                 "condition_id": "relation_context",
@@ -787,7 +1023,6 @@
   }
 }
 ---
-
 # Q-SCD-003
 
 Ten public natural-claim fixtures qualify only `sci-rule:semiconductor-devices:003`. No operational authority is created.

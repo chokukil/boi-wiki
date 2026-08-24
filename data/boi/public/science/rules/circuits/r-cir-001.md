@@ -83,9 +83,9 @@
     ],
     "empirical_trigger_conditions": [
       {
-        "key": "claim_specificity",
+        "key": "requested_node_current_observation",
         "operator": "eq",
-        "value": "equipment_or_numeric"
+        "value": "unqualified_observation"
       }
     ],
     "context_dimensions": {
@@ -112,7 +112,14 @@
         "zero_current"
       ],
       "operator": "equal"
-    }
+    },
+    "quantity_equivalence_constraints": [
+      {
+        "scientific_role": "current_scale",
+        "quantity_kind": "current_scale",
+        "reference_quantity_kind": "current_scale_reference"
+      }
+    ]
   }
 }
 ---

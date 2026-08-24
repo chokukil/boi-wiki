@@ -327,8 +327,8 @@
                 "value": "perfect_insulator"
               },
               {
-                "condition_id": "claim_specificity",
-                "value": "equipment_or_numeric"
+                "condition_id": "requested_ideal_gate_current_observation",
+                "value": "unqualified_observation"
               },
               {
                 "condition_id": "claim_target",
@@ -425,12 +425,12 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:005:unit_variation",
           "document_ref": "qualification:semiconductor-devices:005",
-          "document_digest": "sha256:cfd042c4b53a318c4554150ec3837feec8d032e45d1b8ace12053b8f028608d9",
+          "document_digest": "sha256:c1c1c4e1de747ede3c64da67d2e42d8826ed02a770e8ab44a4bc6a7b44361b64",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 222,
-            "exact": "The ideal MOS model treats the oxide as insulating and therefore sets gate current to zero; this is a model statement, not a universal assertion about real devices. The film thickness scale is recorded as 0.001 micrometer.",
+            "end": 282,
+            "exact": "The ideal MOS model treats the oxide as insulating and therefore sets gate current to zero; this is a model statement, not a universal assertion about real devices. The film thickness scale is recorded as 0.001 micrometer. The same film thickness scale is referenced as 1 nanometer.",
             "prefix": "",
             "suffix": ""
           },
@@ -445,6 +445,11 @@
                 "quantity_kind": "film_thickness_scale",
                 "value": "0.001",
                 "unit": "micrometer"
+              },
+              {
+                "quantity_kind": "film_thickness_scale_reference",
+                "value": 1,
+                "unit": "nanometer"
               }
             ],
             "conditions": [
@@ -683,12 +688,12 @@
         "claim_packet": {
           "claim_id": "claim:semiconductor-devices:005:false_red_prevention",
           "document_ref": "qualification:semiconductor-devices:005",
-          "document_digest": "sha256:dfa6b1334f8a624bff410d734e5ba0ee6b08bc2ce7979a17a41abafef1f8d8f5",
+          "document_digest": "sha256:8846f8cffc0f66ec564ad7c089f9b3da2336e6c96aec3b6693e320b661af46e6",
           "source_span": {
             "offset_encoding": "unicode_code_point",
             "start": 0,
-            "end": 179,
-            "exact": "When the gate oxide model is outside this rule's required scope, the document states that ideal mos gate nonzero gate current. The film thickness scale is recorded as 1 nanometer.",
+            "end": 164,
+            "exact": "A tunneling dielectric is a physical nonideal oxide, not the perfectly insulating oxide of the ideal MOS model. The film thickness scale is recorded as 1 nanometer.",
             "prefix": "",
             "suffix": ""
           },
@@ -712,7 +717,7 @@
               },
               {
                 "condition_id": "gate_oxide_model",
-                "value": "outside_perfect_insulator"
+                "value": "tunneling_dielectric"
               },
               {
                 "condition_id": "claim_target",
