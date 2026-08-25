@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from pydantic import ValidationError
 
 from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.equations import validate_equation_collection
 from boi_api.app.science.models import ConditionConstraint, EvidenceLocator
 
 SCIENCE_TYPE_REQUIREMENTS = {
@@ -359,6 +360,10 @@ def validate_sci_profile_metadata(metadata: dict[str, Any]) -> list[str]:
             errors.append("science.knowledge_kind is invalid")
         if science.get("assurance_basis") not in ASSURANCE_BASES:
             errors.append("science.assurance_basis is invalid")
+        if "equations" in science:
+            errors.extend(validate_equation_collection(science.get("equations")))
+    elif "equations" in science:
+        errors.append("science.equations is allowed only on boi/science-knowledge")
 
     if metadata["type"] == "boi/science-source" and metadata.get("visibility") == "public":
         original_url = science.get("original_url")

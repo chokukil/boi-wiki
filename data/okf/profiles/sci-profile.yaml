@@ -1,0 +1,49 @@
+profile_id: sci-profile
+profile_version: "0.1"
+extends:
+  - okf/0.1
+  - boi-profile/0.1
+scope:
+  stored_types:
+    - boi/science-source
+    - boi/science-evidence
+    - boi/science-knowledge
+    - boi/science-rule
+    - boi/science-pack
+    - boi/science-ontology-binding
+    - boi/science-qualification-matrix
+    - boi/science-release
+equation_knowledge:
+  placement: boi/science-knowledge.science.equations
+  optional: true
+  expression_schema_version: science-expression/0.1
+  semantic_authority: semantic_expression
+  display_channels:
+    - display_latex
+    - plain_text
+    - accessibility_reading
+  scientific_roles:
+    - definition
+    - invariant
+    - law
+    - derived_model
+    - approximation
+    - empirical_fit
+    - qualified_relation
+  decision_uses:
+    - explanation_only
+    - deterministic_rule
+    - formal_reference
+  deterministic_rule_gate:
+    requires:
+      - reviewed_evaluator_link
+      - closed_operator_allowlist
+      - exact_equation_digest
+      - exact_evidence_locator
+      - reviewed_transcription
+      - complete_variable_mapping
+      - dimension_consistency
+  trust_boundaries:
+    - LaTeX, plain text, ontology labels, CAS output, and LLM output are not evaluator inputs.
+    - Unsupported semantic operators remain explanation_only.
+    - Equation, Evidence, Rule, and Release approval remains Admin-only.

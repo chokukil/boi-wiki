@@ -177,6 +177,54 @@ def test_science_knowledge_requires_evidence_and_disallows_confidence():
     assert "science.evidence_refs is required" in validate_sci_profile_metadata(metadata)
 
 
+def test_science_knowledge_equations_are_optional_but_typed_when_present():
+    """Only Knowledge may carry a closed Equation Knowledge package."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+    from tests.test_science_equations import valid_equation_payload
+
+    knowledge = valid_science_metadata("boi/science-knowledge")
+    assert validate_sci_profile_metadata(knowledge) == []
+
+    knowledge["science"]["equations"] = [valid_equation_payload()]
+    assert validate_sci_profile_metadata(knowledge) == []
+
+
+def test_science_profile_rejects_malformed_or_misplaced_equations():
+    """Equation-like payloads must not bypass Knowledge validation via another object type."""
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+    from tests.test_science_equations import valid_equation_payload
+
+    knowledge = valid_science_metadata("boi/science-knowledge")
+    knowledge["science"]["equations"] = [valid_equation_payload()]
+    knowledge["science"]["equations"][0]["display_latex"] = r"\\input{/etc/passwd}"
+    assert "science.equations items must satisfy the closed Equation Knowledge schema" in (
+        validate_sci_profile_metadata(knowledge)
+    )
+
+    evidence = valid_science_metadata("boi/science-evidence")
+    evidence["science"]["equations"] = [valid_equation_payload()]
+    assert "science.equations is allowed only on boi/science-knowledge" in (
+        validate_sci_profile_metadata(evidence)
+    )
+
+
+def test_science_profile_rejects_empty_or_duplicate_equation_collections():
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+    from tests.test_science_equations import valid_equation_payload
+
+    knowledge = valid_science_metadata("boi/science-knowledge")
+    knowledge["science"]["equations"] = []
+    assert "science.equations must be a nonempty list when present" in (
+        validate_sci_profile_metadata(knowledge)
+    )
+
+    equation = valid_equation_payload()
+    knowledge["science"]["equations"] = [equation, deepcopy(equation)]
+    assert "science.equations equation_id values must be unique" in (
+        validate_sci_profile_metadata(knowledge)
+    )
+
+
 @pytest.mark.parametrize(
     ("field_name", "invalid_value", "error"),
     [
