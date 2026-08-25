@@ -38,6 +38,38 @@ const browserEvidence = verification.evidence?.browser;
 const qualificationEvidence = verification.evidence?.qualification;
 const reviewEvidence = verification.evidence?.independent_review;
 const browserChecks = browserEvidence?.check_results;
+const requiredBrowserCheckIds = [
+  "page_loaded",
+  "candidate_not_operational",
+  "nav_order",
+  "inactive_release_has_no_red",
+  "deterministic_aliases_visible",
+  "manual_claim_editor_visible",
+  "qwen_is_separate_experimental_action",
+  "default_used_deterministic_non_qwen_path",
+  "manual_claim_confirmed_without_llm_or_verdict",
+  "ascii_alias_token_boundary",
+  "qwen_failure_matrix_has_no_red",
+  "invalid_claim_matrix_has_no_red",
+  "external_clients_submit_same_claim",
+  "red_gate_requires_active_rule_conditions_and_exact_evidence",
+  "prohibited_ui_absent",
+  "actions_separated_and_focusable",
+  "desktop_no_overflow",
+  "mobile_single_column",
+  "equation_committed_asset_renders_exact_svg",
+  "equation_identity_and_evidence_visible",
+  "equation_details_copy_and_accessibility",
+  "equation_failures_keep_plain_fallback_without_red",
+  "equation_mobile_scroll_is_contained",
+  "equation_qa_is_explicitly_non_operational",
+  "wiki_selection_handoff",
+  "wiki_local_revision_preserves_lineage",
+  "console_clean",
+];
+const browserCheckIds = new Set(
+  Array.isArray(browserChecks) ? browserChecks.map((check) => check?.check_id) : [],
+);
 const requiredGates = {
   G0: "PASS", G1: "PASS", G2: "PASS", G3: "PASS", G4: "PASS",
   G5: "PENDING", G6: "PENDING", G7: "PENDING",
@@ -53,7 +85,9 @@ const evidenceIsFinal =
   && verification.activation_eligible === false
   && browserEvidence?.passed === true
   && Array.isArray(browserChecks)
-  && browserChecks.length === 21
+  && browserChecks.length === requiredBrowserCheckIds.length
+  && browserCheckIds.size === requiredBrowserCheckIds.length
+  && requiredBrowserCheckIds.every((checkId) => browserCheckIds.has(checkId))
   && browserChecks.every((check) => check?.status === "passed")
   && reviewEvidence?.passed === true
   && reviewEvidence?.findings?.critical === 0

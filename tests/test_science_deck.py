@@ -18,6 +18,35 @@ DEFAULT_NODE_MODULES = Path(
     "/mnt/c/Users/choku/.cache/codex-runtimes/codex-primary-runtime/"
     "dependencies/node/node_modules"
 )
+REQUIRED_BROWSER_CHECK_IDS = [
+    "page_loaded",
+    "candidate_not_operational",
+    "nav_order",
+    "inactive_release_has_no_red",
+    "deterministic_aliases_visible",
+    "manual_claim_editor_visible",
+    "qwen_is_separate_experimental_action",
+    "default_used_deterministic_non_qwen_path",
+    "manual_claim_confirmed_without_llm_or_verdict",
+    "ascii_alias_token_boundary",
+    "qwen_failure_matrix_has_no_red",
+    "invalid_claim_matrix_has_no_red",
+    "external_clients_submit_same_claim",
+    "red_gate_requires_active_rule_conditions_and_exact_evidence",
+    "prohibited_ui_absent",
+    "actions_separated_and_focusable",
+    "desktop_no_overflow",
+    "mobile_single_column",
+    "equation_committed_asset_renders_exact_svg",
+    "equation_identity_and_evidence_visible",
+    "equation_details_copy_and_accessibility",
+    "equation_failures_keep_plain_fallback_without_red",
+    "equation_mobile_scroll_is_contained",
+    "equation_qa_is_explicitly_non_operational",
+    "wiki_selection_handoff",
+    "wiki_local_revision_preserves_lineage",
+    "console_clean",
+]
 
 
 def _sha256(path: Path) -> str:
@@ -115,8 +144,8 @@ def _science_deck_repo(tmp_path: Path) -> tuple[Path, Path]:
             "browser": {
                 "passed": True,
                 "check_results": [
-                    {"check_id": f"check-{number}", "status": "passed"}
-                    for number in range(21)
+                    {"check_id": check_id, "status": "passed"}
+                    for check_id in REQUIRED_BROWSER_CHECK_IDS
                 ],
                 "capture_files": [
                     {
@@ -183,7 +212,8 @@ def test_science_deck_builder_is_fail_closed_and_manifest_bound() -> None:
 
     assert 'verification.report_state === "FINAL"' in source
     assert 'verification.implementation_status === "VERIFIED"' in source
-    assert "browserChecks.length === 21" in source
+    assert "requiredBrowserCheckIds" in source
+    assert "browserCheckIds.size === requiredBrowserCheckIds.length" in source
     assert "reviewEvidence?.findings?.important === 0" in source
     assert "verification.git?.commit === currentCommit" in source
     assert "qualification report PDF does not match verification manifest" in source
@@ -218,6 +248,26 @@ def test_science_deck_builder_rejects_tampered_desktop_capture(
 
     assert result.returncode != 0
     assert "desktop UI capture does not match browser evidence" in result.stderr
+    assert not (repo / "artifacts/science-verifier/deck/build-manifest.json").exists()
+
+
+def test_science_deck_builder_rejects_missing_equation_browser_check(
+    tmp_path: Path,
+) -> None:
+    repo, _ = _science_deck_repo(tmp_path)
+    verification_path = repo / "artifacts/science-verifier/verification-manifest.json"
+    verification = json.loads(verification_path.read_text(encoding="utf-8"))
+    verification["evidence"]["browser"]["check_results"] = [
+        check
+        for check in verification["evidence"]["browser"]["check_results"]
+        if check["check_id"] != "equation_failures_keep_plain_fallback_without_red"
+    ]
+    verification_path.write_text(json.dumps(verification), encoding="utf-8")
+
+    result = _run_deck_builder(repo)
+
+    assert result.returncode != 0
+    assert "non-final or unbound verification manifest" in result.stderr
     assert not (repo / "artifacts/science-verifier/deck/build-manifest.json").exists()
 
 
@@ -278,7 +328,9 @@ def test_generated_science_evidence_deck_when_explicitly_requested() -> None:
         manifest["evidence_binding"]["report_record_digest"]
         == verification["report_record_digest"]
     )
-    assert manifest["evidence_binding"]["browser_checks"] == 21
+    assert manifest["evidence_binding"]["browser_checks"] == len(
+        REQUIRED_BROWSER_CHECK_IDS
+    )
     assert manifest["evidence_binding"]["public_cases"] == 440
     assert "G5" in " ".join(
         shape.text
