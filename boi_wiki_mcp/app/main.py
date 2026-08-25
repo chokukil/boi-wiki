@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import json
 import os
+import re
 from html import escape
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -750,12 +751,28 @@ async def api_get_bytes(
     report_digest = str(resp.headers.get("x-science-report-digest") or "").strip()
     if not report_digest:
         raise RuntimeError("Science report export is missing x-science-report-digest")
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", report_digest) is None:
+        raise RuntimeError("Science report export has malformed x-science-report-digest")
+    export_digest = str(resp.headers.get("x-science-export-digest") or "").strip()
+    if not export_digest:
+        raise RuntimeError("Science report export is missing x-science-export-digest")
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", export_digest) is None:
+        raise RuntimeError("Science report export has malformed x-science-export-digest")
+    content_sha256 = hashlib.sha256(content).hexdigest()
+    if export_digest != f"sha256:{content_sha256}":
+        raise RuntimeError(
+            "Science report export digest does not match received bytes"
+        )
     return {
         "content_base64": base64.b64encode(content).decode("ascii"),
         "content_type": str(resp.headers.get("content-type") or "application/octet-stream").split(";", 1)[0],
         "content_disposition": str(resp.headers.get("content-disposition") or ""),
         "report_digest": report_digest,
-        "content_sha256": hashlib.sha256(content).hexdigest(),
+        "export_digest": export_digest,
+        # Compatibility field: the same export-byte identity without the
+        # algorithm prefix. It is never the scientific report identity.
+        "content_sha256": content_sha256,
+        "content_sha256_scope": "export_bytes",
     }
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 from typing import Any, Literal
 
@@ -522,8 +523,17 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
         identity: AuthIdentity = Depends(science_identity),
     ) -> Response:
         report = report_for(identity, report_id, export=True)
+        if format == "markdown":
+            content = render_report_markdown(report).encode("utf-8")
+            media_type = "text/markdown; charset=utf-8"
+        else:
+            content = render_report_pdf(report)
+            media_type = "application/pdf"
         headers = {
             "X-Science-Report-Digest": report.report_digest,
+            "X-Science-Export-Digest": (
+                "sha256:" + hashlib.sha256(content).hexdigest()
+            ),
             "Content-Disposition": (
                 'attachment; filename="science-report-'
                 f"{report.report_id.split(':')[-1]}."
@@ -531,17 +541,7 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
                 + '"'
             ),
         }
-        if format == "markdown":
-            return Response(
-                render_report_markdown(report).encode("utf-8"),
-                media_type="text/markdown; charset=utf-8",
-                headers=headers,
-            )
-        return Response(
-            render_report_pdf(report),
-            media_type="application/pdf",
-            headers=headers,
-        )
+        return Response(content, media_type=media_type, headers=headers)
 
     @router.post("/api/science/proposals")
     def create_proposal(

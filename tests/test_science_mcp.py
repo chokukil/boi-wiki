@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import importlib
 import sys
@@ -236,10 +237,11 @@ def test_authenticated_bridge_forwards_external_claim_submission(
 
 
 @pytest.mark.asyncio
-async def test_export_preserves_report_digest_and_distinct_content_hash(
+async def test_export_verifies_and_preserves_distinct_report_and_export_digests(
     mcp_module, monkeypatch
 ):
     content = b"%PDF-1.4"
+    export_digest = "sha256:" + hashlib.sha256(content).hexdigest()
 
     class FakeClient:
         def __init__(self, *args, **kwargs):
@@ -260,6 +262,7 @@ async def test_export_preserves_report_digest_and_distinct_content_hash(
                 headers={
                     "content-type": "application/pdf",
                     "x-science-report-digest": "sha256:" + "a" * 64,
+                    "x-science-export-digest": export_digest,
                     "content-disposition": 'attachment; filename="report.pdf"',
                 },
             )
@@ -273,10 +276,55 @@ async def test_export_preserves_report_digest_and_distinct_content_hash(
     )
 
     assert result["report_digest"] == "sha256:" + "a" * 64
+    assert result["export_digest"] == export_digest
     assert result["content_sha256"] == hashlib.sha256(content).hexdigest()
+    assert result["content_sha256_scope"] == "export_bytes"
+    assert base64.b64decode(result["content_base64"], validate=True) == content
     assert result["content_type"] == "application/pdf"
     assert result["content_disposition"] == 'attachment; filename="report.pdf"'
     assert "sha256" not in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("export_digest", "message"),
+    [
+        (None, "missing x-science-export-digest"),
+        ("not-a-digest", "malformed x-science-export-digest"),
+        ("sha256:" + "0" * 64, "does not match received bytes"),
+    ],
+)
+async def test_export_fails_closed_when_export_digest_is_not_trustworthy(
+    mcp_module, monkeypatch, export_digest, message
+):
+    content = b"# Science report\n"
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get(self, *args, **kwargs):
+            headers = {
+                "content-type": "text/markdown; charset=utf-8",
+                "x-science-report-digest": "sha256:" + "a" * 64,
+            }
+            if export_digest is not None:
+                headers["x-science-export-digest"] = export_digest
+            return httpx.Response(200, content=content, headers=headers)
+
+    monkeypatch.setattr(mcp_module.httpx, "AsyncClient", FakeClient)
+
+    with pytest.raises(RuntimeError, match=message):
+        await mcp_module.api_get_bytes(
+            "/api/science/reports/report-1/export",
+            bearer_token="user-token",
+        )
 
 
 @pytest.mark.asyncio

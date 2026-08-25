@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -271,6 +272,20 @@ def test_report_exports_share_one_canonical_report_digest() -> None:
     assert stored.json()["report_digest"] == "sha256:" + "8" * 64
     assert markdown.headers["x-science-report-digest"] == stored.json()["report_digest"]
     assert pdf.headers["x-science-report-digest"] == stored.json()["report_digest"]
+    assert markdown.headers["x-science-export-digest"] == (
+        "sha256:" + hashlib.sha256(markdown.content).hexdigest()
+    )
+    assert pdf.headers["x-science-export-digest"] == (
+        "sha256:" + hashlib.sha256(pdf.content).hexdigest()
+    )
+    assert (
+        markdown.headers["x-science-export-digest"]
+        != pdf.headers["x-science-export-digest"]
+    )
+    assert (
+        markdown.headers["x-science-export-digest"]
+        != markdown.headers["x-science-report-digest"]
+    )
     assert markdown.headers["content-type"].startswith("text/markdown")
     assert pdf.headers["content-type"] == "application/pdf"
     assert pdf.content.startswith(b"%PDF")
