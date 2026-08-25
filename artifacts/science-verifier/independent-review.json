@@ -1,0 +1,10 @@
+{
+  "schema_version": "science-independent-review/0.1",
+  "reviewed_git_commit": "02f89be5caad41f45f57af7558a4b3e69c42efbc",
+  "status": "passed",
+  "findings": {
+    "critical": 0,
+    "important": 0,
+    "advisory": 0
+  }
+}

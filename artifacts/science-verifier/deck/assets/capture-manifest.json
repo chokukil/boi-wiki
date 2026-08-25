@@ -1,0 +1,265 @@
+{
+  "schema_version": "science-browser-capture-manifest/0.1",
+  "captured_at": "2026-08-25T05:19:49.261Z",
+  "git_commit": "02f89be5caad41f45f57af7558a4b3e69c42efbc",
+  "route": "/science-verifier",
+  "release_status": "release_candidate",
+  "operational": false,
+  "checks": [
+    {
+      "check_id": "page_loaded",
+      "status": "passed"
+    },
+    {
+      "check_id": "candidate_not_operational",
+      "status": "passed"
+    },
+    {
+      "check_id": "nav_order",
+      "status": "passed"
+    },
+    {
+      "check_id": "inactive_release_has_no_red",
+      "status": "passed"
+    },
+    {
+      "check_id": "deterministic_aliases_visible",
+      "status": "passed"
+    },
+    {
+      "check_id": "manual_claim_editor_visible",
+      "status": "passed"
+    },
+    {
+      "check_id": "qwen_is_separate_experimental_action",
+      "status": "passed"
+    },
+    {
+      "check_id": "default_used_deterministic_non_qwen_path",
+      "status": "passed"
+    },
+    {
+      "check_id": "manual_claim_confirmed_without_llm_or_verdict",
+      "status": "passed"
+    },
+    {
+      "check_id": "ascii_alias_token_boundary",
+      "status": "passed"
+    },
+    {
+      "check_id": "qwen_failure_matrix_has_no_red",
+      "status": "passed"
+    },
+    {
+      "check_id": "invalid_claim_matrix_has_no_red",
+      "status": "passed"
+    },
+    {
+      "check_id": "external_clients_submit_same_claim",
+      "status": "passed"
+    },
+    {
+      "check_id": "red_gate_requires_active_rule_conditions_and_exact_evidence",
+      "status": "passed"
+    },
+    {
+      "check_id": "prohibited_ui_absent",
+      "status": "passed"
+    },
+    {
+      "check_id": "actions_separated_and_focusable",
+      "status": "passed"
+    },
+    {
+      "check_id": "desktop_no_overflow",
+      "status": "passed"
+    },
+    {
+      "check_id": "mobile_single_column",
+      "status": "passed"
+    },
+    {
+      "check_id": "equation_committed_asset_renders_exact_svg",
+      "status": "passed"
+    },
+    {
+      "check_id": "equation_identity_and_evidence_visible",
+      "status": "passed"
+    },
+    {
+      "check_id": "equation_details_copy_and_accessibility",
+      "status": "passed"
+    },
+    {
+      "check_id": "equation_failures_keep_plain_fallback_without_red",
+      "status": "passed"
+    },
+    {
+      "check_id": "equation_mobile_scroll_is_contained",
+      "status": "passed"
+    },
+    {
+      "check_id": "equation_qa_is_explicitly_non_operational",
+      "status": "passed"
+    },
+    {
+      "check_id": "wiki_selection_handoff",
+      "status": "passed"
+    },
+    {
+      "check_id": "wiki_local_revision_preserves_lineage",
+      "status": "passed"
+    },
+    {
+      "check_id": "console_clean",
+      "status": "passed"
+    }
+  ],
+  "captures": [
+    {
+      "path": "review-canvas-desktop.png",
+      "sha256": "sha256:cdf6335659ea10ffa020a6cc0a05d390d965661d0e4bc6d712409fc9e7c799f5"
+    },
+    {
+      "path": "review-canvas-mobile.png",
+      "sha256": "sha256:43c982372cd64df93495e8c81bd8cbacb2e809054768fdfe3c70afeb351e1232"
+    },
+    {
+      "path": "equation-rendering.png",
+      "sha256": "sha256:b018b1f0e85c89997f5c53b589b68eab796b45b74932714f08cd23421c965218"
+    }
+  ],
+  "screenshots": {
+    "desktop": {
+      "path": "/tmp/science-artifacts-02f89be/review-canvas-desktop.png",
+      "sha256": "sha256:cdf6335659ea10ffa020a6cc0a05d390d965661d0e4bc6d712409fc9e7c799f5"
+    },
+    "mobile": {
+      "path": "/tmp/science-artifacts-02f89be/review-canvas-mobile.png",
+      "sha256": "sha256:43c982372cd64df93495e8c81bd8cbacb2e809054768fdfe3c70afeb351e1232"
+    },
+    "equation": {
+      "path": "/tmp/science-artifacts-02f89be/equation-rendering.png",
+      "sha256": "sha256:b018b1f0e85c89997f5c53b589b68eab796b45b74932714f08cd23421c965218"
+    }
+  },
+  "equation_qa": {
+    "label": "비운영 표시 검수 — 판정 근거 아님",
+    "equation_id": "sci:equation:materials:arrhenius-diffusion",
+    "equation_digest": "sha256:65cf2f1245b30cf30cb8f9c2dc39f3d5ace24360ae92fdbcfca48c825a772a99",
+    "asset_digest": "sha256:f663ac27bd915376d7afa09626a6f5b04f2310d08c44118445b9f52076076265",
+    "manifest_digest": "sha256:6f4e12c4da689bc4e93d0e85393b8f26c7191cc41a1a94359a975e673fecf744",
+    "operational": false,
+    "verdict_effect": "none",
+    "red_mark_effect": "none"
+  },
+  "science_requests": [
+    {
+      "path": "/api/science/aliases/detect",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/user-revisions/challenge",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/user-revisions/commit",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/interpretations/sci-interpretation%3A823e320b65fc99c8e2fb9caa0af48835c0b7c4e5fe226f311e477b00adc097f0/confirmation-challenge",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/interpretations/sci-interpretation%3A823e320b65fc99c8e2fb9caa0af48835c0b7c4e5fe226f311e477b00adc097f0/confirm",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/interpret",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/aliases/detect",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/claims/submit",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/claims/submit",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/claims/submit",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/claims/submit",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/claims/submit",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/claims/submit",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/aliases/detect",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/aliases/detect",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/user-revisions/challenge",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/user-revisions/commit",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/interpretations/sci-interpretation%3Ac87c80baf2830767094c897ca3abe598638bc1043e955e0e40d4c2f3aae464b4/confirmation-challenge",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/interpretations/sci-interpretation%3Ac87c80baf2830767094c897ca3abe598638bc1043e955e0e40d4c2f3aae464b4/confirm",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/aliases/detect",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/user-revisions/challenge",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/user-revisions/commit",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/interpretations/sci-interpretation%3A6e683b87d5a5ab03d7bef4411438df9696be4cc7f6abff9d53df01822cd537eb/confirmation-challenge",
+      "method": "POST"
+    },
+    {
+      "path": "/api/science/interpretations/sci-interpretation%3A6e683b87d5a5ab03d7bef4411438df9696be4cc7f6abff9d53df01822cd537eb/confirm",
+      "method": "POST"
+    }
+  ],
+  "qwen_diagnostics": [
+    {
+      "path": "/api/science/interpret",
+      "status": 503,
+      "code": "science_interpretation_unavailable",
+      "diagnostic_code": "adapter_disabled"
+    }
+  ],
+  "console_errors": [],
+  "browser": "Chrome DevTools Protocol",
+  "browser_fallback_reason": "agent-browser CLI unavailable; used the repository CDP verification pattern."
+}

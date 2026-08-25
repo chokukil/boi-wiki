@@ -1,0 +1,79 @@
+{
+  "schema_version": "science-equation-renderer-qualification/0.1",
+  "artifact_kind": "renderer_qualification_non_authoritative",
+  "renderer": {
+    "engine": "MathJax",
+    "version": "4.1.3",
+    "output": "sanitized-svg-paths",
+    "font": "MathJax-Newcm 4.1.3 with Mhchem extension 4.1.3"
+  },
+  "expressions": [
+    {
+      "category": "fraction",
+      "latex": "I=\\frac{V}{R}",
+      "plain_text": "I = V / R",
+      "accessibility_reading": "전류 I는 전압 V를 저항 R로 나눈 값",
+      "adjacent_explanation": "",
+      "svg_digest": "sha256:833edf05c41cffed9e643317d5afeec336a8ce40032dfb7b9fe36b688fbda9e3"
+    },
+    {
+      "category": "exponent_subscript_greek",
+      "latex": "\\sigma=q(n\\mu_n+p\\mu_p)",
+      "plain_text": "sigma = q (n mu_n + p mu_p)",
+      "accessibility_reading": "전도도 시그마는 전하량 q와 전자 및 정공 이동도 항의 합의 곱",
+      "adjacent_explanation": "",
+      "svg_digest": "sha256:01e77cb3fe06aeba8d27d2de5f64eb89ba7835c7bd521ce377f1379e5812f265"
+    },
+    {
+      "category": "summation",
+      "latex": "\\sum_{i=1}^{n}x_i",
+      "plain_text": "sum from i = 1 to n of x_i",
+      "accessibility_reading": "i가 1부터 n까지인 x 아래첨자 i의 합",
+      "adjacent_explanation": "",
+      "svg_digest": "sha256:b2fe5480dee43da609e8fd1ce07d3d0dbf9911f4da000224f24442305d41fc14"
+    },
+    {
+      "category": "integral_differential",
+      "latex": "\\int_0^L E(x)\\,\\mathrm{d}x",
+      "plain_text": "integral from 0 to L of E(x) dx",
+      "accessibility_reading": "0부터 L까지 E x를 x에 대해 적분",
+      "adjacent_explanation": "",
+      "svg_digest": "sha256:d500f4b83b3cfd8c19527bd63c3e2a4331df4aa64cb95142445cb56847f78ee3"
+    },
+    {
+      "category": "vector",
+      "latex": "\\vec{F}=m\\vec{a}",
+      "plain_text": "vector F = m vector a",
+      "accessibility_reading": "힘 벡터 F는 질량 m과 가속도 벡터 a의 곱",
+      "adjacent_explanation": "",
+      "svg_digest": "sha256:a9e75e8dace3de7c37c989fdf097a6007e89285b84d91eb1b67b0d9d76511126"
+    },
+    {
+      "category": "matrix",
+      "latex": "\\begin{bmatrix}a&b\\\\c&d\\end{bmatrix}",
+      "plain_text": "2 by 2 matrix [a b; c d]",
+      "accessibility_reading": "첫째 행 a b, 둘째 행 c d인 2 곱하기 2 행렬",
+      "adjacent_explanation": "",
+      "svg_digest": "sha256:bc4b767094413e75d901bd4921ad7289bd249580adfa4d0aad0b9c636cfc72e2"
+    },
+    {
+      "category": "chemical_reaction_arrow",
+      "latex": "\\ce{2H2 + O2 -> 2H2O}",
+      "plain_text": "2 H2 + O2 -> 2 H2O",
+      "accessibility_reading": "수소 두 분자와 산소 한 분자가 물 두 분자를 생성",
+      "adjacent_explanation": "",
+      "svg_digest": "sha256:50b836797568358923ba8f3cc0fbb7a0e441b3c643f03c5e2fef11a8e75d7f7b"
+    },
+    {
+      "category": "korean_adjacent_explanation",
+      "latex": "h\\propto\\omega^{-1/2}",
+      "plain_text": "h is proportional to omega to the power minus one half",
+      "accessibility_reading": "두께 h는 각속도 오메가의 제곱근 역수에 비례",
+      "adjacent_explanation": "수식은 설명 옆에 표시되며, 이 갤러리는 과학적 판정 근거가 아닙니다.",
+      "svg_digest": "sha256:2b39fcc95b56050c9b2421a47d7868300b84f55d85074cc2353b7168cd5614b3"
+    }
+  ],
+  "pdf_sha256": "sha256:6dd958e3e0928073a2c3dad27589a55a7071062760b5fbb43604ad927e0f13e0",
+  "verdict_effect": "none",
+  "red_mark_effect": "none"
+}

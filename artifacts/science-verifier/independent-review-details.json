@@ -1,0 +1,14 @@
+{
+  "schema_version": "science-independent-review/0.1",
+  "reviewed_commit": "02f89be5caad41f45f57af7558a4b3e69c42efbc",
+  "reviewer": "codex-independent-review/final_exact_rereview",
+  "reviewed_at": "2026-08-25T05:21:54Z",
+  "findings": [],
+  "severity_summary": {
+    "critical": 0,
+    "important": 0,
+    "minor": 0,
+    "note": 0
+  },
+  "conclusion": "PASS. Fresh read-only review of exact commit 02f89be5caad41f45f57af7558a4b3e69c42efbc found zero Critical, Important, Minor, or Note findings. The only delta from the prior PASS commit is confined to scripts/check_science_verifier_ui.mjs: the strict CDP Wiki local-revision check now recognizes successful POST /api/science/user-revisions/commit responses instead of generic /api/science/claims/submit responses. This accurately strengthens measurement of the trusted human boundary because the generic route rejects client_kind=user, while the recognized commit route is browser-session protected and can succeed only after consuming an actor-bound, exact-payload, one-time server challenge. The checker still separately requires two successful interpretation confirmations, exact original/revised document lineage, supersession, canonical source preservation, no red annotation, and the inactive-Release warning. No product API, authority, release, verdict, Rule, Evidence, Equation, renderer, report, or export code changed, so the tooling adjustment cannot grant authority or alter a scientific result. Browser confirmation challenges, Claim-only external agent boundaries, optional/experimental Qwen fail-closed behavior, authoritative release manager with trusted clock and private authority registry, exact sealed-holdout requirement, Admin/Power User separation, inactive/draft exclusion, exact active Rule/applicability/Evidence-locator red gate, deterministic cross-client parity, closed Equation AST/evaluator/Evidence binding, explanation_only formula handling, renderer safety, GroundedExplanation display safety, and report/export digests remain enforced. Node syntax validation passed and focused trust-boundary regression tests passed 162/162. The tracked suite contracts remain Science 1689, MCP 23, and full 2296. Public release qualification matched all 440 cases with G0-G4 PASS; G5 independent sealed holdout, G6 authoritative channel parity, and G7 authorized human Admin review/activation remain PENDING. activation_eligible is false, so the candidate Release remains inactive and non-authorizing. This PASS covers implementation and verification-tool trust boundaries only; it is not scientific approval, holdout completion, or Release activation."
+}

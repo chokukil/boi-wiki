@@ -1,0 +1,746 @@
+{
+  "schema_version": "science-verifier-evidence-manifest/0.2",
+  "report_state": "FINAL",
+  "implementation_status": "VERIFIED",
+  "failure_reasons": [],
+  "git": {
+    "commit": "02f89be5caad41f45f57af7558a4b3e69c42efbc",
+    "dirty": false,
+    "status_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "evidence": {
+    "test_suite_contract": {
+      "available": true,
+      "path": "config/science-verifier-test-suites.json",
+      "sha256": "sha256:b5d113acaff14e84d77bd834642f1d7370c9cc443c89f418a3f326fed6f37562",
+      "valid": true,
+      "passed": true,
+      "schema_version": "science-test-suite-contract/0.1",
+      "identity_format": "pytest-junit-classname::name",
+      "suites": {
+        "science_tests": {
+          "suite_id": "science-tests",
+          "pytest_args": [
+            "tests",
+            "-k",
+            "science and not mcp"
+          ],
+          "collected": 1689,
+          "testcase_identity_digest": "sha256:6fac830fd94fdbbae8cf9d7ff656ad816e77603bbe06cabffcf978cc072dc8f5"
+        },
+        "mcp_tests": {
+          "suite_id": "science-mcp",
+          "pytest_args": [
+            "tests/test_science_mcp.py"
+          ],
+          "collected": 23,
+          "testcase_identity_digest": "sha256:c4fd01121b8aa6e5e598de1b803e6aae1626b553fbcf5dac5dd9a9fefe32af0b"
+        },
+        "full_regression": {
+          "suite_id": "full-regression",
+          "pytest_args": [
+            "tests"
+          ],
+          "collected": 2296,
+          "testcase_identity_digest": "sha256:9d0004773c6065d994a0c1f59fab70ecbb772158d92b62e8e8e5a6df049b5e04"
+        }
+      }
+    },
+    "science_tests": {
+      "available": true,
+      "path": "/tmp/science-final-evidence-02f89be-bound/science-tests.xml",
+      "sha256": "sha256:4c76246c9a88a19ba8528dd3ea9023ec751d713b4ef085525a706fe74321ed2a",
+      "format": "junit-xml",
+      "valid": true,
+      "tests": 1689,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "git_commit": "02f89be5caad41f45f57af7558a4b3e69c42efbc",
+      "suite_id": "science-tests",
+      "testcase_count": 1689,
+      "testcase_identity_digest": "sha256:6fac830fd94fdbbae8cf9d7ff656ad816e77603bbe06cabffcf978cc072dc8f5",
+      "contract_collected": 1689,
+      "contract_testcase_identity_digest": "sha256:6fac830fd94fdbbae8cf9d7ff656ad816e77603bbe06cabffcf978cc072dc8f5",
+      "executed": 1689,
+      "passed": true,
+      "skip_policy": "none",
+      "skipped_cases": [],
+      "unexpected_skipped_cases": []
+    },
+    "mcp_tests": {
+      "available": true,
+      "path": "/tmp/science-final-evidence-02f89be-bound/science-mcp.xml",
+      "sha256": "sha256:6e51e282fd52e2c79868f409798d3f090d031a23d0dd80a4e0d5b1afaa3deeb6",
+      "format": "junit-xml",
+      "valid": true,
+      "tests": 23,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "git_commit": "02f89be5caad41f45f57af7558a4b3e69c42efbc",
+      "suite_id": "science-mcp",
+      "testcase_count": 23,
+      "testcase_identity_digest": "sha256:c4fd01121b8aa6e5e598de1b803e6aae1626b553fbcf5dac5dd9a9fefe32af0b",
+      "contract_collected": 23,
+      "contract_testcase_identity_digest": "sha256:c4fd01121b8aa6e5e598de1b803e6aae1626b553fbcf5dac5dd9a9fefe32af0b",
+      "executed": 23,
+      "passed": true,
+      "skip_policy": "none",
+      "skipped_cases": [],
+      "unexpected_skipped_cases": []
+    },
+    "full_regression": {
+      "available": true,
+      "path": "/tmp/science-final-evidence-02f89be-bound/full-regression.xml",
+      "sha256": "sha256:3e7ebcb2945601577157c3daa825fcb9b61b404e3ebf083b971237b071068f28",
+      "format": "junit-xml",
+      "valid": true,
+      "tests": 2296,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 9,
+      "git_commit": "02f89be5caad41f45f57af7558a4b3e69c42efbc",
+      "suite_id": "full-regression",
+      "testcase_count": 2296,
+      "testcase_identity_digest": "sha256:9d0004773c6065d994a0c1f59fab70ecbb772158d92b62e8e8e5a6df049b5e04",
+      "contract_collected": 2296,
+      "contract_testcase_identity_digest": "sha256:9d0004773c6065d994a0c1f59fab70ecbb772158d92b62e8e8e5a6df049b5e04",
+      "executed": 2287,
+      "passed": true,
+      "skip_policy": "powershell-wsl-exact-allowlist/0.1",
+      "skipped_cases": [
+        "tests.test_repository_source_and_mcp.McpConnectionContractTests::test_codex_preview_apply_and_rollback_preserve_unrelated_config_and_token",
+        "tests.test_repository_source_and_mcp.McpConnectionContractTests::test_verify_runs_initialize_and_tools_list_without_private_content",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_candidate_mirror_may_advance_when_it_contains_current_stable",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_diverged_mirror_history_blocks_switch",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_internal_auth_failure_never_probes_external",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_internal_success_skips_external_probe",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_network_failure_falls_back_and_apply_verify_rollback_are_hash_bound",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_offline_existing_keeps_origin_and_blocks_update",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_origin_drift_invalidates_approved_plan"
+      ],
+      "unexpected_skipped_cases": []
+    },
+    "browser": {
+      "available": true,
+      "path": "/tmp/science-artifacts-02f89be/browser-manifest.json",
+      "sha256": "sha256:16816a225fa77c3f99988966972ae89ec242dd874894ef5d7036f26bd37b9686",
+      "valid": true,
+      "git_commit": "02f89be5caad41f45f57af7558a4b3e69c42efbc",
+      "checks": 27,
+      "captures": 3,
+      "check_results": [
+        {
+          "check_id": "page_loaded",
+          "status": "passed"
+        },
+        {
+          "check_id": "candidate_not_operational",
+          "status": "passed"
+        },
+        {
+          "check_id": "nav_order",
+          "status": "passed"
+        },
+        {
+          "check_id": "inactive_release_has_no_red",
+          "status": "passed"
+        },
+        {
+          "check_id": "deterministic_aliases_visible",
+          "status": "passed"
+        },
+        {
+          "check_id": "manual_claim_editor_visible",
+          "status": "passed"
+        },
+        {
+          "check_id": "qwen_is_separate_experimental_action",
+          "status": "passed"
+        },
+        {
+          "check_id": "default_used_deterministic_non_qwen_path",
+          "status": "passed"
+        },
+        {
+          "check_id": "manual_claim_confirmed_without_llm_or_verdict",
+          "status": "passed"
+        },
+        {
+          "check_id": "ascii_alias_token_boundary",
+          "status": "passed"
+        },
+        {
+          "check_id": "qwen_failure_matrix_has_no_red",
+          "status": "passed"
+        },
+        {
+          "check_id": "invalid_claim_matrix_has_no_red",
+          "status": "passed"
+        },
+        {
+          "check_id": "external_clients_submit_same_claim",
+          "status": "passed"
+        },
+        {
+          "check_id": "red_gate_requires_active_rule_conditions_and_exact_evidence",
+          "status": "passed"
+        },
+        {
+          "check_id": "prohibited_ui_absent",
+          "status": "passed"
+        },
+        {
+          "check_id": "actions_separated_and_focusable",
+          "status": "passed"
+        },
+        {
+          "check_id": "desktop_no_overflow",
+          "status": "passed"
+        },
+        {
+          "check_id": "mobile_single_column",
+          "status": "passed"
+        },
+        {
+          "check_id": "equation_committed_asset_renders_exact_svg",
+          "status": "passed"
+        },
+        {
+          "check_id": "equation_identity_and_evidence_visible",
+          "status": "passed"
+        },
+        {
+          "check_id": "equation_details_copy_and_accessibility",
+          "status": "passed"
+        },
+        {
+          "check_id": "equation_failures_keep_plain_fallback_without_red",
+          "status": "passed"
+        },
+        {
+          "check_id": "equation_mobile_scroll_is_contained",
+          "status": "passed"
+        },
+        {
+          "check_id": "equation_qa_is_explicitly_non_operational",
+          "status": "passed"
+        },
+        {
+          "check_id": "wiki_selection_handoff",
+          "status": "passed"
+        },
+        {
+          "check_id": "wiki_local_revision_preserves_lineage",
+          "status": "passed"
+        },
+        {
+          "check_id": "console_clean",
+          "status": "passed"
+        }
+      ],
+      "mandatory_check_ids": [
+        "actions_separated_and_focusable",
+        "ascii_alias_token_boundary",
+        "candidate_not_operational",
+        "console_clean",
+        "default_used_deterministic_non_qwen_path",
+        "desktop_no_overflow",
+        "deterministic_aliases_visible",
+        "equation_committed_asset_renders_exact_svg",
+        "equation_details_copy_and_accessibility",
+        "equation_failures_keep_plain_fallback_without_red",
+        "equation_identity_and_evidence_visible",
+        "equation_mobile_scroll_is_contained",
+        "equation_qa_is_explicitly_non_operational",
+        "external_clients_submit_same_claim",
+        "inactive_release_has_no_red",
+        "invalid_claim_matrix_has_no_red",
+        "manual_claim_confirmed_without_llm_or_verdict",
+        "manual_claim_editor_visible",
+        "mobile_single_column",
+        "nav_order",
+        "page_loaded",
+        "prohibited_ui_absent",
+        "qwen_failure_matrix_has_no_red",
+        "qwen_is_separate_experimental_action",
+        "red_gate_requires_active_rule_conditions_and_exact_evidence",
+        "wiki_local_revision_preserves_lineage",
+        "wiki_selection_handoff"
+      ],
+      "missing_check_ids": [],
+      "unexpected_check_ids": [],
+      "capture_files": [
+        {
+          "path": "review-canvas-desktop.png",
+          "sha256": "sha256:cdf6335659ea10ffa020a6cc0a05d390d965661d0e4bc6d712409fc9e7c799f5",
+          "actual_sha256": "sha256:cdf6335659ea10ffa020a6cc0a05d390d965661d0e4bc6d712409fc9e7c799f5"
+        },
+        {
+          "path": "review-canvas-mobile.png",
+          "sha256": "sha256:43c982372cd64df93495e8c81bd8cbacb2e809054768fdfe3c70afeb351e1232",
+          "actual_sha256": "sha256:43c982372cd64df93495e8c81bd8cbacb2e809054768fdfe3c70afeb351e1232"
+        },
+        {
+          "path": "equation-rendering.png",
+          "sha256": "sha256:b018b1f0e85c89997f5c53b589b68eab796b45b74932714f08cd23421c965218",
+          "actual_sha256": "sha256:b018b1f0e85c89997f5c53b589b68eab796b45b74932714f08cd23421c965218"
+        }
+      ],
+      "passed": true
+    },
+    "equation_knowledge": {
+      "available": true,
+      "path": "boi_api/app/static/science-equations.json",
+      "sha256": "sha256:337a70a877d45fd14d58ff42a8b0307d2525f6db0292b96167675ba1c5d25fff",
+      "valid": true,
+      "passed": true,
+      "schema_version": "science-equation-assets/0.1",
+      "manifest_digest": "sha256:6f4e12c4da689bc4e93d0e85393b8f26c7191cc41a1a94359a975e673fecf744",
+      "asset_count": 6,
+      "catalog_equation_count": 6,
+      "domain_labels": [
+        "Chemistry",
+        "Circuits",
+        "Materials Science",
+        "Physics",
+        "Semiconductor Devices",
+        "Spin Coating"
+      ],
+      "decision_use_counts": {
+        "deterministic_rule": 3,
+        "explanation_only": 3
+      },
+      "deterministic_rule_equation_ids": [
+        "sci:equation:chemistry:molar-concentration-definition",
+        "sci:equation:circuits:kvl-loop-balance",
+        "sci:equation:physics:applied-work-kinetic-energy-change"
+      ],
+      "explanation_only_equation_ids": [
+        "sci:equation:materials:arrhenius-diffusion",
+        "sci:equation:semiconductor:low-field-conductivity",
+        "sci:equation:spin-coating:drying-limited-power-law"
+      ],
+      "assets": [
+        {
+          "equation_id": "sci:equation:chemistry:molar-concentration-definition",
+          "equation_digest": "sha256:2db62840faed18a6fcff923caf83ab6dd489648d6db0d522e5f444e1d4dcbf8a",
+          "domain_label": "Chemistry",
+          "knowledge_id": "sci:chemistry:001",
+          "knowledge_digest": "sha256:5d55957bf1a96d089371601ee9d6958d529938d6e0db14e1e0a55ed4d53b8f76",
+          "decision_use": "deterministic_rule",
+          "scientific_role": "definition",
+          "display_latex": "c = \\frac{n_{\\mathrm{solute}}}{V_{\\mathrm{solution}}}",
+          "plain_text": "c = n_solute / V_solution",
+          "asset_digest": "sha256:ca757975f1f4552233ea0d0ad4429e9314c30a24b4c4d3b4375f6164d9ce5407",
+          "svg_digest": "sha256:2f9feeb5512dcc6db77c8cc4a9bdb4ef6750eb4ed1b93a9fcdad4a0e416d8ba2",
+          "evidence_uses": [
+            {
+              "evidence_id": "sci-evidence:chemistry:amount-concentration",
+              "evidence_digest": "sha256:61b31d09c34669364ca64b25acab41c860f5c3847889de9b525a04c9e0b6cb90",
+              "source_id": "sci-source:chem1-virtual-textbook",
+              "source_digest": "sha256:e8a02b240ffad488899188eefbeeb40ac8eb54b2e55ab6911253a0efda93380b",
+              "source_url": "https://www.chem1.com/acad/webtext/virtualtextbook.html",
+              "locator": {
+                "medium": "html",
+                "resource_url": "https://www.chem1.com/acad/webtext/solut/solut-1.html",
+                "content_hash": "sha256:f40fc5c0ec0afb3ebb34d21bc2eab905c3675348bf432503256d2fe94eea0013",
+                "retrieved_at": "2026-08-25T02:45:00+09:00",
+                "exact": true,
+                "requested_url": "https://www.chem1.com/acad/webtext/solut/solut-1.html",
+                "resolved_url": "https://www.chem1.com/acad/webtext/solut/solut-1.html",
+                "preservation_status": "checksum_only_no_archived_copy",
+                "heading": "Molarity: mole/volume basis",
+                "sentence_ordinal": 2,
+                "prefix": "This is the method most used by chemists to express concentration, and it is the one most important for you to master.",
+                "suffix": "The important point to remember is that the volume of the solution is different from the volume of the solvent;",
+                "retrieved_resource_hash": "sha256:53dd0dd0907cbc911738b1fe0a4a1268bb22ec4c562077d687389486f80f7c1d",
+                "hash_scope": "utf8_sha256_prefix_lf_original_lf_suffix"
+              },
+              "locator_digest": "sha256:38bd2b3eda5932e72ba1027c748b94f6fb60ee565541e738320a94efac03a7a7",
+              "claim_scope_hash": "sha256:bc9aa27c6f74f140d80b665094cf71a1df1e6969259b49d9b093499d95f2aaf8",
+              "exact_quote_hash": "sha256:cc6e5355ca7ec415eee52ffffb29d2591a01e1e5f78d8ba0416fb38a3b5c11f3"
+            }
+          ]
+        },
+        {
+          "equation_id": "sci:equation:circuits:kvl-loop-balance",
+          "equation_digest": "sha256:ae4be4aacf85dde9c31fd93a090f0a378aeeb3470c115ca95a8a30165e8147ef",
+          "domain_label": "Circuits",
+          "knowledge_id": "sci:circuits:002",
+          "knowledge_digest": "sha256:e35d3a57bd1ec984838cdea3fe26ed6f4de9fb400efd30a546015cf9bde14784",
+          "decision_use": "deterministic_rule",
+          "scientific_role": "law",
+          "display_latex": "\\sum_{k} V_k = 0",
+          "plain_text": "sum(loop voltages with sign) = 0 V",
+          "asset_digest": "sha256:26d023f6456014d4d7b24ca796b318cbf9ac1fa7c7c7ebb31792d3f05d5fca8d",
+          "svg_digest": "sha256:4ff548089ad32bffec13f347cd387b282b50e89b2fcc746549ca3600a5b60221",
+          "evidence_uses": [
+            {
+              "evidence_id": "sci-evidence:circuits:kvl-law",
+              "evidence_digest": "sha256:3fb7e681d5cb647d112356caaafccc8fe21aed62580f03758fb88febecbaf91b",
+              "source_id": "sci-source:mit-6-002",
+              "source_digest": "sha256:d3929b344854b4430227534e1567f455cf3da4b0eab78914b2416e7857f5450d",
+              "source_url": "https://ocw.mit.edu/courses/6-002-circuits-and-electronics-spring-2007/",
+              "locator": {
+                "medium": "pdf",
+                "resource_url": "https://ocw.mit.edu/courses/6-002-circuits-and-electronics-spring-2007/c7c33e6a7c168cda50ff54f99c45e041_6_0022007L02.pdf",
+                "content_hash": "sha256:b4c453cd2265ef5a94a2a2ce4025078a870b4db9c6d70a2bf3aa7722ecc8fba8",
+                "section": "Transcript — Lecture 2, Kirchhoff laws",
+                "retrieved_at": "2026-08-25T02:45:00+09:00",
+                "exact": true,
+                "requested_url": "https://ocw.mit.edu/courses/6-002-circuits-and-electronics-spring-2007/c7c33e6a7c168cda50ff54f99c45e041_6_0022007L02.pdf",
+                "resolved_url": "https://ocw.mit.edu/courses/6-002-circuits-and-electronics-spring-2007/c7c33e6a7c168cda50ff54f99c45e041_6_0022007L02.pdf",
+                "preservation_status": "checksum_only_no_archived_copy",
+                "pdf_page_index": 2,
+                "printed_page": "PDF page 3",
+                "hash_scope": "retrieved_pdf_bytes",
+                "sentence_label": "KVL definition"
+              },
+              "locator_digest": "sha256:60d2afffd160c4a7a9c035c158e41c70efca3b3ded9709275a7d1a0918c1ddd2",
+              "claim_scope_hash": "sha256:35425feac574fe96bee64893f714ce69ebe4e6bd265741ad55600e0d0e4cb268",
+              "exact_quote_hash": "sha256:3df590628532e97bddec3adead00371adabc5112b4e06e0a8bfe0260fcbe1032"
+            }
+          ]
+        },
+        {
+          "equation_id": "sci:equation:materials:arrhenius-diffusion",
+          "equation_digest": "sha256:65cf2f1245b30cf30cb8f9c2dc39f3d5ace24360ae92fdbcfca48c825a772a99",
+          "domain_label": "Materials Science",
+          "knowledge_id": "sci:materials:004",
+          "knowledge_digest": "sha256:ceb61409f1a37d48f2235bf7d5d264848a6cae233e4063aa54b866480d60ef3d",
+          "decision_use": "explanation_only",
+          "scientific_role": "derived_model",
+          "display_latex": "D = D_0 \\exp\\!\\left(-\\frac{E_a}{k_B T}\\right)",
+          "plain_text": "D = D0 * exp(-Ea / (kB*T))",
+          "asset_digest": "sha256:f663ac27bd915376d7afa09626a6f5b04f2310d08c44118445b9f52076076265",
+          "svg_digest": "sha256:64be651dbdf32d1497ae775c9e255d62a548b07079dbebaf4cfd81dc9c8f94df",
+          "evidence_uses": [
+            {
+              "evidence_id": "sci-evidence:materials:diffusion-arrhenius",
+              "evidence_digest": "sha256:6179ca39a0a0ea9fe50623a689383281c4bc8d232ce07a3718637b98bfdc7c71",
+              "source_id": "sci-source:mit-3-091",
+              "source_digest": "sha256:88aab6a0c4836d86494d390cd1f6632a060e5a17f125b93ae2897fd3ab99e26d",
+              "source_url": "https://ocw.mit.edu/courses/3-091-introduction-to-solid-state-chemistry-fall-2018/",
+              "locator": {
+                "medium": "pdf",
+                "resource_url": "https://ocw.mit.edu/courses/3-091-introduction-to-solid-state-chemistry-fall-2018/aa1e1cabaa1d4904209040f98b4436a3_MIT3_091F18_REC26.pdf",
+                "content_hash": "sha256:ded3970444be9ed9b62f3aef4d90f3ece6687caf336a6894a0b6a17723f6300a",
+                "section": "Recitation 26 — Arrhenius relationship",
+                "retrieved_at": "2026-08-25T02:45:00+09:00",
+                "exact": true,
+                "requested_url": "https://ocw.mit.edu/courses/3-091-introduction-to-solid-state-chemistry-fall-2018/aa1e1cabaa1d4904209040f98b4436a3_MIT3_091F18_REC26.pdf",
+                "resolved_url": "https://ocw.mit.edu/courses/3-091-introduction-to-solid-state-chemistry-fall-2018/aa1e1cabaa1d4904209040f98b4436a3_MIT3_091F18_REC26.pdf",
+                "preservation_status": "checksum_only_no_archived_copy",
+                "pdf_page_index": 1,
+                "printed_page": "PDF page 2",
+                "hash_scope": "retrieved_pdf_bytes",
+                "equation": "D = D₀e^(−Eₐ/(kBT))",
+                "transcription_method": "manual visual transcription of the typeset equation; no OCR substitution"
+              },
+              "locator_digest": "sha256:b033a1fd4674d0dc6027f735923d5e60aa13cf00b266ff1d7ab4a57f73c4ba94",
+              "claim_scope_hash": "sha256:0c83d40de943b4e1f3b555b42f13f47c9939a544e0006eab1488990324ebc742",
+              "exact_quote_hash": "sha256:5dcaf1d7d06a198aceaaacc838bf5c0231692b6ec6f06ab6062a98cd8c7ea040"
+            }
+          ]
+        },
+        {
+          "equation_id": "sci:equation:physics:applied-work-kinetic-energy-change",
+          "equation_digest": "sha256:09ee2b7f81aa3fddd1f45e7ceb636053c7fc0f6a1b10cd57978a597e9d013bf5",
+          "domain_label": "Physics",
+          "knowledge_id": "sci:physics:003",
+          "knowledge_digest": "sha256:4196062326ef32c3ba582e3009451b83bf49d496acc5cbd175aeda21e6d2c630",
+          "decision_use": "deterministic_rule",
+          "scientific_role": "law",
+          "display_latex": "W_{\\mathrm{applied}} = \\Delta K",
+          "plain_text": "W_applied = delta_K",
+          "asset_digest": "sha256:1bc23351bc64d0cf5b761a2d30a6015bcf21f5b15f3e329e09d3f528ed6d1e05",
+          "svg_digest": "sha256:23a71836627cec28123edf858c71cbd4e720f79296be73843f1e3ad0f6988d53",
+          "evidence_uses": [
+            {
+              "evidence_id": "sci-evidence:physics:work-energy-power",
+              "evidence_digest": "sha256:a8963aa86fa9cb4108bf4c7893437e800f87ab2301b1efd557db21aaea66484b",
+              "source_id": "sci-source:mit-8-01sc",
+              "source_digest": "sha256:36f9aba3a2bd7e744f86dc07865fbbf0274efbac6d25c73bc7925547a2d3a701",
+              "source_url": "https://ocw.mit.edu/courses/8-01sc-classical-mechanics-fall-2016/",
+              "locator": {
+                "medium": "pdf",
+                "resource_url": "https://ocw.mit.edu/courses/8-01sc-classical-mechanics-fall-2016/mit8_01scs22_chapter13.pdf",
+                "content_hash": "sha256:a6bf0626b4c9446a7b6aec206024b90f611403eb059a8dd7ffc45fe1a98fec00",
+                "section": "13.6 Work-Kinetic Energy Theorem",
+                "retrieved_at": "2026-08-25T02:45:00+09:00",
+                "exact": true,
+                "requested_url": "https://ocw.mit.edu/courses/8-01sc-classical-mechanics-fall-2016/mit8_01scs22_chapter13.pdf",
+                "resolved_url": "https://ocw.mit.edu/courses/8-01sc-classical-mechanics-fall-2016/mit8_01scs22_chapter13.pdf",
+                "preservation_status": "checksum_only_no_archived_copy",
+                "pdf_page_index": 16,
+                "printed_page": "printed 13-16; PDF page 17",
+                "hash_scope": "retrieved_pdf_bytes"
+              },
+              "locator_digest": "sha256:529873a3ab7fa12723d80ff90208971283771a666d5f0b62fa252a4b6f9861b9",
+              "claim_scope_hash": "sha256:b0ad6297d6084cc3943e15f50e4832ef1bf2bbd0d587067ee5d8c3327e71dce7",
+              "exact_quote_hash": "sha256:a89023544a44dc493b7d3bd17bf459fd113b891c82e1051049cee3b60a44d361"
+            }
+          ]
+        },
+        {
+          "equation_id": "sci:equation:semiconductor:low-field-conductivity",
+          "equation_digest": "sha256:0a4901af68c18a20902cd760f5b5fa55e81c7651510c2094fc9ad790e3cf4766",
+          "domain_label": "Semiconductor Devices",
+          "knowledge_id": "sci:semiconductor-devices:003",
+          "knowledge_digest": "sha256:c657ea08650f1b95124f6ef367b63da0a4576d8c34aa23d2735156bd525da449",
+          "decision_use": "explanation_only",
+          "scientific_role": "derived_model",
+          "display_latex": "\\sigma = q n \\mu_n + q p \\mu_p",
+          "plain_text": "sigma = q*n*mu_n + q*p*mu_p",
+          "asset_digest": "sha256:26062fb0e95fc548a8eb5ee03144bbf9784d235dd63680b2f23ce283fc2a68a7",
+          "svg_digest": "sha256:cb66e21bd81092bb5cb967d8cddbb07dcac9b2ef21d7ad565ef9b45ba3698e7d",
+          "evidence_uses": [
+            {
+              "evidence_id": "sci-evidence:semiconductor-devices:carrier-conductivity",
+              "evidence_digest": "sha256:b9b6b568baa5f168fc5defe85da1206c207e8fac2a2a29bb32b041fc1ada1ce5",
+              "source_id": "sci-source:chenming-hu-devices",
+              "source_digest": "sha256:e5f06055b64596f90a7170a09f413e121d525b0f02082cf37e92e31dce1f1d7c",
+              "source_url": "https://www.chu.berkeley.edu/modern-semiconductor-devices-for-integrated-circuits-chenming-calvin-hu-2010/",
+              "locator": {
+                "medium": "pdf",
+                "resource_url": "https://www.chu.berkeley.edu/wp-content/uploads/2020/01/Chenming-Hu_ch2-2.pdf",
+                "content_hash": "sha256:af37b00ce074935c54c88d27af5c8dceac5bc9b900085ef66c1e863b0b291e98",
+                "section": "Chapter 2, 2.2 Drift, equation (2.2.14)",
+                "retrieved_at": "2026-08-25T02:45:00+09:00",
+                "exact": true,
+                "requested_url": "https://www.chu.berkeley.edu/wp-content/uploads/2020/01/Chenming-Hu_ch2-2.pdf",
+                "resolved_url": "https://www.chu.berkeley.edu/wp-content/uploads/2020/01/Chenming-Hu_ch2-2.pdf",
+                "preservation_status": "checksum_only_no_archived_copy",
+                "pdf_page_index": 9,
+                "printed_page": "printed page 44; PDF page 10",
+                "hash_scope": "retrieved_pdf_bytes",
+                "equation": "σ = qnµn + qpµp",
+                "transcription_method": "manual visual transcription of the typeset equation; symbols preserved"
+              },
+              "locator_digest": "sha256:75d495d602ad57ce3d0983e54357ddf3a561dbe66fce7f6935e1df238244d7a7",
+              "claim_scope_hash": "sha256:e9496ec9e637423f0a2eb739a5d2af1f027f11158041c76ebfc2491e9632ab57",
+              "exact_quote_hash": "sha256:a7f286856b6d4fc93a51bd0d52a3888674e44d3b74a23e7901f9e68529c2e925"
+            }
+          ]
+        },
+        {
+          "equation_id": "sci:equation:spin-coating:drying-limited-power-law",
+          "equation_digest": "sha256:4d478fd6bf071a065d61974b648f2124c1ae1f2425c0da53be0233ccc3513470",
+          "domain_label": "Spin Coating",
+          "knowledge_id": "sci:spin-coating:004",
+          "knowledge_digest": "sha256:f6525d4d89b08475ba65aa8c3e4afdb8f7b17f3d56e0c564ce435ae168c35331",
+          "decision_use": "explanation_only",
+          "scientific_role": "approximation",
+          "display_latex": "h \\propto \\omega^{-1/2}",
+          "plain_text": "h proportional to omega^(-1/2)",
+          "asset_digest": "sha256:6241929ca1a6621bcd26505ddd1ea12454c828ad76a3314f63c4cb2d8b3b77d2",
+          "svg_digest": "sha256:eed87c0f0a9d2aa58751a1b6fde6d26d1f6c6cdf53fb5bcaaeba616f1afbca17",
+          "evidence_uses": [
+            {
+              "evidence_id": "sci-evidence:spin-coating:microchemicals-spin-speed-direction",
+              "evidence_digest": "sha256:a43a9b1721afc9870f7587310e7a10bec272058d36d1af281e43f500f089c02d",
+              "source_id": "sci-source:microchemicals-spin-coating-photoresist",
+              "source_digest": "sha256:72386b819a8f92ffb2a77a5165b2e3dc1e2d3ae65914ddbb710e970567c8705c",
+              "source_url": "https://www.microchemicals.com/dokumente/application_notes/spin_coating_photoresist.pdf",
+              "locator": {
+                "medium": "pdf",
+                "resource_url": "https://www.microchemicals.com/dokumente/application_notes/spin_coating_photoresist.pdf",
+                "requested_url": "https://www.microchemicals.com/dokumente/application_notes/spin_coating_photoresist.pdf",
+                "resolved_url": "https://www.microchemicals.com/dokumente/application_notes/spin_coating_photoresist.pdf",
+                "content_hash": "sha256:3d9b159838744f504db5c9742ef7f18b1b5f5d2ff78dfecc487086f41639c6b7",
+                "hash_scope": "retrieved_pdf_bytes",
+                "pdf_page_index": 0,
+                "printed_page": "PDF page 1",
+                "section": "Influence of the Attained Spin Speed",
+                "retrieved_at": "2026-08-25T05:14:00+09:00",
+                "exact": true,
+                "preservation_status": "checksum_only_no_archived_copy",
+                "transcription_method": "agent-reviewed visual/PDF text transcription preserving wording and punctuation"
+              },
+              "locator_digest": "sha256:ba98c256ba42e0a95016036362e78553f0745d45246307c85412cd4f4c202a1a",
+              "claim_scope_hash": "sha256:b9e788573d5bb37a51a131c93947bdb0701ba98a1fe54c8e4415a273fb2fa4a2",
+              "exact_quote_hash": "sha256:40b4fe4a8c1931dc6fc235fdb77a170a111504c8eca41566186953d6d5687d27"
+            }
+          ]
+        }
+      ],
+      "rule_bindings": [
+        {
+          "rule_id": "sci-rule:chemistry:001",
+          "rule_digest": "sha256:cd12876c522637c08b7143dff847c17ae565cabd1fb74c19ff94a200aab0428f",
+          "equation_id": "sci:equation:chemistry:molar-concentration-definition",
+          "equation_digest": "sha256:2db62840faed18a6fcff923caf83ab6dd489648d6db0d522e5f444e1d4dcbf8a",
+          "constraint_operator": "quotient",
+          "evaluator_digest": "sha256:a2324dddd46cd907539eb675d129edfcee646af75b94763f54a365d54c1276ac"
+        },
+        {
+          "rule_id": "sci-rule:circuits:002",
+          "rule_digest": "sha256:b81b78fbc9233fca349834743cf3d9ff0f08ef016f8981942ca635883afb6c5f",
+          "equation_id": "sci:equation:circuits:kvl-loop-balance",
+          "equation_digest": "sha256:ae4be4aacf85dde9c31fd93a090f0a378aeeb3470c115ca95a8a30165e8147ef",
+          "constraint_operator": "equal",
+          "evaluator_digest": "sha256:a2324dddd46cd907539eb675d129edfcee646af75b94763f54a365d54c1276ac"
+        },
+        {
+          "rule_id": "sci-rule:physics:003",
+          "rule_digest": "sha256:e4126965247f29c24be27829d9226f348d80514f7b4f6a10803353d5a225bff9",
+          "equation_id": "sci:equation:physics:applied-work-kinetic-energy-change",
+          "equation_digest": "sha256:09ee2b7f81aa3fddd1f45e7ceb636053c7fc0f6a1b10cd57978a597e9d013bf5",
+          "constraint_operator": "equal",
+          "evaluator_digest": "sha256:a2324dddd46cd907539eb675d129edfcee646af75b94763f54a365d54c1276ac"
+        }
+      ],
+      "supported_evaluator": {
+        "evaluator_id": "sci-evaluator:closed-arithmetic-relation",
+        "version": "0.1.0",
+        "evaluator_digest": "sha256:a2324dddd46cd907539eb675d129edfcee646af75b94763f54a365d54c1276ac",
+        "constraint_operators": [
+          "equal",
+          "product",
+          "quotient"
+        ]
+      },
+      "unsupported_as_decision_authority": [
+        {
+          "form": "vector",
+          "label": "vectors",
+          "decision_authority": "unsupported",
+          "display_or_explanation": "allowed_when_reviewed_and_evidence_bound"
+        },
+        {
+          "form": "matrix",
+          "label": "matrices",
+          "decision_authority": "unsupported",
+          "display_or_explanation": "allowed_when_reviewed_and_evidence_bound"
+        },
+        {
+          "form": "derivative",
+          "label": "derivatives",
+          "decision_authority": "unsupported",
+          "display_or_explanation": "allowed_when_reviewed_and_evidence_bound"
+        },
+        {
+          "form": "integral",
+          "label": "integrals",
+          "decision_authority": "unsupported",
+          "display_or_explanation": "allowed_when_reviewed_and_evidence_bound"
+        },
+        {
+          "form": "summation",
+          "label": "summations",
+          "decision_authority": "unsupported",
+          "display_or_explanation": "allowed_when_reviewed_and_evidence_bound"
+        },
+        {
+          "form": "chemical_reaction",
+          "label": "chemical reactions",
+          "decision_authority": "unsupported",
+          "display_or_explanation": "allowed_when_reviewed_and_evidence_bound"
+        }
+      ],
+      "pdf_safe_drawing_count": 6,
+      "presentation_authority": "none",
+      "verdict_effect": "none",
+      "red_mark_effect": "none",
+      "implementation_contract": {
+        "structured_explanations": "GroundedExplanation blocks bind exact Knowledge, Rule, Equation, evaluator, and Evidence identities/digests.",
+        "scientific_report_digest": "VerificationReport.report_digest is computed from a renderer-independent scientific payload.",
+        "export_digest": "Markdown/PDF export_digest identifies exact rendered bytes and does not replace the scientific report digest."
+      }
+    },
+    "qualification": {
+      "available": true,
+      "path": "/home/chokukil/boi-wiki-sci/repo/artifacts/science-verifier/candidate-qualification.md",
+      "sha256": "sha256:20a42afd100923d4a821452f6d1ee678d1def4218848ef00a36ef1306bb5f361",
+      "valid": true,
+      "release_id": "sci-release:0.1.0",
+      "release_digest": "sha256:5802a4efce096e003d23550b90e5c956967893bc50646455447b91a97d1db9ae",
+      "qualification_result_digest": "sha256:ecce372fcd3adfb56f2ab9b3643721e2bda7305e03f610eb0816fff981ac31e9",
+      "lifecycle": "release_candidate",
+      "activation_eligible": false,
+      "public_case_count": 440,
+      "gates": {
+        "G0": {
+          "status": "PASS",
+          "detail": "Schema, IDs, references, immutable component digests, and candidate lifecycle are valid."
+        },
+        "G1": {
+          "status": "PASS",
+          "detail": "Source/Evidence hashes and locator structures are internally reproducible."
+        },
+        "G2": {
+          "status": "PASS",
+          "detail": "Every public decision remains inside release-pinned Knowledge and Evidence."
+        },
+        "G3": {
+          "status": "PASS",
+          "detail": "All 440 public cases match their expected verdict or ambiguity gate."
+        },
+        "G4": {
+          "status": "PASS",
+          "detail": "Repeated public qualification is byte-stable."
+        },
+        "G5": {
+          "status": "PENDING",
+          "detail": "Independent sealed holdout is not commissioned."
+        },
+        "G6": {
+          "status": "PENDING",
+          "detail": "Web/REST/MCP/explanation/export parity must be established by the authoritative post-integration checker; caller assertions cannot pass this gate."
+        },
+        "G7": {
+          "status": "PENDING",
+          "detail": "Authorized human Admin review and activation must be resolved from the operational audit store; caller assertions cannot pass this gate."
+        }
+      },
+      "passed": true
+    },
+    "independent_review": {
+      "available": true,
+      "path": "/tmp/science-independent-review-02f89be-normalized.json",
+      "sha256": "sha256:3d1961c9f05333c1c6ec83ae29f6c9306de61b55ac359ebe02fa89af844d7946",
+      "valid": true,
+      "reviewed_git_commit": "02f89be5caad41f45f57af7558a4b3e69c42efbc",
+      "status": "passed",
+      "findings": {
+        "critical": 0,
+        "important": 0,
+        "advisory": 0
+      },
+      "passed": true
+    }
+  },
+  "evidence_bundle_digest": "sha256:404f247418254fbbabca94ec124be5200a36525eacd0fb961320be558561485b",
+  "report_record_digest": "sha256:e13ff8200856d2cda1cd8a54491ed9a3bee502c073b74d03da61fe807661ed0b",
+  "digest_contract": {
+    "scientific_report_digest": "VerificationReport.report_digest excludes renderer-only SVG, renderer identity, and presentation asset fields",
+    "qualification_report_record_digest": "sha256:e13ff8200856d2cda1cd8a54491ed9a3bee502c073b74d03da61fe807661ed0b",
+    "export_digest": "exact rendered Markdown/PDF bytes"
+  },
+  "release_id": "sci-release:0.1.0",
+  "release_digest": "sha256:5802a4efce096e003d23550b90e5c956967893bc50646455447b91a97d1db9ae",
+  "qualification_result_digest": "sha256:ecce372fcd3adfb56f2ab9b3643721e2bda7305e03f610eb0816fff981ac31e9",
+  "activation_eligible": false,
+  "gates": {
+    "G0": "PASS",
+    "G1": "PASS",
+    "G2": "PASS",
+    "G3": "PASS",
+    "G4": "PASS",
+    "G5": "PENDING",
+    "G6": "PENDING",
+    "G7": "PENDING"
+  },
+  "markdown": {
+    "path": "artifacts/science-verifier/qualification-report.md",
+    "sha256": "sha256:f5800741f8793570f93a0033ff8810afbebc658ebd22a47bc9830a64783a7dfc",
+    "export_digest": "sha256:f5800741f8793570f93a0033ff8810afbebc658ebd22a47bc9830a64783a7dfc"
+  },
+  "pdf": {
+    "path": "artifacts/science-verifier/qualification-report.pdf",
+    "sha256": "sha256:b9ef886d936f2e61020bfb084c0a9dde75d6b9583b230a6b8df9bbcbfc3e0beb",
+    "export_digest": "sha256:b9ef886d936f2e61020bfb084c0a9dde75d6b9583b230a6b8df9bbcbfc3e0beb"
+  }
+}

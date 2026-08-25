@@ -1,0 +1,52 @@
+{
+  "slide_count": 3,
+  "release_status": "release_candidate",
+  "activation_eligible": false,
+  "evidence_binding": {
+    "git_commit": "02f89be5caad41f45f57af7558a4b3e69c42efbc",
+    "verification_manifest": {
+      "path": "artifacts/science-verifier/verification-manifest.json",
+      "sha256": "sha256:748cc0329b1ed3384d770885a3ea24a40fa60f7f547fbaceb612ae80a2813586"
+    },
+    "report_record_digest": "sha256:e13ff8200856d2cda1cd8a54491ed9a3bee502c073b74d03da61fe807661ed0b",
+    "browser_checks": 27,
+    "public_cases": 440
+  },
+  "pptx": {
+    "path": "artifacts/science-verifier/deck/science-verifier-evidence.pptx",
+    "sha256": "sha256:2556f936351c8b283aa44331f9ad0638801521c3a02de3890ea3e44cd308e7bc"
+  },
+  "inputs": {
+    "architecture": {
+      "path": "artifacts/science-verifier/deck/assets/science-integrity-layer.png",
+      "sha256": "sha256:16457233bfb797e88a775263fdd723f078b79fd6016a78a01c0a59791f5e2523"
+    },
+    "ui": {
+      "path": "artifacts/science-verifier/deck/assets/review-canvas-desktop.png",
+      "sha256": "sha256:cdf6335659ea10ffa020a6cc0a05d390d965661d0e4bc6d712409fc9e7c799f5"
+    },
+    "report": {
+      "path": "artifacts/science-verifier/deck/assets/final-qualification-report.png",
+      "sha256": "sha256:8e8ca16e10a26fd4e516a6efbe5a86a1ad45ee1449d69d27e30804714a984cc6"
+    }
+  },
+  "rendered": {
+    "slide_1": {
+      "path": "artifacts/science-verifier/deck/rendered/slide-1.png",
+      "sha256": "sha256:48b03b016a5979c1173f31ab01326ed7192f341f7efe3cceeb16aa9e12bd462a"
+    },
+    "slide_2": {
+      "path": "artifacts/science-verifier/deck/rendered/slide-2.png",
+      "sha256": "sha256:55806cefc40cf5876f30a97ed9c6fe42a0dc0e33278b4f0c9f74b36cf99a6e86"
+    },
+    "slide_3": {
+      "path": "artifacts/science-verifier/deck/rendered/slide-3.png",
+      "sha256": "sha256:fe408cac0506705d9ade2ddf2fc69a354b524e4384b5f1ac0352fbf643479a46"
+    }
+  },
+  "visual_qa_adjustment": {
+    "scope": "artifact_only",
+    "reason": "removed redundant overlays that obscured source infographic text",
+    "implementation_commit_unchanged": "02f89be5caad41f45f57af7558a4b3e69c42efbc"
+  }
+}
