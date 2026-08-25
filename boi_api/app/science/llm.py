@@ -10,14 +10,17 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 import httpx
-from pydantic import Field, ValidationError, model_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 
 from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.equations import SemanticExpression
 from boi_api.app.science.models import (
+    ClaimCondition,
     LLMModelSettings,
     NormalizedClaim,
     ScienceModel,
     SourceSpan,
+    canonical_science_unit_token,
 )
 from boi_api.app.science.safety import (
     ScienceSensitivePersistenceError,
@@ -55,6 +58,85 @@ class DecisionImpact(ScienceModel):
     reason: str = Field(min_length=1)
 
 
+class FormulaSymbolCandidate(ScienceModel):
+    """One untrusted symbol-to-scientific-role proposal with an exact text anchor."""
+
+    variable_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+    symbol: str = Field(min_length=1, max_length=32)
+    source_span: SourceSpan
+    concept_ref: str = Field(pattern=r"^sci:concept:[A-Za-z0-9._:-]+$")
+    quantity_kind: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+    unit: str | None = Field(default=None, max_length=128)
+    ontology_ref: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^sci:binding:[A-Za-z0-9._:-]+$",
+    )
+
+    @field_validator("unit")
+    @classmethod
+    def canonical_candidate_unit(cls, value: str | None) -> str | None:
+        return canonical_science_unit_token(value) if value is not None else None
+
+
+class FormulaCandidate(ScienceModel):
+    """Closed formula proposal; every field remains outside verdict authority."""
+
+    formula_span: SourceSpan
+    semantic_expression: SemanticExpression
+    proposed_equation_id: str | None = Field(
+        default=None,
+        pattern=r"^sci:equation:[A-Za-z0-9._:-]+$",
+    )
+    proposed_equation_digest: str | None = Field(
+        default=None,
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+    symbol_candidates: list[FormulaSymbolCandidate] = Field(
+        min_length=1, max_length=64
+    )
+    condition_candidates: list[ClaimCondition] = Field(
+        default_factory=list, max_length=64
+    )
+    sign_convention_candidate: str | None = Field(default=None, max_length=2048)
+    ontology_refs: list[str] = Field(default_factory=list, max_length=64)
+
+    @field_validator("ontology_refs")
+    @classmethod
+    def closed_formula_ontology_refs(cls, value: list[str]) -> list[str]:
+        if any(
+            not re.fullmatch(r"sci:binding:[A-Za-z0-9._:-]+", item)
+            for item in value
+        ):
+            raise ValueError("formula ontology_refs must name Science bindings")
+        return value
+
+    @field_validator("sign_convention_candidate")
+    @classmethod
+    def nonempty_sign_convention(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("sign convention candidate must be nonempty")
+        return normalized
+
+    @model_validator(mode="after")
+    def closed_candidate_shape(self) -> "FormulaCandidate":
+        if (self.proposed_equation_id is None) != (
+            self.proposed_equation_digest is None
+        ):
+            raise ValueError(
+                "proposed Equation identity requires an exact ID and digest pair"
+            )
+        if len(self.ontology_refs) != len(set(self.ontology_refs)):
+            raise ValueError("formula ontology_refs must be unique")
+        condition_ids = [item.condition_id for item in self.condition_candidates]
+        if len(condition_ids) != len(set(condition_ids)):
+            raise ValueError("formula condition candidates must be unique")
+        return self
+
+
 class LLMClaimCandidate(ScienceModel):
     source_span: SourceSpan
     normalized_claim: NormalizedClaim
@@ -62,6 +144,9 @@ class LLMClaimCandidate(ScienceModel):
     ambiguity_ids: list[str]
     candidate_meanings: list[CandidateMeaning]
     decision_impact: list[DecisionImpact]
+    formula_candidates: list[FormulaCandidate] = Field(
+        default_factory=list, max_length=16
+    )
 
     @model_validator(mode="after")
     def exact_ambiguity_links(self) -> "LLMClaimCandidate":
@@ -309,6 +394,10 @@ class ScienceLLMClient:
             "object meaning per claim; their textual order may vary. The normalized "
             "subject_concept_id, predicate, and object_concept_id must respectively "
             "equal the selected subject, relation, and object candidate concept_id. "
+            "If a formula is present, copy exact formula and symbol source spans, use "
+            "only the closed semantic expression schema, and treat equation IDs, "
+            "symbol meanings, units, conditions, and sign conventions as proposals. "
+            "Never invent missing formula context. "
             "Return exactly one JSON value matching this strict schema: "
             + json.dumps(schema, ensure_ascii=False, sort_keys=True)
         )

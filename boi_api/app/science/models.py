@@ -10,6 +10,7 @@ from typing import Literal, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.equations import SemanticExpression
 from boi_api.app.science.safety import (
     reject_sensitive_persistence,
     validate_credential_free_https_url,
@@ -566,6 +567,31 @@ InterpretationIssueCode: TypeAlias = Literal[
     "ALIAS_BINDING_MISMATCH",
     "COMPLETE_RELATION_SPAN_REQUIRED",
     "EXTERNAL_CONTEXT_REQUIRES_USER_REVISION",
+    "FORMULA_OUTSIDE_CLAIM_SPAN",
+    "FORMULA_SPAN_OVERLAP",
+    "FORMULA_SYMBOL_INCOMPLETE",
+    "FORMULA_SYMBOL_OVERLAP",
+    "FORMULA_UNDECLARED_VARIABLE",
+    "FORMULA_ONTOLOGY_MISMATCH",
+    "FORMULA_SYMBOL_AMBIGUITY",
+    "FORMULA_CONTEXT_REQUIRES_USER_REVISION",
+    "UNKNOWN_EQUATION_REF",
+    "EQUATION_IDENTITY_MISMATCH",
+    "FORMULA_SEMANTIC_MISMATCH",
+]
+
+FormulaInterpretationIssueCode: TypeAlias = Literal[
+    "FORMULA_OUTSIDE_CLAIM_SPAN",
+    "FORMULA_SPAN_OVERLAP",
+    "FORMULA_SYMBOL_INCOMPLETE",
+    "FORMULA_SYMBOL_OVERLAP",
+    "FORMULA_UNDECLARED_VARIABLE",
+    "FORMULA_ONTOLOGY_MISMATCH",
+    "FORMULA_SYMBOL_AMBIGUITY",
+    "FORMULA_CONTEXT_REQUIRES_USER_REVISION",
+    "UNKNOWN_EQUATION_REF",
+    "EQUATION_IDENTITY_MISMATCH",
+    "FORMULA_SEMANTIC_MISMATCH",
 ]
 
 
@@ -579,6 +605,83 @@ class CandidateMeaningRecord(ScienceModel):
     concept_id: str | None = None
     meaning: str | None = None
     domain: str | None = None
+
+
+class FormulaSymbolInterpretationRecord(ScienceModel):
+    """Server-normalized but still non-authoritative symbol proposal."""
+
+    variable_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+    symbol: str = Field(min_length=1, max_length=32)
+    source_span: SourceSpan
+    concept_ref: str = Field(pattern=r"^sci:concept:[A-Za-z0-9._:-]+$")
+    quantity_kind: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+    unit: str | None = Field(default=None, max_length=128)
+    ontology_ref: str = Field(pattern=r"^sci:binding:[A-Za-z0-9._:-]+$")
+    binding_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    catalog_variable_match: bool | None = None
+
+    @field_validator("unit")
+    @classmethod
+    def canonical_candidate_unit(cls, value: str | None) -> str | None:
+        return canonical_science_unit_token(value) if value is not None else None
+
+
+class FormulaInterpretationRecord(ScienceModel):
+    """Safe UI proposal record that can never carry verdict authority."""
+
+    claim_id: str = Field(min_length=1)
+    formula_span: SourceSpan
+    semantic_expression: SemanticExpression
+    semantic_expression_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    proposed_equation_id: str | None = Field(
+        default=None, pattern=r"^sci:equation:[A-Za-z0-9._:-]+$"
+    )
+    proposed_equation_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
+    catalog_match_status: Literal[
+        "not_proposed",
+        "unknown_equation",
+        "mismatch",
+        "exact_candidate_match",
+    ]
+    symbol_candidates: list[FormulaSymbolInterpretationRecord] = Field(
+        min_length=1, max_length=64
+    )
+    condition_candidates: list[ClaimCondition] = Field(
+        default_factory=list, max_length=64
+    )
+    sign_convention_candidate: str | None = Field(default=None, max_length=2048)
+    ontology_refs: list[str] = Field(default_factory=list, max_length=64)
+    issue_codes: list[FormulaInterpretationIssueCode] = Field(default_factory=list)
+    verdict_authority: Literal[False] = False
+
+    @model_validator(mode="after")
+    def exact_non_authoritative_record(self) -> "FormulaInterpretationRecord":
+        semantic_payload = self.semantic_expression.model_dump(
+            mode="json", exclude_none=True
+        )
+        if self.semantic_expression_digest != sha256_digest(semantic_payload):
+            raise ValueError("formula semantic expression digest is not exact")
+        if (self.proposed_equation_id is None) != (
+            self.proposed_equation_digest is None
+        ):
+            raise ValueError("formula Equation proposal must be an exact identity pair")
+        if self.catalog_match_status == "not_proposed" and (
+            self.proposed_equation_id is not None
+            or self.proposed_equation_digest is not None
+        ):
+            raise ValueError("not_proposed cannot contain an Equation identity")
+        if self.catalog_match_status != "not_proposed" and (
+            self.proposed_equation_id is None
+            or self.proposed_equation_digest is None
+        ):
+            raise ValueError("Equation match status requires a proposed identity")
+        if len(self.ontology_refs) != len(set(self.ontology_refs)):
+            raise ValueError("formula interpretation ontology refs must be unique")
+        if len(self.issue_codes) != len(set(self.issue_codes)):
+            raise ValueError("formula interpretation issue codes must be unique")
+        return self
 
 
 class DetectedAlias(ScienceModel):
@@ -691,6 +794,7 @@ class InterpretationRecord(ScienceModel):
     ontology_release_id: str
     ontology_refs: list[str]
     candidate_meanings: list[CandidateMeaningRecord]
+    formula_candidates: list[FormulaInterpretationRecord] = Field(default_factory=list)
     decision_impact: list[InterpretationDecisionImpact]
     user_revision_history: list[InterpretationRevisionEvent]
     confirmed_claim_packet_digest: str | None
@@ -715,12 +819,33 @@ class InterpretationRecord(ScienceModel):
             claim.pop("source_span", None)
         for meaning in payload["candidate_meanings"]:
             meaning.pop("surface_term", None)
+        for formula in payload["formula_candidates"]:
+            formula.pop("formula_span", None)
+            for symbol in formula["symbol_candidates"]:
+                symbol.pop("source_span", None)
+                symbol.pop("symbol", None)
         reject_sensitive_persistence(payload, path="interpretation")
         claim_ids = [claim.claim_id for claim in self.candidate_claims]
         if len(claim_ids) != len(set(claim_ids)):
             raise ValueError("interpretation claim IDs must be unique")
         if {meaning.claim_id for meaning in self.candidate_meanings} - set(claim_ids):
             raise ValueError("candidate meaning references an unknown claim")
+        if {formula.claim_id for formula in self.formula_candidates} - set(claim_ids):
+            raise ValueError("formula candidate references an unknown claim")
+        formula_identities = [
+            (
+                formula.claim_id,
+                formula.formula_span.start,
+                formula.formula_span.end,
+                formula.semantic_expression_digest,
+            )
+            for formula in self.formula_candidates
+        ]
+        if len(formula_identities) != len(set(formula_identities)) and not any(
+            "FORMULA_SPAN_OVERLAP" in formula.issue_codes
+            for formula in self.formula_candidates
+        ):
+            raise ValueError("duplicate formula candidates require an overlap issue")
         if {impact.claim_id for impact in self.decision_impact} != set(claim_ids):
             raise ValueError("decision impact must cover every candidate claim")
         canonical_ref = self.canonical_source_document_ref

@@ -28,6 +28,8 @@ from boi_api.app.science.models import (
     ClaimPacket,
     DetectedAlias,
     EvidenceLink,
+    FormulaInterpretationRecord,
+    FormulaSymbolInterpretationRecord,
     GroundedAnnotation,
     InterpretationDecisionImpact,
     InterpretationRecord,
@@ -478,6 +480,7 @@ class ScienceService:
         ClaimPacket,
         list[CandidateMeaningRecord],
         InterpretationDecisionImpact,
+        list[FormulaInterpretationRecord],
     ]:
         resolved_local = resolve_anchor(
             interpreted_text,
@@ -640,6 +643,19 @@ class ScienceService:
             deep=True,
         )
 
+        formula_records, formula_issues = self._formula_records_from_candidate(
+            candidate,
+            claim_id=claim_id,
+            claim_span=resolved,
+            document_text=document_text,
+            interpreted_text=interpreted_text,
+            document_digest=document_digest,
+            selection_start=selection_start,
+            ontology_index=ontology_index,
+            client_kind=client_kind,
+        )
+        issues.update(formula_issues)
+
         ordered_issues = [
             issue
             for issue in (
@@ -654,6 +670,17 @@ class ScienceService:
                 "ALIAS_BINDING_MISMATCH",
                 "COMPLETE_RELATION_SPAN_REQUIRED",
                 "EXTERNAL_CONTEXT_REQUIRES_USER_REVISION",
+                "FORMULA_OUTSIDE_CLAIM_SPAN",
+                "FORMULA_SPAN_OVERLAP",
+                "FORMULA_SYMBOL_INCOMPLETE",
+                "FORMULA_SYMBOL_OVERLAP",
+                "FORMULA_UNDECLARED_VARIABLE",
+                "FORMULA_ONTOLOGY_MISMATCH",
+                "FORMULA_SYMBOL_AMBIGUITY",
+                "FORMULA_CONTEXT_REQUIRES_USER_REVISION",
+                "UNKNOWN_EQUATION_REF",
+                "EQUATION_IDENTITY_MISMATCH",
+                "FORMULA_SEMANTIC_MISMATCH",
             )
             if issue in issues
         ]
@@ -666,7 +693,290 @@ class ScienceService:
             ),
             issue_codes=ordered_issues,
         )
-        return claim, meanings, impact
+        return claim, meanings, impact, formula_records
+
+    def _formula_records_from_candidate(
+        self,
+        candidate: LLMClaimCandidate,
+        *,
+        claim_id: str,
+        claim_span: SourceSpan,
+        document_text: str,
+        interpreted_text: str,
+        document_digest: str,
+        selection_start: int,
+        ontology_index: Mapping[str, Mapping[str, object]],
+        client_kind: ClaimSubmissionClientKind,
+    ) -> tuple[list[FormulaInterpretationRecord], set[str]]:
+        """Re-anchor formula proposals and compare them to reviewed Catalog identity.
+
+        The returned records intentionally retain ``verdict_authority=False`` and
+        are not copied into ``ClaimPacket``.  They exist only for later UI review.
+        """
+
+        records: list[FormulaInterpretationRecord] = []
+        all_issues: set[str] = set()
+        equation_issue_codes = {
+            "FORMULA_SYMBOL_INCOMPLETE",
+            "FORMULA_UNDECLARED_VARIABLE",
+            "FORMULA_ONTOLOGY_MISMATCH",
+            "UNKNOWN_EQUATION_REF",
+            "EQUATION_IDENTITY_MISMATCH",
+            "FORMULA_SEMANTIC_MISMATCH",
+        }
+        formula_issue_order = (
+            "FORMULA_OUTSIDE_CLAIM_SPAN",
+            "FORMULA_SPAN_OVERLAP",
+            "FORMULA_SYMBOL_INCOMPLETE",
+            "FORMULA_SYMBOL_OVERLAP",
+            "FORMULA_UNDECLARED_VARIABLE",
+            "FORMULA_ONTOLOGY_MISMATCH",
+            "FORMULA_SYMBOL_AMBIGUITY",
+            "FORMULA_CONTEXT_REQUIRES_USER_REVISION",
+            "UNKNOWN_EQUATION_REF",
+            "EQUATION_IDENTITY_MISMATCH",
+            "FORMULA_SEMANTIC_MISMATCH",
+        )
+
+        for formula in candidate.formula_candidates:
+            local_formula_span = resolve_anchor(
+                interpreted_text,
+                formula.formula_span,
+                document_digest=sha256_digest(interpreted_text),
+            )
+            absolute_formula_span = self._absolute_span(
+                document_text,
+                local_formula_span,
+                selection_start=selection_start,
+            )
+            formula_span = resolve_anchor(
+                document_text,
+                absolute_formula_span,
+                document_digest=document_digest,
+            )
+            issues: set[str] = set()
+            if not (
+                claim_span.start <= formula_span.start
+                and formula_span.end <= claim_span.end
+            ):
+                issues.add("FORMULA_OUTSIDE_CLAIM_SPAN")
+
+            semantic_payload = formula.semantic_expression.model_dump(
+                mode="json", exclude_none=True
+            )
+            semantic_digest = sha256_digest(semantic_payload)
+            semantic_variables = formula.semantic_expression.variable_ids()
+            candidate_variable_ids = {
+                symbol.variable_id for symbol in formula.symbol_candidates
+            }
+            if semantic_variables - candidate_variable_ids:
+                issues.add("FORMULA_SYMBOL_INCOMPLETE")
+            if candidate_variable_ids - semantic_variables:
+                issues.add("FORMULA_UNDECLARED_VARIABLE")
+
+            symbol_records: list[FormulaSymbolInterpretationRecord] = []
+            symbol_ranges: list[tuple[int, int]] = []
+            formula_binding_refs = {
+                symbol.ontology_ref for symbol in formula.symbol_candidates
+            }
+            if formula_binding_refs != set(formula.ontology_refs):
+                issues.add("FORMULA_ONTOLOGY_MISMATCH")
+
+            proposed_equation = None
+            catalog_match_status: Literal[
+                "not_proposed",
+                "unknown_equation",
+                "mismatch",
+                "exact_candidate_match",
+            ] = "not_proposed"
+            catalog_variables: dict[str, Any] = {}
+            if formula.proposed_equation_id is not None:
+                try:
+                    proposed_equation = self.catalog.equation(
+                        formula.proposed_equation_id
+                    ).equation
+                except ScienceCatalogError:
+                    issues.add("UNKNOWN_EQUATION_REF")
+                    catalog_match_status = "unknown_equation"
+                else:
+                    catalog_match_status = "exact_candidate_match"
+                    if (
+                        proposed_equation.equation_digest
+                        != formula.proposed_equation_digest
+                    ):
+                        issues.add("EQUATION_IDENTITY_MISMATCH")
+                    expected_semantic_digest = sha256_digest(
+                        proposed_equation.semantic_expression.model_dump(
+                            mode="json", exclude_none=True
+                        )
+                    )
+                    if expected_semantic_digest != semantic_digest:
+                        issues.add("FORMULA_SEMANTIC_MISMATCH")
+                    catalog_variables = {
+                        item.variable_id: item for item in proposed_equation.variables
+                    }
+                    if set(catalog_variables) - candidate_variable_ids:
+                        issues.add("FORMULA_SYMBOL_INCOMPLETE")
+                    if candidate_variable_ids - set(catalog_variables):
+                        issues.add("FORMULA_UNDECLARED_VARIABLE")
+
+            for symbol in formula.symbol_candidates:
+                local_symbol_span = resolve_anchor(
+                    interpreted_text,
+                    symbol.source_span,
+                    document_digest=sha256_digest(interpreted_text),
+                )
+                absolute_symbol_span = self._absolute_span(
+                    document_text,
+                    local_symbol_span,
+                    selection_start=selection_start,
+                )
+                symbol_span = resolve_anchor(
+                    document_text,
+                    absolute_symbol_span,
+                    document_digest=document_digest,
+                )
+                if symbol_span.exact != symbol.symbol:
+                    issues.add("FORMULA_ONTOLOGY_MISMATCH")
+                in_formula = (
+                    formula_span.start <= symbol_span.start
+                    and symbol_span.end <= formula_span.end
+                )
+                in_claim = (
+                    claim_span.start <= symbol_span.start
+                    and symbol_span.end <= claim_span.end
+                )
+                if not in_formula and not in_claim:
+                    issues.add("FORMULA_OUTSIDE_CLAIM_SPAN")
+                elif not in_formula and client_kind != "user":
+                    issues.add("FORMULA_CONTEXT_REQUIRES_USER_REVISION")
+                symbol_ranges.append((symbol_span.start, symbol_span.end))
+
+                canonical = ontology_index.get(symbol.ontology_ref)
+                binding_digest: str | None = None
+                if canonical is None:
+                    issues.add("FORMULA_ONTOLOGY_MISMATCH")
+                else:
+                    binding_digest = str(canonical["binding_digest"])
+                    if (
+                        canonical["concept_id"] != symbol.concept_ref
+                        or symbol.symbol not in canonical["aliases"]
+                    ):
+                        issues.add("FORMULA_ONTOLOGY_MISMATCH")
+
+                alias_concepts = {
+                    str(binding["concept_id"])
+                    for binding in ontology_index.values()
+                    if symbol.symbol in binding["aliases"]
+                }
+                if proposed_equation is None and len(alias_concepts) > 1:
+                    issues.add("FORMULA_SYMBOL_AMBIGUITY")
+
+                catalog_variable = catalog_variables.get(symbol.variable_id)
+                catalog_variable_match: bool | None = None
+                if proposed_equation is not None:
+                    catalog_variable_match = catalog_variable is not None and (
+                        catalog_variable.symbol == symbol.symbol
+                        and catalog_variable.concept_ref == symbol.concept_ref
+                        and catalog_variable.quantity_kind == symbol.quantity_kind
+                        and (
+                            symbol.unit is None
+                            or catalog_variable.unit == symbol.unit
+                        )
+                    )
+                    if not catalog_variable_match:
+                        issues.add("FORMULA_ONTOLOGY_MISMATCH")
+
+                symbol_records.append(
+                    FormulaSymbolInterpretationRecord(
+                        variable_id=symbol.variable_id,
+                        symbol=symbol.symbol,
+                        source_span=symbol_span,
+                        concept_ref=symbol.concept_ref,
+                        quantity_kind=symbol.quantity_kind,
+                        unit=symbol.unit,
+                        ontology_ref=symbol.ontology_ref,
+                        binding_digest=binding_digest,
+                        catalog_variable_match=catalog_variable_match,
+                    )
+                )
+
+            sorted_symbol_ranges = sorted(symbol_ranges)
+            if any(
+                left[1] > right[0]
+                for left, right in zip(
+                    sorted_symbol_ranges,
+                    sorted_symbol_ranges[1:],
+                    strict=False,
+                )
+            ):
+                issues.add("FORMULA_SYMBOL_OVERLAP")
+            if client_kind != "user" and (
+                formula.condition_candidates
+                or formula.sign_convention_candidate is not None
+                or any(symbol.unit is not None for symbol in formula.symbol_candidates)
+            ):
+                issues.add("FORMULA_CONTEXT_REQUIRES_USER_REVISION")
+
+            if (
+                proposed_equation is not None
+                and issues & equation_issue_codes
+            ):
+                catalog_match_status = "mismatch"
+            ordered_formula_issues = [
+                issue for issue in formula_issue_order if issue in issues
+            ]
+            all_issues.update(issues)
+            records.append(
+                FormulaInterpretationRecord(
+                    claim_id=claim_id,
+                    formula_span=formula_span,
+                    semantic_expression=formula.semantic_expression,
+                    semantic_expression_digest=semantic_digest,
+                    proposed_equation_id=formula.proposed_equation_id,
+                    proposed_equation_digest=formula.proposed_equation_digest,
+                    catalog_match_status=catalog_match_status,
+                    symbol_candidates=symbol_records,
+                    condition_candidates=formula.condition_candidates,
+                    sign_convention_candidate=formula.sign_convention_candidate,
+                    ontology_refs=formula.ontology_refs,
+                    issue_codes=ordered_formula_issues,
+                    verdict_authority=False,
+                )
+            )
+
+        overlapping_record_indexes: set[int] = set()
+        ordered_formula_ranges = sorted(
+            (
+                record.formula_span.start,
+                record.formula_span.end,
+                index,
+            )
+            for index, record in enumerate(records)
+        )
+        for left, right in zip(
+            ordered_formula_ranges,
+            ordered_formula_ranges[1:],
+            strict=False,
+        ):
+            if left[1] > right[0]:
+                overlapping_record_indexes.update((left[2], right[2]))
+        if overlapping_record_indexes:
+            all_issues.add("FORMULA_SPAN_OVERLAP")
+            for index in overlapping_record_indexes:
+                record = records[index]
+                issue_set = {*record.issue_codes, "FORMULA_SPAN_OVERLAP"}
+                records[index] = record.model_copy(
+                    update={
+                        "issue_codes": [
+                            issue
+                            for issue in formula_issue_order
+                            if issue in issue_set
+                        ]
+                    },
+                    deep=True,
+                )
+        return records, all_issues
 
     def detect_aliases(
         self,
@@ -937,7 +1247,7 @@ class ScienceService:
             interpreted_text = selection.exact
             selection_start = selection.start
 
-        claim, meanings, impact = self._claim_from_candidate(
+        claim, meanings, impact, formula_records = self._claim_from_candidate(
             candidate,
             document_text=document_text,
             interpreted_text=interpreted_text,
@@ -967,6 +1277,7 @@ class ScienceService:
                 ontology_release_id=self.ontology_release_id,
                 ontology_refs=claim.interpretation.ontology_refs,
                 candidate_meanings=meanings,
+                formula_candidates=formula_records,
                 decision_impact=[impact],
                 user_revision_history=[],
                 confirmed_claim_packet_digest=None,
@@ -1085,9 +1396,15 @@ class ScienceService:
             )
         claims: list[ClaimPacket] = []
         meanings: list[CandidateMeaningRecord] = []
+        formula_records: list[FormulaInterpretationRecord] = []
         impacts: list[InterpretationDecisionImpact] = []
         for candidate in result.payload.claims:
-            claim, candidate_meanings, decision_impact = self._claim_from_candidate(
+            (
+                claim,
+                candidate_meanings,
+                decision_impact,
+                candidate_formula_records,
+            ) = self._claim_from_candidate(
                 candidate,
                 document_text=document_text,
                 interpreted_text=interpreted_text,
@@ -1099,6 +1416,7 @@ class ScienceService:
             )
             claims.append(claim)
             meanings.extend(candidate_meanings)
+            formula_records.extend(candidate_formula_records)
             impacts.append(decision_impact)
         claim_ids = [claim.claim_id for claim in claims]
         if len(claim_ids) != len(set(claim_ids)):
@@ -1128,6 +1446,7 @@ class ScienceService:
                     }
                 ),
                 candidate_meanings=meanings,
+                formula_candidates=formula_records,
                 decision_impact=impacts,
                 user_revision_history=[],
                 confirmed_claim_packet_digest=None,

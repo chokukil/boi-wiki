@@ -140,6 +140,61 @@ async def test_verification_tools_forward_stored_identity_contract_unchanged(
     }
 
 
+@pytest.mark.asyncio
+async def test_equation_claim_candidate_crosses_mcp_without_authority_rewriting(
+    mcp_module, monkeypatch, authenticated_science_user
+):
+    captured: dict = {}
+    formula_candidate = {
+        "formula_span": {
+            "start": 0,
+            "end": 7,
+            "exact": "V = I R",
+            "prefix": "",
+            "suffix": "",
+        },
+        "semantic_expression": {
+            "schema_version": "science-expression/0.1",
+            "root": {
+                "op": "relation",
+                "relation": "eq",
+                "left": {"op": "variable", "variable_id": "voltage"},
+                "right": {
+                    "op": "multiply",
+                    "left": {"op": "variable", "variable_id": "current"},
+                    "right": {"op": "variable", "variable_id": "resistance"},
+                },
+            },
+        },
+        "proposed_equation_id": "sci:equation:ohms-law",
+        "proposed_equation_digest": "sha256:" + "a" * 64,
+        "symbol_candidates": [],
+        "condition_candidates": [],
+        "sign_convention_candidate": None,
+        "ontology_refs": [],
+    }
+    candidate = {
+        "normalized_claim": {"predicate": "equation"},
+        "formula_candidates": [formula_candidate],
+    }
+
+    async def fake_post(path, **kwargs):
+        captured.update({"path": path, **kwargs})
+        return {"interpretation_id": "submitted"}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_post)
+
+    await mcp_module.science_claim_submit(
+        candidate=candidate,
+        client_kind="codex",
+        idempotency_key="equation-claim-mcp",
+        document="V = I R",
+    )
+
+    assert captured["path"] == "/api/science/claims/submit"
+    assert captured["payload"]["candidate"] == candidate
+
+
 def test_authenticated_bridge_forwards_external_claim_submission(
     mcp_module, monkeypatch
 ):
