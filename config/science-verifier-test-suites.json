@@ -9,24 +9,24 @@
         "-k",
         "science and not mcp"
       ],
-      "collected": 1438,
-      "testcase_identity_digest": "sha256:77a044189874aec85eb9f1caa2b4962b99f6d3337c28d8a22ebe1778142b2ce6"
+      "collected": 1646,
+      "testcase_identity_digest": "sha256:018f98fdac3c71a92c5e43a92025611ce71f8cf511736a3a67a2f836a910a3e2"
     },
     "mcp_tests": {
       "suite_id": "science-mcp",
       "pytest_args": [
         "tests/test_science_mcp.py"
       ],
-      "collected": 14,
-      "testcase_identity_digest": "sha256:ec689239f39316fda086f2882268f79d23dc4deacdf4e766d7a558efbee0863e"
+      "collected": 18,
+      "testcase_identity_digest": "sha256:4aafafbf01bf31dc48d560626ba5ffc51f1675977d75ae79236cf42ba1422476"
     },
     "full_regression": {
       "suite_id": "full-regression",
       "pytest_args": [
         "tests"
       ],
-      "collected": 2036,
-      "testcase_identity_digest": "sha256:1edf05b9ad25daa9d5d47e7a8dbbebd3faeb4b8ffe3435a959f66ee5b7b6114e"
+      "collected": 2248,
+      "testcase_identity_digest": "sha256:d43f6086bb99f659f13a588d78b4f85d7ee96918543a57654a2d048caf16314b"
     }
   }
 }
