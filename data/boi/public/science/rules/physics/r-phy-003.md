@@ -104,7 +104,28 @@
         "quantity_kind": "energy_scale",
         "reference_quantity_kind": "energy_scale_reference"
       }
-    ]
+    ],
+    "equation_binding": {
+      "equation_id": "sci:equation:physics:applied-work-kinetic-energy-change",
+      "equation_digest": "sha256:09ee2b7f81aa3fddd1f45e7ceb636053c7fc0f6a1b10cd57978a597e9d013bf5",
+      "evaluator_id": "sci-evaluator:closed-arithmetic-relation",
+      "evaluator_version": "0.1.0",
+      "evaluator_digest": "sha256:a2324dddd46cd907539eb675d129edfcee646af75b94763f54a365d54c1276ac",
+      "constraint_operator": "equal",
+      "variable_mappings": [
+        {
+          "equation_variable_id": "applied_work",
+          "claim_quantity_kind": "applied_work",
+          "constraint_operand": "left"
+        },
+        {
+          "equation_variable_id": "kinetic_energy_change",
+          "claim_quantity_kind": "kinetic_energy_change",
+          "constraint_operand": "right_1"
+        }
+      ],
+      "binding_digest": "sha256:62bb39569febc13bd869bf9e3b83d1929e71bbcc82a3b253b2e9fd549aba9aa1"
+    }
   }
 }
 ---

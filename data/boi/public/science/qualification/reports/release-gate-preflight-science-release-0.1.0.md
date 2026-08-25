@@ -34,8 +34,8 @@
   },
   "science_qualification": {
     "release_id": "sci-release:0.1.0",
-    "release_digest": "sha256:fdc321fe0d91788e10515c0f9bdae2a8d08355ca2bc8c8c49744d8508c819650",
-    "result_digest": "sha256:c543253b37bef0b1f8634f1ecbf2c1f708f36b6b30eda03764d6139c47b9470d",
+    "release_digest": "sha256:5802a4efce096e003d23550b90e5c956967893bc50646455447b91a97d1db9ae",
+    "result_digest": "sha256:ecce372fcd3adfb56f2ab9b3643721e2bda7305e03f610eb0816fff981ac31e9",
     "lifecycle": "release_candidate",
     "public_case_count": 440,
     "activation_eligible": false
@@ -47,8 +47,8 @@
 > Candidate qualification only. This report is not a human review, approval, or active Science Release.
 
 - Release ID: `sci-release:0.1.0`
-- Release digest: `sha256:fdc321fe0d91788e10515c0f9bdae2a8d08355ca2bc8c8c49744d8508c819650`
-- Result digest: `sha256:c543253b37bef0b1f8634f1ecbf2c1f708f36b6b30eda03764d6139c47b9470d`
+- Release digest: `sha256:5802a4efce096e003d23550b90e5c956967893bc50646455447b91a97d1db9ae`
+- Result digest: `sha256:ecce372fcd3adfb56f2ab9b3643721e2bda7305e03f610eb0816fff981ac31e9`
 - Lifecycle: `release_candidate`
 - Public cases: 440
 - activation_eligible: false
@@ -625,13 +625,13 @@ The exact component map remains in the Release manifest; this report lists one d
 - `sci-pack:science-foundation/0.1.0` — `sha256:1c1780bdf0c8205ddc281e1e33af2b46c7761b8e8869e6f518f71e8d7a8be19a`
 - `sci-pack:semiconductor-devices/0.1.0` — `sha256:3767f6aaf3c5a42b7726d38a28a35264c059a5bbfc561e72fc539d56f60ce979`
 - `sci-pack:spin-coating/0.1.0` — `sha256:c5dac83ff4f1fa5466f12e41d435ab62835b495a7446f8244bafef619b8587aa`
-- `sci-rule:chemistry:001` — `sha256:bee150e96ba02538b0c3f5ee9c618df867054706e9747e7d507be0ebf984c1f5`
+- `sci-rule:chemistry:001` — `sha256:cd12876c522637c08b7143dff847c17ae565cabd1fb74c19ff94a200aab0428f`
 - `sci-rule:chemistry:002` — `sha256:b53736f72884b518fe3e084e07ee194ca6ddf6b94e58e37ce2a157de9dc1ddeb`
 - `sci-rule:chemistry:003` — `sha256:1185eb450c186f0fbd2db96841631cd22f347cebfda3f1cb71642300863df009`
 - `sci-rule:chemistry:004` — `sha256:da3cf63473d4f7c905ed0cd1adad0fbfbbc6996632b52d0146d92cc0b6b694ca`
 - `sci-rule:chemistry:005` — `sha256:aa85b55d7ba8fe4b8bc7fd4acea6315eb051d089a68c80197ac164192f9c2e71`
 - `sci-rule:circuits:001` — `sha256:fc3bc8a2dd3e1a5b90bd5ff13f42d420e464aca8422d0bed2b1433660e0f1dae`
-- `sci-rule:circuits:002` — `sha256:fbdc1c3dcd5c6a9311426a84bfe045cc71ad2ba8e6da2177a0a33b28d91fe7df`
+- `sci-rule:circuits:002` — `sha256:b81b78fbc9233fca349834743cf3d9ff0f08ef016f8981942ca635883afb6c5f`
 - `sci-rule:circuits:003` — `sha256:afc499dbda371be57b915ca9fb1eb2727ea666848962e6e142535bd662ff59a4`
 - `sci-rule:circuits:004` — `sha256:f0a2177446cff3c016353ebab8287f3b70017ad6459ef92a3bebe6a5d7a0fa7c`
 - `sci-rule:circuits:005` — `sha256:d49056e2f3570e827df41c4d2698e53cb7bf624723366925bd8b1f16a93c0612`
@@ -655,7 +655,7 @@ The exact component map remains in the Release manifest; this report lists one d
 - `sci-rule:materials:005` — `sha256:1e7f4bf1dd71852f28d13885bba446b27d6f84dbe5c90744b3b1212814a3ca8a`
 - `sci-rule:physics:001` — `sha256:1c8bd2b3c80b97759c42f8fd6e558e0f22665b332090aa1e7358e6371e137da5`
 - `sci-rule:physics:002` — `sha256:73b17380b1acceb37da63d2c2ee8d4747ed073d270a55d652dd0b47bf79a6186`
-- `sci-rule:physics:003` — `sha256:0127daab36c1a709bc29f89ebb8722fbd8388cee0d4eead916dd23e23c2f7caf`
+- `sci-rule:physics:003` — `sha256:e4126965247f29c24be27829d9226f348d80514f7b4f6a10803353d5a225bff9`
 - `sci-rule:physics:004` — `sha256:cf1c0691500f7fd5dad037b0dc36419ffff6832847450ec3f71f6165ed28f857`
 - `sci-rule:physics:005` — `sha256:aa07ec901abbcce09602c6b23eecbdd0129de8979d32fef45f91109ffb3bff88`
 - `sci-rule:semiconductor-devices:001` — `sha256:b9b3fa736942915f6e29988c16f9d212018da6eaf73b8f2e763a06369185e4eb`
@@ -722,13 +722,13 @@ The exact component map remains in the Release manifest; this report lists one d
 - `sci:binding:domain:spin-speed` — `sha256:11f408f9641b077828c284615075e504b61e2b8538cc46965a7c0f0b6f90e1ac`
 - `sci:binding:domain:thin-film-property` — `sha256:949e1df471f28a8dcccb75fca7b950a3a98c8a4990f97a0b25e36b3d54f0326f`
 - `sci:binding:domain:viscosity` — `sha256:84eb8a8f016e76a875b24ed5a8fdb6bcc2056ae88789d2aabfbc32d1663b28fb`
-- `sci:chemistry:001` — `sha256:d1a8b4bd3f1f0848db65325abd1430305c92fa49994055a21755e187c710a138`
+- `sci:chemistry:001` — `sha256:5d55957bf1a96d089371601ee9d6958d529938d6e0db14e1e0a55ed4d53b8f76`
 - `sci:chemistry:002` — `sha256:148d8e8a36c0c71a03721676cf5e04ef056e2265a7a4f8e86b9a6b99a5d7abbb`
 - `sci:chemistry:003` — `sha256:54ecf554ab9b78a2cb89b3afb7d2320f9bf12b9777f45e8e822f785ef823fa02`
 - `sci:chemistry:004` — `sha256:f73a60e7d21f603bf9bb2c6bd80f613f9b76af5aed1e16330cc4d2d9eb9f8051`
 - `sci:chemistry:005` — `sha256:8ed2efe8ce538018ffac0e2e75350eec119b9adb0c8ac73188156783392c2e92`
 - `sci:circuits:001` — `sha256:80e2725afeb238ddd5bc795f4a9d78d8dec30a1822fe397691118f4d2d26fb88`
-- `sci:circuits:002` — `sha256:9ebf23ef526a1eb698b7f5e702d0727aa88db154abad50ec52cca57cdaa3a80e`
+- `sci:circuits:002` — `sha256:e35d3a57bd1ec984838cdea3fe26ed6f4de9fb400efd30a546015cf9bde14784`
 - `sci:circuits:003` — `sha256:bb6d42bcffafd561bc8f37ba35978b1afc8825715166e9590083c09417b55f4a`
 - `sci:circuits:004` — `sha256:96c214c3514a27dda79f8f20cc55ee8e6d74b2e6953aa237866176b23f007403`
 - `sci:circuits:005` — `sha256:da6d8b56d518de86ae32859c31b919d18f940d12ddb6d370f7030df1c4f2ed74`
@@ -748,21 +748,21 @@ The exact component map remains in the Release manifest; this report lists one d
 - `sci:materials:001` — `sha256:b2bb1da4e38e0372978d861dd468f62471dc41dfa387131dc4c8bd5da06b4f6e`
 - `sci:materials:002` — `sha256:a34595850b880ffdeb46a279f9d37867b24010983bea961782234d11f9cbdde1`
 - `sci:materials:003` — `sha256:86509dd70237cea07401f670cd7d6a031680dc8c6ccf40850af108b00cdd0dbc`
-- `sci:materials:004` — `sha256:ed02c4900003940cfdd7a7d5996848f0b79d583fd12ef50ffee7a91f93635806`
+- `sci:materials:004` — `sha256:ceb61409f1a37d48f2235bf7d5d264848a6cae233e4063aa54b866480d60ef3d`
 - `sci:materials:005` — `sha256:b304188c644c97afe0afc3d8cada223e8ef54e4190e1e4033261c66e077fdee3`
 - `sci:physics:001` — `sha256:39a7d5461f71a59398fb10ee5e9afbfbd8ecdb8d26aedae54aacdc10fccae2ba`
 - `sci:physics:002` — `sha256:5f244f3bc969ee997e8385110f5c535629b79bef154644bc3b3b6cea8cea4c47`
-- `sci:physics:003` — `sha256:e4ccf01c9b8ba22fe8c0abe64ee1cac240e0f043bc2ad16446a8c4da18be080e`
+- `sci:physics:003` — `sha256:4196062326ef32c3ba582e3009451b83bf49d496acc5cbd175aeda21e6d2c630`
 - `sci:physics:004` — `sha256:a0a32e1567d61fef4bb1b054cb2c3276d19851e87daa38ab55cfefa1bf1b7ee4`
 - `sci:physics:005` — `sha256:08f9f13eb5a255aa506263cc6f65c7eaf6df57320781d43d633c3ca13a32812d`
 - `sci:semiconductor-devices:001` — `sha256:26face5b96540daa86daba2d7da93559f5eac4b460f1a7ead8ed509025752dfe`
 - `sci:semiconductor-devices:002` — `sha256:cdea82fed732a90ba02140efe66b85e79fc7b5361065d5fafc2bd46289ecc776`
-- `sci:semiconductor-devices:003` — `sha256:ba301ee40bf1343a3df6013d307ade95341dbece39d7bff812941089c682bc51`
+- `sci:semiconductor-devices:003` — `sha256:c657ea08650f1b95124f6ef367b63da0a4576d8c34aa23d2735156bd525da449`
 - `sci:semiconductor-devices:004` — `sha256:eb33f3322fe4cffe81cddb5073c7300ebcf8cae8a4c8e73cac6bf21c2a9f6615`
 - `sci:semiconductor-devices:005` — `sha256:2942acef7ef7941724daa02285102d081e9cb4cbabc24934f5d1902f2171cfc1`
 - `sci:semiconductor-devices:006` — `sha256:7b0905a8dfeb121beb46ee6f550ac8bdf3bf3f3a33c19c9d58ae509aa0fa3773`
 - `sci:spin-coating:001` — `sha256:3b01ab635d5a84058f5c9b281f16ad700abdf3d90f792b2eb44fd834086ce694`
 - `sci:spin-coating:002` — `sha256:f9180bf884086245ac5a6d06e4506e5c7b7f5caebc4feccd702db3b7b8cf9356`
 - `sci:spin-coating:003` — `sha256:9a8841961066049590d377ae10f7b1291b72afd6e100bb7d3d946944477b4f8d`
-- `sci:spin-coating:004` — `sha256:376ee4bab73579968dc47b230b36a5d7699534078bc42a4fad2437061673cb71`
+- `sci:spin-coating:004` — `sha256:f6525d4d89b08475ba65aa8c3e4afdb8f7b17f3d56e0c564ce435ae168c35331`
 - `sci:spin-coating:005` — `sha256:5ed5415091c4070276cf151f797cc15ea6ea61ae55a2d546ce66a311a1c1fd3b`

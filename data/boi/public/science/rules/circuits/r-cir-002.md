@@ -109,7 +109,28 @@
         "quantity_kind": "voltage_scale",
         "reference_quantity_kind": "voltage_scale_reference"
       }
-    ]
+    ],
+    "equation_binding": {
+      "equation_id": "sci:equation:circuits:kvl-loop-balance",
+      "equation_digest": "sha256:ae4be4aacf85dde9c31fd93a090f0a378aeeb3470c115ca95a8a30165e8147ef",
+      "evaluator_id": "sci-evaluator:closed-arithmetic-relation",
+      "evaluator_version": "0.1.0",
+      "evaluator_digest": "sha256:a2324dddd46cd907539eb675d129edfcee646af75b94763f54a365d54c1276ac",
+      "constraint_operator": "equal",
+      "variable_mappings": [
+        {
+          "equation_variable_id": "algebraic_voltage_sum",
+          "claim_quantity_kind": "algebraic_voltage_sum",
+          "constraint_operand": "left"
+        },
+        {
+          "equation_variable_id": "zero_voltage",
+          "claim_quantity_kind": "zero_voltage",
+          "constraint_operand": "right_1"
+        }
+      ],
+      "binding_digest": "sha256:528281120c0981fd3d96ef5d1ef04f9f632ddef963e1826a84f113e29c2f892a"
+    }
   }
 }
 ---

@@ -115,8 +115,12 @@ def valid_equation_payload(*, decision_use: str = "deterministic_rule") -> dict:
             },
         ],
         "assumptions": ["The element is represented by its reviewed resistive model."],
-        "applicability": ["Use only inside the reviewed element model and sign convention."],
-        "invalid_outside": ["Do not generalize a fitted nonlinear device into an ohmic element."],
+        "applicability": [
+            "Use only inside the reviewed element model and sign convention."
+        ],
+        "invalid_outside": [
+            "Do not generalize a fitted nonlinear device into an ohmic element."
+        ],
         "boundary_conditions": [
             {
                 "condition_id": "resistance-domain",
@@ -153,7 +157,9 @@ def valid_equation_payload(*, decision_use: str = "deterministic_rule") -> dict:
                     "transcription_method": "manual",
                     "review_state": "reviewed",
                     "reviewer": "science-admin",
-                    "reviewed_at": datetime(2026, 8, 25, tzinfo=timezone.utc).isoformat(),
+                    "reviewed_at": datetime(
+                        2026, 8, 25, tzinfo=timezone.utc
+                    ).isoformat(),
                     "semantic_expression_digest": sha256_digest(semantic_expression),
                     "transcription_digest": "",
                 },
@@ -170,7 +176,11 @@ def valid_equation_payload(*, decision_use: str = "deterministic_rule") -> dict:
     }
     transcription = payload["evidence_uses"][0]["transcription"]
     transcription["transcription_digest"] = sha256_digest(
-        {key: value for key, value in transcription.items() if key != "transcription_digest"}
+        {
+            key: value
+            for key, value in transcription.items()
+            if key != "transcription_digest"
+        }
     )
     payload["equation_digest"] = sha256_digest(
         {key: value for key, value in payload.items() if key != "equation_digest"}
@@ -188,6 +198,20 @@ def test_equation_knowledge_accepts_closed_digest_bound_semantics():
     assert equation.equation_digest == equation.computed_digest()
 
 
+def test_equation_evidence_reference_accepts_existing_science_pack_id_style():
+    from boi_api.app.science.equations import ScienceEquationKnowledge
+
+    payload = valid_equation_payload()
+    payload["evidence_uses"][0]["evidence_ref"] = "sci-evidence:circuits:ohms-law"
+    payload["equation_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "equation_digest"}
+    )
+
+    equation = ScienceEquationKnowledge.model_validate(payload)
+
+    assert equation.evidence_uses[0].evidence_ref == ("sci-evidence:circuits:ohms-law")
+
+
 @pytest.mark.parametrize(
     ("mutation", "match"),
     [
@@ -197,7 +221,9 @@ def test_equation_knowledge_accepts_closed_digest_bound_semantics():
         ("oversized_latex", "String should have at most 4096 characters"),
     ],
 )
-def test_equation_schema_is_closed_and_display_input_is_bounded(mutation: str, match: str):
+def test_equation_schema_is_closed_and_display_input_is_bounded(
+    mutation: str, match: str
+):
     from boi_api.app.science.equations import ScienceEquationKnowledge
 
     payload = valid_equation_payload()
@@ -306,17 +332,20 @@ def test_unsupported_expression_can_only_remain_explanation_only():
         "integrand": {"op": "variable", "variable_id": "current"},
         "with_respect_to": "time",
     }
-    payload["variables"] = [payload["variables"][1], {
-        "variable_id": "time",
-        "symbol": "t",
-        "concept_ref": "sci:concept:time",
-        "quantity_kind": "time",
-        "dimension": {"time": 1},
-        "unit": "second",
-        "definition": "Time coordinate.",
-        "domain": "real",
-        "sign_constraint": "nonnegative",
-    }]
+    payload["variables"] = [
+        payload["variables"][1],
+        {
+            "variable_id": "time",
+            "symbol": "t",
+            "concept_ref": "sci:concept:time",
+            "quantity_kind": "time",
+            "dimension": {"time": 1},
+            "unit": "second",
+            "definition": "Time coordinate.",
+            "domain": "real",
+            "sign_constraint": "nonnegative",
+        },
+    ]
     payload["original_notation_mapping"] = [
         {"source_symbol": "I", "variable_id": "current"},
         {"source_symbol": "t", "variable_id": "time"},
@@ -346,7 +375,11 @@ def test_unsupported_expression_can_only_remain_explanation_only():
         payload["semantic_expression"]
     )
     transcription["transcription_digest"] = sha256_digest(
-        {key: value for key, value in transcription.items() if key != "transcription_digest"}
+        {
+            key: value
+            for key, value in transcription.items()
+            if key != "transcription_digest"
+        }
     )
     payload["evaluator"] = None
     payload["equation_digest"] = sha256_digest(
@@ -421,7 +454,11 @@ def test_approximate_relation_cannot_be_transcribed_as_exact_equality():
         payload["semantic_expression"]
     )
     transcription["transcription_digest"] = sha256_digest(
-        {key: value for key, value in transcription.items() if key != "transcription_digest"}
+        {
+            key: value
+            for key, value in transcription.items()
+            if key != "transcription_digest"
+        }
     )
     payload["equation_digest"] = sha256_digest(
         {key: value for key, value in payload.items() if key != "equation_digest"}
@@ -543,7 +580,11 @@ def test_each_evidence_use_requires_complete_nonduplicated_variable_context():
         transcription["variable_context"]
     )
     transcription["transcription_digest"] = sha256_digest(
-        {key: value for key, value in transcription.items() if key != "transcription_digest"}
+        {
+            key: value
+            for key, value in transcription.items()
+            if key != "transcription_digest"
+        }
     )
     payload["equation_digest"] = sha256_digest(
         {key: value for key, value in payload.items() if key != "equation_digest"}
@@ -579,7 +620,11 @@ def test_deterministic_division_requires_a_nonzero_denominator_domain():
         payload["semantic_expression"]
     )
     transcription["transcription_digest"] = sha256_digest(
-        {key: value for key, value in transcription.items() if key != "transcription_digest"}
+        {
+            key: value
+            for key, value in transcription.items()
+            if key != "transcription_digest"
+        }
     )
     payload["equation_digest"] = sha256_digest(
         {key: value for key, value in payload.items() if key != "equation_digest"}
@@ -612,9 +657,7 @@ def test_chemical_reaction_is_a_closed_explanation_only_equation_without_fake_va
             {"species_id": "hydrogen", "stoichiometric_coefficient": "2"},
             {"species_id": "oxygen", "stoichiometric_coefficient": "1"},
         ],
-        "products": [
-            {"species_id": "water", "stoichiometric_coefficient": "2"}
-        ],
+        "products": [{"species_id": "water", "stoichiometric_coefficient": "2"}],
         "reversible": False,
     }
     payload["display_latex"] = r"\\ce{2H2 + O2 -> 2H2O}"
@@ -638,7 +681,11 @@ def test_chemical_reaction_is_a_closed_explanation_only_equation_without_fake_va
         payload["semantic_expression"]
     )
     transcription["transcription_digest"] = sha256_digest(
-        {key: value for key, value in transcription.items() if key != "transcription_digest"}
+        {
+            key: value
+            for key, value in transcription.items()
+            if key != "transcription_digest"
+        }
     )
     payload["equation_digest"] = sha256_digest(
         {key: value for key, value in payload.items() if key != "equation_digest"}

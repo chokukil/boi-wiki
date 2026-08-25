@@ -277,20 +277,28 @@ class SemanticNode(EquationModel):
     operand: SemanticNode | None = None
     left: SemanticNode | None = None
     right: SemanticNode | None = None
-    operands: list[SemanticNode] | None = Field(default=None, min_length=1, max_length=32)
+    operands: list[SemanticNode] | None = Field(
+        default=None, min_length=1, max_length=32
+    )
     function_name: Literal["sqrt", "exp", "ln", "log10", "abs"] | None = None
-    relation: Literal[
-        "eq", "approx", "proportional", "lt", "lte", "gt", "gte"
-    ] | None = None
-    rows: list[list[SemanticNode]] | None = Field(default=None, min_length=1, max_length=16)
+    relation: (
+        Literal["eq", "approx", "proportional", "lt", "lte", "gt", "gte"] | None
+    ) = None
+    rows: list[list[SemanticNode]] | None = Field(
+        default=None, min_length=1, max_length=16
+    )
     expression: SemanticNode | None = None
     integrand: SemanticNode | None = None
     with_respect_to: str | None = Field(default=None, max_length=64)
     order: int | None = Field(default=None, ge=1, le=8)
     lower: SemanticNode | None = None
     upper: SemanticNode | None = None
-    reactants: list[ReactionSpecies] | None = Field(default=None, min_length=1, max_length=32)
-    products: list[ReactionSpecies] | None = Field(default=None, min_length=1, max_length=32)
+    reactants: list[ReactionSpecies] | None = Field(
+        default=None, min_length=1, max_length=32
+    )
+    products: list[ReactionSpecies] | None = Field(
+        default=None, min_length=1, max_length=32
+    )
     reversible: bool | None = None
 
     @field_validator("variable_id", "with_respect_to")
@@ -350,7 +358,9 @@ class SemanticNode(EquationModel):
         if not required[self.op] <= present:
             raise ValueError(f"semantic {self.op} node is incomplete")
         if not present <= required[self.op] | optional.get(self.op, set()):
-            raise ValueError(f"semantic {self.op} node has fields from another operator")
+            raise ValueError(
+                f"semantic {self.op} node has fields from another operator"
+            )
         if self.op == "matrix":
             assert self.rows is not None
             if any(not row or len(row) > 16 for row in self.rows):
@@ -362,7 +372,9 @@ class SemanticNode(EquationModel):
             assert self.operands is not None and self.function_name is not None
             expected_arity = 1
             if len(self.operands) != expected_arity:
-                raise ValueError(f"semantic function {self.function_name} requires one operand")
+                raise ValueError(
+                    f"semantic function {self.function_name} requires one operand"
+                )
         return self
 
 
@@ -371,7 +383,15 @@ SemanticNode.model_rebuild()
 
 def _child_nodes(node: SemanticNode) -> list[SemanticNode]:
     children: list[SemanticNode] = []
-    for name in ("operand", "left", "right", "expression", "integrand", "lower", "upper"):
+    for name in (
+        "operand",
+        "left",
+        "right",
+        "expression",
+        "integrand",
+        "lower",
+        "upper",
+    ):
         child = getattr(node, name)
         if child is not None:
             children.append(child)
@@ -537,7 +557,9 @@ class ApproximationMetadata(EquationModel):
     @model_validator(mode="after")
     def error_unit_matches_bound(self) -> "ApproximationMetadata":
         if (self.maximum_absolute_error is None) != (self.error_unit is None):
-            raise ValueError("approximation numeric error and unit must be provided together")
+            raise ValueError(
+                "approximation numeric error and unit must be provided together"
+            )
         return self
 
 
@@ -602,8 +624,15 @@ class EquationEvidenceLocator(EquationModel):
     @classmethod
     def https_resource_url(cls, value: str) -> str:
         parsed = urlparse(value)
-        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
-            raise ValueError("equation Evidence resource_url must be credential-free HTTPS")
+        if (
+            parsed.scheme != "https"
+            or not parsed.netloc
+            or parsed.username
+            or parsed.password
+        ):
+            raise ValueError(
+                "equation Evidence resource_url must be credential-free HTTPS"
+            )
         return value
 
     @field_validator("content_hash")
@@ -638,7 +667,9 @@ class EquationEvidenceLocator(EquationModel):
             if getattr(self, name) is not None
         }
         if not present_fields <= allowed_fields:
-            raise ValueError("equation Evidence locator mixes media-specific coordinates")
+            raise ValueError(
+                "equation Evidence locator mixes media-specific coordinates"
+            )
         return self
 
 
@@ -653,7 +684,12 @@ class EquationTranscription(EquationModel):
     unit_convention: str = Field(min_length=1, max_length=2048)
     conventions_hash: str
     relation_notation: Literal[
-        "equals", "approximately_equals", "inequality", "definition", "proportionality", "reaction"
+        "equals",
+        "approximately_equals",
+        "inequality",
+        "definition",
+        "proportionality",
+        "reaction",
     ]
     transcription_method: Literal["manual", "ocr_reviewed"]
     review_state: Literal["reviewed"]
@@ -668,10 +704,16 @@ class EquationTranscription(EquationModel):
         if not isinstance(value, dict):
             return value
         original = value.get("original_notation")
-        if isinstance(original, str) and value.get("original_notation_hash") != _text_sha256(original):
-            raise ValueError("original_notation_hash must match exact UTF-8 transcription")
+        if isinstance(original, str) and value.get(
+            "original_notation_hash"
+        ) != _text_sha256(original):
+            raise ValueError(
+                "original_notation_hash must match exact UTF-8 transcription"
+            )
         context = value.get("variable_context")
-        if isinstance(context, list) and value.get("variable_context_hash") != sha256_digest(context):
+        if isinstance(context, list) and value.get(
+            "variable_context_hash"
+        ) != sha256_digest(context):
             raise ValueError("variable_context_hash must match exact variable context")
         conventions = {
             "coordinate_convention": value.get("coordinate_convention"),
@@ -680,7 +722,9 @@ class EquationTranscription(EquationModel):
         }
         if value.get("conventions_hash") != sha256_digest(conventions):
             raise ValueError("conventions_hash must match exact conventions")
-        digest_payload = {key: item for key, item in value.items() if key != "transcription_digest"}
+        digest_payload = {
+            key: item for key, item in value.items() if key != "transcription_digest"
+        }
         if value.get("transcription_digest") != sha256_digest(digest_payload):
             raise ValueError("transcription_digest must match exact transcription")
         return value
@@ -729,7 +773,7 @@ class EquationEvidenceUse(EquationModel):
     @classmethod
     def valid_evidence_ref(cls, value: str) -> str:
         value = _require_identifier(value, "evidence_ref")
-        if not value.startswith("sci:evidence:"):
+        if not value.startswith(("sci:evidence:", "sci-evidence:")):
             raise ValueError("evidence_ref must name Science Evidence")
         return value
 
@@ -743,7 +787,9 @@ class EquationEvidenceUse(EquationModel):
         if self.locator_digest != sha256_digest(
             self.locator.model_dump(mode="json", exclude_unset=True)
         ):
-            raise ValueError("locator_digest must match exact equation Evidence locator")
+            raise ValueError(
+                "locator_digest must match exact equation Evidence locator"
+            )
         return self
 
 
@@ -769,7 +815,9 @@ class EquationEvaluatorLink(EquationModel):
         if len(self.allowed_operators) != len(set(self.allowed_operators)):
             raise ValueError("evaluator allowed_operators must be unique")
         if not set(self.allowed_operators) <= _DETERMINISTIC_OPERATORS:
-            raise ValueError("evaluator contains operators not eligible for deterministic use")
+            raise ValueError(
+                "evaluator contains operators not eligible for deterministic use"
+            )
         return self
 
 
@@ -777,7 +825,9 @@ def _dimension_add(left: tuple[int, ...], right: tuple[int, ...]) -> tuple[int, 
     return tuple(a + b for a, b in zip(left, right, strict=True))
 
 
-def _dimension_subtract(left: tuple[int, ...], right: tuple[int, ...]) -> tuple[int, ...]:
+def _dimension_subtract(
+    left: tuple[int, ...], right: tuple[int, ...]
+) -> tuple[int, ...]:
     return tuple(a - b for a, b in zip(left, right, strict=True))
 
 
@@ -794,7 +844,11 @@ def _infer_dimension(
         assert node.variable_id is not None
         return variable_dimensions[node.variable_id]
     if node.op == "literal":
-        return node.dimension.values_tuple() if node.dimension is not None else _DIMENSIONLESS
+        return (
+            node.dimension.values_tuple()
+            if node.dimension is not None
+            else _DIMENSIONLESS
+        )
     if node.op == "constant":
         return _DIMENSIONLESS
     if node.op == "negate":
@@ -833,7 +887,11 @@ def _infer_dimension(
         )
         if left is None or right is None:
             return None
-        return _dimension_add(left, right) if node.op == "multiply" else _dimension_subtract(left, right)
+        return (
+            _dimension_add(left, right)
+            if node.op == "multiply"
+            else _dimension_subtract(left, right)
+        )
     if node.op == "power":
         assert node.left is not None and node.right is not None
         base = _infer_dimension(
@@ -846,16 +904,22 @@ def _infer_dimension(
             raise ValueError("semantic power exponent must be dimensionless")
         if node.right.op != "literal" or node.right.value is None:
             if base != _DIMENSIONLESS:
-                raise ValueError("dimensionful semantic power requires a literal exponent")
+                raise ValueError(
+                    "dimensionful semantic power requires a literal exponent"
+                )
             return _DIMENSIONLESS
         exponent = node.right.value
         if exponent != exponent.to_integral_value():
             if base != _DIMENSIONLESS:
                 if allow_undetermined_fractional_power:
                     return None
-                raise ValueError("fractional semantic power requires a dimensionless base")
+                raise ValueError(
+                    "fractional semantic power requires a dimensionless base"
+                )
             return _DIMENSIONLESS
-        return tuple(item * int(exponent) for item in base) if base is not None else None
+        return (
+            tuple(item * int(exponent) for item in base) if base is not None else None
+        )
     if node.op == "function":
         assert node.operands is not None and node.function_name is not None
         operand = _infer_dimension(node.operands[0], variable_dimensions)
@@ -868,7 +932,9 @@ def _infer_dimension(
                 raise ValueError("semantic square root has nonintegral dimensions")
             return tuple(item // 2 for item in operand)
         if operand != _DIMENSIONLESS:
-            raise ValueError("semantic transcendental function requires a dimensionless operand")
+            raise ValueError(
+                "semantic transcendental function requires a dimensionless operand"
+            )
         return _DIMENSIONLESS
     if node.op in {"vector", "matrix"}:
         items = node.operands or [item for row in (node.rows or []) for item in row]
@@ -878,7 +944,11 @@ def _infer_dimension(
             raise ValueError("semantic vector or matrix is dimensionally inconsistent")
         return known[0] if known else None
     if node.op == "derivative":
-        assert node.expression is not None and node.with_respect_to is not None and node.order is not None
+        assert (
+            node.expression is not None
+            and node.with_respect_to is not None
+            and node.order is not None
+        )
         expression = _infer_dimension(node.expression, variable_dimensions)
         respect = variable_dimensions[node.with_respect_to]
         if expression is None:
@@ -957,9 +1027,7 @@ def _validate_deterministic_singularities(
         stack.extend(_child_nodes(node))
 
 
-def _expected_relation_notations(
-    role: str, expression: SemanticExpression
-) -> set[str]:
+def _expected_relation_notations(role: str, expression: SemanticExpression) -> set[str]:
     root = expression.root
     if root.op == "chemical_reaction":
         return {"reaction"}
@@ -1009,9 +1077,13 @@ class ScienceEquationKnowledge(EquationModel):
     def exact_equation_digest_before_coercion(cls, value: Any) -> Any:
         if not isinstance(value, dict):
             return value
-        digest_payload = {key: item for key, item in value.items() if key != "equation_digest"}
+        digest_payload = {
+            key: item for key, item in value.items() if key != "equation_digest"
+        }
         if value.get("equation_digest") != sha256_digest(digest_payload):
-            raise ValueError("equation_digest must match the exact Equation Knowledge package")
+            raise ValueError(
+                "equation_digest must match the exact Equation Knowledge package"
+            )
         return value
 
     @field_validator("equation_id")
@@ -1040,7 +1112,9 @@ class ScienceEquationKnowledge(EquationModel):
     @field_validator("assumptions", "applicability", "invalid_outside")
     @classmethod
     def nonempty_unique_statements(cls, value: list[str], info) -> list[str]:
-        normalized = [_validate_bounded_text(item, info.field_name).strip() for item in value]
+        normalized = [
+            _validate_bounded_text(item, info.field_name).strip() for item in value
+        ]
         if len(normalized) != len(set(normalized)):
             raise ValueError(f"{info.field_name} must be unique")
         return normalized
@@ -1059,7 +1133,9 @@ class ScienceEquationKnowledge(EquationModel):
 
         mapped_ids = [item.variable_id for item in self.original_notation_mapping]
         source_symbols = [item.source_symbol for item in self.original_notation_mapping]
-        if set(mapped_ids) != set(variable_ids) or len(mapped_ids) != len(set(mapped_ids)):
+        if set(mapped_ids) != set(variable_ids) or len(mapped_ids) != len(
+            set(mapped_ids)
+        ):
             raise ValueError("original notation must map every variable exactly once")
         if len(source_symbols) != len(set(source_symbols)):
             raise ValueError("original notation source symbols must be unique")
@@ -1071,14 +1147,15 @@ class ScienceEquationKnowledge(EquationModel):
         for use in self.evidence_uses:
             evidence_refs.append(use.evidence_ref)
             if use.transcription.semantic_expression_digest != semantic_digest:
-                raise ValueError("transcription semantic_expression_digest does not match")
+                raise ValueError(
+                    "transcription semantic_expression_digest does not match"
+                )
             context_symbols = [
                 item.source_symbol for item in use.transcription.variable_context
             ]
-            if (
-                set(context_symbols) != set(source_symbols)
-                or len(context_symbols) != len(set(context_symbols))
-            ):
+            if set(context_symbols) != set(source_symbols) or len(
+                context_symbols
+            ) != len(set(context_symbols)):
                 raise ValueError(
                     "Evidence variable context must exactly match original notation"
                 )
@@ -1095,7 +1172,8 @@ class ScienceEquationKnowledge(EquationModel):
         unknown_boundary_ids = {
             item.variable_id
             for item in self.boundary_conditions
-            if item.variable_id is not None and item.variable_id not in set(variable_ids)
+            if item.variable_id is not None
+            and item.variable_id not in set(variable_ids)
         }
         if unknown_boundary_ids:
             raise ValueError("boundary conditions reference undeclared variables")
@@ -1111,14 +1189,18 @@ class ScienceEquationKnowledge(EquationModel):
             raise ValueError("empirical_fit role requires empirical_fit metadata")
         if self.empirical_fit is not None:
             if self.empirical_fit.fit_source_evidence_ref not in set(evidence_refs):
-                raise ValueError("empirical fit source must be an exact Equation Evidence use")
+                raise ValueError(
+                    "empirical fit source must be an exact Equation Evidence use"
+                )
 
         operators = self.semantic_expression.operators()
         if not operators <= _SEMANTIC_OPERATORS:
             raise ValueError("semantic expression contains unsupported operators")
         if self.decision_use == "deterministic_rule":
             if self.evaluator is None:
-                raise ValueError("deterministic_rule requires an explicit reviewed evaluator")
+                raise ValueError(
+                    "deterministic_rule requires an explicit reviewed evaluator"
+                )
             if (
                 self.semantic_expression.root.op != "relation"
                 or self.semantic_expression.root.relation != "eq"
@@ -1127,9 +1209,13 @@ class ScienceEquationKnowledge(EquationModel):
                     "deterministic_rule requires an exact equality semantic root"
                 )
             if not operators <= _DETERMINISTIC_OPERATORS:
-                raise ValueError("deterministic_rule cannot use unsupported expression operators")
+                raise ValueError(
+                    "deterministic_rule cannot use unsupported expression operators"
+                )
             if not operators <= set(self.evaluator.allowed_operators):
-                raise ValueError("deterministic_rule operators must be explicitly allowlisted")
+                raise ValueError(
+                    "deterministic_rule operators must be explicitly allowlisted"
+                )
             nonzero_variable_ids = {
                 item.variable_id
                 for item in self.variables
@@ -1143,7 +1229,9 @@ class ScienceEquationKnowledge(EquationModel):
                 elif condition.operator == "ne" and condition.value == 0:
                     nonzero_variable_ids.add(condition.variable_id)
                 elif condition.operator == "range":
-                    assert condition.minimum is not None and condition.maximum is not None
+                    assert (
+                        condition.minimum is not None and condition.maximum is not None
+                    )
                     if condition.minimum > 0 or condition.maximum < 0:
                         nonzero_variable_ids.add(condition.variable_id)
             _validate_deterministic_singularities(
@@ -1152,7 +1240,9 @@ class ScienceEquationKnowledge(EquationModel):
         elif self.evaluator is not None:
             raise ValueError("an evaluator link is allowed only for deterministic_rule")
         if self.equation_digest != self.computed_digest():
-            raise ValueError("equation_digest must match the canonical Equation Knowledge package")
+            raise ValueError(
+                "equation_digest must match the canonical Equation Knowledge package"
+            )
         return self
 
     def computed_digest(self) -> str:
@@ -1175,7 +1265,9 @@ def validate_equation_collection(value: Any) -> list[str]:
         try:
             equations.append(ScienceEquationKnowledge.model_validate(item))
         except (ValueError, TypeError):
-            return ["science.equations items must satisfy the closed Equation Knowledge schema"]
+            return [
+                "science.equations items must satisfy the closed Equation Knowledge schema"
+            ]
     equation_ids = [item.equation_id for item in equations]
     if len(equation_ids) != len(set(equation_ids)):
         return ["science.equations equation_id values must be unique"]

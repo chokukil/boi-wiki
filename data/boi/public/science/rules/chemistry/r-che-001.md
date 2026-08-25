@@ -105,7 +105,33 @@
         "quantity_kind": "concentration_scale",
         "reference_quantity_kind": "concentration_scale_reference"
       }
-    ]
+    ],
+    "equation_binding": {
+      "equation_id": "sci:equation:chemistry:molar-concentration-definition",
+      "equation_digest": "sha256:2db62840faed18a6fcff923caf83ab6dd489648d6db0d522e5f444e1d4dcbf8a",
+      "evaluator_id": "sci-evaluator:closed-arithmetic-relation",
+      "evaluator_version": "0.1.0",
+      "evaluator_digest": "sha256:a2324dddd46cd907539eb675d129edfcee646af75b94763f54a365d54c1276ac",
+      "constraint_operator": "quotient",
+      "variable_mappings": [
+        {
+          "equation_variable_id": "molar_concentration",
+          "claim_quantity_kind": "molar_concentration",
+          "constraint_operand": "left"
+        },
+        {
+          "equation_variable_id": "solute_amount",
+          "claim_quantity_kind": "solute_amount",
+          "constraint_operand": "right_1"
+        },
+        {
+          "equation_variable_id": "solution_volume",
+          "claim_quantity_kind": "solution_volume",
+          "constraint_operand": "right_2"
+        }
+      ],
+      "binding_digest": "sha256:ca5b4a1833bcd05f9722b2cf17791d6d73482dbcd63b418e4388bee5218d3176"
+    }
   }
 }
 ---
