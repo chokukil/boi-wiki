@@ -61,12 +61,26 @@ def _junit(
     tests: int = 4,
     failures: int = 0,
     skipped: int = 0,
+    skipped_cases: list[tuple[str, str]] | None = None,
 ) -> None:
+    suite_id = {
+        "science": "science-tests",
+        "mcp": "science-mcp",
+        "full": "full-regression",
+    }.get(path.stem, "unknown-suite")
+    if skipped_cases is not None:
+        skipped = len(skipped_cases)
+    else:
+        skipped_cases = [("fixture.Generic", f"skipped-{index}") for index in range(skipped)]
+    cases = "".join(
+        f'<testcase classname="{classname}" name="{case_name}"><skipped message="fixture skip" /></testcase>'
+        for classname, case_name in skipped_cases
+    )
     path.write_text(
         f'''<?xml version="1.0" encoding="utf-8"?>
 <testsuites tests="{tests}" failures="{failures}" errors="0" skipped="{skipped}">
-  <properties><property name="git_commit" value="{commit}" /></properties>
-  <testsuite name="suite" tests="{tests}" failures="{failures}" errors="0" skipped="{skipped}" />
+  <properties><property name="git_commit" value="{commit}" /><property name="suite_id" value="{suite_id}" /></properties>
+  <testsuite name="suite" tests="{tests}" failures="{failures}" errors="0" skipped="{skipped}">{cases}</testsuite>
 </testsuites>
 ''',
         encoding="utf-8",
@@ -312,7 +326,7 @@ def test_full_regression_missing_zero_or_failure_fails_closed(
     )
 
 
-def test_skipped_junit_test_fails_closed(tmp_path: Path) -> None:
+def test_unexpected_skipped_junit_test_fails_closed(tmp_path: Path) -> None:
     bundle = _fixture_bundle(tmp_path)
     full = bundle["full"]
     assert isinstance(full, Path)
@@ -323,7 +337,31 @@ def test_skipped_junit_test_fails_closed(tmp_path: Path) -> None:
     assert completed.returncode == 2
     manifest = _manifest(tmp_path / "report")
     assert manifest["evidence"]["full_regression"]["passed"] is False
-    assert "full_regression:skipped_tests" in manifest["failure_reasons"]
+    assert "full_regression:unexpected_skipped_tests" in manifest["failure_reasons"]
+
+
+def test_exact_powershell_runtime_skip_is_allowed_and_disclosed(tmp_path: Path) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    full = bundle["full"]
+    assert isinstance(full, Path)
+    _junit(
+        full,
+        commit=str(bundle["commit"]),
+        skipped_cases=[
+            (
+                "tests.test_repository_source_and_mcp.RepositorySourceContractTests",
+                "test_internal_success_skips_external_probe",
+            )
+        ],
+    )
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 0, completed.stderr
+    evidence = _manifest(tmp_path / "report")["evidence"]["full_regression"]
+    assert evidence["passed"] is True
+    assert evidence["skipped"] == 1
+    assert evidence["skip_policy"] == "powershell-wsl-exact-allowlist/0.1"
 
 
 @pytest.mark.parametrize("severity", ["critical", "important"])
@@ -361,6 +399,27 @@ def test_dirty_checkout_and_stale_junit_revision_fail_closed(tmp_path: Path) -> 
     reasons = _manifest(tmp_path / "report")["failure_reasons"]
     assert "git:dirty_worktree" in reasons
     assert "science_tests:git_commit_mismatch" in reasons
+
+
+def test_mismatched_junit_suite_identity_fails_closed(tmp_path: Path) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    science = bundle["science"]
+    assert isinstance(science, Path)
+    science.write_text(
+        science.read_text(encoding="utf-8").replace(
+            'name="suite_id" value="science-tests"',
+            'name="suite_id" value="full-regression"',
+        ),
+        encoding="utf-8",
+    )
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 2
+    assert (
+        "science_tests:suite_id_mismatch"
+        in _manifest(tmp_path / "report")["failure_reasons"]
+    )
 
 
 def test_tampered_browser_capture_and_failed_qualification_gate_fail_closed(

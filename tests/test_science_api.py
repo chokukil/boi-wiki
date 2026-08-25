@@ -331,6 +331,86 @@ def test_claim_submission_route_creates_only_a_paused_interpretation() -> None:
     assert kwargs["candidate"].normalized_claim.predicate == "increases"
 
 
+def test_raw_claim_route_keeps_stable_document_identity_and_forwards_lineage() -> None:
+    client, service = _client()
+    original_text = "RPM 증가 시 두께 변화"
+
+    first = client.post(
+        "/api/science/claims/submit",
+        json={
+            "document": original_text,
+            "client_kind": "user",
+            "candidate": _claim_candidate(),
+            "idempotency_key": "claim-submit-lineage-first",
+        },
+    )
+    assert first.status_code == 200
+    _call, (_document, first_kwargs) = service.calls[-1]
+    logical_ref = first_kwargs["document_ref"]
+    assert logical_ref.startswith("boi:submitted:")
+
+    same_document_retry = client.post(
+        "/api/science/claims/submit",
+        json={
+            "document": original_text,
+            "client_kind": "user",
+            "candidate": _claim_candidate(),
+            "idempotency_key": "claim-submit-lineage-same-document",
+        },
+    )
+    assert same_document_retry.status_code == 200
+    _call, (_document, retry_kwargs) = service.calls[-1]
+    assert retry_kwargs["document_ref"] == logical_ref
+
+    second = client.post(
+        "/api/science/claims/submit",
+        json={
+            "document": f"검토: {original_text}",
+            "client_kind": "user",
+            "candidate": _claim_candidate(),
+            "supersedes_claim_id": "sci-claim:prior",
+            "source_lineage": {
+                "document_ref": logical_ref,
+                "document_digest": sha256_digest(original_text),
+            },
+            "idempotency_key": "claim-submit-lineage-second",
+        },
+    )
+
+    assert second.status_code == 200
+    _call, (_document, second_kwargs) = service.calls[-1]
+    assert second_kwargs["document_ref"] == logical_ref
+    assert second_kwargs["source_lineage_document_ref"] == logical_ref
+    assert second_kwargs["source_lineage_document_digest"] == sha256_digest(
+        original_text
+    )
+
+
+@pytest.mark.parametrize(
+    "payload_update",
+    [
+        {"source_lineage": {"document_ref": "boi:submitted:x", "document_digest": "sha256:" + "1" * 64}},
+        {"supersedes_claim_id": "sci-claim:prior", "source_lineage": {"document_ref": "boi:public:science:document:fixture", "document_digest": "sha256:" + "1" * 64}},
+    ],
+)
+def test_raw_claim_route_rejects_unbound_or_non_submitted_lineage(
+    payload_update: dict,
+) -> None:
+    client, service = _client()
+    payload = {
+        "document": "RPM 증가 시 두께 변화",
+        "client_kind": "user",
+        "candidate": _claim_candidate(),
+        "idempotency_key": "claim-submit-invalid-lineage",
+        **payload_update,
+    }
+
+    response = client.post("/api/science/claims/submit", json=payload)
+
+    assert response.status_code == 422
+    assert not service.calls
+
+
 @pytest.mark.parametrize("forbidden", ["verdict", "evidence", "rule"])
 def test_claim_submission_rejects_client_authored_scientific_authority(
     forbidden: str,

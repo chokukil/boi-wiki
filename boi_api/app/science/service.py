@@ -357,19 +357,11 @@ class ScienceService:
             issues.add("ONTOLOGY_REF_MISMATCH")
 
         normalized = candidate.normalized_claim
-        has_outcome_context_ambiguity = any(
-            impact.changes_outcome for impact in candidate.decision_impact
-        )
         if client_kind != "user" and (
             normalized.quantities
             or normalized.conditions
-            or (
-                (
-                    normalized.process_stage is not None
-                    or normalized.material_state is not None
-                )
-                and not has_outcome_context_ambiguity
-            )
+            or normalized.process_stage is not None
+            or normalized.material_state is not None
         ):
             issues.add("EXTERNAL_CONTEXT_REQUIRES_USER_REVISION")
         by_role: dict[str, list[Any]] = {"subject": [], "relation": [], "object": []}
@@ -609,6 +601,8 @@ class ScienceService:
         idempotency_key: str,
         selection_anchor: SourceSpan | None = None,
         supersedes_claim_id: str | None = None,
+        source_lineage_document_ref: str | None = None,
+        source_lineage_document_digest: str | None = None,
     ) -> InterpretationRecord:
         """Revalidate one untrusted external Claim candidate and pause for confirmation."""
 
@@ -624,6 +618,27 @@ class ScienceService:
             ),
         )
         document_digest = sha256_digest(document_text)
+        lineage_provided = (
+            source_lineage_document_ref is not None
+            or source_lineage_document_digest is not None
+        )
+        if bool(source_lineage_document_ref) != bool(
+            source_lineage_document_digest
+        ):
+            raise ScienceConfirmationRequired(
+                "submitted document lineage is incomplete"
+            )
+        if lineage_provided and supersedes_claim_id is None:
+            raise ScienceConfirmationRequired(
+                "submitted document lineage requires a predecessor Claim"
+            )
+        if lineage_provided and (
+            not document_ref.startswith("boi:submitted:")
+            or source_lineage_document_ref != document_ref
+        ):
+            raise ScienceConfirmationRequired(
+                "submitted lineage document does not match the current document"
+            )
         if supersedes_claim_id is not None:
             resolver = getattr(
                 self.runtime_store, "interpretations_for_claim", None
@@ -656,7 +671,26 @@ class ScienceService:
                 raise ScienceAuthorizationError(
                     "superseded Claim owner does not match trusted identity"
                 )
-            if not any(
+            if lineage_provided:
+                same_lineage = [
+                    record
+                    for record in owned
+                    if len(record.candidate_claims) == 1
+                    and record.candidate_claims[0].document_ref
+                    == source_lineage_document_ref
+                ]
+                if not same_lineage:
+                    raise ScienceConfirmationRequired(
+                        "submitted lineage document does not match the predecessor Claim"
+                    )
+                if not any(
+                    record.document_digest == source_lineage_document_digest
+                    for record in same_lineage
+                ):
+                    raise ScienceConfirmationRequired(
+                        "submitted lineage digest does not match the predecessor Claim"
+                    )
+            elif not any(
                 record.document_digest == document_digest
                 and len(record.candidate_claims) == 1
                 and record.candidate_claims[0].document_ref == document_ref
@@ -676,6 +710,8 @@ class ScienceService:
                 "client_kind": client_kind,
                 "candidate": candidate,
                 "supersedes_claim_id": supersedes_claim_id,
+                "source_lineage_document_ref": source_lineage_document_ref,
+                "source_lineage_document_digest": source_lineage_document_digest,
                 "dictionary_release_id": self.dictionary_release_id,
                 "ontology_release_id": self.ontology_release_id,
             }

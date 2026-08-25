@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
@@ -16,6 +17,49 @@ const assets = join(deckRoot, "assets");
 const rendered = join(deckRoot, "rendered");
 mkdirSync(rendered, { recursive: true });
 
+function fileDigest(path) {
+  return "sha256:" + createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+const verificationPath = join(artifactRoot, "verification-manifest.json");
+const verification = JSON.parse(readFileSync(verificationPath, "utf8"));
+const currentCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const browserEvidence = verification.evidence?.browser;
+const qualificationEvidence = verification.evidence?.qualification;
+const reviewEvidence = verification.evidence?.independent_review;
+const browserChecks = browserEvidence?.check_results;
+const requiredGates = {
+  G0: "PASS", G1: "PASS", G2: "PASS", G3: "PASS", G4: "PASS",
+  G5: "PENDING", G6: "PENDING", G7: "PENDING",
+};
+const evidenceIsFinal =
+  verification.schema_version === "science-verifier-evidence-manifest/0.2"
+  && verification.report_state === "FINAL"
+  && verification.implementation_status === "VERIFIED"
+  && Array.isArray(verification.failure_reasons)
+  && verification.failure_reasons.length === 0
+  && verification.git?.commit === currentCommit
+  && verification.git?.dirty === false
+  && verification.activation_eligible === false
+  && browserEvidence?.passed === true
+  && Array.isArray(browserChecks)
+  && browserChecks.length === 20
+  && browserChecks.every((check) => check?.status === "passed")
+  && reviewEvidence?.passed === true
+  && reviewEvidence?.findings?.critical === 0
+  && reviewEvidence?.findings?.important === 0
+  && qualificationEvidence?.lifecycle === "release_candidate"
+  && qualificationEvidence?.activation_eligible === false
+  && Object.entries(requiredGates).every(([gate, status]) => verification.gates?.[gate] === status);
+if (!evidenceIsFinal) {
+  throw new Error("refusing to build evidence deck from non-final or unbound verification manifest");
+}
+const publicCaseCount = qualificationEvidence.public_case_count;
+const browserCheckCount = browserChecks.length;
+const gatePassLabel = `G0–G4  ${verification.gates.G0}`;
+const implementationHeadline = "구현은 검증됐고, 과학 지식 Release는 아직 비활성이다";
+const qualificationDigestShort = verification.qualification_result_digest.slice(7, 15);
+
 const paths = {
   architecture: join(assets, "science-integrity-layer.png"),
   ui: join(assets, "review-canvas-desktop.png"),
@@ -24,6 +68,9 @@ const paths = {
 };
 for (const [name, path] of Object.entries(paths)) {
   if (name !== "pptx" && !statSync(path).isFile()) throw new Error(`missing deck input: ${path}`);
+}
+if (fileDigest(join(artifactRoot, "qualification-report.pdf")) !== verification.pdf?.sha256) {
+  throw new Error("qualification report PDF does not match verification manifest");
 }
 
 const C = {
@@ -89,7 +136,7 @@ slide2.background = { color: C.paper };
 title(slide2, "REAL DOCUMENT REVIEW", "Qwen 없이도 문서 검토와 Claim 확인이 끝난다", "실제 실행 화면 · release_candidate · 운영 판정과 빨간 표시 없음");
 slide2.addShape(pptx.ShapeType.roundRect, { x: 0.43, y: 1.36, w: 5.25, h: 5.5, rectRadius: 0.06, fill: { color: C.white }, line: { color: C.border, width: 1 } });
 slide2.addImage({ path: paths.ui, ...(await contain(paths.ui, 0.53, 1.46, 5.05, 5.3)) });
-metric(slide2, 5.96, 1.5, "20/20", "실제 Chromium checks", C.green);
+metric(slide2, 5.96, 1.5, `${browserCheckCount}/${browserCheckCount}`, "실제 Chromium checks", C.green);
 metric(slide2, 8.12, 1.5, "0", "inactive 빨간 표시", C.purple);
 metric(slide2, 10.28, 1.5, "0", "기본 Qwen 호출", C.teal);
 slide2.addShape(pptx.ShapeType.roundRect, { x: 5.96, y: 2.8, w: 6.32, h: 2.4, rectRadius: 0.07, fill: { color: C.white }, line: { color: C.border, width: 1 } });
@@ -109,13 +156,13 @@ slide2.addNotes("실제 비활성 상태의 화면이다. active Release가 없�
 
 const slide3 = pptx.addSlide();
 slide3.background = { color: C.paper };
-title(slide3, "QUALIFICATION BOUNDARY", "구현은 검증됐고, 과학 지식 Release는 아직 비활성이다", "자동 통과 항목과 사람 승인 대기를 같은 화면에 고정");
+title(slide3, "QUALIFICATION BOUNDARY", implementationHeadline, "자동 통과 항목과 사람 승인 대기를 같은 화면에 고정");
 slide3.addShape(pptx.ShapeType.roundRect, { x: 0.43, y: 1.36, w: 6.3, h: 5.5, rectRadius: 0.06, fill: { color: C.white }, line: { color: C.border, width: 1 } });
 slide3.addImage({ path: paths.report, ...(await contain(paths.report, 0.52, 1.45, 6.12, 5.31)) });
 slide3.addText("자동 검증", { x: 7.06, y: 1.52, w: 2.4, h: 0.28, fontFace: "Aptos Display", fontSize: 15, bold: true, color: C.ink, margin: 0 });
 slide3.addShape(pptx.ShapeType.roundRect, { x: 7.06, y: 1.9, w: 5.75, h: 1.12, rectRadius: 0.07, fill: { color: "ECFDF3" }, line: { color: "86EFAC", width: 1 } });
-slide3.addText("G0–G4  PASS", { x: 7.34, y: 2.13, w: 2.1, h: 0.34, fontFace: "Aptos Display", fontSize: 21, bold: true, color: C.green, margin: 0 });
-slide3.addText("440/440 public candidate cases\n반복 qualification bytes 동일", { x: 9.43, y: 2.09, w: 2.9, h: 0.55, fontFace: "Aptos", fontSize: 9.2, color: C.ink, margin: 0 });
+slide3.addText(gatePassLabel, { x: 7.34, y: 2.13, w: 2.1, h: 0.34, fontFace: "Aptos Display", fontSize: 21, bold: true, color: C.green, margin: 0 });
+slide3.addText(`${publicCaseCount}/${publicCaseCount} public candidate cases\n반복 qualification bytes 동일`, { x: 9.43, y: 2.09, w: 2.9, h: 0.55, fontFace: "Aptos", fontSize: 9.2, color: C.ink, margin: 0 });
 slide3.addText("사람 승인 대기", { x: 7.06, y: 3.4, w: 2.4, h: 0.28, fontFace: "Aptos Display", fontSize: 15, bold: true, color: C.ink, margin: 0 });
 for (const [index, row] of [
   ["G5", "독립 sealed holdout"],
@@ -129,7 +176,7 @@ for (const [index, row] of [
 }
 slide3.addShape(pptx.ShapeType.roundRect, { x: 7.06, y: 5.95, w: 5.75, h: 0.72, rectRadius: 0.06, fill: { color: C.dark }, line: { color: C.dark } });
 slide3.addText("완료 = 구현 + 자동 검증\n완료 아님 = 과학적 진실·공정 승인·Release 활성화", { x: 7.34, y: 6.12, w: 5.1, h: 0.38, fontFace: "Aptos", fontSize: 10.5, bold: true, color: C.white, margin: 0, breakLine: false });
-addSource(slide3, "Source · qualification-report.{md,pdf} · preflight digest 5fc0b76…0957");
+addSource(slide3, `Source · qualification-report.{md,pdf} · qualification digest ${qualificationDigestShort}…`);
 addPage(slide3, 3);
 slide3.addNotes("G5-G7이 PENDING이므로 Release를 활성화하거나 운영 검증 완료로 표현하지 않는다.");
 
@@ -174,7 +221,7 @@ slideSvgs.push(svgFrame(`
   ${text(54, 92, "Qwen 없이도 문서 검토와 Claim 확인이 끝난다", 32, "#111827", 700)}
   ${text(56, 128, "실제 실행 화면 · release_candidate · 운영 판정과 빨간 표시 없음", 17, "#667085", 400)}
   ${rounded(52, 160, 642, 650, "#FFFFFF", "#D7DCE5", 12, 1)}${uiImage}
-  ${rounded(718, 180, 240, 118, "#FFFFFF", "#D7DCE5", 12)}${text(742, 228, "20/20", 34, "#15803D", 700)}${text(742, 270, "실제 Chromium checks", 14, "#667085")}
+  ${rounded(718, 180, 240, 118, "#FFFFFF", "#D7DCE5", 12)}${text(742, 228, `${browserCheckCount}/${browserCheckCount}`, 34, "#15803D", 700)}${text(742, 270, "실제 Chromium checks", 14, "#667085")}
   ${rounded(978, 180, 240, 118, "#FFFFFF", "#D7DCE5", 12)}${text(1002, 228, "0", 34, "#6D28D9", 700)}${text(1002, 270, "inactive 빨간 표시", 14, "#667085")}
   ${rounded(1238, 180, 240, 118, "#FFFFFF", "#D7DCE5", 12)}${text(1262, 228, "0", 34, "#0F766E", 700)}${text(1262, 270, "기본 Qwen 호출", 14, "#667085")}
   ${rounded(718, 334, 760, 286, "#FFFFFF", "#D7DCE5", 12)}${text(750, 376, "서버가 다시 확인하는 것", 23, "#111827", 700)}
@@ -186,17 +233,17 @@ slideSvgs.push(svgFrame(`
 const reportImage = await svgContain(paths.report, 62, 164, 700, 642);
 slideSvgs.push(svgFrame(`
   ${text(54, 44, "QUALIFICATION BOUNDARY", 14, "#6D28D9", 700)}
-  ${text(54, 92, "구현은 검증됐고, 과학 지식 Release는 아직 비활성이다", 32, "#111827", 700)}
+  ${text(54, 92, implementationHeadline, 32, "#111827", 700)}
   ${text(56, 128, "자동 통과 항목과 사람 승인 대기를 같은 화면에 고정", 17, "#667085")}
   ${rounded(52, 160, 720, 650, "#FFFFFF", "#D7DCE5", 12)}${reportImage}
   ${text(816, 206, "자동 검증", 23, "#111827", 700)}
-  ${rounded(816, 230, 690, 130, "#ECFDF3", "#86EFAC", 12)}${text(850, 292, "G0–G4  PASS", 34, "#15803D", 700)}${lines(1150, 278, "440/440 public candidate cases\n반복 qualification bytes 동일", 15, "#111827", 400, 1.45)}
+  ${rounded(816, 230, 690, 130, "#ECFDF3", "#86EFAC", 12)}${text(850, 292, gatePassLabel, 34, "#15803D", 700)}${lines(1150, 278, `${publicCaseCount}/${publicCaseCount} public candidate cases\n반복 qualification bytes 동일`, 15, "#111827", 400, 1.45)}
   ${text(816, 414, "사람 승인 대기", 23, "#111827", 700)}
   ${rounded(816, 442, 690, 62, "#FFF7ED", "#FED7AA", 10)}${text(844, 481, "G5", 17, "#D97706", 700)}${text(910, 481, "독립 sealed holdout", 16, "#111827")}
   ${rounded(816, 516, 690, 62, "#FFF7ED", "#FED7AA", 10)}${text(844, 555, "G6", 17, "#D97706", 700)}${text(910, 555, "active stored-report channel parity", 16, "#111827")}
   ${rounded(816, 590, 690, 62, "#FFF7ED", "#FED7AA", 10)}${text(844, 629, "G7", 17, "#D97706", 700)}${text(910, 629, "Science Admin 원문 검토·activation audit", 16, "#111827")}
   ${rounded(816, 694, 690, 90, "#0B1220", "#0B1220", 12)}${lines(850, 734, "완료 = 구현 + 자동 검증\n완료 아님 = 과학적 진실·공정 승인·Release 활성화", 17, "#FFFFFF", 700, 1.35)}
-  ${text(54, 862, "Source · qualification-report.{md,pdf} · preflight digest 5fc0b76…0957", 12, "#667085")}${page(3)}
+  ${text(54, 862, `Source · qualification-report.{md,pdf} · qualification digest ${qualificationDigestShort}…`, 12, "#667085")}${page(3)}
 `));
 
 for (let index = 0; index < slideSvgs.length; index += 1) {
@@ -216,11 +263,18 @@ for (let index = 0; index < slides.length; index += 1) {
 await whole.composite(composites).png().toFile(join(rendered, "whole-deck.png"));
 await sharp(slides[2]).png().toFile(join(rendered, "representative-evidence-slide.png"));
 
-function digest(path) { return "sha256:" + createHash("sha256").update(readFileSync(path)).digest("hex"); }
+function digest(path) { return fileDigest(path); }
 const manifest = {
   slide_count: 3,
   release_status: "release_candidate",
   activation_eligible: false,
+  evidence_binding: {
+    git_commit: currentCommit,
+    verification_manifest: { path: relative(root, verificationPath), sha256: digest(verificationPath) },
+    report_record_digest: verification.report_record_digest,
+    browser_checks: browserCheckCount,
+    public_cases: publicCaseCount,
+  },
   pptx: { path: relative(root, paths.pptx), sha256: digest(paths.pptx) },
   inputs: Object.fromEntries(Object.entries(paths).filter(([key]) => key !== "pptx").map(([key, path]) => [key, { path: relative(root, path), sha256: digest(path) }])),
   rendered: Object.fromEntries(slides.map((path, index) => [`slide_${index + 1}`, { path: relative(root, path), sha256: digest(path) }])),

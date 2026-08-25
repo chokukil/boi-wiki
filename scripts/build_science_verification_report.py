@@ -50,6 +50,24 @@ MANDATORY_BROWSER_CHECK_IDS = frozenset(
         "console_clean",
     }
 )
+EXPECTED_JUNIT_SUITE_IDS = {
+    "science_tests": "science-tests",
+    "mcp_tests": "science-mcp",
+    "full_regression": "full-regression",
+}
+ALLOWED_FULL_REGRESSION_SKIPS = frozenset(
+    {
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_internal_success_skips_external_probe",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_network_failure_falls_back_and_apply_verify_rollback_are_hash_bound",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_internal_auth_failure_never_probes_external",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_offline_existing_keeps_origin_and_blocks_update",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_origin_drift_invalidates_approved_plan",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_candidate_mirror_may_advance_when_it_contains_current_stable",
+        "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_diverged_mirror_history_blocks_switch",
+        "tests.test_repository_source_and_mcp.McpConnectionContractTests::test_codex_preview_apply_and_rollback_preserve_unrelated_config_and_token",
+        "tests.test_repository_source_and_mcp.McpConnectionContractTests::test_verify_runs_initialize_and_tools_list_without_private_content",
+    }
+)
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -175,21 +193,45 @@ def _junit_evidence(
         if len(commits) != 1:
             raise ValueError("exactly one git_commit property is required")
         evidence_commit = commits.pop()
+        suite_ids = {
+            prop.get("value", "")
+            for prop in root.findall(".//property[@name='suite_id']")
+            if prop.get("value")
+        }
+        if len(suite_ids) != 1:
+            raise ValueError("exactly one suite_id property is required")
+        suite_id = suite_ids.pop()
+        skipped_cases = {
+            f"{case.get('classname', '')}::{case.get('name', '')}"
+            for case in root.findall(".//testcase")
+            if case.find("skipped") is not None
+        }
+        if len(skipped_cases) != counts["skipped"]:
+            raise ValueError("every skipped test needs an identifiable testcase")
     except (ET.ParseError, TypeError, ValueError):
         record.update({"format": "junit-xml", "valid": False})
         return record, [f"{name}:invalid"]
 
+    expected_suite_id = EXPECTED_JUNIT_SUITE_IDS[name]
+    allowed_skips = (
+        ALLOWED_FULL_REGRESSION_SKIPS if name == "full_regression" else frozenset()
+    )
+    unexpected_skips = skipped_cases - allowed_skips
     record.update(
         {
             "format": "junit-xml",
             "valid": True,
             **counts,
             "git_commit": evidence_commit,
+            "suite_id": suite_id,
             "passed": counts["tests"] > 0
             and counts["failures"] == 0
             and counts["errors"] == 0
-            and counts["skipped"] == 0,
-            "strict_no_skips": counts["skipped"] == 0,
+            and suite_id == expected_suite_id
+            and not unexpected_skips,
+            "skip_policy": "none" if name != "full_regression" else "powershell-wsl-exact-allowlist/0.1",
+            "skipped_cases": sorted(skipped_cases),
+            "unexpected_skipped_cases": sorted(unexpected_skips),
         }
     )
     failures: list[str] = []
@@ -197,8 +239,10 @@ def _junit_evidence(
         failures.append(f"{name}:zero_tests")
     if counts["failures"] or counts["errors"]:
         failures.append(f"{name}:test_failures")
-    if counts["skipped"]:
-        failures.append(f"{name}:skipped_tests")
+    if suite_id != expected_suite_id:
+        failures.append(f"{name}:suite_id_mismatch")
+    if unexpected_skips:
+        failures.append(f"{name}:unexpected_skipped_tests")
     if evidence_commit != current_commit:
         failures.append(f"{name}:git_commit_mismatch")
     return record, failures
@@ -482,7 +526,7 @@ def _markdown(record: dict[str, Any]) -> str:
     ):
         item = evidence[key]
         if key.endswith("tests") or key == "full_regression":
-            result = f"tests={item.get('tests', 0)}, failures={item.get('failures', 0)}, errors={item.get('errors', 0)}"
+            result = f"tests={item.get('tests', 0)}, failures={item.get('failures', 0)}, errors={item.get('errors', 0)}, skipped={item.get('skipped', 0)}"
         elif key == "browser":
             result = (
                 f"checks={item.get('checks', 0)}, captures={item.get('captures', 0)}"
@@ -679,7 +723,7 @@ def _pdf(path: Path, record: dict[str, Any]) -> None:
     ):
         item = record["evidence"][key]
         if key.endswith("tests") or key == "full_regression":
-            result = f"tests={item.get('tests', 0)}, failures={item.get('failures', 0)}, errors={item.get('errors', 0)}"
+            result = f"tests={item.get('tests', 0)}, failures={item.get('failures', 0)}, errors={item.get('errors', 0)}, skipped={item.get('skipped', 0)}"
         elif key == "browser":
             result = (
                 f"checks={item.get('checks', 0)}, captures={item.get('captures', 0)}"

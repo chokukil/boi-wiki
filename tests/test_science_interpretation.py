@@ -22,6 +22,7 @@ from boi_api.app.science.authorization import (
 from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
 from boi_api.app.science.llm import (
+    LLMClaimCandidate,
     ScienceInterpretationPayload,
     ScienceInterpretationUnavailable,
     ScienceLLMClient,
@@ -174,8 +175,8 @@ def _llm_content(*, extra: dict[str, object] | None = None) -> dict[str, object]
             "polarity": "positive",
             "quantities": [],
             "conditions": [],
-            "process_stage": "final_spin",
-            "material_state": "liquid_film",
+            "process_stage": None,
+            "material_state": None,
         },
         "ontology_refs": [
             "sci:binding:rpm",
@@ -217,6 +218,18 @@ def _llm_content(*, extra: dict[str, object] | None = None) -> dict[str, object]
     if extra:
         claim.update(extra)
     return {"claims": [claim]}
+
+
+def _candidate_without_external_applicability() -> LLMClaimCandidate:
+    return ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+
+
+def _user_candidate_with_applicability() -> LLMClaimCandidate:
+    content = _llm_content()
+    normalized = content["claims"][0]["normalized_claim"]
+    normalized["process_stage"] = "final_spin"
+    normalized["material_state"] = "liquid_film"
+    return ScienceInterpretationPayload.model_validate(content).claims[0]
 
 
 def _openai_response(content: object) -> httpx.Response:
@@ -968,9 +981,18 @@ def _confirmed_interpretation(
         identity=identity,
         idempotency_key=INTERPRET_KEY,
     )
+    revision = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=identity,
+        client_kind="user",
+        candidate=_user_candidate_with_applicability(),
+        supersedes_claim_id=proposal.candidate_claims[0].claim_id,
+        idempotency_key="science-request:user-applicability-fixture",
+    )
     return service.confirm_interpretation(
-        proposal.interpretation_id,
-        claim_ids=[proposal.candidate_claims[0].claim_id],
+        revision.interpretation_id,
+        claim_ids=[revision.candidate_claims[0].claim_id],
         identity=identity,
         idempotency_key=CONFIRM_KEY,
     )
@@ -1214,7 +1236,7 @@ def test_external_claim_submission_reuses_server_validation_and_never_calls_llm(
     science_identity: AuthIdentity,
 ):
     service, _catalog, store, llm = _service()
-    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    candidate = _candidate_without_external_applicability()
 
     record = service.submit_claim_candidate(
         "RPM 증가 시 두께 변화",
@@ -1233,6 +1255,40 @@ def test_external_claim_submission_reuses_server_validation_and_never_calls_llm(
     assert record.operation_binding.operation == "submit_claim_candidate"
     assert record.decision_impact[0].issue_codes == ["USER_CONFIRMATION_REQUIRED"]
     assert record.candidate_claims[0].interpretation.user_confirmed is False
+
+
+def test_agent_stage_and_state_remain_blocked_even_with_outcome_ambiguity(
+    science_identity: AuthIdentity,
+):
+    """An Agent cannot make applicability context trusted by self-labeling impact."""
+
+    content = _llm_content()
+    content["claims"][0]["normalized_claim"]["process_stage"] = "final_spin"
+    content["claims"][0]["normalized_claim"]["material_state"] = "liquid_film"
+    assert content["claims"][0]["decision_impact"][0]["changes_outcome"] is True
+    candidate = ScienceInterpretationPayload.model_validate(content).claims[0]
+    service, _catalog, _store, _llm = _service()
+
+    submitted = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="codex",
+        candidate=candidate,
+        idempotency_key="science-request:agent-stage-state",
+    )
+
+    assert submitted.decision_impact[0].status == "blocked_semantic_mismatch"
+    assert "EXTERNAL_CONTEXT_REQUIRES_USER_REVISION" in (
+        submitted.decision_impact[0].issue_codes
+    )
+    with pytest.raises(ScienceConfirmationRequired):
+        service.confirm_interpretation(
+            submitted.interpretation_id,
+            claim_ids=[submitted.candidate_claims[0].claim_id],
+            identity=science_identity,
+            idempotency_key="science-request:agent-stage-state-confirm",
+        )
 
 
 def test_agent_supplied_condition_cannot_directly_produce_a_verdict_or_report(
@@ -1291,7 +1347,7 @@ def test_different_user_cannot_confirm_or_verify_another_users_interpretation(
         display_name="Other Science User",
         roles=["science.user", "boi.viewer"],
     )
-    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    candidate = _candidate_without_external_applicability()
     submitted = service.submit_claim_candidate(
         "RPM 증가 시 두께 변화",
         document_ref="boi:public:science:document:fixture",
@@ -1501,6 +1557,147 @@ def test_manual_correction_is_an_immutable_resubmission(
     assert store.interpretations[original.interpretation_id] == original
 
 
+def test_raw_submitted_document_revision_accepts_verified_server_lineage(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, _llm = _service()
+    original_text = "RPM 증가 시 두께 변화"
+    document_ref = "boi:submitted:stable-logical-document"
+    original_candidate = ScienceInterpretationPayload.model_validate(
+        _llm_content()
+    ).claims[0]
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=document_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=original_candidate,
+        idempotency_key="science-request:raw-lineage-original",
+    )
+    original_claim = original.candidate_claims[0]
+    revised_text = f"검토: {original_text}"
+    revised_candidate = ScienceInterpretationPayload.model_validate(
+        _llm_content(
+            extra={
+                "source_span": {
+                    "start": len("검토: "),
+                    "end": len(revised_text),
+                    "exact": original_text,
+                    "prefix": "검토: ",
+                    "suffix": "",
+                }
+            }
+        )
+    ).claims[0]
+
+    revised = service.submit_claim_candidate(
+        revised_text,
+        document_ref=document_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=revised_candidate,
+        supersedes_claim_id=original_claim.claim_id,
+        source_lineage_document_ref=document_ref,
+        source_lineage_document_digest=original.document_digest,
+        idempotency_key="science-request:raw-lineage-revised",
+    )
+
+    revised_claim = revised.candidate_claims[0]
+    assert revised.supersedes_claim_id == original_claim.claim_id
+    assert revised_claim.claim_id != original_claim.claim_id
+    assert revised_claim.document_ref == original_claim.document_ref == document_ref
+    assert revised.document_digest == sha256_digest(revised_text)
+    assert revised.document_digest != original.document_digest
+    assert store.interpretations[original.interpretation_id] == original
+
+
+def test_raw_submitted_document_revision_rejects_ref_digest_and_document_attacks(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    original_text = "RPM 증가 시 두께 변화"
+    document_ref = "boi:submitted:stable-logical-document"
+    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=document_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=candidate,
+        idempotency_key="science-request:raw-lineage-attack-original",
+    )
+    claim_id = original.candidate_claims[0].claim_id
+    revised_text = f"검토: {original_text}"
+    revised_candidate = ScienceInterpretationPayload.model_validate(
+        _llm_content(
+            extra={
+                "source_span": {
+                    "start": len("검토: "),
+                    "end": len(revised_text),
+                    "exact": original_text,
+                    "prefix": "검토: ",
+                    "suffix": "",
+                }
+            }
+        )
+    ).claims[0]
+
+    other = AuthIdentity(
+        employee_id="100003",
+        display_name="Other Science User",
+        roles=["science.user", "boi.viewer"],
+    )
+    with pytest.raises(ScienceAuthorizationError, match="Claim owner"):
+        service.submit_claim_candidate(
+            revised_text,
+            document_ref=document_ref,
+            identity=other,
+            client_kind="user",
+            candidate=revised_candidate,
+            supersedes_claim_id=claim_id,
+            source_lineage_document_ref=document_ref,
+            source_lineage_document_digest=original.document_digest,
+            idempotency_key="science-request:raw-lineage-user-attack",
+        )
+
+    with pytest.raises(ScienceConfirmationRequired, match="lineage document"):
+        service.submit_claim_candidate(
+            revised_text,
+            document_ref="boi:submitted:other-logical-document",
+            identity=science_identity,
+            client_kind="user",
+            candidate=revised_candidate,
+            supersedes_claim_id=claim_id,
+            source_lineage_document_ref="boi:submitted:other-logical-document",
+            source_lineage_document_digest=original.document_digest,
+            idempotency_key="science-request:raw-lineage-ref-attack",
+        )
+
+    with pytest.raises(ScienceConfirmationRequired, match="lineage digest"):
+        service.submit_claim_candidate(
+            revised_text,
+            document_ref=document_ref,
+            identity=science_identity,
+            client_kind="user",
+            candidate=revised_candidate,
+            supersedes_claim_id=claim_id,
+            source_lineage_document_ref=document_ref,
+            source_lineage_document_digest=sha256_digest("forged predecessor"),
+            idempotency_key="science-request:raw-lineage-digest-attack",
+        )
+
+    with pytest.raises(ScienceConfirmationRequired, match="exact source document"):
+        service.submit_claim_candidate(
+            revised_text,
+            document_ref=document_ref,
+            identity=science_identity,
+            client_kind="user",
+            candidate=revised_candidate,
+            supersedes_claim_id=claim_id,
+            idempotency_key="science-request:raw-lineage-missing-contract",
+        )
+
+
 def test_manual_correction_rejects_dangling_cross_user_and_cross_document_lineage(
     science_identity: AuthIdentity,
 ):
@@ -1583,7 +1780,7 @@ def test_different_clients_produce_the_same_claim_and_deterministic_verdict(
     science_identity: AuthIdentity,
 ):
     service, _catalog, _store, _llm = _service()
-    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    candidate = _candidate_without_external_applicability()
     verdicts = []
     claim_ids = []
     for client_kind in ("codex", "claude"):
@@ -1621,7 +1818,7 @@ def test_real_store_preserves_external_submission_confirmation_dependency(
     science_identity: AuthIdentity,
 ):
     service, _catalog, store, _llm = _real_service(tmp_path)
-    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    candidate = _candidate_without_external_applicability()
     submitted = service.submit_claim_candidate(
         "RPM 증가 시 두께 변화",
         document_ref="boi:public:science:document:fixture",
@@ -1663,7 +1860,7 @@ def test_external_claim_submission_cannot_use_an_inactive_release_for_verdict(
     science_identity: AuthIdentity,
 ):
     service, catalog, _store, _llm = _service()
-    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    candidate = _candidate_without_external_applicability()
     submitted = service.submit_claim_candidate(
         "RPM 증가 시 두께 변화",
         document_ref="boi:public:science:document:fixture",
@@ -2052,9 +2249,18 @@ def test_explicit_identity_bound_confirmation_creates_a_typed_revision_before_ve
             identity=science_identity,
         )
 
+    user_revision = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="user",
+        candidate=_user_candidate_with_applicability(),
+        supersedes_claim_id=proposal.candidate_claims[0].claim_id,
+        idempotency_key="science-request:explicit-user-applicability",
+    )
     confirmed = service.confirm_interpretation(
-        proposal.interpretation_id,
-        claim_ids=[proposal.candidate_claims[0].claim_id],
+        user_revision.interpretation_id,
+        claim_ids=[user_revision.candidate_claims[0].claim_id],
         identity=science_identity,
         idempotency_key=CONFIRM_KEY,
     )
@@ -2072,7 +2278,7 @@ def test_explicit_identity_bound_confirmation_creates_a_typed_revision_before_ve
     )
     assert event.action == "claim_confirmed"
     assert event.actor_id == science_identity.employee_id
-    assert event.source_interpretation_id == proposal.interpretation_id
+    assert event.source_interpretation_id == user_revision.interpretation_id
     verdict = service.verify_claim(
         confirmed.interpretation_id,
         confirmed.candidate_claims[0].claim_id,

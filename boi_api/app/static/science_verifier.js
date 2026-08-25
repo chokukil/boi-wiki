@@ -27,6 +27,7 @@
   let aliasMatches = [];
   let latestInterpretation = null;
   let supersedesClaimId = null;
+  let sourceLineage = null;
   const reportsByClaim = new Map();
   const evidenceDetails = new Map();
 
@@ -332,15 +333,19 @@
     const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setStatus("확정한 Claim 후보의 원문 구간·별칭·ontology_ref·개념 역할을 서버가 다시 검증하고 있습니다.", "working");
     reportsByClaim.clear();
-    const record = await requestJson("/api/science/claims/submit", { method: "POST", body: JSON.stringify({ ...sourcePayload(text), client_kind: "user", candidate, ...(supersedesClaimId ? { supersedes_claim_id: supersedesClaimId } : {}), idempotency_key: `science-user-claim-${nonce}` }) });
+    const revision = core.submittedRevisionPayload(supersedesClaimId, sourceLineage);
+    const record = await requestJson("/api/science/claims/submit", { method: "POST", body: JSON.stringify({ ...sourcePayload(text), client_kind: "user", candidate, ...revision, idempotency_key: `science-user-claim-${nonce}` }) });
     renderInterpretation(record);
     const claim = record.candidate_claims?.[0];
     const impact = record.decision_impact?.find((item) => item.claim_id === claim?.claim_id);
+    if (claim) {
+      supersedesClaimId = claim.claim_id;
+      sourceLineage = core.submittedDocumentLineage(record);
+    }
     if (!claim || impact?.status !== "requires_user_confirmation" || impact.issue_codes?.some((code) => code !== "USER_CONFIRMATION_REQUIRED")) {
       setStatus("서버 교차 검증에서 주장 해석을 확정하지 못했습니다. 해당 주장만 수정하세요. 빨간 표시나 판정은 만들지 않았습니다.", "warning");
       return;
     }
-    supersedesClaimId = claim.claim_id;
     await confirmAndVerify(record, claim);
   }
 

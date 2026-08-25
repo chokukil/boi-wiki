@@ -736,8 +736,10 @@ release:
 - Science REST/MCP의 행위자는 사용자 bearer·세션·허용된 사용자 신원이어야 한다. service token은 브리지 자체만 인증하며 사용자로 가장할 수 없다.
 - Claim 제출, 사용자 확인, 단일 Claim 검증, 문서 보고서는 동일 actor에 묶인다. Wiki 문서는 확인·검증 시점의 read ACL을 다시 검사하고, 직접 제출 문서는 최초 제출자만 사용할 수 있다.
 - 수동 수정의 `supersedes_claim_id`는 실제로 존재하는 같은 actor·같은 문서의 선행 Claim만 가리킬 수 있다.
-- Agent가 제출한 수량·조건은 사용자 화면에서 명시적으로 다시 작성되기 전에는 Rule applicability에 사용하지 않는다. 공정 단계·물질 상태는 결과를 바꾸는 모호성으로 노출되고 확인되기 전에는 판정하지 않는다.
+- 직접 제출 문서의 본문 revision은 서버가 반환한 stable `boi:submitted:*` ref와 선행 document digest를 함께 검증한다. 이 lineage 계약이 없으면 기존 exact ref+digest 규칙을 완화하지 않는다.
+- Agent가 제출한 수량·조건·공정 단계·물질 상태는 Agent가 `changes_outcome`을 선언했더라도 Rule applicability에 사용하지 않는다. 사용자가 화면에서 직접 작성해 새 Claim으로 제출해야 적용 조건 후보가 된다.
 - 단독 Evidence 조회는 원문 검토 기능이며 운영 적격성을 주장하지 않는다. 빨간 표시는 immutable report의 active Release binding과 reviewed-source identity까지 확인해야 한다.
+- 구현 완료 보고서와 3장 Evidence Deck은 현재 HEAD에 hash-bound된 JUnit suite identity, 필수 브라우저 check 집합, 캡처, qualification, 독립 리뷰 manifest에서만 상태와 수치를 읽는다. 누락·불일치·Important finding이 있으면 보고서는 DRAFT이고 Deck 생성을 중단한다.
 
 ### Release Gate
 

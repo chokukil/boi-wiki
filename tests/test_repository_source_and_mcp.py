@@ -12,6 +12,23 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 POWERSHELL = "powershell.exe"
 
 
+def _powershell_is_usable() -> bool:
+    try:
+        completed = subprocess.run(
+            [POWERSHELL, "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
+POWERSHELL_USABLE = _powershell_is_usable()
+
+
 def run(*args, cwd=None, env=None, check=True):
     completed = subprocess.run(
         [str(a) for a in args],
@@ -151,6 +168,10 @@ class McpHandler(BaseHTTPRequestHandler):
         pass
 
 
+@unittest.skipUnless(
+    POWERSHELL_USABLE,
+    "PowerShell execution is unavailable in this runtime; exact WSL allowlist applies",
+)
 class RepositorySourceContractTests(unittest.TestCase):
     def test_internal_success_skips_external_probe(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -310,6 +331,10 @@ class RepositorySourceContractTests(unittest.TestCase):
             self.assertEqual(git("remote", "get-url", "origin", cwd=work), str(external))
 
 
+@unittest.skipUnless(
+    POWERSHELL_USABLE,
+    "PowerShell execution is unavailable in this runtime; exact WSL allowlist applies",
+)
 class McpConnectionContractTests(unittest.TestCase):
     def test_codex_preview_apply_and_rollback_preserve_unrelated_config_and_token(self):
         script = ROOT / "scripts" / "connect-boi-wiki-mcp.ps1"

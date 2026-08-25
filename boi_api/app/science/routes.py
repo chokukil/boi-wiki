@@ -96,6 +96,11 @@ class DetectAliasesRequest(_RequestModel):
         return self
 
 
+class SubmittedDocumentLineage(_RequestModel):
+    document_ref: str = Field(pattern=r"^boi:submitted:[A-Za-z0-9._:-]+$")
+    document_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
 class SubmitClaimRequest(_RequestModel):
     document: str | None = None
     document_ref: str | None = None
@@ -104,11 +109,18 @@ class SubmitClaimRequest(_RequestModel):
     candidate: LLMClaimCandidate
     idempotency_key: str = Field(min_length=8, max_length=256)
     supersedes_claim_id: str | None = Field(default=None, min_length=1)
+    source_lineage: SubmittedDocumentLineage | None = None
 
     @model_validator(mode="after")
     def exact_source(self) -> "SubmitClaimRequest":
         if bool(self.document) == bool(self.document_ref):
             raise ValueError("exactly one document or document_ref is required")
+        if self.source_lineage is not None and (
+            not self.document or self.supersedes_claim_id is None
+        ):
+            raise ValueError(
+                "source_lineage requires a raw document and supersedes_claim_id"
+            )
         return self
 
 
@@ -384,10 +396,16 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
             document_ref = request.document_ref
         else:
             document = request.document or ""
-            submitted_id = sha256_digest(request.idempotency_key).removeprefix(
-                "sha256:"
-            )
-            document_ref = f"boi:submitted:{submitted_id}"
+            if request.source_lineage is not None:
+                document_ref = request.source_lineage.document_ref
+            else:
+                submitted_id = sha256_digest(
+                    {
+                        "actor_id": identity.employee_id,
+                        "initial_document_digest": sha256_digest(document),
+                    }
+                ).removeprefix("sha256:")
+                document_ref = f"boi:submitted:{submitted_id}"
         result = _invoke(
             lambda: service().submit_claim_candidate(
                 document,
@@ -398,6 +416,16 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
                 idempotency_key=request.idempotency_key,
                 selection_anchor=request.selection,
                 supersedes_claim_id=request.supersedes_claim_id,
+                source_lineage_document_ref=(
+                    request.source_lineage.document_ref
+                    if request.source_lineage is not None
+                    else None
+                ),
+                source_lineage_document_digest=(
+                    request.source_lineage.document_digest
+                    if request.source_lineage is not None
+                    else None
+                ),
             )
         )
         return _json_model(result)

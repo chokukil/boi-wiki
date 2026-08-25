@@ -41,8 +41,9 @@ Science Verifier는 AI 답변을 신뢰하는 기능이 아니다. 사용자·Co
 2. `등록 용어 찾기`가 서버의 `POST /api/science/aliases/detect`를 호출한다. 이 단계는 Claim이나 verdict를 만들지 않는다.
 3. 사용자가 subject, relation, object, 조건과 문서 구간을 확인·수정한다. Codex·Claude 같은 외부 Agent가 같은 구조의 후보를 제출해도 서버 검사는 동일하다.
    - Agent가 넣은 수량·조건은 곧바로 Rule 적용 사실이 되지 않는다. 사용자 화면에서 값과 단위를 명시적으로 확인하고 `client_kind=user`의 새 Claim으로 다시 제출해야 한다.
-   - 공정 단계·물질 상태는 결과를 바꾸는 모호성으로 표시된 경우에만 확인 대상으로 진행하며, 확인 전에는 판정에 쓰지 않는다.
+   - Agent가 넣은 공정 단계·물질 상태도 자기 선언한 모호성 여부와 무관하게 차단한다. 사용자가 화면에서 직접 작성한 새 Claim만 적용 조건 후보가 된다.
 4. 결과를 바꿀 수 있는 모호성만 보라색 점선으로 표시한다. 사용자가 확인하면 그 Claim만 새 immutable interpretation으로 다시 검증한다.
+   - 직접 붙여 넣은 문서를 수정할 때는 서버가 돌려준 submitted document ref와 이전 digest를 함께 보낸다. 서버가 같은 actor의 실제 선행 Claim을 확인한 경우에만 `supersedes_claim_id` 계보를 잇고, 이전 record는 변경하지 않는다.
 5. 활성 Release가 없거나 Rule·적용 조건·정확한 Evidence locator가 부족하면 판정을 보류한다. 빨간 표시를 만들지 않는다.
 6. 결정론적 `VIOLATION`에만 빨간 밑줄과 음영을 표시한다. 교정 카드에는 충분한 과학적 설명과 출처 1~2개를 항상 보이고, 펼쳐보기에서 원문·검토된 번역·locator·원본 URL을 제공한다.
 
@@ -58,6 +59,8 @@ Science Verifier는 AI 답변을 신뢰하는 기능이 아니다. 사용자·Co
 | 보고서 | report/export endpoint | `science_report_get`, `science_report_export` | 같은 stored report를 Markdown/PDF로 표현 |
 
 Claim 제출 payload에 `verdict`, `rule`, `evidence`, `citation`, `correction`을 넣어도 서버가 권위로 받아들이지 않는다. 존재하지 않는 `ontology_ref`, 문서에 없는 별칭, 겹치거나 불완전한 역할 구간, 미확인 조건은 판정 전에 차단한다. 같은 canonical Claim과 Release는 `client_kind`가 user, codex, claude, qwen 중 무엇이든 같은 결과를 내야 한다.
+
+최종 구현 보고서는 현재 Git revision과 suite identity가 묶인 JUnit, 필수 20개 브라우저 check와 캡처 hash, Candidate qualification, Critical·Important 0건의 독립 리뷰가 모두 일치할 때만 `FINAL / VERIFIED`가 된다. WSL에서 Windows PowerShell 실행 자체가 불가능한 9개 계약 테스트만 정확한 node ID allowlist로 skip할 수 있으며 보고서에 수치를 그대로 노출한다. PPT도 이 verification manifest와 PDF hash를 읽지 못하면 생성하지 않는다.
 
 # Qwen 실험 어댑터
 

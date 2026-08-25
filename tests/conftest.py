@@ -42,6 +42,10 @@ def bind_junit_to_git_revision(record_testsuite_property):
             f"BOI_TEST_GIT_COMMIT {requested} does not match checked-out revision {actual}"
         )
     record_testsuite_property("git_commit", actual)
+    suite_id = os.getenv("BOI_TEST_SUITE_ID", "").strip()
+    if not suite_id:
+        pytest.fail("BOI_TEST_SUITE_ID is required with BOI_TEST_GIT_COMMIT")
+    record_testsuite_property("suite_id", suite_id)
 
 
 class FakeKafkaProducer:
