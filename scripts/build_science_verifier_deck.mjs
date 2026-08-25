@@ -89,7 +89,7 @@ slide2.background = { color: C.paper };
 title(slide2, "REAL DOCUMENT REVIEW", "Qwen 없이도 문서 검토와 Claim 확인이 끝난다", "실제 실행 화면 · release_candidate · 운영 판정과 빨간 표시 없음");
 slide2.addShape(pptx.ShapeType.roundRect, { x: 0.43, y: 1.36, w: 5.25, h: 5.5, rectRadius: 0.06, fill: { color: C.white }, line: { color: C.border, width: 1 } });
 slide2.addImage({ path: paths.ui, ...(await contain(paths.ui, 0.53, 1.46, 5.05, 5.3)) });
-metric(slide2, 5.96, 1.5, "16/16", "실제 Chromium checks", C.green);
+metric(slide2, 5.96, 1.5, "20/20", "실제 Chromium checks", C.green);
 metric(slide2, 8.12, 1.5, "0", "inactive 빨간 표시", C.purple);
 metric(slide2, 10.28, 1.5, "0", "기본 Qwen 호출", C.teal);
 slide2.addShape(pptx.ShapeType.roundRect, { x: 5.96, y: 2.8, w: 6.32, h: 2.4, rectRadius: 0.07, fill: { color: C.white }, line: { color: C.border, width: 1 } });
@@ -174,7 +174,7 @@ slideSvgs.push(svgFrame(`
   ${text(54, 92, "Qwen 없이도 문서 검토와 Claim 확인이 끝난다", 32, "#111827", 700)}
   ${text(56, 128, "실제 실행 화면 · release_candidate · 운영 판정과 빨간 표시 없음", 17, "#667085", 400)}
   ${rounded(52, 160, 642, 650, "#FFFFFF", "#D7DCE5", 12, 1)}${uiImage}
-  ${rounded(718, 180, 240, 118, "#FFFFFF", "#D7DCE5", 12)}${text(742, 228, "16/16", 34, "#15803D", 700)}${text(742, 270, "실제 Chromium checks", 14, "#667085")}
+  ${rounded(718, 180, 240, 118, "#FFFFFF", "#D7DCE5", 12)}${text(742, 228, "20/20", 34, "#15803D", 700)}${text(742, 270, "실제 Chromium checks", 14, "#667085")}
   ${rounded(978, 180, 240, 118, "#FFFFFF", "#D7DCE5", 12)}${text(1002, 228, "0", 34, "#6D28D9", 700)}${text(1002, 270, "inactive 빨간 표시", 14, "#667085")}
   ${rounded(1238, 180, 240, 118, "#FFFFFF", "#D7DCE5", 12)}${text(1262, 228, "0", 34, "#0F766E", 700)}${text(1262, 270, "기본 Qwen 호출", 14, "#667085")}
   ${rounded(718, 334, 760, 286, "#FFFFFF", "#D7DCE5", 12)}${text(750, 376, "서버가 다시 확인하는 것", 23, "#111827", 700)}
