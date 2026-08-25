@@ -116,7 +116,7 @@ def _science_deck_repo(tmp_path: Path) -> tuple[Path, Path]:
                 "passed": True,
                 "check_results": [
                     {"check_id": f"check-{number}", "status": "passed"}
-                    for number in range(20)
+                    for number in range(21)
                 ],
                 "capture_files": [
                     {
@@ -183,12 +183,14 @@ def test_science_deck_builder_is_fail_closed_and_manifest_bound() -> None:
 
     assert 'verification.report_state === "FINAL"' in source
     assert 'verification.implementation_status === "VERIFIED"' in source
-    assert "browserChecks.length === 20" in source
+    assert "browserChecks.length === 21" in source
     assert "reviewEvidence?.findings?.important === 0" in source
     assert "verification.git?.commit === currentCommit" in source
     assert "qualification report PDF does not match verification manifest" in source
     assert 'pptx.layout = "LAYOUT_WIDE"' in source
     assert "slide_count: 3" in source
+    assert "visual inspection: PENDING" in source
+    assert "visual inspection: PASS" not in source
 
 
 def test_science_deck_builder_rejects_tracked_changes_but_allows_untracked_outputs(
@@ -276,7 +278,7 @@ def test_generated_science_evidence_deck_when_explicitly_requested() -> None:
         manifest["evidence_binding"]["report_record_digest"]
         == verification["report_record_digest"]
     )
-    assert manifest["evidence_binding"]["browser_checks"] == 20
+    assert manifest["evidence_binding"]["browser_checks"] == 21
     assert manifest["evidence_binding"]["public_cases"] == 440
     assert "G5" in " ".join(
         shape.text

@@ -53,7 +53,7 @@ const evidenceIsFinal =
   && verification.activation_eligible === false
   && browserEvidence?.passed === true
   && Array.isArray(browserChecks)
-  && browserChecks.length === 20
+  && browserChecks.length === 21
   && browserChecks.every((check) => check?.status === "passed")
   && reviewEvidence?.passed === true
   && reviewEvidence?.findings?.critical === 0
@@ -324,5 +324,5 @@ const manifest = {
   rendered: Object.fromEntries(slides.map((path, index) => [`slide_${index + 1}`, { path: relative(root, path), sha256: digest(path) }])),
 };
 writeFileSync(join(deckRoot, "build-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-writeFileSync(join(deckRoot, "quality-scorecard.md"), `# Science Verifier Evidence Deck Quality Scorecard\n\n- Slide count: 3/3\n- Editable PPTX: PASS\n- Per-slide PNG: PASS\n- Whole-deck preview: PASS\n- Actual UI evidence: PASS\n- Actual final report evidence: PASS\n- Release inactive boundary visible: PASS\n- G5–G7 PENDING visible: PASS\n- Aspect ratio distortion: none observed\n- Text overflow/collision: PASS after full-size slide and whole-deck visual inspection\n`);
+writeFileSync(join(deckRoot, "quality-scorecard.md"), `# Science Verifier Evidence Deck Quality Scorecard\n\n- Slide count: 3/3\n- Editable PPTX: PASS\n- Per-slide PNG: PASS\n- Whole-deck preview: PASS\n- Actual UI evidence: PASS\n- Actual final report evidence: PASS\n- Release inactive boundary visible: PASS\n- G5–G7 PENDING visible: PASS\n- Aspect ratio distortion: automated render available; human visual inspection: PENDING\n- Text overflow/collision: human visual inspection: PENDING\n`);
 console.log(JSON.stringify(manifest, null, 2));

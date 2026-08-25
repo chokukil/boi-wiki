@@ -54,6 +54,7 @@ MANDATORY_BROWSER_CHECK_IDS = {
     "desktop_no_overflow",
     "mobile_single_column",
     "wiki_selection_handoff",
+    "wiki_local_revision_preserves_lineage",
     "console_clean",
 }
 
@@ -365,7 +366,7 @@ def test_verified_is_derived_from_clean_hash_bound_machine_evidence(
         sorted(_identity(testcase) for testcase in _default_testcases("science_tests"))
     )
     assert evidence["full_regression"]["sha256"] == _sha256(bundle["full"])
-    assert evidence["browser"]["checks"] == 20
+    assert evidence["browser"]["checks"] == 21
     assert evidence["browser"]["captures"] == 1
     assert evidence["qualification"]["public_case_count"] == 40
     assert evidence["qualification"]["passed"] is True
@@ -387,7 +388,7 @@ def test_mandatory_browser_checks_match_the_ui_checker_contract() -> None:
     )[0]
     produced_ids = set(re.findall(r"^      ([a-z0-9_]+):", checks_block, re.MULTILINE))
 
-    assert len(produced_ids) == 20
+    assert len(produced_ids) == 21
     assert produced_ids == MANDATORY_BROWSER_CHECK_IDS
 
 

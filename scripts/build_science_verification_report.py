@@ -47,6 +47,7 @@ MANDATORY_BROWSER_CHECK_IDS = frozenset(
         "desktop_no_overflow",
         "mobile_single_column",
         "wiki_selection_handoff",
+        "wiki_local_revision_preserves_lineage",
         "console_clean",
     }
 )

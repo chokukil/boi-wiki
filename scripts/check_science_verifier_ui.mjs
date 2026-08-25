@@ -152,7 +152,7 @@ async function terminateChrome(child) {
 }
 
 function relevantConsoleErrors(errors) {
-  return errors.filter((item) => !/favicon\.ico|404 \(Not Found\)/i.test(item));
+  return errors.filter((item) => !/favicon\.ico|404 \(Not Found\)|\/api\/science\/interpret\?.*503 \(Service Unavailable\)/i.test(item));
 }
 
 async function main() {
@@ -168,6 +168,9 @@ async function main() {
 
   const consoleErrors = [];
   const scienceRequests = [];
+  const scienceRequestMetadata = new Map();
+  const scienceResponses = [];
+  const scienceResponseTasks = [];
   let cdp;
   try {
     await waitForJson(`http://127.0.0.1:${port}/json/version`, 10000);
@@ -185,11 +188,34 @@ async function main() {
       if (["error", "warning"].includes(params.type)) consoleErrors.push((params.args || []).map((arg) => arg.value || arg.description || "").join(" "));
     });
     cdp.on("Log.entryAdded", (params) => {
-      if (["error", "warning"].includes(params.entry?.level)) consoleErrors.push(params.entry?.text || "");
+      if (["error", "warning"].includes(params.entry?.level)) {
+        consoleErrors.push(`${params.entry?.url || ""} ${params.entry?.text || ""}`.trim());
+      }
     });
     cdp.on("Network.requestWillBeSent", (params) => {
       const url = params.request?.url || "";
-      if (url.includes("/api/science/")) scienceRequests.push({ url, method: params.request?.method || "" });
+      if (url.includes("/api/science/")) {
+        const request = { url, method: params.request?.method || "" };
+        scienceRequests.push(request);
+        scienceRequestMetadata.set(params.requestId, request);
+      }
+    });
+    cdp.on("Network.responseReceived", (params) => {
+      const request = scienceRequestMetadata.get(params.requestId);
+      if (request) request.status = params.response?.status;
+    });
+    cdp.on("Network.loadingFinished", (params) => {
+      const request = scienceRequestMetadata.get(params.requestId);
+      if (!request) return;
+      const task = cdp.send("Network.getResponseBody", { requestId: params.requestId })
+        .then(({ body, base64Encoded }) => {
+          const text = base64Encoded ? Buffer.from(body || "", "base64").toString("utf8") : String(body || "");
+          let payload = null;
+          try { payload = JSON.parse(text); } catch { payload = null; }
+          scienceResponses.push({ ...request, payload });
+        })
+        .catch(() => scienceResponses.push({ ...request, payload: null }));
+      scienceResponseTasks.push(task);
     });
 
     await cdp.send("Page.navigate", { url: args.url });
@@ -289,6 +315,14 @@ async function main() {
           schema_mismatch: () => Promise.resolve(failureResponse('schema_mismatch')),
         };
         const qwen = {};
+        document.querySelector('[data-science-status]').textContent = 'browser matrix pending: adapter_disabled_real_server';
+        document.querySelector('[data-science-qwen-experimental]').click();
+        const realServerClosed = await waitFor(() => status().includes('Qwen 해석을 사용할 수 없습니다'));
+        qwen.adapter_disabled_real_server = {
+          closed: realServerClosed,
+          redCount: redCount(),
+          status: status(),
+        };
         for (const [caseId, responder] of Object.entries(qwenCases)) {
           window.fetch = (input, init) => String(input).includes('/api/science/interpret') ? responder() : originalFetch(input, init);
           document.querySelector('[data-science-status]').textContent = 'browser matrix pending: ' + caseId;
@@ -452,13 +486,109 @@ async function main() {
       })()
     `);
     await waitUntil(cdp, "location.pathname === '/science-verifier' && document.querySelector('[data-science-status]')?.textContent.length > 0", args.timeoutMs);
-    const handoff = await cdp.evaluate(`
+    const wikiSource = await cdp.evaluate(`
+      (() => {
+        const input = document.querySelector('[name="document"]');
+        return {
+          documentText: input?.value || '',
+          selectionStart: input?.selectionStart ?? -1,
+          selectionEnd: input?.selectionEnd ?? -1,
+        };
+      })()
+    `);
+    const handoff = {
+      documentRef: await cdp.evaluate("document.querySelector('[name=\"document_ref\"]')?.value || ''"),
+      textareaHasContent: wikiSource.documentText.length > 100,
+      selectionReady: await cdp.evaluate("document.querySelector('[data-science-status]')?.textContent.includes('ACL 확인된 원문')"),
+    };
+
+    await cdp.evaluate("document.querySelector('[data-science-alias-detect]').click()");
+    await waitUntil(cdp, "document.querySelector('[data-science-status]')?.textContent.includes('등록 용어를 찾았습니다') && !document.querySelector('[data-science-candidate-editor]').hidden", args.timeoutMs);
+    const wikiAliases = await cdp.evaluate("[...document.querySelectorAll('.science-alias-chip')].map((node) => node.textContent)");
+    const selectWikiRoles = `
+      (() => {
+        const choose = (name, surface) => {
+          const select = document.querySelector('[name="' + name + '"]');
+          const option = [...select.options].find((item) => item.textContent.split(' — ')[0] === surface);
+          if (!option) throw new Error('missing canonical Wiki role option: ' + name + '=' + surface);
+          select.value = option.value;
+          select.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        choose('subject_match', 'spin speed');
+        choose('relation_match', 'decreases');
+        choose('object_match', 'film thickness');
+      })()
+    `;
+    await cdp.evaluate(selectWikiRoles);
+    await cdp.evaluate("document.querySelector('[data-science-candidate-form]').requestSubmit()");
+    await waitUntil(cdp, "document.querySelector('[data-science-status]')?.textContent.includes('활성 Science Release가 없어 판정을 실행하지 않았습니다')", args.timeoutMs);
+
+    await cdp.evaluate("document.querySelector('[data-science-live-claims] [data-science-local-edit]').click()");
+    await waitUntil(cdp, "document.querySelector('[data-science-edit-dialog]')?.open === true", args.timeoutMs);
+    const revisedWikiClaim = "When photoresist drying stops spin-off flow, attainable film thickness decreases approximately as spin speed increases.";
+    await cdp.evaluate(`
+      (() => {
+        const dialog = document.querySelector('[data-science-edit-dialog]');
+        const input = dialog.querySelector('[data-science-dialog-text]');
+        input.value = ${JSON.stringify(revisedWikiClaim)};
+        dialog.querySelector('[data-science-dialog-apply]').click();
+      })()
+    `);
+    await waitUntil(cdp, "document.querySelector('[data-science-status]')?.textContent.includes('수정한 주장 하나에서 등록 용어를 다시 찾았습니다')", args.timeoutMs);
+    const revisedWikiAliases = await cdp.evaluate("[...document.querySelectorAll('.science-alias-chip')].map((node) => node.textContent)");
+    await cdp.evaluate(selectWikiRoles);
+    await cdp.evaluate("document.querySelector('[data-science-candidate-form]').requestSubmit()");
+    await waitUntil(cdp, "document.querySelector('[data-science-status]')?.textContent.includes('활성 Science Release가 없어 판정을 실행하지 않았습니다')", args.timeoutMs);
+    const wikiFinal = await cdp.evaluate(`
       (() => ({
-        documentRef: document.querySelector('[name="document_ref"]')?.value || '',
-        textareaHasContent: (document.querySelector('[name="document"]')?.value || '').length > 100,
-        selectionReady: document.querySelector('[data-science-status]')?.textContent.includes('ACL 확인된 원문'),
+        status: document.querySelector('[data-science-status]')?.textContent || '',
+        documentText: document.querySelector('[name="document"]')?.value || '',
+        redCount: document.querySelectorAll('.science-violation').length,
       }))()
     `);
+
+    await sleep(100);
+    const responseDeadline = Date.now() + args.timeoutMs;
+    while (Date.now() < responseDeadline) {
+      await Promise.allSettled([...scienceResponseTasks]);
+      const wikiResponseCount = scienceResponses.filter((item) => {
+        const path = new URL(item.url).pathname;
+        const exact = item.payload?.candidate_claims?.[0]?.source_span?.exact || '';
+        return (path === '/api/science/claims/submit' || path.includes('/api/science/interpretations/'))
+          && exact.includes('spin speed') && exact.includes('film thickness') && exact.includes('decreases');
+      }).length;
+      if (wikiResponseCount >= 4) break;
+      await sleep(50);
+    }
+    const wikiResponses = scienceResponses.filter((item) => {
+      const exact = item.payload?.candidate_claims?.[0]?.source_span?.exact || '';
+      return exact.includes('spin speed') && exact.includes('film thickness') && exact.includes('decreases');
+    });
+    const wikiSubmissionResponses = wikiResponses.filter((item) => new URL(item.url).pathname === '/api/science/claims/submit' && item.status === 200);
+    const wikiConfirmationResponses = wikiResponses.filter((item) => new URL(item.url).pathname.includes('/api/science/interpretations/') && new URL(item.url).pathname.endsWith('/confirm') && item.status === 200);
+    const canonicalWikiRef = 'boi:public:science:knowledge:spin-coating:004';
+    const firstWikiSubmission = wikiSubmissionResponses.find((item) => item.payload?.candidate_claims?.[0]?.document_ref === canonicalWikiRef);
+    const revisedWikiSubmission = wikiSubmissionResponses.find((item) => item.payload?.candidate_claims?.[0]?.document_ref?.startsWith('boi:submitted:'));
+    const firstWikiClaimId = firstWikiSubmission?.payload?.candidate_claims?.[0]?.claim_id || '';
+    const revisedWikiClaimId = revisedWikiSubmission?.payload?.candidate_claims?.[0]?.claim_id || '';
+    const confirmedWikiClaimIds = new Set(wikiConfirmationResponses
+      .filter((item) => item.payload?.candidate_claims?.[0]?.interpretation?.user_confirmed === true)
+      .map((item) => item.payload?.candidate_claims?.[0]?.claim_id));
+    const expectedRevisedDocument = `${wikiSource.documentText.slice(0, wikiSource.selectionStart)}${revisedWikiClaim}${wikiSource.documentText.slice(wikiSource.selectionEnd)}`;
+    const wikiLocalRevision = {
+      initialAliasesPresent: ['spin speed', 'decreases', 'film thickness'].every((surface) => wikiAliases.some((chip) => chip.startsWith(surface + ' → '))),
+      revisedAliasesPresent: ['spin speed', 'decreases', 'film thickness'].every((surface) => revisedWikiAliases.some((chip) => chip.startsWith(surface + ' → '))),
+      onlySelectedClaimChanged: wikiFinal.documentText === expectedRevisedDocument,
+      successfulSubmissions: wikiSubmissionResponses.length,
+      successfulConfirmations: wikiConfirmationResponses.length,
+      firstDocumentRef: firstWikiSubmission?.payload?.candidate_claims?.[0]?.document_ref || '',
+      revisedDocumentRef: revisedWikiSubmission?.payload?.candidate_claims?.[0]?.document_ref || '',
+      revisedSupersedesFirst: revisedWikiSubmission?.payload?.supersedes_claim_id === firstWikiClaimId,
+      revisedCanonicalSourceRef: revisedWikiSubmission?.payload?.canonical_source_document_ref || '',
+      bothClaimsConfirmed: Boolean(firstWikiClaimId && revisedWikiClaimId && confirmedWikiClaimIds.has(firstWikiClaimId) && confirmedWikiClaimIds.has(revisedWikiClaimId)),
+      finalStatus: wikiFinal.status,
+      redCount: wikiFinal.redCount,
+    };
 
     const checks = {
       page_loaded: desktop.releaseStatus === "release_candidate",
@@ -471,7 +601,7 @@ async function main() {
       default_used_deterministic_non_qwen_path: defaultNonQwenPath,
       manual_claim_confirmed_without_llm_or_verdict: manualRoute.redCount === 0 && manualRoute.cards === 1 && !manualRoute.leakedConfirmationCode && scienceRequests.some((item) => item.url.includes("/api/science/claims/submit")) && scienceRequests.some((item) => item.url.includes("/api/science/interpretations/") && item.url.includes("/confirm")) && !scienceRequests.some((item) => item.url.includes("/api/science/verify-document")),
       ascii_alias_token_boundary: tokenBoundary.resistanceChips === 1 && tokenBoundary.resistanceMarks === 1 && tokenBoundary.rpmChips === 1,
-      qwen_failure_matrix_has_no_red: Object.values(failureMatrix.qwen).every((item) => item.closed && item.redCount === 0),
+      qwen_failure_matrix_has_no_red: Object.values(failureMatrix.qwen).every((item) => item.closed && item.redCount === 0) && scienceRequests.some((item) => new URL(item.url).pathname === "/api/science/interpret" && item.status >= 400),
       invalid_claim_matrix_has_no_red: Object.values(failureMatrix.claims).every((item) => item.redCount === 0 && (item.decision === "blocked_semantic_mismatch" || item.status >= 400)),
       external_clients_submit_same_claim: failureMatrix.parity.statuses.every((status) => status === 200) && failureMatrix.parity.sameClaim && failureMatrix.parity.sameDecision && failureMatrix.parity.redCount === 0,
       red_gate_requires_active_rule_conditions_and_exact_evidence: failureMatrix.redGate.exactActiveFixtureAccepted && failureMatrix.redGate.inexactLocatorRejected && failureMatrix.redGate.inactiveReleaseRejected,
@@ -480,6 +610,7 @@ async function main() {
       desktop_no_overflow: !desktop.horizontalOverflow,
       mobile_single_column: mobile.width === 390 && mobile.columns.split(" ").length === 1 && !mobile.horizontalOverflow && mobile.editorVisible,
       wiki_selection_handoff: handoff.documentRef === "boi:public:science:knowledge:spin-coating:004" && handoff.textareaHasContent && handoff.selectionReady,
+      wiki_local_revision_preserves_lineage: wikiLocalRevision.initialAliasesPresent && wikiLocalRevision.revisedAliasesPresent && wikiLocalRevision.onlySelectedClaimChanged && wikiLocalRevision.successfulSubmissions === 2 && wikiLocalRevision.successfulConfirmations === 2 && wikiLocalRevision.firstDocumentRef === canonicalWikiRef && wikiLocalRevision.revisedDocumentRef.startsWith("boi:submitted:") && wikiLocalRevision.revisedSupersedesFirst && wikiLocalRevision.revisedCanonicalSourceRef === canonicalWikiRef && wikiLocalRevision.bothClaimsConfirmed && wikiLocalRevision.finalStatus.includes("활성 Science Release가 없어 판정을 실행하지 않았습니다") && wikiLocalRevision.redCount === 0,
       console_clean: relevantConsoleErrors(consoleErrors).length === 0,
     };
     const report = {
@@ -488,10 +619,12 @@ async function main() {
       desktop,
       mobile,
       handoff,
+      wikiLocalRevision,
       manualRoute,
       tokenBoundary,
       failureMatrix,
       scienceRequests,
+      scienceResponses: scienceResponses.map((item) => ({ path: new URL(item.url).pathname, method: item.method, status: item.status })),
       consoleErrors: relevantConsoleErrors(consoleErrors),
       screenshot: args.screenshot,
       mobileScreenshot: args.mobileScreenshot,
