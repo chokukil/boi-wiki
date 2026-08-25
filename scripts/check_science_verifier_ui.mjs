@@ -799,7 +799,7 @@ async function main() {
       const wikiResponseCount = scienceResponses.filter((item) => {
         const path = new URL(item.url).pathname;
         const exact = item.payload?.candidate_claims?.[0]?.source_span?.exact || '';
-        return (path === '/api/science/claims/submit' || path.includes('/api/science/interpretations/'))
+        return (path === '/api/science/user-revisions/commit' || path.includes('/api/science/interpretations/'))
           && exact.includes('spin speed') && exact.includes('film thickness') && exact.includes('decreases');
       }).length;
       if (wikiResponseCount >= 4) break;
@@ -809,7 +809,7 @@ async function main() {
       const exact = item.payload?.candidate_claims?.[0]?.source_span?.exact || '';
       return exact.includes('spin speed') && exact.includes('film thickness') && exact.includes('decreases');
     });
-    const wikiSubmissionResponses = wikiResponses.filter((item) => new URL(item.url).pathname === '/api/science/claims/submit' && item.status === 200);
+    const wikiSubmissionResponses = wikiResponses.filter((item) => new URL(item.url).pathname === '/api/science/user-revisions/commit' && item.status === 200);
     const wikiConfirmationResponses = wikiResponses.filter((item) => new URL(item.url).pathname.includes('/api/science/interpretations/') && new URL(item.url).pathname.endsWith('/confirm') && item.status === 200);
     const canonicalWikiRef = 'boi:public:science:knowledge:spin-coating:004';
     const firstWikiSubmission = wikiSubmissionResponses.find((item) => item.payload?.candidate_claims?.[0]?.document_ref === canonicalWikiRef);
