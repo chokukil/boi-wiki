@@ -9,10 +9,11 @@
   <script src="{{ asset_url('doc_metadata.js') }}" defer></script>
   <script src="{{ asset_url('doc_edit.js') }}" defer></script>
   <script src="{{ asset_url('evidence_tray.js') }}" defer></script>
+  {% if science_selection %}<script src="{{ asset_url('science_verifier_selection.js') }}" defer></script>{% endif %}
 </head>
 <body>
   {% include "_app_shell.html" %}
-  <main class="doc-page">
+  <main class="doc-page"{% if science_selection %} data-science-document-ref="{{ science_selection.document_ref }}" data-science-verifier-url="{{ science_selection.verifier_url }}"{% endif %}>
     {% if shell.page_actions %}
     <nav class="document-actions" aria-label="Document actions">
       {% for action in shell.page_actions %}
@@ -95,7 +96,10 @@
     <section class="body">
       <div class="section-heading">
         <h2>Body</h2>
-        {% if body_editor %}<button type="button" class="edit-body-button">Body 수정</button>{% endif %}
+        <div class="document-body-actions">
+          {% if science_selection %}<button type="button" class="secondary-button" data-science-selection-launcher>선택 영역 과학 검증</button>{% endif %}
+          {% if body_editor %}<button type="button" class="edit-body-button">Body 수정</button>{% endif %}
+        </div>
       </div>
       <div class="markdown-body rendered-content">{{ body_html }}</div>
       {% if body_editor %}

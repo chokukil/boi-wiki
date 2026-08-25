@@ -164,6 +164,9 @@ BOI_SCIENCE_DICTIONARY_RELEASE_ID = os.getenv(
 BOI_SCIENCE_ONTOLOGY_RELEASE_ID = os.getenv(
     "BOI_SCIENCE_ONTOLOGY_RELEASE_ID", "sci:ontology:general-science-draft/0.1.0"
 ).strip()
+BOI_SCIENCE_PREVIEW_RELEASE_ID = os.getenv(
+    "BOI_SCIENCE_PREVIEW_RELEASE_ID", "sci-release:0.1.0"
+).strip()
 EVENTS_ROOT = Path(os.getenv("EVENTS_ROOT") or str(BOI_RUNTIME_ROOT / "events"))
 EVENT_CATALOG_ROOT = Path(os.getenv("EVENT_CATALOG_ROOT", "/data/event_catalog"))
 ACTION_CATALOG_ROOT = Path(os.getenv("ACTION_CATALOG_ROOT", "/data/action_catalog"))
@@ -5707,6 +5710,18 @@ def section_subnav_for(active_nav: str, request: Request, employee_id: str) -> l
     ]
 
 
+def science_access_allowed(employee_id: str) -> bool:
+    """Resolve Science navigation from Science-local roles and access mode."""
+
+    from .science.authorization import ScienceAuthorization
+
+    identity = identity_for_employee(employee_id)
+    return ScienceAuthorization(BOI_SCIENCE_ACCESS_MODE).can_access(
+        identity,
+        roles_for(employee_id),
+    )
+
+
 def app_shell_context(
     request: Request,
     employee_id: str,
@@ -5723,10 +5738,22 @@ def app_shell_context(
         {"id": "library", "label": "BoI Wiki", "href": final_operator_guide_url(employee_id)},
         {"id": "inbox", "label": "BoI Inbox", "href": app_url("/inbox", employee_id)},
         {"id": "sops", "label": "SOP", "href": app_url("/sops", employee_id)},
-        {"id": "events", "label": "Event Broker", "href": app_url("/events", employee_id)},
-        {"id": "actions", "label": "Action", "href": app_url("/actions", employee_id)},
-        {"id": "advanced", "label": "Advanced", "href": app_url("/permissions", employee_id)},
     ]
+    if science_access_allowed(employee_id):
+        primary_nav.append(
+            {
+                "id": "science",
+                "label": "Science Verifier",
+                "href": app_url("/science-verifier", employee_id),
+            }
+        )
+    primary_nav.extend(
+        [
+            {"id": "events", "label": "Event Broker", "href": app_url("/events", employee_id)},
+            {"id": "actions", "label": "Action", "href": app_url("/actions", employee_id)},
+            {"id": "advanced", "label": "Advanced", "href": app_url("/permissions", employee_id)},
+        ]
+    )
     return {
         "title": title,
         "description": description,
@@ -17701,6 +17728,18 @@ async def doc_page(
     workflow_poc = workflow_context(workflow_key, employee_id, doc_lookup=doc_lookup) if workflow_key else None
     graph_ref = str(doc["metadata"].get("boi_id") or doc.get("uri", "").lstrip("/"))
     doc_query = urlencode({"employee_id": employee_id})
+    science_selection = (
+        {
+            "document_ref": graph_ref,
+            "verifier_url": app_url(
+                "/science-verifier",
+                employee_id,
+                document_ref=graph_ref,
+            ),
+        }
+        if science_access_allowed(employee_id)
+        else None
+    )
     return templates.TemplateResponse(
         "doc.html",
         {
@@ -17714,6 +17753,7 @@ async def doc_page(
                 description=str(doc["metadata"].get("description") or ""),
                 page_actions=[
                     {"label": "폴더로 돌아가기", "href": browse_url(employee_id, folder=return_folder), "kind": "secondary"},
+                    *([{"label": "Science Verifier", "href": science_selection["verifier_url"], "kind": "secondary"}] if science_selection else []),
                     *([{"label": "Source 보기 / 검증 편집", "href": source_url_for_doc(doc, employee_id), "kind": "secondary"}] if source_url_for_doc(doc, employee_id) else []),
                     *([{"label": "같은 Event Type BoI", "href": browse_url(employee_id, event_type=doc["metadata"].get("event_type", "")), "kind": "secondary"}] if doc["metadata"].get("event_type") else []),
                 ],
@@ -17738,6 +17778,169 @@ async def doc_page(
             "metadata_summary_rows": metadata_summary_rows_for_template(doc["metadata"], request),
             "public_boi_base_url": boi_public_base_url(request),
             "action_spec": action_spec_for_template(doc["metadata"], request),
+            "science_selection": science_selection,
+        },
+    )
+
+
+def science_candidate_demo_context(catalog: Any) -> dict[str, Any]:
+    """Build a non-operational UI fixture from pinned candidate Catalog objects."""
+
+    rule_id = "sci-rule:spin-coating:004"
+    cases = catalog.qualification_cases(rule_id)
+    violation_case = next(
+        case for case in cases if case.case_kind == "clear_violation"
+    )
+    ambiguity_case = next(
+        case for case in cases if case.case_kind == "decision_changing_ambiguity"
+    )
+    violation_claim = dict(violation_case.claim_packet)
+    ambiguity_claim = dict(ambiguity_case.claim_packet)
+    evidence_id = str(violation_case.expected_evidence_path[0])
+    evidence = catalog.evidence(evidence_id)
+    source = catalog.source(str(evidence.source_id))
+    rule = catalog.rule(rule_id)
+    knowledge_id = str(rule.knowledge_refs[0])
+    knowledge = catalog.knowledge(knowledge_id)
+    ontology_refs = list(
+        violation_claim["interpretation"].get("ontology_refs") or []
+    )
+    ontology = [catalog.ontology_binding(ref) for ref in ontology_refs]
+    locator = dict(evidence.locator)
+    locator_parts = [
+        locator.get("section"),
+        locator.get("printed_page"),
+        (
+            f"PDF page {int(locator['pdf_page_index']) + 1}"
+            if locator.get("pdf_page_index") is not None
+            else None
+        ),
+    ]
+    return {
+        "rule_id": rule_id,
+        "rule_digest": rule.digest,
+        "knowledge_id": knowledge_id,
+        "knowledge_digest": knowledge.digest,
+        "knowledge_statement": str(knowledge.statement),
+        "required_conditions": [
+            condition.model_dump(mode="json")
+            if hasattr(condition, "model_dump")
+            else dict(condition)
+            for condition in rule.required_conditions
+        ],
+        "violation": {
+            "case_id": violation_case.case_id,
+            "claim": violation_claim,
+            "expected_outcome": str(violation_case.expected_verdict),
+            "rationale": str(violation_case.rationale),
+        },
+        "ambiguity": {
+            "case_id": ambiguity_case.case_id,
+            "claim": ambiguity_claim,
+            "expected_outcome": "AMBIGUITY_GATE",
+            "rationale": str(ambiguity_case.rationale),
+        },
+        "evidence": {
+            "evidence_id": evidence_id,
+            "evidence_digest": evidence.digest,
+            "original_text": str(evidence.original_text),
+            "original_text_hash": str(evidence.original_text_hash),
+            "reviewed_translation": str(evidence.reviewed_translation),
+            "locator": locator,
+            "locator_text": " / ".join(
+                str(value) for value in locator_parts if value
+            ),
+            "review_status": str(
+                (evidence.okf_review or {}).get("review_status") or "pending_review"
+            ),
+        },
+        "source": {
+            "source_id": source.object_id,
+            "source_digest": source.digest,
+            "title": str(source.title),
+            "url": str(source.original_url),
+        },
+        "ontology": [
+            {
+                "binding_id": binding.object_id,
+                "binding_digest": binding.digest,
+                "meaning": str(binding.meaning),
+                "domain": str(binding.domain),
+            }
+            for binding in ontology
+        ],
+    }
+
+
+def science_release_is_operational(status: str) -> bool:
+    """Permit new scientific verdict display only from the exact active lifecycle."""
+
+    return status == "active"
+
+
+@app.get("/science-verifier", response_class=HTMLResponse)
+async def science_verifier_page(
+    request: Request,
+    employee_id: str = Depends(current_employee),
+    document_ref: str = "",
+    demo: bool = False,
+) -> HTMLResponse:
+    if not science_access_allowed(employee_id):
+        raise HTTPException(status_code=403, detail="Science Verifier access denied")
+
+    catalog = app.state.science_catalog
+    release = catalog.resolve_release(BOI_SCIENCE_PREVIEW_RELEASE_ID)
+    initial_document = ""
+    if document_ref:
+        document = find_doc_by_id(document_ref, employee_id)
+        if document is None or not access_policy_for_doc(
+            document, employee_id
+        ).can_read:
+            raise HTTPException(status_code=404, detail="Science document unavailable")
+        initial_document = str(document.get("body") or "")
+
+    roles = roles_for(employee_id)
+    role_label = (
+        "Admin"
+        if "science.admin" in roles
+        else "Power User"
+        if any(role.startswith("science.power_user:") for role in roles)
+        else "User"
+    )
+    operational = science_release_is_operational(release.status)
+    demo_context = science_candidate_demo_context(catalog) if demo else None
+    return templates.TemplateResponse(
+        "science_verifier.html",
+        {
+            "request": request,
+            "employee_id": employee_id,
+            "shell": app_shell_context(
+                request,
+                employee_id,
+                active_nav="science",
+                title="Science Verifier",
+                description="AI 답변을 믿지 않고, 확인 가능한 주장·조건·근거 경로를 문서 위에서 검토합니다.",
+                hide_pet_agent=True,
+            ),
+            "release": {
+                "release_id": release.release_id,
+                "release_digest": release.content_hash,
+                "status": release.status,
+                "operational": operational,
+                "known_limitations": release.known_limitations,
+            },
+            "role_label": role_label,
+            "access_mode": BOI_SCIENCE_ACCESS_MODE,
+            "initial_document": initial_document,
+            "document_ref": document_ref,
+            "demo": demo_context,
+            "bootstrap": {
+                "employee_id": employee_id,
+                "document_ref": document_ref,
+                "release_id": release.release_id,
+                "release_status": release.status,
+                "operational": operational,
+            },
         },
     )
 
