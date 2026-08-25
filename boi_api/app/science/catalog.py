@@ -49,6 +49,8 @@ from boi_api.app.science.rules import (
     ResolvedRuleSet,
     VerificationRule,
     has_complete_quantity_equivalence_operands,
+    validate_equation_knowledge_for_operational_binding,
+    validate_operational_equation_binding,
 )
 from boi_api.app.science.safety import (
     ScienceSensitivePersistenceError,
@@ -754,7 +756,80 @@ class ScienceCatalog:
         )
         return resolved
 
-    def _resolved_rule_set(self, release_set: ResolvedReleaseSet) -> ResolvedRuleSet:
+    def _validate_released_equation_binding(
+        self,
+        release_set: ResolvedReleaseSet,
+        rule: VerificationRule,
+        *,
+        required: bool,
+    ) -> None:
+        if not required and rule.equation_binding is None:
+            return
+        error_type = ScienceOperationalError if required else ScienceCatalogError
+        try:
+            identity = validate_operational_equation_binding(rule)
+        except (ValidationError, ValueError, TypeError) as exc:
+            raise error_type(
+                f"Rule has no valid operational Equation binding: {rule.rule_id}"
+            ) from exc
+        if identity is None:
+            return
+        try:
+            resolved_equation = self.equation(identity.equation_id)
+        except ScienceCatalogError as exc:
+            raise error_type(
+                f"Rule references unknown Equation Knowledge: {rule.rule_id}"
+            ) from exc
+        if resolved_equation.knowledge_id not in rule.knowledge_refs:
+            raise error_type(
+                f"Rule Equation is outside its Knowledge references: {rule.rule_id}"
+            )
+        components = {component.ref: component for component in release_set.components}
+        knowledge_component = components.get(resolved_equation.knowledge_id)
+        if (
+            knowledge_component is None
+            or knowledge_component.kind != "knowledge"
+            or knowledge_component.declared_digest
+            != knowledge_component.actual_digest
+            or knowledge_component.actual_digest != resolved_equation.knowledge_digest
+        ):
+            raise error_type(
+                f"Rule Equation Knowledge is not exactly release-pinned: {rule.rule_id}"
+            )
+        equation_evidence_refs = {
+            use.evidence_ref for use in resolved_equation.equation.evidence_uses
+        }
+        if not equation_evidence_refs <= set(rule.evidence_refs):
+            raise error_type(
+                f"Rule Equation Evidence is outside its Evidence references: {rule.rule_id}"
+            )
+        for evidence_ref in equation_evidence_refs:
+            component = components.get(evidence_ref)
+            evidence = self._require("evidence", evidence_ref)
+            if (
+                component is None
+                or component.kind != "evidence"
+                or component.declared_digest != component.actual_digest
+                or component.actual_digest != evidence.digest
+            ):
+                raise error_type(
+                    f"Rule Equation Evidence is not exactly release-pinned: {rule.rule_id}"
+                )
+        try:
+            validate_equation_knowledge_for_operational_binding(
+                identity, resolved_equation.equation
+            )
+        except (ValidationError, ValueError, TypeError) as exc:
+            raise error_type(
+                f"Rule does not match exact Equation Knowledge: {rule.rule_id}"
+            ) from exc
+
+    def _resolved_rule_set(
+        self,
+        release_set: ResolvedReleaseSet,
+        *,
+        require_operational_equation_bindings: bool,
+    ) -> ResolvedRuleSet:
         released_rules: list[ReleasedRule] = []
         for component in release_set.rule_components:
             stored = self._require("rule", component.ref)
@@ -767,6 +842,11 @@ class ScienceCatalog:
                 )
             rule = self._verification_rule(stored)
             self._assert_rule_evidence_scope(rule)
+            self._validate_released_equation_binding(
+                release_set,
+                rule,
+                required=require_operational_equation_bindings,
+            )
             semantic_digest = sha256_digest(rule)
             if component.semantic_digest != semantic_digest:
                 raise ScienceCatalogError(
@@ -789,7 +869,9 @@ class ScienceCatalog:
     ) -> QualificationRuleSet:
         """Resolve a serializable candidate Rule set for qualification only."""
 
-        resolved = self._resolved_rule_set(release_set)
+        resolved = self._resolved_rule_set(
+            release_set, require_operational_equation_bindings=False
+        )
         return validate_with_closed_error(
             lambda: QualificationRuleSet.model_validate(
                 resolved.model_dump(mode="json", exclude_unset=True)
@@ -817,7 +899,9 @@ class ScienceCatalog:
         approval_snapshot: list[dict[str, Any]] = []
         for release in releases:
             approval_snapshot.extend(self._assert_active_decision_components(release))
-        resolved = self._resolved_rule_set(release_set)
+        resolved = self._resolved_rule_set(
+            release_set, require_operational_equation_bindings=True
+        )
         return _issue_operational_verification(
             release_set,
             resolved,
