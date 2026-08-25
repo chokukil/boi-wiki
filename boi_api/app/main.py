@@ -32545,8 +32545,9 @@ def _configure_science_verifier() -> None:
         return ScienceService(
             catalog=catalog,
             runtime_store=runtime_store,
-            llm_client=(
-                ScienceLLMClient(ScienceLLMConfig.from_env())
+            llm_client=None,
+            llm_client_factory=(
+                lambda: ScienceLLMClient(ScienceLLMConfig.from_env())
                 if BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED
                 else None
             ),

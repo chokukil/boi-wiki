@@ -316,3 +316,49 @@ def test_real_alias_api_does_not_match_r_inside_rpm_but_keeps_standalone_r(
     assert [(match["start"], match["end"]) for match in matches] == [
         (document.index(", R") + 2, document.index(", R") + 3)
     ]
+
+
+def test_browser_disabled_adapter_contract_rejects_other_qwen_failures() -> None:
+    """A timeout must not be mislabeled as proof that the adapter is disabled."""
+
+    module_url = (REPO_ROOT / "scripts" / "science_browser_contract.mjs").as_uri()
+    script = f"""
+      import {{ isExactDisabledAdapterResponse }} from {json.dumps(module_url)};
+      const base = {{
+        url: 'http://localhost/api/science/interpret',
+        status: 503,
+        payload: {{ detail: {{
+          code: 'science_interpretation_unavailable',
+          diagnostic_code: 'adapter_disabled',
+        }} }},
+      }};
+      console.log(JSON.stringify({{
+        exact: isExactDisabledAdapterResponse(base),
+        timeout: isExactDisabledAdapterResponse({{
+          ...base,
+          payload: {{ detail: {{ ...base.payload.detail, diagnostic_code: 'timeout' }} }},
+        }}),
+        connection: isExactDisabledAdapterResponse({{
+          ...base,
+          payload: {{ detail: {{ ...base.payload.detail, diagnostic_code: 'connection_unavailable' }} }},
+        }}),
+        wrongPath: isExactDisabledAdapterResponse({{ ...base, url: 'http://localhost/api/science/aliases/detect' }}),
+        wrongStatus: isExactDisabledAdapterResponse({{ ...base, status: 500 }}),
+      }}));
+    """
+    completed = subprocess.run(
+        ["node", "--input-type=module", "--eval", script],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == {
+        "exact": True,
+        "timeout": False,
+        "connection": False,
+        "wrongPath": False,
+        "wrongStatus": False,
+    }

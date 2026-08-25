@@ -132,11 +132,13 @@ class ScienceService:
         ontology_release_id: str,
         ontology_binding_ids: Sequence[str],
         document_access_check: Callable[[AuthIdentity, str], bool],
+        llm_client_factory: Callable[[], ScienceLLMClient | None] | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.catalog = catalog
         self.runtime_store = runtime_store
         self.llm_client = llm_client
+        self._llm_client_factory = llm_client_factory
         self.dictionary_release_id = dictionary_release_id
         self.ontology_release_id = ontology_release_id
         self.ontology_binding_ids = tuple(ontology_binding_ids)
@@ -291,24 +293,30 @@ class ScienceService:
     def _record_id(cls, prefix: Literal["interpretation", "report"], key: str) -> str:
         return f"sci-{prefix}:" + cls._idempotency_digest(key).removeprefix("sha256:")
 
-    def _prompt_digest(self) -> str:
-        if self.llm_client is None:
+    def _interpretation_client(self) -> ScienceLLMClient:
+        client = self.llm_client
+        if client is None and self._llm_client_factory is not None:
+            client = self._llm_client_factory()
+        if client is None:
             raise ScienceInterpretationUnavailable(
                 "Experimental Science LLM adapter is disabled",
                 diagnostic_code="adapter_disabled",
             )
+        return client
+
+    def _prompt_digest(self, client: ScienceLLMClient) -> str:
         return sha256_digest(
             {
                 "prompt_version": PROMPT_VERSION,
                 "system_prompt_digest": sha256_digest(
                     ScienceLLMClient._system_prompt()
                 ),
-                "model_id": self.llm_client.config.model_id,
-                "transport_mode": self.llm_client.config.transport_mode,
-                "response_format_mode": self.llm_client.config.response_format_mode,
-                "reasoning_mode": self.llm_client.config.reasoning_mode,
-                "max_attempts": self.llm_client.config.max_attempts,
-                "model_settings": self.llm_client.config.safe_model_settings(),
+                "model_id": client.config.model_id,
+                "transport_mode": client.config.transport_mode,
+                "response_format_mode": client.config.response_format_mode,
+                "reasoning_mode": client.config.reasoning_mode,
+                "max_attempts": client.config.max_attempts,
+                "model_settings": client.config.safe_model_settings(),
                 "dictionary_release_id": self.dictionary_release_id,
                 "ontology_release_id": self.ontology_release_id,
                 "ontology_binding_ids": self.ontology_binding_ids,
@@ -1007,7 +1015,8 @@ class ScienceService:
             raise ScienceInterpretationUnavailable("document text must be nonempty")
         document_digest = sha256_digest(document_text)
         interpretation_id = self._record_id("interpretation", idempotency_key)
-        prompt_digest = self._prompt_digest()
+        llm_client = self._interpretation_client()
+        prompt_digest = self._prompt_digest(llm_client)
         request_digest = sha256_digest(
             {
                 "operation": "interpret_document",
@@ -1057,7 +1066,7 @@ class ScienceService:
                 for alias in candidate["aliases"]
             )
         }
-        result = self.llm_client.interpret(
+        result = llm_client.interpret(
             interpreted_text,
             ontology_candidates=list(ontology_index.values()),
         )
@@ -1106,8 +1115,8 @@ class ScienceService:
                 interpretation_id=interpretation_id,
                 document_digest=document_digest,
                 candidate_claims=claims,
-                model_id=self.llm_client.config.model_id,
-                model_settings=self.llm_client.config.safe_model_settings(),
+                model_id=llm_client.config.model_id,
+                model_settings=llm_client.config.safe_model_settings(),
                 prompt_version=PROMPT_VERSION,
                 dictionary_release_id=self.dictionary_release_id,
                 ontology_release_id=self.ontology_release_id,

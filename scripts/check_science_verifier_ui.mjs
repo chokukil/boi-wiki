@@ -6,6 +6,7 @@ import { get } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { isExactDisabledAdapterResponse } from "./science_browser_contract.mjs";
 
 function parseArgs(argv) {
   const args = {
@@ -590,6 +591,7 @@ async function main() {
       redCount: wikiFinal.redCount,
     };
 
+    const exactDisabledAdapterResponse = scienceResponses.find(isExactDisabledAdapterResponse);
     const checks = {
       page_loaded: desktop.releaseStatus === "release_candidate",
       candidate_not_operational: desktop.operational === "false" && desktop.candidateBoundary,
@@ -601,7 +603,7 @@ async function main() {
       default_used_deterministic_non_qwen_path: defaultNonQwenPath,
       manual_claim_confirmed_without_llm_or_verdict: manualRoute.redCount === 0 && manualRoute.cards === 1 && !manualRoute.leakedConfirmationCode && scienceRequests.some((item) => item.url.includes("/api/science/claims/submit")) && scienceRequests.some((item) => item.url.includes("/api/science/interpretations/") && item.url.includes("/confirm")) && !scienceRequests.some((item) => item.url.includes("/api/science/verify-document")),
       ascii_alias_token_boundary: tokenBoundary.resistanceChips === 1 && tokenBoundary.resistanceMarks === 1 && tokenBoundary.rpmChips === 1,
-      qwen_failure_matrix_has_no_red: Object.values(failureMatrix.qwen).every((item) => item.closed && item.redCount === 0) && scienceRequests.some((item) => new URL(item.url).pathname === "/api/science/interpret" && item.status >= 400),
+      qwen_failure_matrix_has_no_red: Object.values(failureMatrix.qwen).every((item) => item.closed && item.redCount === 0) && Boolean(exactDisabledAdapterResponse),
       invalid_claim_matrix_has_no_red: Object.values(failureMatrix.claims).every((item) => item.redCount === 0 && (item.decision === "blocked_semantic_mismatch" || item.status >= 400)),
       external_clients_submit_same_claim: failureMatrix.parity.statuses.every((status) => status === 200) && failureMatrix.parity.sameClaim && failureMatrix.parity.sameDecision && failureMatrix.parity.redCount === 0,
       red_gate_requires_active_rule_conditions_and_exact_evidence: failureMatrix.redGate.exactActiveFixtureAccepted && failureMatrix.redGate.inexactLocatorRejected && failureMatrix.redGate.inactiveReleaseRejected,
@@ -653,6 +655,14 @@ async function main() {
           mobile: { path: args.mobileScreenshot, sha256: fileDigest(args.mobileScreenshot) },
         },
         science_requests: scienceRequests.map((item) => ({ path: new URL(item.url).pathname, method: item.method })),
+        qwen_diagnostics: scienceResponses
+          .filter((item) => new URL(item.url).pathname === "/api/science/interpret")
+          .map((item) => ({
+            path: new URL(item.url).pathname,
+            status: item.status,
+            code: item.payload?.detail?.code || "",
+            diagnostic_code: item.payload?.detail?.diagnostic_code || "",
+          })),
         console_errors: relevantConsoleErrors(consoleErrors),
         browser: report.browser,
         browser_fallback_reason: report.browserFallbackReason,
