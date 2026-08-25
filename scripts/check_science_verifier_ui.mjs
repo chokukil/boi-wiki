@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { get } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,9 @@ function parseArgs(argv) {
     url: "http://localhost:28000/science-verifier?employee_id=100001",
     timeoutMs: 60000,
     screenshot: "",
+    mobileScreenshot: "",
+    reportJson: "",
+    gitCommit: "",
     strict: false,
   };
   for (let index = 2; index < argv.length; index += 1) {
@@ -18,9 +22,12 @@ function parseArgs(argv) {
     if (item === "--url") args.url = argv[++index] || args.url;
     else if (item === "--timeout-ms") args.timeoutMs = Number(argv[++index] || args.timeoutMs);
     else if (item === "--screenshot") args.screenshot = argv[++index] || "";
+    else if (item === "--mobile-screenshot") args.mobileScreenshot = argv[++index] || "";
+    else if (item === "--report-json") args.reportJson = argv[++index] || "";
+    else if (item === "--git-commit") args.gitCommit = argv[++index] || "";
     else if (item === "--strict") args.strict = true;
     else if (item === "-h" || item === "--help") {
-      console.log("Usage: node scripts/check_science_verifier_ui.mjs [--url URL] [--timeout-ms MS] [--screenshot FILE] [--strict]");
+      console.log("Usage: node scripts/check_science_verifier_ui.mjs [--url URL] [--timeout-ms MS] [--screenshot FILE] [--mobile-screenshot FILE] [--report-json FILE] [--git-commit SHA] [--strict]");
       process.exit(0);
     }
   }
@@ -282,6 +289,7 @@ async function main() {
         editorVisible: !document.querySelector('[data-science-candidate-editor]').hidden,
       }))()
     `);
+    if (args.mobileScreenshot) await cdp.screenshot(args.mobileScreenshot);
 
     await cdp.send("Emulation.clearDeviceMetricsOverride");
     const origin = new URL(args.url).origin;
@@ -340,9 +348,32 @@ async function main() {
       scienceRequests,
       consoleErrors: relevantConsoleErrors(consoleErrors),
       screenshot: args.screenshot,
+      mobileScreenshot: args.mobileScreenshot,
       browser: "Chrome DevTools Protocol",
       browserFallbackReason: "agent-browser CLI unavailable; used the repository CDP verification pattern.",
     };
+    if (args.reportJson) {
+      const fileDigest = (path) => path && existsSync(path)
+        ? `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`
+        : "";
+      const captureManifest = {
+        captured_at: new Date().toISOString(),
+        git_commit: args.gitCommit,
+        route: new URL(args.url).pathname,
+        release_status: desktop.releaseStatus,
+        operational: desktop.operational === "true",
+        checks,
+        screenshots: {
+          desktop: { path: args.screenshot, sha256: fileDigest(args.screenshot) },
+          mobile: { path: args.mobileScreenshot, sha256: fileDigest(args.mobileScreenshot) },
+        },
+        science_requests: scienceRequests.map((item) => ({ path: new URL(item.url).pathname, method: item.method })),
+        console_errors: relevantConsoleErrors(consoleErrors),
+        browser: report.browser,
+        browser_fallback_reason: report.browserFallbackReason,
+      };
+      writeFileSync(args.reportJson, `${JSON.stringify(captureManifest, null, 2)}\n`);
+    }
     console.log(JSON.stringify(report, null, 2));
     if (args.strict && !report.ok) process.exitCode = 1;
   } finally {
