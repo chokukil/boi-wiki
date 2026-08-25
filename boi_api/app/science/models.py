@@ -655,6 +655,7 @@ class FormulaInterpretationRecord(ScienceModel):
     ontology_refs: list[str] = Field(default_factory=list, max_length=64)
     issue_codes: list[FormulaInterpretationIssueCode] = Field(default_factory=list)
     verdict_authority: Literal[False] = False
+    candidate_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def exact_non_authoritative_record(self) -> "FormulaInterpretationRecord":
@@ -681,6 +682,11 @@ class FormulaInterpretationRecord(ScienceModel):
             raise ValueError("formula interpretation ontology refs must be unique")
         if len(self.issue_codes) != len(set(self.issue_codes)):
             raise ValueError("formula interpretation issue codes must be unique")
+        digest_payload = self.model_dump(
+            mode="json", exclude={"candidate_digest"}, exclude_none=False
+        )
+        if self.candidate_digest != sha256_digest(digest_payload):
+            raise ValueError("formula candidate digest is not exact")
         return self
 
 

@@ -10,7 +10,7 @@ from boi_api.app.science.anchors import SpanAnchorError
 from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.equations import ScienceEquationKnowledge
 from boi_api.app.science.llm import ScienceInterpretationPayload
-from boi_api.app.science.models import SourceSpan
+from boi_api.app.science.models import FormulaInterpretationRecord, SourceSpan
 from boi_api.app.science.service import ScienceConfirmationRequired
 from tests.test_science_equations import valid_equation_payload
 from tests.test_science_interpretation import (
@@ -522,3 +522,26 @@ def test_formula_interpretation_round_trips_through_immutable_runtime_store(
         "exact_candidate_match"
     )
     assert loaded.formula_candidates[0].verdict_authority is False
+
+
+def test_persisted_formula_candidate_digest_detects_interpretation_drift(
+    science_identity,
+):
+    service, catalog, _store, _llm = _service()
+    equation = _install_equation_catalog(service, catalog)
+    candidate = ScienceInterpretationPayload.model_validate(
+        {"claims": [_candidate_payload(equation)]}
+    ).claims[0]
+    saved = service.submit_claim_candidate(
+        DOCUMENT,
+        document_ref="boi:public:science:document:equation-fixture",
+        identity=science_identity,
+        client_kind="codex",
+        candidate=candidate,
+        idempotency_key="science-request:equation-record-digest",
+    )
+    payload = saved.formula_candidates[0].model_dump(mode="json")
+    payload["symbol_candidates"][0]["quantity_kind"] = "volume"
+
+    with pytest.raises(ValidationError, match="formula candidate digest"):
+        FormulaInterpretationRecord.model_validate(payload)

@@ -927,23 +927,23 @@ class ScienceService:
                 issue for issue in formula_issue_order if issue in issues
             ]
             all_issues.update(issues)
-            records.append(
-                FormulaInterpretationRecord(
-                    claim_id=claim_id,
-                    formula_span=formula_span,
-                    semantic_expression=formula.semantic_expression,
-                    semantic_expression_digest=semantic_digest,
-                    proposed_equation_id=formula.proposed_equation_id,
-                    proposed_equation_digest=formula.proposed_equation_digest,
-                    catalog_match_status=catalog_match_status,
-                    symbol_candidates=symbol_records,
-                    condition_candidates=formula.condition_candidates,
-                    sign_convention_candidate=formula.sign_convention_candidate,
-                    ontology_refs=formula.ontology_refs,
-                    issue_codes=ordered_formula_issues,
-                    verdict_authority=False,
-                )
-            )
+            record_payload: dict[str, Any] = {
+                "claim_id": claim_id,
+                "formula_span": formula_span,
+                "semantic_expression": formula.semantic_expression,
+                "semantic_expression_digest": semantic_digest,
+                "proposed_equation_id": formula.proposed_equation_id,
+                "proposed_equation_digest": formula.proposed_equation_digest,
+                "catalog_match_status": catalog_match_status,
+                "symbol_candidates": symbol_records,
+                "condition_candidates": formula.condition_candidates,
+                "sign_convention_candidate": formula.sign_convention_candidate,
+                "ontology_refs": formula.ontology_refs,
+                "issue_codes": ordered_formula_issues,
+                "verdict_authority": False,
+            }
+            record_payload["candidate_digest"] = sha256_digest(record_payload)
+            records.append(FormulaInterpretationRecord.model_validate(record_payload))
 
         overlapping_record_indexes: set[int] = set()
         ordered_formula_ranges = sorted(
@@ -966,15 +966,15 @@ class ScienceService:
             for index in overlapping_record_indexes:
                 record = records[index]
                 issue_set = {*record.issue_codes, "FORMULA_SPAN_OVERLAP"}
-                records[index] = record.model_copy(
-                    update={
-                        "issue_codes": [
-                            issue
-                            for issue in formula_issue_order
-                            if issue in issue_set
-                        ]
-                    },
-                    deep=True,
+                record_payload = record.model_dump(
+                    mode="json", exclude={"candidate_digest"}
+                )
+                record_payload["issue_codes"] = [
+                    issue for issue in formula_issue_order if issue in issue_set
+                ]
+                record_payload["candidate_digest"] = sha256_digest(record_payload)
+                records[index] = FormulaInterpretationRecord.model_validate(
+                    record_payload
                 )
         return records, all_issues
 
