@@ -73,6 +73,7 @@ SCIENCE_TYPE_REQUIREMENTS = {
         "known_limitations",
         "components",
         "qualification_report",
+        "holdout_manifest_ref",
     },
 }
 
@@ -418,6 +419,24 @@ def validate_sci_profile_metadata(metadata: dict[str, Any]) -> list[str]:
 
     if metadata["type"] == "boi/science-rule" and "evidence_uses" in science:
         errors.extend(_validate_evidence_uses(science))
+
+    if metadata["type"] == "boi/science-release":
+        holdout_ref = science.get("holdout_manifest_ref")
+        if (
+            not isinstance(holdout_ref, str)
+            or not holdout_ref.startswith("boi:public:science:holdout-manifest:")
+        ):
+            errors.append("science.holdout_manifest_ref is invalid")
+        if science.get("status") in {"active", "superseded"}:
+            for field_name in (
+                "frozen_release_content_hash",
+                "decision_material_digest",
+            ):
+                value = science.get(field_name)
+                if not isinstance(value, str) or not _SHA256_PATTERN.fullmatch(value):
+                    errors.append(
+                        f"science.{field_name} is required for an active or superseded Release"
+                    )
 
     if "evidence_refs" in science:
         science_refs, science_ref_errors = _validate_reference_collection(

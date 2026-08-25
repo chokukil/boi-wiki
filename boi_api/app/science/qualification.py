@@ -5,16 +5,22 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
 from pydantic import Field
 
 from boi_api.app.okf import split_frontmatter
-from boi_api.app.science.catalog import ScienceCatalog
+from boi_api.app.science.catalog import (
+    ReviewerRoleResolver,
+    ScienceCatalog,
+    TrustedHoldoutResolver,
+)
 from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.exceptions import ScienceOperationalError
 from boi_api.app.science.models import (
     ClaimPacket,
     PrimaryVerdict,
@@ -155,19 +161,23 @@ def _structurally_broken_evidence(catalog: ScienceCatalog) -> list[str]:
     return broken
 
 
-def _holdout_manifest(boi_root: Path) -> tuple[str | None, Mapping[str, object] | None]:
-    path = (
-        Path(boi_root)
-        / "public"
-        / "science"
-        / "qualification"
-        / "holdouts"
-        / "manifest.md"
+def _holdout_manifest(
+    boi_root: Path, manifest_ref: str
+) -> tuple[str | None, Mapping[str, object] | None]:
+    root = (
+        Path(boi_root) / "public" / "science" / "qualification" / "holdouts"
     )
-    if not path.is_file():
+    if not root.is_dir():
         return None, None
-    raw = path.read_bytes()
-    metadata, _body = split_frontmatter(raw.decode("utf-8"))
+    matches: list[tuple[bytes, Mapping[str, object]]] = []
+    for path in sorted(root.glob("*.md"), key=lambda item: item.as_posix()):
+        raw = path.read_bytes()
+        metadata, _body = split_frontmatter(raw.decode("utf-8"))
+        if isinstance(metadata, Mapping) and metadata.get("boi_id") == manifest_ref:
+            matches.append((raw, metadata))
+    if len(matches) != 1:
+        return None, None
+    raw, metadata = matches[0]
     holdout = metadata.get("science_holdout")
     return "sha256:" + hashlib.sha256(raw).hexdigest(), (
         holdout if isinstance(holdout, Mapping) else None
@@ -183,10 +193,18 @@ def qualify_release_candidate(
     release_id: str,
     *,
     holdout_path: Path | None = None,
+    reviewer_role_resolver: ReviewerRoleResolver | None = None,
+    trusted_holdout_resolver: TrustedHoldoutResolver | None = None,
+    trusted_clock: Callable[[], datetime] | None = None,
 ) -> QualificationResult:
     """Run public candidate gates without issuing operational authority."""
 
-    catalog = ScienceCatalog(Path(boi_root))
+    catalog = ScienceCatalog(
+        Path(boi_root),
+        reviewer_role_resolver=reviewer_role_resolver,
+        trusted_holdout_resolver=trusted_holdout_resolver,
+        trusted_clock=trusted_clock,
+    )
     release_set = catalog.resolve_release_set(ReleaseSelection(foundation=release_id))
     release = release_set.foundation_release
     qualification = catalog.resolve_qualification_rule_set(release_set)
@@ -305,7 +323,33 @@ def qualify_release_candidate(
         )
 
     broken_evidence = _structurally_broken_evidence(catalog)
-    holdout_manifest_digest, holdout_manifest = _holdout_manifest(Path(boi_root))
+    stored_release = catalog._objects["release"][release.release_id]
+    holdout_manifest_ref = getattr(stored_release, "holdout_manifest_ref", "")
+    holdout_manifest_digest, holdout_manifest = _holdout_manifest(
+        Path(boi_root),
+        holdout_manifest_ref if isinstance(holdout_manifest_ref, str) else "",
+    )
+    holdout_gate_status: GateStatus = "PENDING"
+    holdout_gate_summary = "Independent sealed holdout is not commissioned."
+    if (
+        holdout_manifest
+        and holdout_manifest.get("state") == "sealed_independent_holdout"
+    ):
+        try:
+            catalog.resolve_independent_holdout_qualification(release)
+        except ScienceOperationalError as exc:
+            holdout_gate_status = "FAIL"
+            holdout_gate_summary = f"Stored sealed holdout failed closed validation: {exc}"
+        else:
+            holdout_gate_status = "PASS"
+            holdout_gate_summary = (
+                "Release-bound independent sealed holdout passed exact G5 validation."
+            )
+    elif holdout_path is not None:
+        holdout_gate_summary = (
+            "Caller-provided holdout paths have no qualification authority; "
+            "the stored release-bound holdout remains pending."
+        )
     public_errors = {
         *missed_violations,
         *false_red_cases,
@@ -341,14 +385,8 @@ def qualify_release_candidate(
         ),
         "G5": _gate(
             "G5",
-            "PENDING",
-            (
-                "Independent sealed holdout is not commissioned."
-                if not holdout_manifest
-                or holdout_manifest.get("state") != "sealed_independent_holdout"
-                or holdout_path is None
-                else "Sealed holdout support is reserved for the post-freeze final checker."
-            ),
+            holdout_gate_status,
+            holdout_gate_summary,
         ),
         "G6": _gate(
             "G6",

@@ -134,6 +134,7 @@ def valid_science_metadata(science_type: str) -> dict:
             "known_limitations": [],
             "components": ["sci-rule:fixture"],
             "qualification_report": "sci:report:fixture",
+            "holdout_manifest_ref": "boi:public:science:holdout-manifest:fixture",
         },
     }
     metadata["science"] = science_by_type[science_type]
@@ -153,6 +154,7 @@ def valid_science_metadata(science_type: str) -> dict:
         ("boi/science-ontology-binding", "meaning"),
         ("boi/science-qualification-matrix", "cases"),
         ("boi/science-release", "qualification_report"),
+        ("boi/science-release", "holdout_manifest_ref"),
     ],
 )
 def test_science_stored_object_requires_its_profile_fields(science_type: str, required_field: str):
@@ -163,6 +165,23 @@ def test_science_stored_object_requires_its_profile_fields(science_type: str, re
     del metadata["science"][required_field]
 
     assert f"science.{required_field} is required" in validate_sci_profile_metadata(metadata)
+
+
+def test_active_science_release_requires_preserved_freeze_identity() -> None:
+    from boi_api.app.science.profile import validate_sci_profile_metadata
+
+    metadata = valid_science_metadata("boi/science-release")
+    metadata["science"]["status"] = "active"
+    errors = validate_sci_profile_metadata(metadata)
+
+    assert (
+        "science.frozen_release_content_hash is required for an active or superseded Release"
+        in errors
+    )
+    assert (
+        "science.decision_material_digest is required for an active or superseded Release"
+        in errors
+    )
 
 
 def test_science_knowledge_requires_evidence_and_disallows_confidence():

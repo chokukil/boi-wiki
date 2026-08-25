@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
 from datetime import date, datetime, timedelta
@@ -10,7 +11,7 @@ from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from boi_api.app.okf import (
     split_frontmatter,
@@ -80,6 +81,9 @@ ObjectKind = Literal[
 ]
 
 ReviewerRoleResolver: TypeAlias = Callable[[Mapping[str, str]], Iterable[str]]
+TrustedHoldoutResolver: TypeAlias = Callable[
+    [Mapping[str, str]], Mapping[str, str] | None
+]
 
 _TYPE_TO_KIND: dict[str, ObjectKind] = {
     "boi/science-source": "source",
@@ -159,6 +163,71 @@ class ResolvedEquationKnowledge(BaseModel):
     equation: ScienceEquationKnowledge
 
 
+class TrustedHoldoutIdentity(BaseModel):
+    """Externally trusted identity for one frozen Release holdout artifact."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    release_id: str = Field(min_length=1)
+    frozen_release_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    manifest_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    rule_freeze_commit: str = Field(
+        pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    )
+
+
+class SealedHoldoutResult(BaseModel):
+    """Closed passing/failing result bound to exact Release decision material."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["science-holdout-result/0.1"]
+    status: Literal["passed", "failed"]
+    qualification_gate: Literal["G5"]
+    release_id: str = Field(min_length=1)
+    frozen_release_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    decision_material_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    rule_digests: dict[str, str]
+    component_digests: dict[str, str]
+    case_set_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    sealed_case_count: int = Field(gt=0)
+    result_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def exact_result_digest(self) -> "SealedHoldoutResult":
+        payload = self.model_dump(mode="json", exclude={"result_digest"})
+        if self.result_digest != sha256_digest(payload):
+            raise ValueError("holdout result digest is not exact")
+        for digest_map in (self.rule_digests, self.component_digests):
+            if any(
+                not key.strip()
+                or not isinstance(digest, str)
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest)
+                for key, digest in digest_map.items()
+            ):
+                raise ValueError("holdout decision digests are invalid")
+        return self
+
+
+class SealedIndependentHoldout(BaseModel):
+    """Closed stored manifest; authority still requires an external trust resolver."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    manifest_version: Literal["science-holdout/0.1"]
+    release_id: str = Field(min_length=1)
+    state: Literal["sealed_independent_holdout"]
+    external_acl_url: str = Field(pattern=r"^boi-private://[^\s]+$")
+    sealed_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    rule_freeze_commit: str = Field(
+        pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    )
+    reviewer: dict[str, str]
+    reviewer_role: Literal["independent_science_reviewer"]
+    reviewed_at: str = Field(min_length=1)
+    result: SealedHoldoutResult
+
+
 def _normalized(value: Any) -> Any:
     """Convert YAML values to canonical JSON-compatible values without filesystem state."""
     if isinstance(value, datetime):
@@ -172,6 +241,23 @@ def _normalized(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_normalized(item) for item in value]
     return value
+
+
+def release_decision_material_digest(release: ResolvedRelease) -> str:
+    """Hash frozen scientific decision material while excluding lifecycle metadata."""
+
+    return sha256_digest(
+        {
+            "release_id": release.release_id,
+            "schema_version": release.schema_version,
+            "components": [
+                component.model_dump(mode="json")
+                for component in sorted(release.components, key=lambda item: item.ref)
+            ],
+            "component_digests": dict(sorted(release.component_digests.items())),
+            "known_limitations": release.known_limitations,
+        }
+    )
 
 
 def _release_manifest_digest(metadata: dict[str, Any], body: str) -> str:
@@ -194,6 +280,7 @@ class ScienceCatalog:
         boi_root: Path,
         *,
         reviewer_role_resolver: ReviewerRoleResolver | None = None,
+        trusted_holdout_resolver: TrustedHoldoutResolver | None = None,
         trusted_clock: Callable[[], datetime] | None = None,
         clock_skew: timedelta = timedelta(seconds=30),
     ):
@@ -204,6 +291,7 @@ class ScienceCatalog:
         self.boi_root = Path(boi_root)
         self.science_root = self.boi_root / "public" / "science"
         self._reviewer_role_resolver = reviewer_role_resolver
+        self._trusted_holdout_resolver = trusted_holdout_resolver
         self._trusted_clock = trusted_clock
         self._clock_skew = clock_skew
         self._objects = self._load_objects()
@@ -897,7 +985,15 @@ class ScienceCatalog:
             )
         approval_snapshot: list[dict[str, Any]] = []
         for release in releases:
-            approval_snapshot.extend(self._assert_active_decision_components(release))
+            release_snapshot = self._assert_active_decision_components(release)
+            approval_snapshot.extend(release_snapshot)
+            approval_snapshot.append(
+                self._assert_sealed_independent_holdout(
+                    release,
+                    decision_snapshot=release_snapshot,
+                    require_activation=True,
+                )
+            )
         resolved = self._resolved_rule_set(
             release_set, require_operational_equation_bindings=True
         )
@@ -1538,6 +1634,226 @@ class ScienceCatalog:
             raise ScienceOperationalError(
                 f"trusted reviewer-role resolution failed: {object_id}"
             ) from exc
+
+    def _holdout_document(
+        self, release: ResolvedRelease
+    ) -> tuple[SealedIndependentHoldout, str]:
+        stored_release = self._require("release", release.release_id)
+        manifest_ref = getattr(stored_release, "holdout_manifest_ref", None)
+        if not isinstance(manifest_ref, str) or not manifest_ref.strip():
+            raise ScienceOperationalError(
+                f"active Release lacks a sealed independent holdout manifest: {release.release_id}"
+            )
+        holdout_root = (self.science_root / "qualification" / "holdouts").resolve()
+        if not holdout_root.is_dir():
+            raise ScienceOperationalError(
+                f"active Release lacks a sealed independent holdout manifest: {release.release_id}"
+            )
+        matches: list[tuple[bytes, Mapping[str, Any], Path]] = []
+        for path in sorted(holdout_root.glob("*.md"), key=lambda item: item.as_posix()):
+            resolved_path = path.resolve()
+            if not resolved_path.is_relative_to(holdout_root):
+                raise ScienceOperationalError("holdout manifest escapes its trusted root")
+            try:
+                raw = path.read_bytes()
+                metadata, _body = split_frontmatter(raw.decode("utf-8"))
+            except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+                raise ScienceOperationalError(
+                    f"sealed independent holdout manifest is unreadable: {release.release_id}"
+                ) from exc
+            if isinstance(metadata, Mapping) and metadata.get("boi_id") == manifest_ref:
+                matches.append((raw, metadata, path))
+        if len(matches) != 1:
+            raise ScienceOperationalError(
+                f"active Release lacks one exact sealed independent holdout manifest: {release.release_id}"
+            )
+        raw, metadata, path = matches[0]
+        errors = (
+            validate_okf_core_metadata(dict(metadata))
+            + validate_boi_profile_metadata(dict(metadata))
+            + validate_boi_profile_path_acl(dict(metadata), path, self.boi_root)
+        )
+        if errors:
+            raise ScienceOperationalError(
+                f"sealed independent holdout manifest has invalid OKF metadata: {release.release_id}"
+            )
+        holdout = metadata.get("science_holdout")
+        try:
+            sealed = SealedIndependentHoldout.model_validate(holdout)
+        except (ValidationError, ValueError, TypeError) as exc:
+            raise ScienceOperationalError(
+                f"Release has no valid sealed independent holdout manifest: {release.release_id}"
+            ) from exc
+        return sealed, "sha256:" + hashlib.sha256(raw).hexdigest()
+
+    def _assert_sealed_independent_holdout(
+        self,
+        release: ResolvedRelease,
+        *,
+        decision_snapshot: list[dict[str, Any]],
+        require_activation: bool,
+    ) -> dict[str, Any]:
+        """Return one G5 audit event only for an externally trusted sealed result."""
+
+        if self._trusted_holdout_resolver is None:
+            raise ScienceOperationalError(
+                "active Rule capability requires a trusted independent holdout resolver"
+            )
+        holdout, manifest_digest = self._holdout_document(release)
+        result = holdout.result
+        stored_release = self._require("release", release.release_id)
+        frozen_release_content_hash = (
+            getattr(stored_release, "frozen_release_content_hash", None)
+            if release.status in {"active", "superseded"}
+            else release.content_hash
+        )
+        stored_decision_digest = getattr(
+            stored_release, "decision_material_digest", None
+        )
+        actual_decision_digest = release_decision_material_digest(release)
+        if (
+            holdout.release_id != release.release_id
+            or result.release_id != release.release_id
+            or not isinstance(frozen_release_content_hash, str)
+            or result.frozen_release_content_hash != frozen_release_content_hash
+            or (
+                release.status in {"active", "superseded"}
+                and stored_decision_digest != actual_decision_digest
+            )
+            or (
+                release.status == "release_candidate"
+                and stored_decision_digest not in {None, actual_decision_digest}
+            )
+            or result.decision_material_digest != actual_decision_digest
+        ):
+            raise ScienceOperationalError(
+                f"independent holdout has an invalid release binding: {release.release_id}"
+            )
+        expected_rule_digests = {
+            component.ref: component.semantic_digest
+            for component in release.components
+            if component.kind == "rule"
+        }
+        if (
+            result.component_digests != release.component_digests
+            or result.rule_digests != expected_rule_digests
+        ):
+            raise ScienceOperationalError(
+                f"independent holdout decision digests do not match the Release: {release.release_id}"
+            )
+        if result.status != "passed":
+            raise ScienceOperationalError(
+                f"independent holdout has no passing result: {release.release_id}"
+            )
+        trust_query = {
+            "release_id": release.release_id,
+            "frozen_release_content_hash": frozen_release_content_hash,
+        }
+        try:
+            trusted_raw = self._trusted_holdout_resolver(trust_query)
+            trusted = TrustedHoldoutIdentity.model_validate(trusted_raw)
+        except Exception as exc:
+            raise ScienceOperationalError(
+                f"trusted independent holdout identity is unavailable: {release.release_id}"
+            ) from exc
+        if (
+            trusted.release_id != release.release_id
+            or trusted.frozen_release_content_hash != frozen_release_content_hash
+        ):
+            raise ScienceOperationalError(
+                f"trusted independent holdout has an invalid release binding: {release.release_id}"
+            )
+        if trusted.manifest_digest != manifest_digest:
+            raise ScienceOperationalError(
+                f"independent holdout immutable manifest digest mismatch: {release.release_id}"
+            )
+        if trusted.rule_freeze_commit != holdout.rule_freeze_commit:
+            raise ScienceOperationalError(
+                f"independent holdout does not match the trusted rule freeze: {release.release_id}"
+            )
+
+        reviewer = self._actor_identity(holdout.reviewer)
+        if reviewer is None or reviewer[0] != "human":
+            raise ScienceOperationalError(
+                f"independent holdout reviewer identity is invalid: {release.release_id}"
+            )
+        trusted_roles = self._trusted_admin_roles(reviewer, release.release_id)
+        if "science.independent_holdout_reviewer" not in trusted_roles:
+            raise ScienceOperationalError(
+                f"independent holdout reviewer role is not trusted: {release.release_id}"
+            )
+        decision_actors = {
+            identity
+            for item in decision_snapshot
+            if (identity := self._actor_identity(item.get("actor"))) is not None
+        }
+        authored_objects = [
+            stored_release,
+            *(self._find_component(component.ref) for component in release.components),
+        ]
+        author_identities = {
+            identity
+            for item in authored_objects
+            if (identity := self._actor_identity(item.okf_author)) is not None
+        }
+        if reviewer in decision_actors or reviewer in author_identities:
+            raise ScienceOperationalError(
+                f"independent holdout reviewer is not distinct from author, approver, or activator: {release.release_id}"
+            )
+        reviewed_at = self._timestamp(
+            holdout.reviewed_at,
+            label="holdout reviewed_at",
+            object_id=release.release_id,
+        )
+        now = self._trusted_now()
+        if reviewed_at > now + self._clock_skew:
+            raise ScienceOperationalError(
+                f"independent holdout review occurs after trusted clock: {release.release_id}"
+            )
+        authorship_boundary = max(
+            self._authorship_boundary(item) for item in authored_objects
+        )
+        if reviewed_at < authorship_boundary:
+            raise ScienceOperationalError(
+                f"independent holdout review precedes the frozen Release material: {release.release_id}"
+            )
+        activation_times = [
+            self._timestamp(
+                item.get("occurred_at"),
+                label="activation occurred_at",
+                object_id=release.release_id,
+            )
+            for item in decision_snapshot
+            if item.get("event_kind") == "activation"
+        ]
+        if require_activation and (
+            len(activation_times) != 1 or reviewed_at > activation_times[0]
+        ):
+            raise ScienceOperationalError(
+                f"independent holdout review must precede Release activation: {release.release_id}"
+            )
+        return {
+            "release_id": release.release_id,
+            "object_id": str(getattr(stored_release, "holdout_manifest_ref")),
+            "object_digest": manifest_digest,
+            "event_kind": "sealed_independent_holdout",
+            "actor": {"type": "human", "user_id": reviewer[1]},
+            "occurred_at": reviewed_at.isoformat(),
+            "rule_freeze_commit": holdout.rule_freeze_commit,
+            "result_digest": result.result_digest,
+            "qualification_gate": "G5",
+        }
+
+    def resolve_independent_holdout_qualification(
+        self, release: ResolvedRelease
+    ) -> dict[str, Any]:
+        """Validate G5 without issuing any operational Rule capability."""
+
+        return self._assert_sealed_independent_holdout(
+            release,
+            decision_snapshot=[],
+            require_activation=False,
+        )
 
     def _authorship_boundary(self, component: ScienceObject) -> datetime:
         boundary = self._timestamp(

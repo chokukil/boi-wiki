@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-EXPECTED_FOUNDATION_RELEASE_HASH = "sha256:e0f12bb1b3547d7df22da6738087f72470412161213e258bf4cf646a4eb9465b"
+EXPECTED_FOUNDATION_RELEASE_HASH = "sha256:e801dfbe0f2ef880ad97cee1cf278da9e19fcc9fcf3c8359f8713432d80b1e21"
 
 
 def _normalized_for_oracle(value: object) -> object:
@@ -154,11 +154,18 @@ def _add_release(boi_root: Path, *, release_id: str = "sci-release:0.1.0", statu
         "known_limitations": ["fixture-only"],
         "components": components or [],
         "qualification_report": "sci:report:fixture",
+        "holdout_manifest_ref": (
+            "boi:public:science:holdout-manifest:"
+            + release_id.removeprefix("sci-release:")
+        ),
     }
     if last_safe_release_id is not None:
         science["last_safe_release_id"] = last_safe_release_id
     if active is not None:
         science["active"] = active
+    if status in {"active", "superseded"}:
+        science["frozen_release_content_hash"] = "sha256:" + "0" * 64
+        science["decision_material_digest"] = "sha256:" + "0" * 64
     _write_release(boi_root, f"releases/{release_id.replace(':', '-')}.md", _metadata("boi/science-release", science, boi_id=release_id))
 
 
@@ -248,6 +255,8 @@ def _approve_decision_document(
 def _trusted_admin_roles(actor: dict[str, str]) -> set[str]:
     if actor == {"type": "human", "user_id": "reviewer-1"}:
         return {"science.admin"}
+    if actor == {"type": "human", "user_id": "holdout-reviewer-1"}:
+        return {"science.independent_holdout_reviewer"}
     return set()
 
 
@@ -263,8 +272,14 @@ def _activate_release_document(
     approved_at: str = "2026-08-25T09:30:00+09:00",
     activated_at: str = "2026-08-25T09:40:00+09:00",
 ) -> None:
+    from boi_api.app.science.catalog import (
+        ScienceCatalog,
+        release_decision_material_digest,
+    )
+
     relative = f"releases/{release_id.replace(':', '-')}.md"
     path = boi_root / "public" / "science" / relative
+    frozen_release = ScienceCatalog(boi_root).resolve_release(release_id)
     metadata = yaml.safe_load(path.read_text(encoding="utf-8").split("---", 2)[1])
     metadata["author"] = {"type": "agent", "agent_id": "fixture-release-author"}
     metadata["status"] = "approved"
@@ -281,8 +296,11 @@ def _activate_release_document(
             }
         ],
     }
+    target_status = (
+        "superseded" if frozen_release.status == "superseded" else "active"
+    )
     metadata["activation"] = {
-        "activation_status": "active",
+        "activation_status": target_status,
         "authorized_activation_events": [
             {
                 "decision": "activated",
@@ -291,8 +309,141 @@ def _activate_release_document(
             }
         ],
     }
+    metadata["science"]["status"] = target_status
+    metadata["science"]["frozen_release_content_hash"] = frozen_release.content_hash
+    metadata["science"]["decision_material_digest"] = (
+        release_decision_material_digest(frozen_release)
+    )
     metadata["science"]["release_eligibility"] = "active_release_eligible"
     _write_release(boi_root, relative, metadata)
+
+
+def _freeze_release_document(
+    boi_root: Path, release_id: str = "sci-release:0.1.0"
+) -> None:
+    relative = f"releases/{release_id.replace(':', '-')}.md"
+    path = boi_root / "public" / "science" / relative
+    metadata = yaml.safe_load(path.read_text(encoding="utf-8").split("---", 2)[1])
+    metadata["science"]["status"] = "release_candidate"
+    metadata["science"].pop("frozen_release_content_hash", None)
+    metadata["science"].pop("decision_material_digest", None)
+    metadata.pop("activation", None)
+    _write_release(boi_root, relative, metadata)
+
+
+def _write_sealed_holdout(
+    boi_root: Path,
+    release_id: str = "sci-release:0.1.0",
+    *,
+    reviewer_id: str = "holdout-reviewer-1",
+    rule_freeze_commit: str = "a" * 40,
+    result_status: str = "passed",
+) -> Path:
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.digests import sha256_digest
+
+    from boi_api.app.science.catalog import release_decision_material_digest
+
+    release = ScienceCatalog(boi_root).resolve_release(release_id)
+    result = {
+        "schema_version": "science-holdout-result/0.1",
+        "status": result_status,
+        "qualification_gate": "G5",
+        "release_id": release.release_id,
+        "frozen_release_content_hash": release.content_hash,
+        "decision_material_digest": release_decision_material_digest(release),
+        "rule_digests": {
+            component.ref: component.semantic_digest
+            for component in release.components
+            if component.kind == "rule"
+        },
+        "component_digests": release.component_digests,
+        "case_set_digest": "sha256:" + "7" * 64,
+        "sealed_case_count": 2,
+    }
+    result["result_digest"] = sha256_digest(result)
+    suffix = release_id.removeprefix("sci-release:")
+    metadata = {
+        "okf_version": "0.1",
+        "boi_profile_version": "0.1",
+        "type": "boi/report",
+        "title": f"{release_id} sealed independent holdout",
+        "description": "Immutable independent holdout result fixture",
+        "tags": ["ScienceVerifier", "Holdout"],
+        "timestamp": "2026-08-25T09:35:00+09:00",
+        "boi_id": f"boi:public:science:holdout-manifest:{suffix}",
+        "visibility": "public",
+        "classification": "internal",
+        "owner": "science-admin",
+        "author": {"type": "agent", "agent_id": "holdout-recorder"},
+        "acl_policy": "acl:public",
+        "status": "reviewed",
+        "source_refs": [{"type": "boi", "ref": release_id}],
+        "review": {
+            "reviewer": reviewer_id,
+            "reviewed_at": "2026-08-25T09:35:00+09:00",
+            "review_status": "reviewed",
+            "required_role": "independent_science_reviewer",
+            "authorized_review_events": [],
+        },
+        "science_holdout": {
+            "manifest_version": "science-holdout/0.1",
+            "release_id": release.release_id,
+            "state": "sealed_independent_holdout",
+            "external_acl_url": f"boi-private://science-verifier/holdouts/{suffix}.json",
+            "sealed_sha256": "sha256:" + "9" * 64,
+            "rule_freeze_commit": rule_freeze_commit,
+            "reviewer": {"type": "human", "user_id": reviewer_id},
+            "reviewer_role": "independent_science_reviewer",
+            "reviewed_at": "2026-08-25T09:35:00+09:00",
+            "result": result,
+        },
+    }
+    path = (
+        boi_root
+        / "public"
+        / "science"
+        / "qualification"
+        / "holdouts"
+        / f"{release_id.replace(':', '-')}.md"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "---\n"
+        + yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True)
+        + "---\n# Sealed independent holdout\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _trusted_holdout_resolver_snapshot(boi_root: Path):
+    from boi_api.app.okf import split_frontmatter
+
+    registry: dict[tuple[str, str], dict[str, str]] = {}
+    holdout_root = boi_root / "public" / "science" / "qualification" / "holdouts"
+    for path in sorted(holdout_root.glob("*.md")):
+        raw = path.read_bytes()
+        metadata, _body = split_frontmatter(raw.decode("utf-8"))
+        holdout = metadata.get("science_holdout", {})
+        result = holdout.get("result", {})
+        release_id = result.get("release_id")
+        frozen_release_content_hash = result.get("frozen_release_content_hash")
+        if isinstance(release_id, str) and isinstance(frozen_release_content_hash, str):
+            registry[(release_id, frozen_release_content_hash)] = {
+                "release_id": release_id,
+                "frozen_release_content_hash": frozen_release_content_hash,
+                "manifest_digest": "sha256:" + hashlib.sha256(raw).hexdigest(),
+                "rule_freeze_commit": holdout["rule_freeze_commit"],
+            }
+
+    def resolve(query: dict[str, str]) -> dict[str, str] | None:
+        value = registry.get(
+            (query["release_id"], query["frozen_release_content_hash"])
+        )
+        return deepcopy(value) if value is not None else None
+
+    return resolve
 
 
 def _fully_approved_operational_fixture(science_tree: Path) -> dict[str, str]:
@@ -315,6 +466,8 @@ def _fully_approved_operational_fixture(science_tree: Path) -> dict[str, str]:
             for object_id, relative in paths.items()
         },
     )
+    _freeze_release_document(science_tree)
+    _write_sealed_holdout(science_tree)
     _activate_release_document(science_tree)
     return paths
 
@@ -829,6 +982,7 @@ def test_catalog_issues_opaque_operational_attestation_only_after_complete_activ
     catalog = ScienceCatalog(
         science_tree,
         reviewer_role_resolver=_trusted_admin_roles,
+        trusted_holdout_resolver=_trusted_holdout_resolver_snapshot(science_tree),
         trusted_clock=_trusted_clock,
     )
     release_set = catalog.resolve_release_set(
@@ -878,7 +1032,12 @@ def test_catalog_issues_opaque_operational_attestation_only_after_complete_activ
             "component_digests": release_set.foundation_release.component_digests,
         }
     ]
-    assert len(attestation["approval_snapshot"]) == 9
+    assert len(attestation["approval_snapshot"]) == 10
+    assert any(
+        item["event_kind"] == "sealed_independent_holdout"
+        and item["release_id"] == "sci-release:0.1.0"
+        for item in attestation["approval_snapshot"]
+    )
     assert attestation["rule_set_digest"] == operational.rule_set_digest
     assert verify_claim(claim, operational).verdict is PrimaryVerdict.VIOLATION
     with pytest.raises(TypeError, match="Catalog-issued operational verification"):
@@ -894,6 +1053,163 @@ def test_catalog_issues_opaque_operational_attestation_only_after_complete_activ
         copy.copy(operational)
     with pytest.raises(TypeError, match="cannot be serialized"):
         pickle.dumps(operational)
+
+
+def test_operational_rule_capability_rejects_locally_authored_holdout_without_trust(
+    science_tree: Path,
+) -> None:
+    """A perfect-looking local file must not mint G5 authority by itself."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceOperationalError
+    from boi_api.app.science.models import ReleaseSelection
+
+    _fully_approved_operational_fixture(science_tree)
+    catalog = ScienceCatalog(
+        science_tree,
+        reviewer_role_resolver=_trusted_admin_roles,
+        trusted_clock=_trusted_clock,
+    )
+    release_set = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:0.1.0")
+    )
+
+    with pytest.raises(
+        ScienceOperationalError, match="trusted independent holdout resolver"
+    ):
+        catalog.resolve_operational_rule_set(release_set)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("missing", "sealed independent holdout manifest"),
+        ("tampered", "immutable manifest digest"),
+        ("self_reviewed", "independent holdout reviewer"),
+        ("wrong_release", "release binding"),
+        ("wrong_freeze", "trusted rule freeze"),
+        ("failed", "passing result"),
+        ("reviewed_after_activation", "precede Release activation"),
+    ],
+)
+def test_operational_rule_capability_fails_closed_on_invalid_independent_holdout(
+    science_tree: Path, mutation: str, message: str
+) -> None:
+    """Missing or mutable holdout assertions never authorize deterministic verdicts."""
+    from boi_api.app.okf import split_frontmatter
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.digests import sha256_digest
+    from boi_api.app.science.exceptions import ScienceOperationalError
+    from boi_api.app.science.models import ReleaseSelection
+
+    _fully_approved_operational_fixture(science_tree)
+    trusted_resolver = _trusted_holdout_resolver_snapshot(science_tree)
+    path = next(
+        (science_tree / "public/science/qualification/holdouts").glob("*.md")
+    )
+    if mutation == "missing":
+        path.unlink()
+    else:
+        metadata, body = split_frontmatter(path.read_text(encoding="utf-8"))
+        holdout = metadata["science_holdout"]
+        if mutation == "tampered":
+            body += "\nTampered after the trusted digest was recorded.\n"
+        elif mutation == "self_reviewed":
+            holdout["reviewer"]["user_id"] = "reviewer-1"
+        elif mutation == "wrong_release":
+            holdout["result"]["release_id"] = "sci-release:other"
+        elif mutation == "wrong_freeze":
+            holdout["rule_freeze_commit"] = "b" * 40
+        elif mutation == "failed":
+            holdout["result"]["status"] = "failed"
+        elif mutation == "reviewed_after_activation":
+            holdout["reviewed_at"] = "2026-08-25T09:45:00+09:00"
+        if mutation in {
+            "self_reviewed",
+            "wrong_release",
+            "failed",
+            "reviewed_after_activation",
+        }:
+            result = holdout["result"]
+            result["result_digest"] = sha256_digest(
+                {key: value for key, value in result.items() if key != "result_digest"}
+            )
+        path.write_text(
+            "---\n"
+            + yaml.safe_dump(metadata, sort_keys=False, allow_unicode=True)
+            + "---\n"
+            + body.lstrip("\n"),
+            encoding="utf-8",
+        )
+        if mutation in {
+            "self_reviewed",
+            "wrong_release",
+            "failed",
+            "reviewed_after_activation",
+        }:
+            trusted_resolver = _trusted_holdout_resolver_snapshot(science_tree)
+        elif mutation == "wrong_freeze":
+            current_resolver = _trusted_holdout_resolver_snapshot(science_tree)
+
+            def trusted_resolver(query: dict[str, str]) -> dict[str, str] | None:
+                identity = current_resolver(query)
+                if identity is not None:
+                    identity["rule_freeze_commit"] = "a" * 40
+                return identity
+
+    catalog = ScienceCatalog(
+        science_tree,
+        reviewer_role_resolver=_trusted_admin_roles,
+        trusted_holdout_resolver=trusted_resolver,
+        trusted_clock=_trusted_clock,
+    )
+    release_set = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:0.1.0")
+    )
+
+    with pytest.raises(ScienceOperationalError, match=message):
+        catalog.resolve_operational_rule_set(release_set)
+
+
+def test_operational_holdout_rejects_decision_material_changed_after_rule_freeze(
+    science_tree: Path,
+) -> None:
+    """Activation lifecycle may change, but post-freeze scientific content may not."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceOperationalError
+    from boi_api.app.science.models import ReleaseSelection
+
+    paths = _fully_approved_operational_fixture(science_tree)
+    trusted_resolver = _trusted_holdout_resolver_snapshot(science_tree)
+    rule_path = science_tree / "public/science/rules/rule.md"
+    metadata = yaml.safe_load(
+        rule_path.read_text(encoding="utf-8").split("---", 2)[1]
+    )
+    _write_document(
+        science_tree,
+        "rules/rule.md",
+        metadata,
+        body="# Changed after the independent holdout was sealed\n",
+    )
+    _replace_release_components(
+        science_tree,
+        "sci-release:0.1.0",
+        {
+            object_id: _component_digest(science_tree, relative)
+            for object_id, relative in paths.items()
+        },
+    )
+    catalog = ScienceCatalog(
+        science_tree,
+        reviewer_role_resolver=_trusted_admin_roles,
+        trusted_holdout_resolver=trusted_resolver,
+        trusted_clock=_trusted_clock,
+    )
+    release_set = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:0.1.0")
+    )
+
+    with pytest.raises(ScienceOperationalError, match="release binding"):
+        catalog.resolve_operational_rule_set(release_set)
 
 
 def test_catalog_rejects_arbitrary_superseded_release_for_new_operational_verdict(
@@ -913,6 +1229,7 @@ def test_catalog_rejects_arbitrary_superseded_release_for_new_operational_verdic
     catalog = ScienceCatalog(
         science_tree,
         reviewer_role_resolver=_trusted_admin_roles,
+        trusted_holdout_resolver=_trusted_holdout_resolver_snapshot(science_tree),
         trusted_clock=_trusted_clock,
     )
     release_set = catalog.resolve_release_set(
@@ -1028,6 +1345,7 @@ def test_typed_evidence_scope_conditions_are_nondecisive_when_claim_input_is_mis
     catalog = ScienceCatalog(
         science_tree,
         reviewer_role_resolver=_trusted_admin_roles,
+        trusted_holdout_resolver=_trusted_holdout_resolver_snapshot(science_tree),
         trusted_clock=_trusted_clock,
     )
     release_set = catalog.resolve_release_set(
@@ -1542,6 +1860,8 @@ def test_catalog_to_engine_cross_task_proof_uses_exact_full_release_selection(
         "sci-release:0.1.0",
         foundation_components,
     )
+    _freeze_release_document(science_tree)
+    _write_sealed_holdout(science_tree)
     _activate_release_document(science_tree)
     domain_relative = _add_pack(
         science_tree,
@@ -1562,6 +1882,8 @@ def test_catalog_to_engine_cross_task_proof_uses_exact_full_release_selection(
         "sci-release:domain-proof",
         {"sci-pack:domain-proof": _component_digest(science_tree, domain_relative)},
     )
+    _freeze_release_document(science_tree, "sci-release:domain-proof")
+    _write_sealed_holdout(science_tree, "sci-release:domain-proof")
     _activate_release_document(science_tree, "sci-release:domain-proof")
     application_relative = _add_pack(
         science_tree,
@@ -1592,6 +1914,8 @@ def test_catalog_to_engine_cross_task_proof_uses_exact_full_release_selection(
             )
         },
     )
+    _freeze_release_document(science_tree, "sci-release:application-proof")
+    _write_sealed_holdout(science_tree, "sci-release:application-proof")
     _activate_release_document(science_tree, "sci-release:application-proof")
     selection = ReleaseSelection(
         foundation="sci-release:0.1.0",
@@ -1631,6 +1955,7 @@ def test_catalog_to_engine_cross_task_proof_uses_exact_full_release_selection(
     catalog = ScienceCatalog(
         science_tree,
         reviewer_role_resolver=_trusted_admin_roles,
+        trusted_holdout_resolver=_trusted_holdout_resolver_snapshot(science_tree),
         trusted_clock=_trusted_clock,
     )
 

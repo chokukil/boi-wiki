@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -130,6 +132,116 @@ def test_pending_holdout_manifest_is_explicit_and_non_authorizing() -> None:
     assert holdout["expected_minimum_case_count"] == 88
     assert holdout["required_non_spin_majority"] is True
     assert "actual holdout claims are not stored" in body.lower()
+
+
+def test_g5_passes_only_for_release_bound_externally_trusted_sealed_holdout(
+    tmp_path: Path,
+) -> None:
+    from boi_api.app.science.catalog import release_decision_material_digest
+    from boi_api.app.science.digests import sha256_digest
+
+    copied_root = tmp_path / "boi"
+    shutil.copytree(BOI_ROOT, copied_root)
+    catalog = ScienceCatalog(copied_root)
+    release = catalog.resolve_release(RELEASE_ID)
+    metadata, body = split_frontmatter(
+        (copied_root / HOLDOUT_MANIFEST_PATH.relative_to(BOI_ROOT)).read_text(
+            encoding="utf-8"
+        )
+    )
+    result = {
+        "schema_version": "science-holdout-result/0.1",
+        "status": "passed",
+        "qualification_gate": "G5",
+        "release_id": release.release_id,
+        "frozen_release_content_hash": release.content_hash,
+        "decision_material_digest": release_decision_material_digest(release),
+        "rule_digests": {
+            component.ref: component.semantic_digest
+            for component in release.components
+            if component.kind == "rule"
+        },
+        "component_digests": release.component_digests,
+        "case_set_digest": "sha256:" + "7" * 64,
+        "sealed_case_count": 88,
+    }
+    result["result_digest"] = sha256_digest(result)
+    metadata["status"] = "reviewed"
+    metadata["review"] = {
+        "reviewer": "holdout-reviewer-1",
+        "reviewed_at": "2026-08-25T23:00:00+09:00",
+        "review_status": "reviewed",
+        "required_role": "independent_science_reviewer",
+        "authorized_review_events": [],
+    }
+    metadata["science_holdout"] = {
+        "manifest_version": "science-holdout/0.1",
+        "release_id": release.release_id,
+        "state": "sealed_independent_holdout",
+        "external_acl_url": "boi-private://science-verifier/holdouts/science-release-0.1.0.json",
+        "sealed_sha256": "sha256:" + "9" * 64,
+        "rule_freeze_commit": "a" * 40,
+        "reviewer": {"type": "human", "user_id": "holdout-reviewer-1"},
+        "reviewer_role": "independent_science_reviewer",
+        "reviewed_at": "2026-08-25T23:00:00+09:00",
+        "result": result,
+    }
+    path = copied_root / HOLDOUT_MANIFEST_PATH.relative_to(BOI_ROOT)
+    path.write_text(
+        "---\n"
+        + json.dumps(metadata, ensure_ascii=False, indent=2)
+        + "\n---\n"
+        + body.lstrip("\n"),
+        encoding="utf-8",
+    )
+    manifest_digest = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+    untrusted = qualify_release_candidate(copied_root, RELEASE_ID)
+    assert untrusted.gates["G5"].status == "FAIL"
+
+    def reviewer_roles(actor: dict[str, str]) -> set[str]:
+        if actor == {"type": "human", "user_id": "holdout-reviewer-1"}:
+            return {"science.independent_holdout_reviewer"}
+        return set()
+
+    def trusted_holdout(query: dict[str, str]) -> dict[str, str] | None:
+        if query != {
+            "release_id": release.release_id,
+            "frozen_release_content_hash": release.content_hash,
+        }:
+            return None
+        return {
+            **query,
+            "manifest_digest": manifest_digest,
+            "rule_freeze_commit": "a" * 40,
+        }
+
+    result = qualify_release_candidate(
+        copied_root,
+        RELEASE_ID,
+        reviewer_role_resolver=reviewer_roles,
+        trusted_holdout_resolver=trusted_holdout,
+        trusted_clock=lambda: datetime.fromisoformat("2026-08-25T23:30:00+09:00"),
+    )
+
+    assert result.gates["G5"].status == "PASS", result.gates["G5"].summary
+    assert result.activation_eligible is False
+
+
+def test_caller_provided_holdout_path_cannot_change_pending_g5(
+    tmp_path: Path,
+) -> None:
+    asserted = tmp_path / "caller-asserted-holdout.json"
+    asserted.write_text('{"status":"passed"}', encoding="utf-8")
+
+    result = qualify_release_candidate(
+        BOI_ROOT,
+        RELEASE_ID,
+        holdout_path=asserted,
+    )
+
+    assert result.gates["G5"].status == "PENDING"
+    assert "no qualification authority" in result.gates["G5"].summary
 
 
 def test_qualification_cli_writes_reproducible_preflight_report(tmp_path: Path) -> None:
