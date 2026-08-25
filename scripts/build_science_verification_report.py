@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -19,7 +20,33 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+SOURCE_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(SOURCE_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_REPO_ROOT))
+
+from boi_api.app.science.catalog import ScienceCatalog  # noqa: E402
+from boi_api.app.science.equation_assets import (  # noqa: E402
+    load_equation_asset_manifest,
+)
+from boi_api.app.science.equation_rendering import (  # noqa: E402
+    safe_equation_svg_to_drawing,
+)
+from boi_api.app.science.rules import (  # noqa: E402
+    EQUATION_EVALUATOR_CONTRACT,
+    EQUATION_EVALUATOR_CONTRACT_DIGEST,
+    EQUATION_EVALUATOR_ID,
+    EQUATION_EVALUATOR_VERSION,
+    validate_operational_equation_binding,
+)
 
 
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -48,6 +75,12 @@ MANDATORY_BROWSER_CHECK_IDS = frozenset(
         "mobile_single_column",
         "wiki_selection_handoff",
         "wiki_local_revision_preserves_lineage",
+        "equation_committed_asset_renders_exact_svg",
+        "equation_identity_and_evidence_visible",
+        "equation_details_copy_and_accessibility",
+        "equation_failures_keep_plain_fallback_without_red",
+        "equation_mobile_scroll_is_contained",
+        "equation_qa_is_explicitly_non_operational",
         "console_clean",
     }
 )
@@ -73,6 +106,37 @@ ALLOWED_FULL_REGRESSION_SKIPS = frozenset(
         "tests.test_repository_source_and_mcp.McpConnectionContractTests::test_codex_preview_apply_and_rollback_preserve_unrelated_config_and_token",
         "tests.test_repository_source_and_mcp.McpConnectionContractTests::test_verify_runs_initialize_and_tools_list_without_private_content",
     }
+)
+
+EQUATION_DOMAIN_LABELS = {
+    "sci:equation:chemistry:molar-concentration-definition": "Chemistry",
+    "sci:equation:circuits:kvl-loop-balance": "Circuits",
+    "sci:equation:materials:arrhenius-diffusion": "Materials Science",
+    "sci:equation:physics:applied-work-kinetic-energy-change": "Physics",
+    "sci:equation:semiconductor:low-field-conductivity": "Semiconductor Devices",
+    "sci:equation:spin-coating:drying-limited-power-law": "Spin Coating",
+}
+EXPECTED_DETERMINISTIC_EQUATION_IDS = frozenset(
+    {
+        "sci:equation:chemistry:molar-concentration-definition",
+        "sci:equation:circuits:kvl-loop-balance",
+        "sci:equation:physics:applied-work-kinetic-energy-change",
+    }
+)
+EXPECTED_EXPLANATION_ONLY_EQUATION_IDS = frozenset(
+    {
+        "sci:equation:materials:arrhenius-diffusion",
+        "sci:equation:semiconductor:low-field-conductivity",
+        "sci:equation:spin-coating:drying-limited-power-law",
+    }
+)
+UNSUPPORTED_DECISION_AUTHORITY_FORMS = (
+    ("vector", "vectors"),
+    ("matrix", "matrices"),
+    ("derivative", "derivatives"),
+    ("integral", "integrals"),
+    ("summation", "summations"),
+    ("chemical_reaction", "chemical reactions"),
 )
 
 
@@ -598,6 +662,202 @@ def _review_evidence(
     return record, failures
 
 
+def _equation_knowledge_evidence(
+    repo_root: Path,
+) -> tuple[dict[str, Any], list[str]]:
+    """Validate the committed presentation manifest against the Science Catalog.
+
+    The presentation SVGs never acquire verdict authority here.  The evidence
+    record only proves that the exact, digest-bound display assets correspond
+    to the six reviewed Equation Knowledge packages in the Candidate Catalog.
+    """
+
+    path = repo_root / "boi_api/app/static/science-equations.json"
+    record, data = _base_evidence(path, repo_root)
+    if data is None:
+        record.update({"valid": False, "passed": False})
+        return record, ["equation_knowledge:missing"]
+
+    try:
+        manifest = load_equation_asset_manifest(path)
+        catalog = ScienceCatalog(repo_root / "data/boi")
+        resolved_equations = {
+            resolved.equation.equation_id: resolved
+            for resolved in catalog._equations.values()
+        }
+        assets = {asset.equation_id: asset for asset in manifest.assets}
+        expected_ids = set(EQUATION_DOMAIN_LABELS)
+        if set(resolved_equations) != expected_ids or set(assets) != expected_ids:
+            raise ValueError("Equation Catalog and presentation manifest must be exact")
+
+        decision_use_by_id: dict[str, str] = {}
+        asset_summaries: list[dict[str, Any]] = []
+        pdf_safe_drawing_count = 0
+        for equation_id in sorted(expected_ids):
+            resolved = resolved_equations[equation_id]
+            equation = resolved.equation
+            asset = assets[equation_id]
+            if (
+                asset.equation_digest != equation.equation_digest
+                or asset.display_latex != equation.display_latex
+                or asset.plain_text != equation.plain_text
+                or asset.accessibility_reading != equation.accessibility_reading
+            ):
+                raise ValueError("Equation presentation does not match the Catalog")
+            drawing = safe_equation_svg_to_drawing(
+                asset.sanitized_svg, asset.svg_digest
+            )
+            if drawing is None:
+                raise ValueError("Equation SVG is not safe for PDF presentation")
+            pdf_safe_drawing_count += 1
+            decision_use_by_id[equation_id] = equation.decision_use
+            evidence_summaries: list[dict[str, Any]] = []
+            for use in equation.evidence_uses:
+                evidence_object = catalog._objects["evidence"][use.evidence_ref]
+                source_object = catalog._objects["source"][evidence_object.source_id]
+                evidence_summaries.append(
+                    {
+                        "evidence_id": use.evidence_ref,
+                        "evidence_digest": evidence_object.digest,
+                        "source_id": evidence_object.source_id,
+                        "source_digest": source_object.digest,
+                        "source_url": source_object.original_url,
+                        "locator": evidence_object.locator,
+                        "locator_digest": use.locator_digest,
+                        "claim_scope_hash": use.claim_scope_hash,
+                        "exact_quote_hash": evidence_object.original_text_hash,
+                    }
+                )
+            asset_summaries.append(
+                {
+                    "equation_id": equation_id,
+                    "equation_digest": equation.equation_digest,
+                    "domain_label": EQUATION_DOMAIN_LABELS[equation_id],
+                    "knowledge_id": resolved.knowledge_id,
+                    "knowledge_digest": resolved.knowledge_digest,
+                    "decision_use": equation.decision_use,
+                    "scientific_role": equation.scientific_role,
+                    "display_latex": equation.display_latex,
+                    "plain_text": equation.plain_text,
+                    "asset_digest": asset.asset_digest,
+                    "svg_digest": asset.svg_digest,
+                    "evidence_uses": evidence_summaries,
+                }
+            )
+
+        deterministic_ids = {
+            equation_id
+            for equation_id, decision_use in decision_use_by_id.items()
+            if decision_use == "deterministic_rule"
+        }
+        explanation_only_ids = {
+            equation_id
+            for equation_id, decision_use in decision_use_by_id.items()
+            if decision_use == "explanation_only"
+        }
+        if deterministic_ids != set(EXPECTED_DETERMINISTIC_EQUATION_IDS):
+            raise ValueError("deterministic Equation Knowledge set changed")
+        if explanation_only_ids != set(EXPECTED_EXPLANATION_ONLY_EQUATION_IDS):
+            raise ValueError("explanation-only Equation Knowledge set changed")
+        if set(decision_use_by_id.values()) != {
+            "deterministic_rule",
+            "explanation_only",
+        }:
+            raise ValueError("unexpected Equation decision use")
+
+        rule_bindings: list[dict[str, Any]] = []
+        for rule_object in catalog._objects["rule"].values():
+            rule = catalog._verification_rule(rule_object)
+            if rule.equation_binding is None:
+                continue
+            identity = validate_operational_equation_binding(rule)
+            if identity is None:
+                continue
+            resolved = resolved_equations.get(identity.equation_id)
+            if (
+                resolved is None
+                or identity.equation_digest != resolved.equation.equation_digest
+                or identity.equation_id not in deterministic_ids
+                or identity.evaluator_id != EQUATION_EVALUATOR_ID
+                or identity.evaluator_version != EQUATION_EVALUATOR_VERSION
+                or identity.evaluator_digest != EQUATION_EVALUATOR_CONTRACT_DIGEST
+                or identity.constraint_operator
+                not in EQUATION_EVALUATOR_CONTRACT["operators"]
+            ):
+                raise ValueError("Rule is not bound to the exact closed evaluator")
+            rule_bindings.append(
+                {
+                    "rule_id": rule.rule_id,
+                    "rule_digest": rule_object.digest,
+                    "equation_id": identity.equation_id,
+                    "equation_digest": identity.equation_digest,
+                    "constraint_operator": identity.constraint_operator,
+                    "evaluator_digest": identity.evaluator_digest,
+                }
+            )
+        rule_bindings.sort(key=lambda item: item["rule_id"])
+        if {item["equation_id"] for item in rule_bindings} != deterministic_ids:
+            raise ValueError("deterministic Equation set lacks exact Rule bindings")
+    except (OSError, RuntimeError, TypeError, ValueError):
+        record.update({"valid": False, "passed": False})
+        return record, ["equation_knowledge:invalid"]
+
+    unsupported = [
+        {
+            "form": form,
+            "label": label,
+            "decision_authority": "unsupported",
+            "display_or_explanation": "allowed_when_reviewed_and_evidence_bound",
+        }
+        for form, label in UNSUPPORTED_DECISION_AUTHORITY_FORMS
+    ]
+    record.update(
+        {
+            "valid": True,
+            "passed": True,
+            "schema_version": manifest.schema_version,
+            "manifest_digest": manifest.manifest_digest,
+            "asset_count": len(manifest.assets),
+            "catalog_equation_count": len(resolved_equations),
+            "domain_labels": sorted(EQUATION_DOMAIN_LABELS.values()),
+            "decision_use_counts": {
+                "deterministic_rule": len(deterministic_ids),
+                "explanation_only": len(explanation_only_ids),
+            },
+            "deterministic_rule_equation_ids": sorted(deterministic_ids),
+            "explanation_only_equation_ids": sorted(explanation_only_ids),
+            "assets": asset_summaries,
+            "rule_bindings": rule_bindings,
+            "supported_evaluator": {
+                "evaluator_id": EQUATION_EVALUATOR_ID,
+                "version": EQUATION_EVALUATOR_VERSION,
+                "evaluator_digest": EQUATION_EVALUATOR_CONTRACT_DIGEST,
+                "constraint_operators": list(EQUATION_EVALUATOR_CONTRACT["operators"]),
+            },
+            "unsupported_as_decision_authority": unsupported,
+            "pdf_safe_drawing_count": pdf_safe_drawing_count,
+            "presentation_authority": "none",
+            "verdict_effect": "none",
+            "red_mark_effect": "none",
+            "implementation_contract": {
+                "structured_explanations": (
+                    "GroundedExplanation blocks bind exact Knowledge, Rule, "
+                    "Equation, evaluator, and Evidence identities/digests."
+                ),
+                "scientific_report_digest": (
+                    "VerificationReport.report_digest is computed from a "
+                    "renderer-independent scientific payload."
+                ),
+                "export_digest": (
+                    "Markdown/PDF export_digest identifies exact rendered bytes "
+                    "and does not replace the scientific report digest."
+                ),
+            },
+        }
+    )
+    return record, []
+
+
 def _knowledge_counts(repo_root: Path, public_case_count: int | None) -> dict[str, int]:
     root = repo_root / "data/boi/public/science"
     return {
@@ -641,6 +901,7 @@ def _markdown(record: dict[str, Any]) -> str:
         ("mcp_tests", "MCP 계약 JUnit"),
         ("full_regression", "전체 저장소 회귀 JUnit"),
         ("browser", "브라우저 캡처 manifest"),
+        ("equation_knowledge", "수식 Knowledge·표시 asset"),
         ("qualification", "Candidate qualification"),
         ("independent_review", "독립 코드 리뷰"),
     ):
@@ -653,6 +914,12 @@ def _markdown(record: dict[str, Any]) -> str:
             result = (
                 f"checks={item.get('checks', 0)}, captures={item.get('captures', 0)}"
             )
+        elif key == "equation_knowledge":
+            result = (
+                f"assets={item.get('asset_count', 0)}, "
+                f"catalog_equations={item.get('catalog_equation_count', 0)}, "
+                f"pdf_safe={item.get('pdf_safe_drawing_count', 0)}"
+            )
         elif key == "qualification":
             result = f"cases={item.get('public_case_count', 0)}, lifecycle={item.get('lifecycle', 'unknown')}"
         else:
@@ -664,11 +931,108 @@ def _markdown(record: dict[str, Any]) -> str:
         "\n".join(f"- `{reason}`" for reason in record["failure_reasons"]) or "- 없음"
     )
     counts = record["counts"]
+    equations = evidence["equation_knowledge"]
+
+    def markdown_cell(value: object) -> str:
+        return str(value).replace("|", "\\|").replace("`", "\\`")
+
+    equation_rows = (
+        "\n".join(
+            "| {domain} | `{equation_id}` | `{latex}` | `{plain}` | `{use}` |".format(
+                domain=markdown_cell(item["domain_label"]),
+                equation_id=markdown_cell(item["equation_id"]),
+                latex=markdown_cell(item["display_latex"]),
+                plain=markdown_cell(item["plain_text"]),
+                use=markdown_cell(item["decision_use"]),
+            )
+            for item in equations.get("assets", [])
+        )
+        or "| - | - | - | - | UNVERIFIED |"
+    )
+    equation_evidence_lines = (
+        "\n".join(
+            "- `{equation_id}` → Evidence `{evidence_id}` "
+            "(`{evidence_digest}`), Source [{source_id}]({source_url}), "
+            "locator `{locator}`".format(
+                equation_id=markdown_cell(item["equation_id"]),
+                evidence_id=markdown_cell(use["evidence_id"]),
+                evidence_digest=markdown_cell(use["evidence_digest"]),
+                source_id=markdown_cell(use["source_id"]),
+                source_url=use["source_url"],
+                locator=markdown_cell(
+                    json.dumps(
+                        use["locator"],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                ),
+            )
+            for item in equations.get("assets", [])
+            for use in item.get("evidence_uses", [])
+        )
+        or "- 유효한 Equation Evidence 연결 없음"
+    )
+    explanation_only_rows = (
+        "\n".join(
+            "| {domain} | `{equation_id}` | `{plain}` | "
+            "설명·표시만 허용; 판정 권한 없음 |".format(
+                domain=markdown_cell(item["domain_label"]),
+                equation_id=markdown_cell(item["equation_id"]),
+                plain=markdown_cell(item["plain_text"]),
+            )
+            for item in equations.get("assets", [])
+            if item.get("decision_use") == "explanation_only"
+        )
+        or "| - | - | - | 유효한 수식 증거 없음 |"
+    )
+    unsupported_rows = (
+        "\n".join(
+            f"| `{markdown_cell(item['form'])}` | {markdown_cell(item['label'])} | "
+            "지원하지 않음 | 검토·근거 결합 시 설명/표시는 가능 |"
+            for item in equations.get("unsupported_as_decision_authority", [])
+        )
+        or "| - | - | UNVERIFIED | - |"
+    )
+    evaluator = equations.get("supported_evaluator", {})
+    operators = (
+        ", ".join(
+            f"`{markdown_cell(item)}`"
+            for item in evaluator.get("constraint_operators", [])
+        )
+        or "UNVERIFIED"
+    )
+    browser = evidence["browser"]
+    equation_browser_checks = [
+        item.get("check_id")
+        for item in browser.get("check_results", [])
+        if isinstance(item, dict)
+        and any(
+            token in str(item.get("check_id", ""))
+            for token in ("equation", "formula", "math")
+        )
+    ]
+    browser_equation_statement = (
+        ", ".join(f"`{markdown_cell(item)}`" for item in equation_browser_checks)
+        if equation_browser_checks
+        else "전용 수식 check ID가 입력 manifest에 없어 브라우저 수식 표시를 별도로 입증하지 않음"
+    )
+    structured_contract = equations.get("implementation_contract", {})
+    if equations.get("passed") is True:
+        equation_verification_statements = (
+            "- Equation manifest 자체 digest, 6개 asset digest/SVG digest, 접근성 문구를 검증하고, Catalog가 다시 검증한 Equation Knowledge·Evidence locator와 정확히 대조했다.\n"
+            "- 3개 `deterministic_rule` 수식은 exact Rule binding과 닫힌 evaluator identity를 다시 대조했다. 나머지 3개 `explanation_only` 수식은 판정 경로에 넣지 않았다."
+        )
+    else:
+        equation_verification_statements = (
+            "- Equation evidence가 유효하지 않아 수식 구현을 검증했다고 보고하지 않는다. "
+            "보고서 상태는 DRAFT/UNVERIFIED로 하향한다."
+        )
     return f"""# Science Verifier 구현 검증 보고서
 
 > **구현 상태: {record["implementation_status"]}**<br>
 > **보고서 상태: {record["report_state"]}**<br>
-> **Science Knowledge Release: NOT ACTIVE — 사람 Admin 승인과 독립 holdout 대기**
+> **Science Knowledge Release: NOT ACTIVE — 사람 Admin 승인과 독립 sealed holdout 대기**
 
 이 보고서는 AI나 호출자 제공 숫자를 신뢰하지 않는다. 현재 Git 상태와 기계 산출 JUnit, 브라우저 캡처 manifest, Candidate qualification, 독립 리뷰를 검증하고 각 원본 파일의 SHA-256을 묶어 구현 상태를 계산한다.
 
@@ -707,13 +1071,61 @@ def _markdown(record: dict[str, Any]) -> str:
 | Qualification families | {counts["qualification_case_families"]} |
 | Public qualification cases | {counts["public_cases"]} |
 
+## 수식 지식·검증·표시 구현
+
+- Equation asset manifest: `{equations.get("manifest_digest", "unavailable")}` (assets={equations.get("asset_count", 0)}, Catalog equations={equations.get("catalog_equation_count", 0)})
+- 범용 도메인: {", ".join(equations.get("domain_labels", [])) or "UNVERIFIED"}
+- 결정론적 Rule 수식: {len(equations.get("deterministic_rule_equation_ids", []))}개
+- 설명 전용 수식: {len(equations.get("explanation_only_equation_ids", []))}개
+- 닫힌 evaluator: `{evaluator.get("evaluator_id", "unavailable")}` version `{evaluator.get("version", "unavailable")}` (`{evaluator.get("evaluator_digest", "unavailable")}`)
+- 지원하는 결정 연산: {operators}. 이 목록 밖의 수식 구조는 판정 권한을 얻지 않는다.
+- 표시 자산 권한: `{equations.get("presentation_authority", "none")}`; SVG/PDF 표시 실패가 verdict나 빨간 표시에 영향을 주지 않는다.
+
+| 도메인 | Equation identity | 표시 LaTeX | plain fallback | decision use |
+|---|---|---|---|---|
+{equation_rows}
+
+### 원문 Evidence 연결
+
+{equation_evidence_lines}
+
+### 구조화된 과학 설명과 digest 분리
+
+- {structured_contract.get("structured_explanations", "Structured explanation contract is UNVERIFIED.")}
+- {structured_contract.get("scientific_report_digest", "Scientific report digest contract is UNVERIFIED.")}
+- {structured_contract.get("export_digest", "Export digest contract is UNVERIFIED.")}
+- 즉, `VerificationReport.report_digest`는 renderer 전용 SVG/renderer/asset bytes를 제외한 과학적 기록을 식별하고, Markdown/PDF `export_digest`는 실제 내보내기 바이트를 식별한다. 둘을 서로 대신 사용하지 않는다.
+
+## 자동 검증된 범위와 실제 표시 증거
+
+{equation_verification_statements}
+- Science JUnit: tests={evidence["science_tests"].get("tests", 0)}, failures={evidence["science_tests"].get("failures", 0)}, errors={evidence["science_tests"].get("errors", 0)}, skipped={evidence["science_tests"].get("skipped", 0)}. 결과는 tracked suite identity digest가 일치할 때만 VERIFIED로 파생한다.
+- 브라우저 증거는 입력 capture manifest의 passed check/capture만 보고한다: checks={browser.get("checks", 0)}, captures={browser.get("captures", 0)}. 수식 관련 입력 check: {browser_equation_statement}.
+- PDF 표시 QA: 안전 검증과 ReportLab 변환을 통과한 Candidate equation drawing={equations.get("pdf_safe_drawing_count", 0)}. PDF export에는 이 수식들을 벡터 drawing으로 배치하지만, 이는 표시 QA이지 판정 근거가 아니다. 최종 PDF 바이트 digest는 `verification-manifest.json`의 `pdf.export_digest`에 기록한다.
+
+## 판정 권한으로 지원하지 않는 수식 유형
+
+| AST form | 의미 | 결정론적 판정 권한 | 허용 범위 |
+|---|---|---|---|
+{unsupported_rows}
+
+복잡 수식을 단순화·재배열하거나 범용 CAS로 판정하지 않는다. vector/matrix/derivative/integral/summation/chemical reaction은 닫힌 AST에 보존할 수 있어도 현재 evaluator에서는 결정 권한이 없다.
+
+## 설명 전용 수식
+
+| 도메인 | Equation identity | plain fallback | 운영 경계 |
+|---|---|---|---|
+{explanation_only_rows}
+
+설명 전용 수식은 충분한 과학 설명과 근거 탐색에 사용할 수 있지만 빨간 밑줄, verdict, Rule 위반을 생성할 수 없다.
+
 ## Release Gate
 
 | Gate | 기계 산출 상태 | 근거/대기 사항 |
 |---|---|---|
 {gate_rows}
 
-G5·G6·G7 또는 사람 Admin 승인 대기를 종합점수로 상쇄하지 않는다. 구현 보고서가 FINAL이어도 Science Knowledge Release의 승인·활성화·과학적 진실·공정 또는 안전 승인을 의미하지 않는다.
+G5·G6·G7 또는 사람 Admin 승인 대기를 종합점수로 상쇄하지 않는다. 사람 Admin 승인과 독립 sealed holdout이 아직 대기 중이며 Release는 활성화되지 않았다. 구현 보고서가 FINAL이어도 **구현 증빙 묶음의 완료만** 의미하고 Science Knowledge Release의 승인·활성화·과학적 진실·공정 또는 안전 승인을 의미하지 않는다.
 """
 
 
@@ -822,7 +1234,98 @@ def _table(
     return table
 
 
-def _pdf(path: Path, record: dict[str, Any]) -> None:
+def _equation_pdf_grid(
+    manifest_path: Path,
+    equation_evidence: dict[str, Any],
+    styles: dict[str, ParagraphStyle],
+) -> Table:
+    """Build a compact vector-math gallery from the exact validated assets."""
+
+    manifest = load_equation_asset_manifest(manifest_path)
+    summaries = {
+        item["equation_id"]: item for item in equation_evidence.get("assets", [])
+    }
+    cells: list[list[Any]] = []
+    for asset in manifest.assets:
+        summary = summaries.get(asset.equation_id)
+        if summary is None or summary.get("equation_digest") != asset.equation_digest:
+            raise ValueError("PDF Equation gallery does not match report evidence")
+        drawing = safe_equation_svg_to_drawing(asset.sanitized_svg, asset.svg_digest)
+        if drawing is None:
+            raise ValueError("PDF Equation gallery SVG failed closed")
+        max_width = 75 * mm
+        max_height = 17 * mm
+        scale = min(
+            1.0,
+            max_width / float(drawing.width),
+            max_height / float(drawing.height),
+        )
+        drawing.scale(scale, scale)
+        drawing.width = float(drawing.width) * scale
+        drawing.height = float(drawing.height) * scale
+        evidence_use = summary["evidence_uses"][0]
+        locator = evidence_use["locator"]
+        locator_text = next(
+            (
+                str(locator[field])
+                for field in (
+                    "section",
+                    "heading",
+                    "equation",
+                    "printed_page",
+                    "sentence_label",
+                )
+                if locator.get(field)
+            ),
+            "exact reviewed locator",
+        )
+        cell: list[Any] = [
+            Paragraph(
+                f"<b>{summary['domain_label']}</b> · {summary['decision_use']}",
+                styles["cell"],
+            ),
+            Spacer(1, 1.2 * mm),
+            drawing,
+            Spacer(1, 1.2 * mm),
+            Paragraph(asset.plain_text, styles["cell"]),
+            Paragraph(
+                f"{asset.equation_id}<br/>{asset.equation_digest}",
+                styles["cell"],
+            ),
+            Paragraph(
+                f"Evidence: {evidence_use['evidence_id']}<br/>Locator: {locator_text}",
+                styles["cell"],
+            ),
+        ]
+        if not cells or len(cells[-1]) == 2:
+            cells.append([cell])
+        else:
+            cells[-1].append(cell)
+    if cells and len(cells[-1]) == 1:
+        cells[-1].append([Paragraph("", styles["cell"])])
+    table = Table(cells, colWidths=[87 * mm, 87 * mm], hAlign="LEFT")
+    table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#D1D5DB")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 0),
+                    (-1, -1),
+                    [colors.white, colors.HexColor("#F9FAFB")],
+                ),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    return table
+
+
+def _pdf(path: Path, record: dict[str, Any], repo_root: Path) -> None:
     styles = _styles()
     document = SimpleDocTemplate(
         str(path),
@@ -841,6 +1344,7 @@ def _pdf(path: Path, record: dict[str, Any]) -> None:
         ("mcp_tests", "MCP JUnit"),
         ("full_regression", "Full regression"),
         ("browser", "Browser captures"),
+        ("equation_knowledge", "Equation Knowledge"),
         ("qualification", "Qualification"),
         ("independent_review", "Independent review"),
     ):
@@ -852,6 +1356,12 @@ def _pdf(path: Path, record: dict[str, Any]) -> None:
         elif key == "browser":
             result = (
                 f"checks={item.get('checks', 0)}, captures={item.get('captures', 0)}"
+            )
+        elif key == "equation_knowledge":
+            result = (
+                f"assets={item.get('asset_count', 0)}, "
+                f"catalog={item.get('catalog_equation_count', 0)}, "
+                f"pdf-safe={item.get('pdf_safe_drawing_count', 0)}"
             )
         elif key == "qualification":
             result = f"cases={item.get('public_case_count', 0)}"
@@ -870,6 +1380,7 @@ def _pdf(path: Path, record: dict[str, Any]) -> None:
     if len(gate_rows) == 1:
         gate_rows.append(["-", "UNVERIFIED", "유효한 qualification 결과 없음"])
     failure_text = "<br/>".join(record["failure_reasons"]) or "없음"
+    equation_evidence = record["evidence"]["equation_knowledge"]
     story: list[Any] = [
         Paragraph("SCIENCE VERIFIER", styles["body"]),
         Paragraph("구현 검증 보고서", styles["title"]),
@@ -898,6 +1409,42 @@ def _pdf(path: Path, record: dict[str, Any]) -> None:
             styles["body"],
         ),
     ]
+    if equation_evidence.get("passed") is True:
+        story.extend(
+            [
+                PageBreak(),
+                Paragraph("Candidate 수식 표시 QA", styles["title"]),
+                Paragraph(
+                    "아래 6개 수식은 digest-bound Science Equation Knowledge와 정확히 일치하는 로컬 SVG를 ReportLab vector drawing으로 변환한 표시 검수 표본입니다. Release Candidate 표시이며 verdict·빨간 표시·운영 판정 권한은 없습니다.",
+                    styles["body"],
+                ),
+                Spacer(1, 3 * mm),
+                _equation_pdf_grid(
+                    repo_root / "boi_api/app/static/science-equations.json",
+                    equation_evidence,
+                    styles,
+                ),
+                Paragraph("수식 판정 경계", styles["h1"]),
+                Paragraph(
+                    "결정론적 Rule에 정확히 결합된 3개 수식만 closed evaluator의 equal/product/quotient 계약 안에서 사용됩니다. Materials Science, Semiconductor Devices, Spin Coating 수식 3개는 explanation_only입니다.",
+                    styles["body"],
+                ),
+                Paragraph(
+                    "vector, matrix, derivative, integral, summation, chemical reaction은 검토된 설명·표시로 보존할 수 있지만 현재 결정 권한으로 지원하지 않습니다. 범용 CAS 단순화나 자동 재배열을 판정에 사용하지 않습니다.",
+                    styles["body"],
+                ),
+                Paragraph("설명과 digest 계약", styles["h1"]),
+                Paragraph(
+                    "GroundedExplanation은 Knowledge·Rule·Equation·evaluator·Evidence identity/digest를 구조화해 묶습니다. VerificationReport.report_digest는 renderer 전용 표시 필드를 제외한 과학적 payload를 식별하고, Markdown/PDF export_digest는 실제 렌더링 바이트를 별도로 식별합니다.",
+                    styles["body"],
+                ),
+                Paragraph("승인 대기", styles["h1"]),
+                Paragraph(
+                    "이 PDF의 FINAL은 구현 증빙 묶음의 완료만 뜻합니다. 사람 Admin 승인과 독립 sealed holdout은 대기 중이며 Science Knowledge Release는 NOT ACTIVE입니다.",
+                    styles["body"],
+                ),
+            ]
+        )
     document.build(story)
 
 
@@ -923,6 +1470,10 @@ def _collect(args: argparse.Namespace) -> dict[str, Any]:
         failures.extend(source_failures)
     evidence["browser"], source_failures = _browser_evidence(
         args.browser_capture_manifest, args.repo_root, git["commit"]
+    )
+    failures.extend(source_failures)
+    evidence["equation_knowledge"], source_failures = _equation_knowledge_evidence(
+        args.repo_root
     )
     failures.extend(source_failures)
     evidence["qualification"], source_failures = _qualification_evidence(
@@ -965,7 +1516,7 @@ def main() -> int:
     markdown_path = args.output_dir / "qualification-report.md"
     pdf_path = args.output_dir / "qualification-report.pdf"
     markdown_path.write_text(_markdown(record), encoding="utf-8")
-    _pdf(pdf_path, record)
+    _pdf(pdf_path, record, args.repo_root)
     qualification = record["evidence"]["qualification"]
     manifest = {
         "schema_version": "science-verifier-evidence-manifest/0.2",
@@ -976,6 +1527,14 @@ def main() -> int:
         "evidence": record["evidence"],
         "evidence_bundle_digest": record["evidence_bundle_digest"],
         "report_record_digest": record["report_record_digest"],
+        "digest_contract": {
+            "scientific_report_digest": (
+                "VerificationReport.report_digest excludes renderer-only "
+                "SVG, renderer identity, and presentation asset fields"
+            ),
+            "qualification_report_record_digest": record["report_record_digest"],
+            "export_digest": "exact rendered Markdown/PDF bytes",
+        },
         "release_id": qualification.get("release_id"),
         "release_digest": qualification.get("release_digest"),
         "qualification_result_digest": qualification.get("qualification_result_digest"),
@@ -987,10 +1546,12 @@ def main() -> int:
         "markdown": {
             "path": display_path(markdown_path, args.repo_root),
             "sha256": sha256_bytes(markdown_path.read_bytes()),
+            "export_digest": sha256_bytes(markdown_path.read_bytes()),
         },
         "pdf": {
             "path": display_path(pdf_path, args.repo_root),
             "sha256": sha256_bytes(pdf_path.read_bytes()),
+            "export_digest": sha256_bytes(pdf_path.read_bytes()),
         },
     }
     manifest_path = args.output_dir / "verification-manifest.json"

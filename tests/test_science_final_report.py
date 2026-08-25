@@ -55,6 +55,12 @@ MANDATORY_BROWSER_CHECK_IDS = {
     "mobile_single_column",
     "wiki_selection_handoff",
     "wiki_local_revision_preserves_lineage",
+    "equation_committed_asset_renders_exact_svg",
+    "equation_identity_and_evidence_visible",
+    "equation_details_copy_and_accessibility",
+    "equation_failures_keep_plain_fallback_without_red",
+    "equation_mobile_scroll_is_contained",
+    "equation_qa_is_explicitly_non_operational",
     "console_clean",
 }
 
@@ -198,7 +204,22 @@ def _fixture_bundle(tmp_path: Path) -> dict[str, Path | str]:
     qualification = repo / "qualification.md"
     qualification.write_text(_qualification_markdown(), encoding="utf-8")
     contract = _write_suite_contract(repo)
-    _git(repo, "add", "qualification.md", str(contract.relative_to(repo)))
+    science_data = repo / "data/boi"
+    science_data.parent.mkdir(parents=True)
+    science_data.symlink_to(PROJECT_ROOT / "data/boi", target_is_directory=True)
+    equation_manifest = repo / "boi_api/app/static/science-equations.json"
+    equation_manifest.parent.mkdir(parents=True)
+    equation_manifest.symlink_to(
+        PROJECT_ROOT / "boi_api/app/static/science-equations.json"
+    )
+    _git(
+        repo,
+        "add",
+        "qualification.md",
+        str(contract.relative_to(repo)),
+        "data/boi",
+        "boi_api/app/static/science-equations.json",
+    )
     _git(repo, "commit", "-m", "qualification and suite contract fixture")
     commit = _git(repo, "rev-parse", "HEAD")
 
@@ -366,11 +387,63 @@ def test_verified_is_derived_from_clean_hash_bound_machine_evidence(
         sorted(_identity(testcase) for testcase in _default_testcases("science_tests"))
     )
     assert evidence["full_regression"]["sha256"] == _sha256(bundle["full"])
-    assert evidence["browser"]["checks"] == 21
+    assert evidence["browser"]["checks"] == 27
     assert evidence["browser"]["captures"] == 1
     assert evidence["qualification"]["public_case_count"] == 40
     assert evidence["qualification"]["passed"] is True
     assert evidence["independent_review"]["findings"]["critical"] == 0
+    equations = evidence["equation_knowledge"]
+    assert equations["passed"] is True
+    assert equations["asset_count"] == 6
+    assert equations["catalog_equation_count"] == 6
+    assert equations["domain_labels"] == [
+        "Chemistry",
+        "Circuits",
+        "Materials Science",
+        "Physics",
+        "Semiconductor Devices",
+        "Spin Coating",
+    ]
+    assert equations["deterministic_rule_equation_ids"] == [
+        "sci:equation:chemistry:molar-concentration-definition",
+        "sci:equation:circuits:kvl-loop-balance",
+        "sci:equation:physics:applied-work-kinetic-energy-change",
+    ]
+    assert equations["explanation_only_equation_ids"] == [
+        "sci:equation:materials:arrhenius-diffusion",
+        "sci:equation:semiconductor:low-field-conductivity",
+        "sci:equation:spin-coating:drying-limited-power-law",
+    ]
+    assert equations["supported_evaluator"]["constraint_operators"] == [
+        "equal",
+        "product",
+        "quotient",
+    ]
+    assert equations["pdf_safe_drawing_count"] == 6
+    assert equations["presentation_authority"] == "none"
+    assert all(len(item["evidence_uses"]) == 1 for item in equations["assets"])
+    physics = next(
+        item for item in equations["assets"] if item["domain_label"] == "Physics"
+    )
+    assert physics["evidence_uses"][0]["evidence_id"] == (
+        "sci-evidence:physics:work-energy-power"
+    )
+    assert physics["evidence_uses"][0]["source_url"] == (
+        "https://ocw.mit.edu/courses/8-01sc-classical-mechanics-fall-2016/"
+    )
+    assert physics["evidence_uses"][0]["locator"]["section"] == (
+        "13.6 Work-Kinetic Energy Theorem"
+    )
+    assert {
+        item["form"] for item in equations["unsupported_as_decision_authority"]
+    } == {
+        "vector",
+        "matrix",
+        "derivative",
+        "integral",
+        "summation",
+        "chemical_reaction",
+    }
     assert manifest["evidence_bundle_digest"] == _canonical_digest(
         {"git": manifest["git"], "evidence": manifest["evidence"]}
     )
@@ -379,6 +452,57 @@ def test_verified_is_derived_from_clean_hash_bound_machine_evidence(
     assert "구현 상태: VERIFIED" in markdown
     assert f"검증 코드 revision: `{bundle['commit']}`" in markdown
     assert "Science Knowledge Release: NOT ACTIVE" in markdown
+    assert "수식 지식·검증·표시 구현" in markdown
+    assert "W_{\\mathrm{applied}} = \\Delta K" in markdown
+    assert "D = D0 * exp(-Ea / (kB*T))" in markdown
+    assert "sci-evidence:physics:work-energy-power" in markdown
+    assert "13.6 Work-Kinetic Energy Theorem" in markdown
+    assert "설명 전용 수식" in markdown
+    assert "판정 권한으로 지원하지 않는 수식 유형" in markdown
+    assert "VerificationReport.report_digest" in markdown
+    assert "Markdown/PDF export_digest" in markdown
+    assert "Admin 승인과 독립 sealed holdout 대기" in markdown
+    assert manifest["markdown"]["export_digest"] == manifest["markdown"]["sha256"]
+    assert manifest["pdf"]["export_digest"] == manifest["pdf"]["sha256"]
+
+
+def test_missing_equation_asset_manifest_fails_closed(tmp_path: Path) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    repo = bundle["repo"]
+    assert isinstance(repo, Path)
+    (repo / "boi_api/app/static/science-equations.json").unlink()
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 2
+    manifest = _manifest(tmp_path / "report")
+    assert manifest["report_state"] == "DRAFT"
+    assert "equation_knowledge:missing" in manifest["failure_reasons"]
+    assert manifest["evidence"]["equation_knowledge"]["passed"] is False
+    markdown = (tmp_path / "report/qualification-report.md").read_text(encoding="utf-8")
+    assert (
+        "Equation evidence가 유효하지 않아 수식 구현을 검증했다고 보고하지 않는다"
+        in markdown
+    )
+    assert "6개 asset digest/SVG digest" not in markdown
+
+
+def test_tampered_equation_asset_manifest_fails_closed(tmp_path: Path) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    repo = bundle["repo"]
+    assert isinstance(repo, Path)
+    manifest_path = repo / "boi_api/app/static/science-equations.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest_path.unlink()
+    payload["assets"][0]["plain_text"] = "tampered formula"
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 2
+    manifest = _manifest(tmp_path / "report")
+    assert "equation_knowledge:invalid" in manifest["failure_reasons"]
+    assert manifest["evidence"]["equation_knowledge"]["valid"] is False
 
 
 def test_mandatory_browser_checks_match_the_ui_checker_contract() -> None:
@@ -388,7 +512,7 @@ def test_mandatory_browser_checks_match_the_ui_checker_contract() -> None:
     )[0]
     produced_ids = set(re.findall(r"^      ([a-z0-9_]+):", checks_block, re.MULTILINE))
 
-    assert len(produced_ids) == 21
+    assert len(produced_ids) == 27
     assert produced_ids == MANDATORY_BROWSER_CHECK_IDS
 
 
