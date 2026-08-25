@@ -757,7 +757,8 @@ def test_active_release_rejects_untrusted_or_ineligible_decision_components(
             "user_id": "not-an-admin",
         }
     else:
-        resolver = lambda _actor: {"science.power_user"}
+        def resolver(_actor: str) -> set[str]:
+            return {"science.power_user"}
     _write_document(science_tree, target, metadata)
     _replace_release_components(
         science_tree,
@@ -893,6 +894,33 @@ def test_catalog_issues_opaque_operational_attestation_only_after_complete_activ
         copy.copy(operational)
     with pytest.raises(TypeError, match="cannot be serialized"):
         pickle.dumps(operational)
+
+
+def test_catalog_rejects_arbitrary_superseded_release_for_new_operational_verdict(
+    science_tree: Path,
+):
+    """Only the exact active pointer (or its declared last-safe target) may mint authority."""
+    from boi_api.app.science.catalog import ScienceCatalog
+    from boi_api.app.science.exceptions import ScienceOperationalError
+    from boi_api.app.science.models import ReleaseSelection
+
+    _fully_approved_operational_fixture(science_tree)
+    _add_release(
+        science_tree,
+        release_id="sci-release:arbitrary-superseded",
+        status="superseded",
+    )
+    catalog = ScienceCatalog(
+        science_tree,
+        reviewer_role_resolver=_trusted_admin_roles,
+        trusted_clock=_trusted_clock,
+    )
+    release_set = catalog.resolve_release_set(
+        ReleaseSelection(foundation="sci-release:arbitrary-superseded")
+    )
+
+    with pytest.raises(ScienceOperationalError, match="cannot be evaluated as active"):
+        catalog.resolve_operational_rule_set(release_set)
 
 
 @pytest.mark.parametrize(

@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Build the implementation qualification record without activating Science knowledge."""
+"""Build a hash-bound implementation verification report without activating knowledge."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import re
+import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -16,20 +19,13 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (
-    KeepTogether,
-    PageBreak,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
-RELEASE_ID = "sci-release:0.1.0"
-RELEASE_DIGEST = "sha256:fdc321fe0d91788e10515c0f9bdae2a8d08355ca2bc8c8c49744d8508c819650"
-QUALIFICATION_RESULT_DIGEST = "sha256:c543253b37bef0b1f8634f1ecbf2c1f708f36b6b30eda03764d6139c47b9470d"
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+GATE_RE = re.compile(r"^- (G[0-7]) \| ([A-Z_]+) \| (.+)$", re.MULTILINE)
+REQUIRED_QUALIFICATION_GATES = tuple(f"G{i}" for i in range(5))
+ALL_QUALIFICATION_GATES = tuple(f"G{i}" for i in range(8))
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -56,176 +52,464 @@ def display_path(path: Path, repo_root: Path) -> str:
 
 def _args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument(
+        "--repo-root", type=Path, default=Path(__file__).resolve().parents[1]
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--git-commit", required=True)
     parser.add_argument("--generated-at", required=True)
-    parser.add_argument("--science-tests", type=int, required=True)
-    parser.add_argument("--mcp-tests", type=int, required=True)
-    parser.add_argument("--browser-checks", type=int, required=True)
-    parser.add_argument("--full-regression-tests", type=int, required=True)
+    parser.add_argument("--science-test-summary", type=Path)
+    parser.add_argument("--mcp-test-summary", type=Path)
+    parser.add_argument("--full-regression-summary", type=Path)
+    parser.add_argument("--browser-capture-manifest", type=Path)
+    parser.add_argument("--qualification-result", type=Path)
+    parser.add_argument("--independent-review", type=Path)
     return parser.parse_args()
 
 
-def _knowledge_counts(repo_root: Path) -> dict[str, int]:
+def _git_state(repo_root: Path) -> tuple[dict[str, Any], list[str]]:
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        status_bytes = subprocess.run(
+            ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return {
+            "commit": None,
+            "dirty": True,
+            "status_digest": sha256_bytes(b"git-state-unavailable"),
+        }, ["git:state_unavailable"]
+    state = {
+        "commit": commit,
+        "dirty": bool(status_bytes),
+        "status_digest": sha256_bytes(status_bytes),
+    }
+    return state, ["git:dirty_worktree"] if status_bytes else []
+
+
+def _base_evidence(
+    path: Path | None, repo_root: Path
+) -> tuple[dict[str, Any], bytes | None]:
+    if path is None or not path.is_file():
+        return {
+            "available": False,
+            "path": None if path is None else display_path(path, repo_root),
+        }, None
+    data = path.read_bytes()
+    return {
+        "available": True,
+        "path": display_path(path, repo_root),
+        "sha256": sha256_bytes(data),
+    }, data
+
+
+def _nonnegative_int(value: object) -> int:
+    if isinstance(value, bool):
+        raise ValueError("boolean is not an integer count")
+    number = int(value)
+    if number < 0:
+        raise ValueError("negative count")
+    return number
+
+
+def _junit_evidence(
+    name: str, path: Path | None, repo_root: Path, current_commit: str | None
+) -> tuple[dict[str, Any], list[str]]:
+    record, data = _base_evidence(path, repo_root)
+    if data is None:
+        return record, [f"{name}:missing"]
+    try:
+        root = ET.fromstring(data)
+        if root.tag not in {"testsuite", "testsuites"}:
+            raise ValueError("not a JUnit root")
+        if root.tag == "testsuites" and root.get("tests") is None:
+            suites = root.findall("./testsuite")
+            counts = {
+                key: sum(_nonnegative_int(suite.get(key, "0")) for suite in suites)
+                for key in ("tests", "failures", "errors", "skipped")
+            }
+        else:
+            counts = {
+                key: _nonnegative_int(root.get(key, "0"))
+                for key in ("tests", "failures", "errors", "skipped")
+            }
+        if counts["failures"] + counts["errors"] + counts["skipped"] > counts["tests"]:
+            raise ValueError("JUnit result counts are inconsistent")
+        commits = {
+            prop.get("value", "")
+            for prop in root.findall(".//property[@name='git_commit']")
+            if prop.get("value")
+        }
+        if len(commits) != 1:
+            raise ValueError("exactly one git_commit property is required")
+        evidence_commit = commits.pop()
+    except (ET.ParseError, TypeError, ValueError):
+        record.update({"format": "junit-xml", "valid": False})
+        return record, [f"{name}:invalid"]
+
+    record.update(
+        {
+            "format": "junit-xml",
+            "valid": True,
+            **counts,
+            "git_commit": evidence_commit,
+            "passed": counts["tests"] > 0
+            and counts["failures"] == 0
+            and counts["errors"] == 0,
+        }
+    )
+    failures: list[str] = []
+    if counts["tests"] == 0:
+        failures.append(f"{name}:zero_tests")
+    if counts["failures"] or counts["errors"]:
+        failures.append(f"{name}:test_failures")
+    if evidence_commit != current_commit:
+        failures.append(f"{name}:git_commit_mismatch")
+    return record, failures
+
+
+def _browser_evidence(
+    path: Path | None, repo_root: Path, current_commit: str | None
+) -> tuple[dict[str, Any], list[str]]:
+    record, data = _base_evidence(path, repo_root)
+    if data is None:
+        return record, ["browser:missing"]
+    try:
+        payload = json.loads(data)
+        if not isinstance(payload, dict):
+            raise ValueError("manifest must be an object")
+        if payload.get("schema_version") != "science-browser-capture-manifest/0.1":
+            raise ValueError("unsupported schema")
+        commit = payload.get("git_commit")
+        if not isinstance(commit, str) or not commit:
+            raise ValueError("git commit is required")
+        checks = payload.get("checks")
+        captures = payload.get("captures")
+        if not isinstance(checks, list) or not checks:
+            raise ValueError("checks are required")
+        if not isinstance(captures, list) or not captures:
+            raise ValueError("captures are required")
+        check_ids: set[str] = set()
+        checks_passed = True
+        for check in checks:
+            if not isinstance(check, dict):
+                raise ValueError("invalid check")
+            check_id = check.get("check_id")
+            if not isinstance(check_id, str) or not check_id or check_id in check_ids:
+                raise ValueError("check IDs must be unique")
+            check_ids.add(check_id)
+            checks_passed = checks_passed and check.get("status") == "passed"
+        assert path is not None
+        manifest_root = path.resolve().parent
+        capture_records: list[dict[str, str]] = []
+        capture_digests_match = True
+        for capture in captures:
+            if not isinstance(capture, dict):
+                raise ValueError("invalid capture")
+            relative = capture.get("path")
+            expected = capture.get("sha256")
+            if (
+                not isinstance(relative, str)
+                or not relative
+                or not isinstance(expected, str)
+            ):
+                raise ValueError("capture path and digest are required")
+            capture_path = (manifest_root / relative).resolve()
+            if (
+                capture_path != manifest_root
+                and manifest_root not in capture_path.parents
+            ):
+                raise ValueError("capture escapes manifest directory")
+            if not capture_path.is_file() or not DIGEST_RE.fullmatch(expected):
+                capture_digests_match = False
+                actual = None
+            else:
+                actual = sha256_bytes(capture_path.read_bytes())
+                capture_digests_match = capture_digests_match and actual == expected
+            capture_records.append(
+                {"path": relative, "sha256": expected, "actual_sha256": actual}
+            )
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        record.update({"valid": False})
+        return record, ["browser:invalid"]
+
+    record.update(
+        {
+            "valid": True,
+            "git_commit": commit,
+            "checks": len(checks),
+            "captures": len(captures),
+            "check_results": checks,
+            "capture_files": capture_records,
+            "passed": checks_passed
+            and capture_digests_match
+            and commit == current_commit,
+        }
+    )
+    failures: list[str] = []
+    if commit != current_commit:
+        failures.append("browser:git_commit_mismatch")
+    if not checks_passed:
+        failures.append("browser:failed_checks")
+    if not capture_digests_match:
+        failures.append("browser:capture_digest_mismatch")
+    return record, failures
+
+
+def _frontmatter(text: str) -> dict[str, Any]:
+    if not text.startswith("---\n"):
+        raise ValueError("JSON frontmatter required")
+    end = text.find("\n---\n", 4)
+    if end < 0:
+        raise ValueError("unterminated frontmatter")
+    value = json.loads(text[4:end])
+    if not isinstance(value, dict):
+        raise ValueError("frontmatter must be an object")
+    return value
+
+
+def _qualification_evidence(
+    path: Path | None, repo_root: Path
+) -> tuple[dict[str, Any], list[str]]:
+    record, data = _base_evidence(path, repo_root)
+    if data is None:
+        return record, ["qualification:missing"]
+    try:
+        text = data.decode("utf-8")
+        metadata = _frontmatter(text)
+        science = metadata.get("science_qualification")
+        if not isinstance(science, dict):
+            raise ValueError("science_qualification is required")
+        release_id = science.get("release_id")
+        release_digest = science.get("release_digest")
+        result_digest = science.get(
+            "qualification_result_digest", science.get("result_digest")
+        )
+        lifecycle = science.get("lifecycle")
+        activation_eligible = science.get("activation_eligible")
+        public_case_count = _nonnegative_int(science.get("public_case_count"))
+        if not isinstance(release_id, str) or not release_id:
+            raise ValueError("release ID is required")
+        if not isinstance(release_digest, str) or not DIGEST_RE.fullmatch(
+            release_digest
+        ):
+            raise ValueError("invalid release digest")
+        if not isinstance(result_digest, str) or not DIGEST_RE.fullmatch(result_digest):
+            raise ValueError("invalid result digest")
+        if lifecycle != "release_candidate" or activation_eligible is not False:
+            raise ValueError("qualification must not activate a release")
+        if public_case_count == 0:
+            raise ValueError("qualification needs cases")
+        gate_matches = GATE_RE.findall(text)
+        gates: dict[str, dict[str, str]] = {}
+        for gate, status, detail in gate_matches:
+            if gate in gates:
+                raise ValueError("duplicate gate")
+            gates[gate] = {"status": status, "detail": detail}
+        if set(gates) != set(ALL_QUALIFICATION_GATES):
+            raise ValueError("all qualification gates are required")
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        record.update({"valid": False})
+        return record, ["qualification:invalid"]
+
+    record.update(
+        {
+            "valid": True,
+            "release_id": release_id,
+            "release_digest": release_digest,
+            "qualification_result_digest": result_digest,
+            "lifecycle": lifecycle,
+            "activation_eligible": activation_eligible,
+            "public_case_count": public_case_count,
+            "gates": gates,
+            "passed": all(
+                gates[gate]["status"] == "PASS" for gate in REQUIRED_QUALIFICATION_GATES
+            ),
+        }
+    )
+    failures = [
+        f"qualification:{gate}_not_passed"
+        for gate in REQUIRED_QUALIFICATION_GATES
+        if gates[gate]["status"] != "PASS"
+    ]
+    return record, failures
+
+
+def _review_evidence(
+    path: Path | None, repo_root: Path, current_commit: str | None
+) -> tuple[dict[str, Any], list[str]]:
+    record, data = _base_evidence(path, repo_root)
+    if data is None:
+        return record, ["independent_review:missing"]
+    try:
+        payload = json.loads(data)
+        if not isinstance(payload, dict):
+            raise ValueError("review must be an object")
+        if payload.get("schema_version") != "science-independent-review/0.1":
+            raise ValueError("unsupported schema")
+        reviewed_commit = payload.get("reviewed_git_commit")
+        status = payload.get("status")
+        findings = payload.get("findings")
+        if not isinstance(reviewed_commit, str) or not reviewed_commit:
+            raise ValueError("reviewed commit is required")
+        if not isinstance(status, str):
+            raise ValueError("review status is required")
+        if not isinstance(findings, dict) or set(findings) != {
+            "critical",
+            "important",
+            "advisory",
+        }:
+            raise ValueError("finding counts are required")
+        normalized_findings = {
+            key: _nonnegative_int(findings[key])
+            for key in ("critical", "important", "advisory")
+        }
+    except (json.JSONDecodeError, TypeError, ValueError):
+        record.update({"valid": False})
+        return record, ["independent_review:invalid"]
+
+    record.update(
+        {
+            "valid": True,
+            "reviewed_git_commit": reviewed_commit,
+            "status": status,
+            "findings": normalized_findings,
+            "passed": status == "passed"
+            and normalized_findings["critical"] == 0
+            and reviewed_commit == current_commit,
+        }
+    )
+    failures: list[str] = []
+    if reviewed_commit != current_commit:
+        failures.append("independent_review:git_commit_mismatch")
+    if status != "passed":
+        failures.append("independent_review:not_passed")
+    if normalized_findings["critical"]:
+        failures.append("independent_review:critical_findings")
+    return record, failures
+
+
+def _knowledge_counts(repo_root: Path, public_case_count: int | None) -> dict[str, int]:
     root = repo_root / "data/boi/public/science"
     return {
         "knowledge": len(list((root / "knowledge").glob("*/sci-*-*.md"))),
         "evidence": len(
-            [path for path in (root / "evidence").glob("*/*.md") if path.name != "index.md"]
+            [
+                path
+                for path in (root / "evidence").glob("*/*.md")
+                if path.name != "index.md"
+            ]
         ),
         "rules": len(list((root / "rules").glob("*/r-*-*.md"))),
         "packs": len(list((root / "packs").glob("*.md"))),
         "ontology_bindings": len(list((root / "ontology-bindings").glob("*/*.md"))),
-        "qualification_case_families": len(list((root / "qualification/cases").glob("*/q-*-*.md"))),
-        "public_cases": 440,
+        "qualification_case_families": len(
+            list((root / "qualification/cases").glob("*/q-*-*.md"))
+        ),
+        "public_cases": public_case_count or 0,
     }
 
 
-def _failure_matrix() -> list[tuple[str, str, str]]:
-    return [
-        ("Qwen 연결 불가 / timeout / 빈 content / invalid JSON / schema mismatch", "PASS", "각 실패는 Claim·report 0건, red 0건으로 fail-closed"),
-        ("존재하지 않는 ontology_ref", "PASS", "paused semantic mismatch; 사용자 확인·판정 진입 불가"),
-        ("문서에 없는 별칭", "PASS", "ALIAS_BINDING_MISMATCH로 차단"),
-        ("겹치거나 불완전한 Claim 역할 구간", "PASS", "COMPLETE_RELATION_SPAN_REQUIRED로 차단"),
-        ("사용자 직접 해석 수정", "PASS", "기존 기록을 보존하고 supersedes 관계의 새 interpretation 생성"),
-        ("Codex·Claude·Qwen·User REST/MCP 제출", "PASS", "동일 closed schema와 서버 재검증 적용"),
-        ("동일 Claim의 클라이언트 간 결과", "PASS", "client_kind와 무관한 동일 Claim ID·결정론 verdict"),
-        ("비활성 Release", "PASS", "verify 호출과 red annotation을 실행하지 않음"),
-        ("근거 없는 빨간 표시", "PASS", "active Rule+조건+exact Evidence locator가 없으면 red 0건"),
-        ("ASCII 단일문자 별칭 오탐", "PASS", "RPM 내부 R은 제외하고 독립 R은 유지"),
-    ]
-
-
-def _gate_matrix() -> list[tuple[str, str, str]]:
-    return [
-        ("G0", "PASS", "schema, IDs, references, immutable digests, candidate lifecycle"),
-        ("G1", "PASS", "Source/Evidence hash와 locator 구조 재현"),
-        ("G2", "PASS", "공개 판정이 release-pinned Knowledge/Evidence 범위 안에 있음"),
-        ("G3", "PASS", "공개 440 cases의 expected verdict/ambiguity gate 일치"),
-        ("G4", "PASS", "반복 qualification bytes와 digest 동일"),
-        ("G5", "PENDING", "개발에 쓰지 않은 독립 sealed holdout 미수행"),
-        ("G6", "PENDING", "inactive 경로와 client parity는 검증했으나 active stored report의 Web/REST/MCP/Markdown/PDF parity는 활성 Release 전 검증 불가"),
-        ("G7", "PENDING", "사람 Admin의 원문 검토·승인·activation audit 없음"),
-    ]
-
-
-def _report_record(args: argparse.Namespace, counts: dict[str, int]) -> dict[str, Any]:
-    preflight_path = args.repo_root / "data/boi/public/science/qualification/reports/release-gate-preflight-science-release-0.1.0.md"
-    return {
-        "report_version": "science-verifier-implementation-qualification/0.1.0",
-        "generated_at": args.generated_at,
-        "git_commit": args.git_commit,
-        "implementation_status": "verified",
-        "knowledge_release_status": "not_active",
-        "release_id": RELEASE_ID,
-        "release_digest": RELEASE_DIGEST,
-        "qualification_result_digest": QUALIFICATION_RESULT_DIGEST,
-        "preflight_file_digest": sha256_bytes(preflight_path.read_bytes()),
-        "activation_eligible": False,
-        "counts": counts,
-        "verification": {
-            "science_non_mcp_tests": args.science_tests,
-            "science_mcp_tests": args.mcp_tests,
-            "browser_checks": args.browser_checks,
-            "full_regression_tests": args.full_regression_tests,
-            "okf_documents_linted": 480,
-        },
-        "gates": {gate: status for gate, status, _ in _gate_matrix()},
-    }
+def _status_for(record: dict[str, Any]) -> str:
+    return "VERIFIED" if record.get("passed") is True else "UNVERIFIED"
 
 
 def _markdown(record: dict[str, Any]) -> str:
+    evidence = record["evidence"]
+    qualification = evidence["qualification"]
+    gates = qualification.get("gates", {})
+    gate_rows = (
+        "\n".join(
+            f"| {gate} | {entry['status']} | {entry['detail']} |"
+            for gate, entry in sorted(gates.items())
+        )
+        or "| - | UNVERIFIED | 유효한 qualification 결과 없음 |"
+    )
+    source_rows: list[str] = []
+    for key, label in (
+        ("science_tests", "Science 회귀 JUnit"),
+        ("mcp_tests", "MCP 계약 JUnit"),
+        ("full_regression", "전체 저장소 회귀 JUnit"),
+        ("browser", "브라우저 캡처 manifest"),
+        ("qualification", "Candidate qualification"),
+        ("independent_review", "독립 코드 리뷰"),
+    ):
+        item = evidence[key]
+        if key.endswith("tests") or key == "full_regression":
+            result = f"tests={item.get('tests', 0)}, failures={item.get('failures', 0)}, errors={item.get('errors', 0)}"
+        elif key == "browser":
+            result = (
+                f"checks={item.get('checks', 0)}, captures={item.get('captures', 0)}"
+            )
+        elif key == "qualification":
+            result = f"cases={item.get('public_case_count', 0)}, lifecycle={item.get('lifecycle', 'unknown')}"
+        else:
+            result = f"status={item.get('status', 'unknown')}, findings={item.get('findings', {})}"
+        source_rows.append(
+            f"| {label} | {_status_for(item)} | {result} | `{item.get('sha256', 'missing')}` |"
+        )
+    failures = (
+        "\n".join(f"- `{reason}`" for reason in record["failure_reasons"]) or "- 없음"
+    )
     counts = record["counts"]
-    verification = record["verification"]
-    failures = "\n".join(
-        f"| {case} | {status} | {evidence} |" for case, status, evidence in _failure_matrix()
-    )
-    gates = "\n".join(
-        f"| {gate} | {status} | {reason} |" for gate, status, reason in _gate_matrix()
-    )
     return f"""# Science Verifier 구현 검증 보고서
 
-> **구현 상태: VERIFIED**<br>
+> **구현 상태: {record["implementation_status"]}**<br>
+> **보고서 상태: {record["report_state"]}**<br>
 > **Science Knowledge Release: NOT ACTIVE — 사람 Admin 승인과 독립 holdout 대기**
 
-이 보고서는 Science Verifier 애플리케이션·신뢰 경계·자동화 검증의 구현 결과다. 과학 지식 Release의 승인, 활성화, 운영 qualification을 의미하지 않는다.
+이 보고서는 AI나 호출자 제공 숫자를 신뢰하지 않는다. 현재 Git 상태와 기계 산출 JUnit, 브라우저 캡처 manifest, Candidate qualification, 독립 리뷰를 검증하고 각 원본 파일의 SHA-256을 묶어 구현 상태를 계산한다.
 
 ## 검증 식별자
 
-- 생성 시각: `{record['generated_at']}`
-- 검증 코드 revision: `{record['git_commit']}`
-- Release: `{record['release_id']}` (`release_candidate`, `active=false`)
-- Release digest: `{record['release_digest']}`
-- 공개 qualification result: `{record['qualification_result_digest']}`
-- Preflight file digest: `{record['preflight_file_digest']}`
-- Report record digest: `{record['report_record_digest']}`
+- 생성 시각: `{record["generated_at"]}`
+- 검증 코드 revision: `{record["git"]["commit"]}`
+- Git dirty: `{str(record["git"]["dirty"]).lower()}`
+- Git status digest: `{record["git"]["status_digest"]}`
+- Evidence bundle digest: `{record["evidence_bundle_digest"]}`
+- Report record digest: `{record["report_record_digest"]}`
+- Release: `{qualification.get("release_id", "unavailable")}` (`{qualification.get("lifecycle", "unavailable")}`, `active=false`)
+- Release digest: `{qualification.get("release_digest", "unavailable")}`
+- Qualification result digest: `{qualification.get("qualification_result_digest", "unavailable")}`
 - Activation eligible: `false`
 
-## 구현된 신뢰 경로
+## 기계 검증 증거
 
-`사용자 문서 → 결정론적 별칭 탐지 → User/Codex/Claude/Qwen Claim 후보 → span·ontology·개념 역할 서버 재검증 → 결과를 바꾸는 모호성만 사용자 확인 → 활성 Release의 Rule·조건·Evidence 결정론 판정 → 원문과 충분한 과학적 설명`
+| 증빙 | 파생 상태 | 기계 결과 | 파일 SHA-256 |
+|---|---|---|---|
+{chr(10).join(source_rows)}
 
-Qwen은 기본 비활성인 선택적·실험적 후보 생성 어댑터다. 모든 LLM과 외부 Agent는 verdict, Rule, Evidence, citation 권한이 없다. 웹 기본 경로는 Qwen 호출 없이 완료된다.
+## 상태 하향 사유
 
-## 범용 지식 Candidate
-
-| 자산 | 수량 |
-|---|---:|
-| Science Knowledge | {counts['knowledge']} |
-| Evidence | {counts['evidence']} |
-| Deterministic Rules | {counts['rules']} |
-| Knowledge Packs | {counts['packs']} |
-| Ontology bindings | {counts['ontology_bindings']} |
-| Qualification families | {counts['qualification_case_families']} |
-| Public qualification cases | {counts['public_cases']} |
-
-범위는 공통 과학, 물리, 화학, 회로, 재료과학, 반도체 소자, spin coating이다. Spin coating은 범용 구조의 응용 증명이며 전용 치팅 경로가 아니다.
-
-## 자동 검증 증거
-
-| 검증 묶음 | 결과 |
-|---|---:|
-| Science 비-MCP 회귀 | {verification['science_non_mcp_tests']} passed |
-| Science MCP 계약 | {verification['science_mcp_tests']} passed |
-| 실제 Chromium 문서 검토 E2E | {verification['browser_checks']}/{verification['browser_checks']} passed |
-| 전체 저장소 회귀 | {verification['full_regression_tests']} passed |
-| OKF strict lint | {verification['okf_documents_linted']} documents passed |
-| Candidate qualification | 440/440 deterministic; repeated bytes identical |
-
-## 요구 실패 사례
-
-| 사례 | 결과 | 관찰 |
-|---|---|---|
 {failures}
 
-실제 브라우저에서는 `release_candidate`, `operational=false`, `redCount=0`을 확인했다. 기본 경로의 네트워크 요청은 alias detect → claim submit → explicit confirm뿐이며 Qwen interpret와 verify-document는 호출되지 않았다.
+## Candidate 지식 자산
+
+| 자산 | 파일/결과 수량 |
+|---|---:|
+| Science Knowledge | {counts["knowledge"]} |
+| Evidence | {counts["evidence"]} |
+| Deterministic Rules | {counts["rules"]} |
+| Knowledge Packs | {counts["packs"]} |
+| Ontology bindings | {counts["ontology_bindings"]} |
+| Qualification families | {counts["qualification_case_families"]} |
+| Public qualification cases | {counts["public_cases"]} |
 
 ## Release Gate
 
-| Gate | 상태 | 근거/대기 사항 |
+| Gate | 기계 산출 상태 | 근거/대기 사항 |
 |---|---|---|
-{gates}
+{gate_rows}
 
-종합점수로 PENDING을 상쇄하지 않는다. 특히 G5·G7이 없으므로 이 Candidate를 활성화하지 않았고, G6의 active stored-report channel parity도 완료로 표시하지 않는다.
-
-## 사용자 경험 확인
-
-- SOP 다음에 Science Verifier 메뉴가 있다.
-- 문서 위에 등록 별칭을 중립 표시하고 사용자가 subject/relation/object·조건을 확인한다.
-- 결과를 바꾸는 모호성만 보라색 점선 대상으로 삼는다.
-- red 표시는 active Rule, 충족 조건, active Evidence와 exact locator가 모두 있을 때의 `VIOLATION`에만 허용한다.
-- 일반 사용자도 펼쳐보기에서 원문·검토 번역·locator·원본 URL을 확인할 수 있다.
-- 이번 검증 수정과 전역 용어 개선 제안을 분리한다.
-
-## 사람 승인 대기
-
-1. 독립 reviewer가 개발에 쓰지 않은 sealed holdout을 수행한다.
-2. Science Admin이 Source·Evidence 원문·Knowledge·Rule·적용 조건과 digest를 직접 검토한다.
-3. G5·G6·G7이 모두 충족된 별도 audit event가 생성된 뒤에만 Release를 활성화한다.
-4. 활성화 후 동일 stored report의 Web/REST/MCP/Markdown/PDF parity를 다시 확인한다.
-
-현재 결과는 **구현 완료와 자동 검증 완료**이지 **과학적 진실 보증, 공정 승인, 안전 승인, Science Release 활성화**가 아니다.
+G5·G6·G7 또는 사람 Admin 승인 대기를 종합점수로 상쇄하지 않는다. 구현 보고서가 FINAL이어도 Science Knowledge Release의 승인·활성화·과학적 진실·공정 또는 안전 승인을 의미하지 않는다.
 """
 
 
@@ -238,25 +522,72 @@ def _styles() -> dict[str, ParagraphStyle]:
         font_name = "Helvetica"
     base = getSampleStyleSheet()
     return {
-        "title": ParagraphStyle("TitleK", parent=base["Title"], fontName=font_name, fontSize=24, leading=30, textColor=colors.HexColor("#111827"), alignment=TA_LEFT, spaceAfter=10),
-        "status": ParagraphStyle("StatusK", parent=base["Normal"], fontName=font_name, fontSize=13, leading=20, textColor=colors.HexColor("#5B21B6"), spaceAfter=12),
-        "h1": ParagraphStyle("H1K", parent=base["Heading1"], fontName=font_name, fontSize=15, leading=21, textColor=colors.HexColor("#111827"), spaceBefore=12, spaceAfter=7),
-        "body": ParagraphStyle("BodyK", parent=base["BodyText"], fontName=font_name, fontSize=9.3, leading=14, textColor=colors.HexColor("#374151"), spaceAfter=6),
-        "small": ParagraphStyle("SmallK", parent=base["BodyText"], fontName=font_name, fontSize=7.7, leading=11, textColor=colors.HexColor("#4B5563")),
-        "cell": ParagraphStyle("CellK", parent=base["BodyText"], fontName=font_name, fontSize=7.3, leading=10, textColor=colors.HexColor("#1F2937")),
-        "cell_center": ParagraphStyle("CellCenterK", parent=base["BodyText"], fontName=font_name, fontSize=7.3, leading=10, textColor=colors.HexColor("#1F2937"), alignment=TA_CENTER),
-        "header": ParagraphStyle("HeaderK", parent=base["BodyText"], fontName=font_name, fontSize=7.3, leading=10, textColor=colors.white),
+        "title": ParagraphStyle(
+            "TitleK",
+            parent=base["Title"],
+            fontName=font_name,
+            fontSize=22,
+            leading=28,
+            textColor=colors.HexColor("#111827"),
+            alignment=TA_LEFT,
+        ),
+        "status": ParagraphStyle(
+            "StatusK",
+            parent=base["Normal"],
+            fontName=font_name,
+            fontSize=12,
+            leading=18,
+            textColor=colors.HexColor("#5B21B6"),
+        ),
+        "h1": ParagraphStyle(
+            "H1K",
+            parent=base["Heading1"],
+            fontName=font_name,
+            fontSize=14,
+            leading=20,
+            spaceBefore=10,
+            spaceAfter=6,
+        ),
+        "body": ParagraphStyle(
+            "BodyK",
+            parent=base["BodyText"],
+            fontName=font_name,
+            fontSize=8.5,
+            leading=13,
+            textColor=colors.HexColor("#374151"),
+        ),
+        "cell": ParagraphStyle(
+            "CellK", parent=base["BodyText"], fontName=font_name, fontSize=7, leading=9
+        ),
+        "center": ParagraphStyle(
+            "CenterK",
+            parent=base["BodyText"],
+            fontName=font_name,
+            fontSize=7,
+            leading=9,
+            alignment=TA_CENTER,
+        ),
+        "header": ParagraphStyle(
+            "HeaderK",
+            parent=base["BodyText"],
+            fontName=font_name,
+            fontSize=7,
+            leading=9,
+            textColor=colors.white,
+        ),
     }
 
 
-def _table(rows: list[list[Any]], widths: list[float], styles: dict[str, ParagraphStyle]) -> Table:
+def _table(
+    rows: list[list[Any]], widths: list[float], styles: dict[str, ParagraphStyle]
+) -> Table:
     data = [
         [
             Paragraph(
                 str(value),
                 styles["header"]
                 if row_index == 0
-                else styles["cell_center"]
+                else styles["center"]
                 if column == 1
                 else styles["cell"],
             )
@@ -269,13 +600,16 @@ def _table(rows: list[list[Any]], widths: list[float], styles: dict[str, Paragra
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, -1), styles["cell"].fontName),
                 ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D1D5DB")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9FAFB")]),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -1),
+                    [colors.white, colors.HexColor("#F9FAFB")],
+                ),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                 ("TOPPADDING", (0, 0), (-1, -1), 4),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]
@@ -286,7 +620,7 @@ def _table(rows: list[list[Any]], widths: list[float], styles: dict[str, Paragra
 
 def _pdf(path: Path, record: dict[str, Any]) -> None:
     styles = _styles()
-    doc = SimpleDocTemplate(
+    document = SimpleDocTemplate(
         str(path),
         pagesize=A4,
         leftMargin=17 * mm,
@@ -296,87 +630,156 @@ def _pdf(path: Path, record: dict[str, Any]) -> None:
         title="Science Verifier 구현 검증 보고서",
         author="BoI Wiki Science Verifier",
     )
+    evidence_rows: list[list[Any]] = [["증빙", "상태", "기계 결과"]]
+    for key, label in (
+        ("science_tests", "Science JUnit"),
+        ("mcp_tests", "MCP JUnit"),
+        ("full_regression", "Full regression"),
+        ("browser", "Browser captures"),
+        ("qualification", "Qualification"),
+        ("independent_review", "Independent review"),
+    ):
+        item = record["evidence"][key]
+        if key.endswith("tests") or key == "full_regression":
+            result = f"tests={item.get('tests', 0)}, failures={item.get('failures', 0)}, errors={item.get('errors', 0)}"
+        elif key == "browser":
+            result = (
+                f"checks={item.get('checks', 0)}, captures={item.get('captures', 0)}"
+            )
+        elif key == "qualification":
+            result = f"cases={item.get('public_case_count', 0)}"
+        else:
+            result = f"status={item.get('status', 'unknown')}, critical={item.get('findings', {}).get('critical', 'unknown')}"
+        evidence_rows.append([label, _status_for(item), result])
+    gate_rows = [["Gate", "상태", "근거"]]
+    for gate, entry in sorted(
+        record["evidence"]["qualification"].get("gates", {}).items()
+    ):
+        gate_rows.append([gate, entry["status"], entry["detail"]])
+    if len(gate_rows) == 1:
+        gate_rows.append(["-", "UNVERIFIED", "유효한 qualification 결과 없음"])
+    failure_text = "<br/>".join(record["failure_reasons"]) or "없음"
     story: list[Any] = [
-        Paragraph("SCIENCE VERIFIER", styles["small"]),
+        Paragraph("SCIENCE VERIFIER", styles["body"]),
         Paragraph("구현 검증 보고서", styles["title"]),
-        Paragraph("구현 상태: VERIFIED  ·  Science Knowledge Release: NOT ACTIVE", styles["status"]),
-        Paragraph("AI 답변을 신뢰하지 않고, 해석 후보와 결정론적 판정 권한을 분리한 문서 중심 검증기의 구현 결과입니다. 사람 Admin 승인과 독립 holdout이 없으므로 과학 지식 Release는 비활성 상태입니다.", styles["body"]),
+        Paragraph(
+            f"구현 상태: {record['implementation_status']} · 보고서: {record['report_state']} · Science Knowledge Release: NOT ACTIVE",
+            styles["status"],
+        ),
+        Paragraph(
+            "호출자 숫자가 아니라 Git 상태와 해시로 묶인 기계 증빙에서 구현 상태를 계산했습니다. 이 결과는 지식 Release 활성화나 과학적 진실 보증이 아닙니다.",
+            styles["body"],
+        ),
         Spacer(1, 4 * mm),
-        _table(
-            [
-                ["검증 항목", "결과", "근거"],
-                ["Science 비-MCP", f"{record['verification']['science_non_mcp_tests']} PASS", "신뢰 경계·Rule·Evidence·storage·UI"],
-                ["Science MCP", f"{record['verification']['science_mcp_tests']} PASS", "REST wrapper와 identity 보존"],
-                ["실제 Chromium", f"{record['verification']['browser_checks']}/{record['verification']['browser_checks']} PASS", "inactive·no Qwen·manual confirm·no red"],
-                ["전체 저장소", f"{record['verification']['full_regression_tests']} PASS", "repo regression"],
-                ["공개 Candidate", "440/440 PASS", "반복 bytes 동일"],
-            ],
-            [46 * mm, 34 * mm, 94 * mm],
-            styles,
+        _table(evidence_rows, [48 * mm, 32 * mm, 94 * mm], styles),
+        Paragraph("검증 식별자", styles["h1"]),
+        Paragraph(
+            f"Code revision: {record['git']['commit']}<br/>Git dirty: {record['git']['dirty']}<br/>Git status digest: {record['git']['status_digest']}<br/>Evidence bundle: {record['evidence_bundle_digest']}<br/>Report record: {record['report_record_digest']}",
+            styles["body"],
         ),
-        Paragraph("고정 식별자", styles["h1"]),
-        Paragraph(f"Release: {RELEASE_ID}<br/>Release digest: {RELEASE_DIGEST}<br/>Qualification result: {QUALIFICATION_RESULT_DIGEST}<br/>Report record: {record['report_record_digest']}<br/>Code revision: {record['git_commit']}", styles["small"]),
+        Paragraph("상태 하향 사유", styles["h1"]),
+        Paragraph(failure_text, styles["body"]),
         Paragraph("Release Gate", styles["h1"]),
-        _table([["Gate", "상태", "근거/대기 사항"], *[list(row) for row in _gate_matrix()]], [18 * mm, 25 * mm, 131 * mm], styles),
+        _table(gate_rows, [18 * mm, 28 * mm, 128 * mm], styles),
         Paragraph("완료 경계", styles["h1"]),
-        Paragraph("G5 독립 sealed holdout, G6 active stored-report channel parity, G7 사람 Admin 검토·activation audit가 남아 있습니다. 구현 완료를 Science Release 활성화, 과학적 진실 보증, 공정·안전 승인으로 표현하지 않습니다.", styles["body"]),
-        PageBreak(),
-        Paragraph("요구 실패 사례 검증", styles["title"]),
-        _table([["사례", "결과", "관찰"], *[list(row) for row in _failure_matrix()]], [63 * mm, 21 * mm, 90 * mm], styles),
-        Paragraph("브라우저 관찰", styles["h1"]),
-        Paragraph("실제 UI는 release_candidate / operational=false / redCount=0이었습니다. 기본 네트워크 경로는 aliases/detect → claims/submit → explicit confirmation이며 Qwen interpret와 verify-document는 호출하지 않았습니다. SOP 다음 메뉴, 문서 선택영역 handoff, 모바일 단일 열, console error 0건을 확인했습니다.", styles["body"]),
-        Paragraph("빨간 표시의 강제 조건", styles["h1"]),
-        Paragraph("active Release · VIOLATION · active Rule · 충족된 적용 조건 · active reviewed Evidence · exact locator · canonical text span이 모두 일치해야 합니다. 하나라도 없으면 판정을 보류하고 빨간 표시를 만들지 않습니다.", styles["body"]),
-        PageBreak(),
-        Paragraph("범용 Science Knowledge Candidate", styles["title"]),
-        _table(
-            [["자산", "수량", "상태"],
-             ["Knowledge", record['counts']['knowledge'], "draft / pending review"],
-             ["Evidence", record['counts']['evidence'], "original·translation·locator·URL"],
-             ["Rules", record['counts']['rules'], "inactive candidate"],
-             ["Packs", record['counts']['packs'], "common·physics·chemistry·circuits·materials·semiconductor·spin"],
-             ["Ontology bindings", record['counts']['ontology_bindings'], "interpretation only"],
-             ["Qualification families", record['counts']['qualification_case_families'], "10 variants each"],
-             ["Public cases", record['counts']['public_cases'], "candidate-only"],
-            ],
-            [58 * mm, 28 * mm, 88 * mm], styles,
+        Paragraph(
+            "사람 Admin 승인과 독립 sealed holdout이 없으면 Candidate를 활성화하거나 운영 검증 완료로 표현하지 않습니다.",
+            styles["body"],
         ),
-        Paragraph("사람 승인 대기", styles["h1"]),
-        Paragraph("1. 독립 reviewer의 sealed holdout<br/>2. Admin의 Source·Evidence 원문·Knowledge·Rule·적용 조건·digest 검토<br/>3. G5·G6·G7 충족을 기록한 별도 activation audit<br/>4. 활성화 뒤 동일 stored report의 Web·REST·MCP·Markdown·PDF parity 재검증", styles["body"]),
-        Spacer(1, 10 * mm),
-        KeepTogether([
-            Paragraph("결론", styles["h1"]),
-            Paragraph("Science Verifier 애플리케이션과 fail-closed 신뢰 경계는 구현·자동 검증되었습니다. Science Knowledge Release는 활성화하지 않았으며 사람의 승인 대기 상태입니다.", styles["status"]),
-        ]),
     ]
-    doc.build(story)
+    document.build(story)
+
+
+def _collect(args: argparse.Namespace) -> dict[str, Any]:
+    git, failures = _git_state(args.repo_root)
+    evidence: dict[str, Any] = {}
+    for name, path in (
+        ("science_tests", args.science_test_summary),
+        ("mcp_tests", args.mcp_test_summary),
+        ("full_regression", args.full_regression_summary),
+    ):
+        evidence[name], source_failures = _junit_evidence(
+            name, path, args.repo_root, git["commit"]
+        )
+        failures.extend(source_failures)
+    evidence["browser"], source_failures = _browser_evidence(
+        args.browser_capture_manifest, args.repo_root, git["commit"]
+    )
+    failures.extend(source_failures)
+    evidence["qualification"], source_failures = _qualification_evidence(
+        args.qualification_result, args.repo_root
+    )
+    failures.extend(source_failures)
+    evidence["independent_review"], source_failures = _review_evidence(
+        args.independent_review, args.repo_root, git["commit"]
+    )
+    failures.extend(source_failures)
+    failure_reasons = sorted(set(failures))
+    status = "VERIFIED" if not failure_reasons else "UNVERIFIED"
+    report_state = "FINAL" if status == "VERIFIED" else "DRAFT"
+    qualification = evidence["qualification"]
+    record: dict[str, Any] = {
+        "report_version": "science-verifier-implementation-qualification/0.2.0",
+        "generated_at": args.generated_at,
+        "report_state": report_state,
+        "implementation_status": status,
+        "knowledge_release_status": "not_active",
+        "activation_eligible": False,
+        "failure_reasons": failure_reasons,
+        "git": git,
+        "evidence": evidence,
+        "counts": _knowledge_counts(
+            args.repo_root, qualification.get("public_case_count")
+        ),
+    }
+    record["evidence_bundle_digest"] = canonical_digest(
+        {"git": git, "evidence": evidence}
+    )
+    record["report_record_digest"] = canonical_digest(record)
+    return record
 
 
 def main() -> int:
     args = _args()
+    record = _collect(args)
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    counts = _knowledge_counts(args.repo_root)
-    record = _report_record(args, counts)
-    record["report_record_digest"] = canonical_digest(record)
-    markdown = _markdown(record)
     markdown_path = args.output_dir / "qualification-report.md"
     pdf_path = args.output_dir / "qualification-report.pdf"
-    markdown_path.write_text(markdown, encoding="utf-8")
+    markdown_path.write_text(_markdown(record), encoding="utf-8")
     _pdf(pdf_path, record)
+    qualification = record["evidence"]["qualification"]
     manifest = {
+        "schema_version": "science-verifier-evidence-manifest/0.2",
+        "report_state": record["report_state"],
+        "implementation_status": record["implementation_status"],
+        "failure_reasons": record["failure_reasons"],
+        "git": record["git"],
+        "evidence": record["evidence"],
+        "evidence_bundle_digest": record["evidence_bundle_digest"],
         "report_record_digest": record["report_record_digest"],
-        "release_id": RELEASE_ID,
-        "release_digest": RELEASE_DIGEST,
+        "release_id": qualification.get("release_id"),
+        "release_digest": qualification.get("release_digest"),
+        "qualification_result_digest": qualification.get("qualification_result_digest"),
         "activation_eligible": False,
-        "markdown": {"path": display_path(markdown_path, args.repo_root), "sha256": sha256_bytes(markdown_path.read_bytes())},
-        "pdf": {"path": display_path(pdf_path, args.repo_root), "sha256": sha256_bytes(pdf_path.read_bytes())},
-        "preflight": {"path": "data/boi/public/science/qualification/reports/release-gate-preflight-science-release-0.1.0.md", "sha256": record["preflight_file_digest"]},
-        "gates": record["gates"],
+        "gates": {
+            gate: entry["status"]
+            for gate, entry in qualification.get("gates", {}).items()
+        },
+        "markdown": {
+            "path": display_path(markdown_path, args.repo_root),
+            "sha256": sha256_bytes(markdown_path.read_bytes()),
+        },
+        "pdf": {
+            "path": display_path(pdf_path, args.repo_root),
+            "sha256": sha256_bytes(pdf_path.read_bytes()),
+        },
     }
     manifest_path = args.output_dir / "verification-manifest.json"
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
-    return 0
+    return 0 if record["implementation_status"] == "VERIFIED" else 2
 
 
 if __name__ == "__main__":

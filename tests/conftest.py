@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import types
@@ -14,6 +15,33 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def bind_junit_to_git_revision(record_testsuite_property):
+    """Bind release-evidence JUnit XML to the exact tested Git revision.
+
+    Ordinary developer runs remain unchanged.  Final evidence runs opt in with
+    ``BOI_TEST_GIT_COMMIT``; a stale requested revision fails the session
+    before its XML can be accepted by the report builder.
+    """
+
+    requested = os.getenv("BOI_TEST_GIT_COMMIT", "").strip()
+    if not requested:
+        return
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    actual = completed.stdout.strip()
+    if requested != actual:
+        pytest.fail(
+            f"BOI_TEST_GIT_COMMIT {requested} does not match checked-out revision {actual}"
+        )
+    record_testsuite_property("git_commit", actual)
 
 
 class FakeKafkaProducer:

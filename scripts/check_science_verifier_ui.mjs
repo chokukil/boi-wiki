@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { get } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 function parseArgs(argv) {
@@ -260,6 +260,147 @@ async function main() {
         leakedConfirmationCode: document.body.innerText.includes('USER_CONFIRMATION_REQUIRED'),
       }))()
     `);
+    const defaultNonQwenPath = scienceRequests.some((item) => new URL(item.url).pathname === "/api/science/aliases/detect")
+      && !scienceRequests.some((item) => new URL(item.url).pathname === "/api/science/interpret")
+      && !scienceRequests.some((item) => new URL(item.url).pathname === "/api/science/verify-document");
+
+    const failureMatrix = await cdp.evaluate(`
+      (async () => {
+        const originalFetch = window.fetch.bind(window);
+        const status = () => document.querySelector('[data-science-status]')?.textContent || '';
+        const redCount = () => document.querySelectorAll('.science-violation').length;
+        const waitFor = async (predicate, timeout = 4000) => {
+          const deadline = Date.now() + timeout;
+          while (Date.now() < deadline) {
+            if (predicate()) return true;
+            await new Promise((resolve) => setTimeout(resolve, 25));
+          }
+          return false;
+        };
+        const failureResponse = (diagnostic) => new Response(
+          JSON.stringify({ detail: { code: 'science_interpretation_unavailable', diagnostic_code: diagnostic } }),
+          { status: 503, headers: { 'content-type': 'application/json' } },
+        );
+        const qwenCases = {
+          connection_unavailable: () => Promise.reject(new Error('fixture connection unavailable')),
+          timeout: () => new Promise((resolve) => setTimeout(() => resolve(failureResponse('timeout')), 75)),
+          empty_content: () => Promise.resolve(failureResponse('empty_content')),
+          invalid_json: () => Promise.resolve(new Response('not-json', { status: 200, headers: { 'content-type': 'application/json' } })),
+          schema_mismatch: () => Promise.resolve(failureResponse('schema_mismatch')),
+        };
+        const qwen = {};
+        for (const [caseId, responder] of Object.entries(qwenCases)) {
+          window.fetch = (input, init) => String(input).includes('/api/science/interpret') ? responder() : originalFetch(input, init);
+          document.querySelector('[data-science-status]').textContent = 'browser matrix pending: ' + caseId;
+          document.querySelector('[data-science-qwen-experimental]').click();
+          const closed = await waitFor(() => status().includes('Qwen 해석을 사용할 수 없습니다'));
+          qwen[caseId] = { closed, redCount: redCount(), status: status() };
+        }
+        window.fetch = originalFetch;
+
+        const post = async (path, payload) => {
+          const response = await originalFetch(path, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          let body = null;
+          try { body = await response.json(); } catch { body = null; }
+          return { status: response.status, body };
+        };
+        const documentText = 'Photo Track에서 Spin Coating 두께를 높이려면 final spin RPM을 높여야 한다.';
+        const aliases = await post('/api/science/aliases/detect', {
+          document: documentText,
+          request_id: 'browser-matrix-aliases',
+        });
+        const matches = aliases.body?.matches || [];
+        const pick = (surface) => matches.find((item) => item.surface_term === surface);
+        const selected = { subject: pick('RPM'), relation: pick('높여야 한다'), object: pick('두께') };
+        if (!selected.subject || !selected.relation || !selected.object) throw new Error('browser matrix aliases unavailable');
+        const span = {
+          offset_encoding: 'unicode_code_point', start: 0,
+          end: Array.from(documentText).length, exact: documentText, prefix: '', suffix: '',
+        };
+        const baseCandidate = {
+          source_span: span,
+          normalized_claim: {
+            subject_concept_id: selected.subject.concept_id,
+            relation_kind: 'monotonic_direction', predicate: selected.relation.concept_id,
+            object_concept_id: selected.object.concept_id, polarity: 'positive',
+            quantities: [], conditions: [], process_stage: null, material_state: null,
+          },
+          ontology_refs: [selected.subject.ontology_ref, selected.relation.ontology_ref, selected.object.ontology_ref],
+          ambiguity_ids: [],
+          candidate_meanings: ['subject', 'relation', 'object'].map((role) => ({
+            ambiguity_id: null, concept_role: role, surface_term: selected[role].surface_term,
+            ontology_ref: selected[role].ontology_ref, meaning: selected[role].meaning,
+          })),
+          decision_impact: [],
+        };
+        const clone = (value) => JSON.parse(JSON.stringify(value));
+        const mutations = {
+          unknown_ontology_ref(candidate) { candidate.ontology_refs.push('sci:binding:does-not-exist'); },
+          alias_absent_from_document(candidate) { candidate.candidate_meanings[0].surface_term = '문서에 없는 별칭'; },
+          overlapping_role_span(candidate) { candidate.candidate_meanings[1].surface_term = 'RPM'; },
+          incomplete_claim_span(candidate) {
+            candidate.source_span.exact = 'Photo Track에서 Spin Coating';
+            candidate.source_span.end = Array.from(candidate.source_span.exact).length;
+          },
+        };
+        const claims = {};
+        for (const [caseId, mutate] of Object.entries(mutations)) {
+          const candidate = clone(baseCandidate); mutate(candidate);
+          const response = await post('/api/science/claims/submit', {
+            document: documentText, client_kind: 'codex', candidate,
+            idempotency_key: 'browser-matrix-' + caseId,
+          });
+          claims[caseId] = {
+            status: response.status,
+            decision: response.body?.decision_impact?.[0]?.status || null,
+            issues: response.body?.decision_impact?.[0]?.issue_codes || [],
+            redCount: redCount(),
+          };
+        }
+        const parity = {};
+        for (const clientKind of ['codex', 'claude']) {
+          parity[clientKind] = await post('/api/science/claims/submit', {
+            document: documentText, client_kind: clientKind, candidate: baseCandidate,
+            idempotency_key: 'browser-matrix-parity-' + clientKind,
+          });
+        }
+        const core = await import('/static/science_verifier_core.mjs');
+        const locator = {
+          medium: 'pdf', exact: true, section: '3.2', pdf_page_index: 6, printed_page: '7',
+          resource_url: 'https://example.test/source.pdf', requested_url: 'https://example.test/source.pdf',
+          resolved_url: 'https://example.test/source.pdf', content_hash: 'sha256:' + '1'.repeat(64),
+          retrieved_at: '2026-08-25T00:00:00Z', hash_scope: 'retrieved_resource',
+        };
+        const verdict = {
+          verdict: 'VIOLATION', decisive_rule_ids: ['sci:rule:test'],
+          condition_evaluations: [{ condition_id: 'scope', satisfied: true }],
+          evidence_refs: ['sci:evidence:test'],
+        };
+        const annotation = { evidence_links: [{
+          evidence_id: 'sci:evidence:test', locator, url: 'https://example.test/source.pdf',
+          reviewed_source: { qualification_state: 'active' },
+        }] };
+        return {
+          qwen,
+          claims,
+          parity: {
+            statuses: [parity.codex.status, parity.claude.status],
+            sameClaim: parity.codex.body?.candidate_claims?.[0]?.claim_id === parity.claude.body?.candidate_claims?.[0]?.claim_id,
+            sameDecision: JSON.stringify(parity.codex.body?.decision_impact) === JSON.stringify(parity.claude.body?.decision_impact),
+            redCount: redCount(),
+          },
+          redGate: {
+            exactActiveFixtureAccepted: core.trustedViolationState(verdict, [annotation], true),
+            inexactLocatorRejected: !core.trustedViolationState(verdict, [{ evidence_links: [{ ...annotation.evidence_links[0], locator: { section: '3.2' } }] }], true),
+            inactiveReleaseRejected: !core.trustedViolationState(verdict, [annotation], false),
+          },
+        };
+      })()
+    `);
 
     await cdp.evaluate(`
       (() => {
@@ -327,9 +468,13 @@ async function main() {
       deterministic_aliases_visible: desktop.aliasCount >= 3 && desktop.aliasChipCount >= 3,
       manual_claim_editor_visible: desktop.candidateEditorVisible && desktop.roleSelects === 3,
       qwen_is_separate_experimental_action: desktop.qwenExperimental && desktop.noLlmBoundary,
-      default_used_deterministic_non_qwen_path: scienceRequests.some((item) => new URL(item.url).pathname === "/api/science/aliases/detect") && !scienceRequests.some((item) => new URL(item.url).pathname === "/api/science/interpret") && !scienceRequests.some((item) => new URL(item.url).pathname === "/api/science/verify-document"),
+      default_used_deterministic_non_qwen_path: defaultNonQwenPath,
       manual_claim_confirmed_without_llm_or_verdict: manualRoute.redCount === 0 && manualRoute.cards === 1 && !manualRoute.leakedConfirmationCode && scienceRequests.some((item) => item.url.includes("/api/science/claims/submit")) && scienceRequests.some((item) => item.url.includes("/api/science/interpretations/") && item.url.includes("/confirm")) && !scienceRequests.some((item) => item.url.includes("/api/science/verify-document")),
       ascii_alias_token_boundary: tokenBoundary.resistanceChips === 1 && tokenBoundary.resistanceMarks === 1 && tokenBoundary.rpmChips === 1,
+      qwen_failure_matrix_has_no_red: Object.values(failureMatrix.qwen).every((item) => item.closed && item.redCount === 0),
+      invalid_claim_matrix_has_no_red: Object.values(failureMatrix.claims).every((item) => item.redCount === 0 && (item.decision === "blocked_semantic_mismatch" || item.status >= 400)),
+      external_clients_submit_same_claim: failureMatrix.parity.statuses.every((status) => status === 200) && failureMatrix.parity.sameClaim && failureMatrix.parity.sameDecision && failureMatrix.parity.redCount === 0,
+      red_gate_requires_active_rule_conditions_and_exact_evidence: failureMatrix.redGate.exactActiveFixtureAccepted && failureMatrix.redGate.inexactLocatorRejected && failureMatrix.redGate.inactiveReleaseRejected,
       prohibited_ui_absent: desktop.noScore && desktop.noDoe,
       actions_separated_and_focusable: desktop.distinctActions && desktop.focusVisibleTarget,
       desktop_no_overflow: !desktop.horizontalOverflow,
@@ -345,6 +490,7 @@ async function main() {
       handoff,
       manualRoute,
       tokenBoundary,
+      failureMatrix,
       scienceRequests,
       consoleErrors: relevantConsoleErrors(consoleErrors),
       screenshot: args.screenshot,
@@ -356,13 +502,19 @@ async function main() {
       const fileDigest = (path) => path && existsSync(path)
         ? `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`
         : "";
+      const manifestDir = dirname(args.reportJson);
+      const captures = [args.screenshot, args.mobileScreenshot]
+        .filter((path) => path && existsSync(path))
+        .map((path) => ({ path: relative(manifestDir, path) || basename(path), sha256: fileDigest(path) }));
       const captureManifest = {
+        schema_version: "science-browser-capture-manifest/0.1",
         captured_at: new Date().toISOString(),
         git_commit: args.gitCommit,
         route: new URL(args.url).pathname,
         release_status: desktop.releaseStatus,
         operational: desktop.operational === "true",
-        checks,
+        checks: Object.entries(checks).map(([check_id, passed]) => ({ check_id, status: passed ? "passed" : "failed" })),
+        captures,
         screenshots: {
           desktop: { path: args.screenshot, sha256: fileDigest(args.screenshot) },
           mobile: { path: args.mobileScreenshot, sha256: fileDigest(args.mobileScreenshot) },

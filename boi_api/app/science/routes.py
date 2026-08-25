@@ -264,6 +264,10 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
         identity: AuthIdentity = Depends(dependencies.current_identity_dependency),
     ) -> AuthIdentity:
         try:
+            if identity.auth_source == "service_token":
+                raise ScienceAuthorizationError(
+                    "interactive user identity required for Science Verifier"
+                )
             dependencies.authorization.require_access(
                 identity,
                 dependencies.roles_for(identity.employee_id),
@@ -418,13 +422,14 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
     def verify_claim(
         claim_id: str,
         request: VerifyClaimRequest,
-        _identity: AuthIdentity = Depends(science_identity),
+        identity: AuthIdentity = Depends(science_identity),
     ) -> dict[str, Any]:
         result = _invoke(
             lambda: service().verify_claim(
                 request.interpretation_id,
                 claim_id,
                 request.release_selection,
+                identity=identity,
             )
         )
         return _json_model(result)
@@ -453,6 +458,9 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
         source = _invoke(lambda: dependencies.catalog.source(evidence.source_id))
         require_read(identity, source.boi_id)
         return {
+            "authority_scope": "standalone_lookup_non_authoritative",
+            "operational_eligibility": False,
+            "release_binding": None,
             "evidence_id": evidence.evidence_id,
             "evidence_digest": evidence.digest,
             "source_id": source.source_id,

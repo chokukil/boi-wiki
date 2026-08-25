@@ -40,6 +40,8 @@ Science Verifier는 AI 답변을 신뢰하는 기능이 아니다. 사용자·Co
 1. `SOP` 다음의 `Science Verifier`를 열고 문서를 붙여 넣거나 Wiki 문서의 선택 영역에서 검토 화면으로 이동한다.
 2. `등록 용어 찾기`가 서버의 `POST /api/science/aliases/detect`를 호출한다. 이 단계는 Claim이나 verdict를 만들지 않는다.
 3. 사용자가 subject, relation, object, 조건과 문서 구간을 확인·수정한다. Codex·Claude 같은 외부 Agent가 같은 구조의 후보를 제출해도 서버 검사는 동일하다.
+   - Agent가 넣은 수량·조건은 곧바로 Rule 적용 사실이 되지 않는다. 사용자 화면에서 값과 단위를 명시적으로 확인하고 `client_kind=user`의 새 Claim으로 다시 제출해야 한다.
+   - 공정 단계·물질 상태는 결과를 바꾸는 모호성으로 표시된 경우에만 확인 대상으로 진행하며, 확인 전에는 판정에 쓰지 않는다.
 4. 결과를 바꿀 수 있는 모호성만 보라색 점선으로 표시한다. 사용자가 확인하면 그 Claim만 새 immutable interpretation으로 다시 검증한다.
 5. 활성 Release가 없거나 Rule·적용 조건·정확한 Evidence locator가 부족하면 판정을 보류한다. 빨간 표시를 만들지 않는다.
 6. 결정론적 `VIOLATION`에만 빨간 밑줄과 음영을 표시한다. 교정 카드에는 충분한 과학적 설명과 출처 1~2개를 항상 보이고, 펼쳐보기에서 원문·검토된 번역·locator·원본 URL을 제공한다.
@@ -52,7 +54,7 @@ Science Verifier는 AI 답변을 신뢰하는 기능이 아니다. 사용자·Co
 | Claim 후보 제출 | `POST /api/science/claims/submit` | `science_claim_submit` | 모든 클라이언트 입력을 untrusted로 재검증 |
 | 사용자 확인 | interpretation confirm endpoint | `science_interpretation_confirm` | 인증된 사용자의 명시적 확인만 허용 |
 | 결정론적 검증 | claim/document verify endpoint | `science_verify_claim`, `science_verify_document` | 활성 Release의 Rule만 판정 |
-| 근거 확인 | evidence endpoint | `science_evidence_get` | ACL이 허용한 원문·번역·locator·URL |
+| 근거 확인 | evidence endpoint | `science_evidence_get` | ACL이 허용한 원문·번역·locator·URL. 단독 조회는 운영 적격성을 주장하지 않음 |
 | 보고서 | report/export endpoint | `science_report_get`, `science_report_export` | 같은 stored report를 Markdown/PDF로 표현 |
 
 Claim 제출 payload에 `verdict`, `rule`, `evidence`, `citation`, `correction`을 넣어도 서버가 권위로 받아들이지 않는다. 존재하지 않는 `ontology_ref`, 문서에 없는 별칭, 겹치거나 불완전한 역할 구간, 미확인 조건은 판정 전에 차단한다. 같은 canonical Claim과 Release는 `client_kind`가 user, codex, claude, qwen 중 무엇이든 같은 결과를 내야 한다.

@@ -128,10 +128,16 @@ export function buildManualCandidate({
 
 function locatorIsExact(locator) {
   if (!locator || typeof locator !== "object") return false;
-  return [
-    "section", "equation", "printed_page", "pdf_page_index", "paragraph",
-    "figure", "table", "resource_url", "requested_url", "resolved_url",
-  ].some((key) => locator[key] !== undefined && locator[key] !== null && String(locator[key]).trim() !== "");
+  const present = (key) => locator[key] !== undefined && locator[key] !== null && String(locator[key]).trim() !== "";
+  const common = ["resource_url", "requested_url", "resolved_url", "content_hash", "retrieved_at", "hash_scope"];
+  if (locator.exact !== true || !common.every(present) || locator.resource_url !== locator.resolved_url) return false;
+  const requiredByMedium = {
+    pdf: ["section", "pdf_page_index", "printed_page"],
+    html: ["heading", "sentence_ordinal", "prefix", "suffix", "retrieved_resource_hash"],
+    api_json: ["section", "field_path", "record_path"],
+  };
+  const required = requiredByMedium[locator.medium];
+  return Array.isArray(required) && required.every(present);
 }
 
 export function trustedViolationState(verdict, annotations, operational) {

@@ -32553,6 +32553,7 @@ def _configure_science_verifier() -> None:
             dictionary_release_id=BOI_SCIENCE_DICTIONARY_RELEASE_ID,
             ontology_release_id=BOI_SCIENCE_ONTOLOGY_RELEASE_ID,
             ontology_binding_ids=[binding.object_id for binding in bindings],
+            document_access_check=can_read_boi,
         )
 
     app.state.science_authorization = authorization

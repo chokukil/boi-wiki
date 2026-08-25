@@ -15,7 +15,10 @@ from pydantic import ValidationError
 
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.anchors import SpanAnchorError, resolve_anchor
-from boi_api.app.science.authorization import ScienceAuthorization
+from boi_api.app.science.authorization import (
+    ScienceAuthorization,
+    ScienceAuthorizationError,
+)
 from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
 from boi_api.app.science.llm import (
@@ -907,6 +910,7 @@ def _service(content: dict[str, object] | None = None):
             "sci:binding:increases",
             "sci:binding:film-thickness",
         ],
+        document_access_check=lambda _identity, _document_ref: True,
         clock=lambda: datetime(2026, 8, 25, 4, 0, tzinfo=timezone.utc),
     )
     return service, catalog, store, llm
@@ -932,6 +936,7 @@ def _real_service(tmp_path: Path, content: dict[str, object] | None = None):
             "sci:binding:increases",
             "sci:binding:film-thickness",
         ],
+        document_access_check=lambda _identity, _document_ref: True,
         clock=lambda: datetime(2026, 8, 25, 4, 0, tzinfo=timezone.utc),
     )
     return service, catalog, store, llm
@@ -1250,14 +1255,81 @@ def test_agent_supplied_condition_cannot_directly_produce_a_verdict_or_report(
     claim_id = submitted.candidate_claims[0].claim_id
     selection = ReleaseSelection(foundation="sci-release:foundation-0.1")
 
+    assert submitted.decision_impact[0].status == "blocked_semantic_mismatch"
+    assert "EXTERNAL_CONTEXT_REQUIRES_USER_REVISION" in (
+        submitted.decision_impact[0].issue_codes
+    )
     with pytest.raises(ScienceConfirmationRequired):
-        service.verify_claim(submitted.interpretation_id, claim_id, selection)
+        service.confirm_interpretation(
+            submitted.interpretation_id,
+            claim_ids=[claim_id],
+            identity=science_identity,
+            idempotency_key="science-request:agent-context-confirm",
+        )
+    with pytest.raises(ScienceConfirmationRequired):
+        service.verify_claim(
+            submitted.interpretation_id,
+            claim_id,
+            selection,
+            identity=science_identity,
+        )
     with pytest.raises(ScienceConfirmationRequired):
         service.verify_document(
             submitted.interpretation_id,
             selection,
             identity=science_identity,
             idempotency_key="science-request:unconfirmed-condition-report",
+        )
+
+
+def test_different_user_cannot_confirm_or_verify_another_users_interpretation(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    other = AuthIdentity(
+        employee_id="100003",
+        display_name="Other Science User",
+        roles=["science.user", "boi.viewer"],
+    )
+    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    submitted = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="codex",
+        candidate=candidate,
+        idempotency_key="science-request:owner-submit",
+    )
+    claim_id = submitted.candidate_claims[0].claim_id
+
+    with pytest.raises(ScienceAuthorizationError, match="interpretation owner"):
+        service.confirm_interpretation(
+            submitted.interpretation_id,
+            claim_ids=[claim_id],
+            identity=other,
+            idempotency_key="science-request:other-confirm",
+        )
+
+    confirmed = service.confirm_interpretation(
+        submitted.interpretation_id,
+        claim_ids=[claim_id],
+        identity=science_identity,
+        idempotency_key="science-request:owner-confirm",
+    )
+    selection = ReleaseSelection(foundation="sci-release:foundation-0.1")
+    with pytest.raises(ScienceAuthorizationError, match="interpretation owner"):
+        service.verify_claim(
+            confirmed.interpretation_id,
+            claim_id,
+            selection,
+            identity=other,
+        )
+    with pytest.raises(ScienceAuthorizationError, match="interpretation owner"):
+        service.verify_document(
+            confirmed.interpretation_id,
+            selection,
+            identity=other,
+            idempotency_key="science-request:other-report",
         )
 
 
@@ -1429,6 +1501,84 @@ def test_manual_correction_is_an_immutable_resubmission(
     assert store.interpretations[original.interpretation_id] == original
 
 
+def test_manual_correction_rejects_dangling_cross_user_and_cross_document_lineage(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    original = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="codex",
+        candidate=candidate,
+        idempotency_key="science-request:lineage-original",
+    )
+    claim_id = original.candidate_claims[0].claim_id
+
+    with pytest.raises(ScienceConfirmationRequired, match="provenance"):
+        service.submit_claim_candidate(
+            "RPM 증가 시 두께 변화",
+            document_ref="boi:public:science:document:fixture",
+            identity=science_identity,
+            client_kind="user",
+            candidate=candidate,
+            supersedes_claim_id="sci-claim:does-not-exist",
+            idempotency_key="science-request:lineage-dangling",
+        )
+
+    other = AuthIdentity(
+        employee_id="100003",
+        display_name="Other Science User",
+        roles=["science.user", "boi.viewer"],
+    )
+    with pytest.raises(ScienceAuthorizationError, match="Claim owner"):
+        service.submit_claim_candidate(
+            "RPM 증가 시 두께 변화",
+            document_ref="boi:public:science:document:fixture",
+            identity=other,
+            client_kind="user",
+            candidate=candidate,
+            supersedes_claim_id=claim_id,
+            idempotency_key="science-request:lineage-other-user",
+        )
+
+    with pytest.raises(ScienceConfirmationRequired, match="source document"):
+        service.submit_claim_candidate(
+            "RPM 증가 시 두께 변화",
+            document_ref="boi:public:science:document:other",
+            identity=science_identity,
+            client_kind="user",
+            candidate=candidate,
+            supersedes_claim_id=claim_id,
+            idempotency_key="science-request:lineage-other-document",
+        )
+
+
+def test_interpretation_confirmation_rechecks_current_document_access(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
+    submitted = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="user",
+        candidate=candidate,
+        idempotency_key="science-request:access-submit",
+    )
+    service._document_access_check = lambda _identity, _document_ref: False
+
+    with pytest.raises(ScienceAuthorizationError, match="document access"):
+        service.confirm_interpretation(
+            submitted.interpretation_id,
+            claim_ids=[submitted.candidate_claims[0].claim_id],
+            identity=science_identity,
+            idempotency_key="science-request:access-confirm",
+        )
+
+
 def test_different_clients_produce_the_same_claim_and_deterministic_verdict(
     science_identity: AuthIdentity,
 ):
@@ -1458,6 +1608,7 @@ def test_different_clients_produce_the_same_claim_and_deterministic_verdict(
                 confirmed.interpretation_id,
                 claim_id,
                 ReleaseSelection(foundation="sci-release:foundation-0.1"),
+                identity=science_identity,
             )
         )
 
@@ -1494,7 +1645,18 @@ def test_real_store_preserves_external_submission_confirmation_dependency(
         confirmed.interpretation_id,
         claim_id,
         ReleaseSelection(foundation="sci-release:foundation-0.1"),
+        identity=science_identity,
     ).verdict == PrimaryVerdict.VIOLATION
+    correction = service.submit_claim_candidate(
+        "RPM 증가 시 두께 변화",
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        client_kind="user",
+        candidate=candidate,
+        supersedes_claim_id=claim_id,
+        idempotency_key="science-request:real-store-correction",
+    )
+    assert correction.supersedes_claim_id == claim_id
 
 
 def test_external_claim_submission_cannot_use_an_inactive_release_for_verdict(
@@ -1530,6 +1692,7 @@ def test_external_claim_submission_cannot_use_an_inactive_release_for_verdict(
             confirmed.interpretation_id,
             claim_id,
             ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
         )
 
 
@@ -1600,7 +1763,7 @@ def test_identity_bound_revision_rejects_endpoint_shaped_actor_before_save(
         roles=["science.admin"],
     )
 
-    with pytest.raises(ScienceConfirmationRequired, match="failed closed"):
+    with pytest.raises(ScienceAuthorizationError, match="interpretation owner"):
         service.confirm_interpretation(
             proposal.interpretation_id,
             claim_ids=[proposal.candidate_claims[0].claim_id],
@@ -1886,6 +2049,7 @@ def test_explicit_identity_bound_confirmation_creates_a_typed_revision_before_ve
             proposal.interpretation_id,
             proposal.candidate_claims[0].claim_id,
             ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
         )
 
     confirmed = service.confirm_interpretation(
@@ -1913,6 +2077,7 @@ def test_explicit_identity_bound_confirmation_creates_a_typed_revision_before_ve
         confirmed.interpretation_id,
         confirmed.candidate_claims[0].claim_id,
         ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
     )
     assert verdict.verdict is PrimaryVerdict.VIOLATION
     assert store.interpretations[confirmed.interpretation_id] == confirmed
@@ -1928,6 +2093,7 @@ def test_verify_claim_rejects_a_catalog_result_not_matching_the_exact_selection(
             record.interpretation_id,
             record.candidate_claims[0].claim_id,
             ReleaseSelection(foundation="sci-release:different-selection"),
+            identity=science_identity,
         )
 
     assert catalog.resolve_operational_calls == 0
@@ -1946,6 +2112,7 @@ def test_verify_claim_rejects_any_non_catalog_operational_object(
             record.interpretation_id,
             record.candidate_claims[0].claim_id,
             ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
         )
 
     assert catalog.resolve_operational_calls == 1
@@ -1962,6 +2129,7 @@ def test_verify_claim_runs_the_engine_only_with_catalog_operational_capability(
         record.interpretation_id,
         record.candidate_claims[0].claim_id,
         ReleaseSelection(foundation=catalog.release.release_id),
+        identity=science_identity,
     )
 
     assert verdict.verdict is PrimaryVerdict.VIOLATION
@@ -3125,7 +3293,7 @@ def test_report_retry_concurrency_and_pending_audit_are_exactly_once(
         display_name="Other authorized user",
         roles=["science.admin"],
     )
-    with pytest.raises(ScienceIdempotencyConflict):
+    with pytest.raises(ScienceAuthorizationError, match="interpretation owner"):
         service.verify_document(
             interpretation.interpretation_id,
             selection,
@@ -3251,6 +3419,7 @@ def test_service_rejects_stale_interpret_binding_before_engine_or_report(
             proposal.interpretation_id,
             claim.claim_id,
             ReleaseSelection(foundation=catalog.release.release_id),
+            identity=science_identity,
         )
     with pytest.raises(ScienceConfirmationRequired):
         service.verify_document(
@@ -3515,7 +3684,10 @@ def test_authoritative_confirmation_drops_invalid_stored_record_context(
     store.load_interpretation = lambda _record_id: malformed
 
     with pytest.raises(ScienceConfirmationRequired) as captured:
-        service._authoritative_confirmation(confirmed.interpretation_id)
+        service._authoritative_confirmation(
+            confirmed.interpretation_id,
+            identity=science_identity,
+        )
 
     _assert_closed_runtime_validation_error(captured.value, secret=secret)
 

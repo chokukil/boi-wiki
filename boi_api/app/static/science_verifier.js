@@ -48,7 +48,11 @@
       headers: { "content-type": "application/json", ...(options.headers || {}) },
     });
     let body = {};
-    try { body = await response.json(); } catch { body = {}; }
+    try { body = await response.json(); }
+    catch {
+      if (response.ok) throw new Error("Science API returned invalid JSON; no result was accepted.");
+      body = {};
+    }
     if (!response.ok) {
       const detail = body?.detail;
       throw new Error(typeof detail === "string" ? detail : detail?.message || `HTTP ${response.status}`);
@@ -222,6 +226,21 @@
       appendText(header, "span", verdict?.verdict || (ambiguity ? "해석 확인 필요" : "해석 후보"), `science-verdict ${state?.trustedViolation ? "violation" : ambiguity ? "ambiguity" : "neutral"}`);
       appendText(header, "small", claim.claim_id); card.appendChild(header);
       appendText(card, "p", claim.source_span?.exact || "", "science-claim-text");
+      const normalized = claim.normalized_claim || {};
+      const assertedContext = [
+        ...(normalized.conditions || []).map((item) => `${item.condition_id}=${item.value}${item.unit ? ` ${item.unit}` : ""}`),
+        ...(normalized.process_stage ? [`process_stage=${normalized.process_stage}`] : []),
+        ...(normalized.material_state ? [`material_state=${normalized.material_state}`] : []),
+        ...(normalized.quantities || []).map((item) => `${item.quantity_kind}=${item.value} ${item.unit}`),
+      ];
+      appendText(
+        card,
+        "p",
+        assertedContext.length
+          ? `사용자 확인 대상 조건: ${assertedContext.join(" · ")}`
+          : "사용자가 주장한 적용 조건 없음 — Rule에 조건이 필요하면 판정을 보류합니다.",
+        "science-asserted-context",
+      );
       if (verdict) {
         appendText(card, "h3", "판정과 적용 조건");
         appendText(card, "p", (verdict.condition_evaluations || []).length ? verdict.condition_evaluations.map((item) => `${item.condition_id}: ${item.satisfied ? "충족" : "미충족"}`).join(" · ") : "적용 조건이 확인되지 않아 빨간 표시를 만들지 않습니다.");

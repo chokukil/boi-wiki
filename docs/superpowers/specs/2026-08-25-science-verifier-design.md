@@ -729,6 +729,16 @@ release:
 
 상태는 `release_candidate`, `active`, `superseded`, `withdrawn`을 사용한다. 활성 Release의 객체를 직접 수정하지 않는다.
 
+운영 capability는 선택된 모든 Release가 현재 `active`일 때만 발급한다. `superseded`는 과거 보고서 재현을 위한 이력 상태일 뿐 새 verdict·빨간 표시를 만들 수 없다. `release_candidate`와 `withdrawn`도 운영 판정에 들어가지 않는다.
+
+### 실행 신뢰 경계
+
+- Science REST/MCP의 행위자는 사용자 bearer·세션·허용된 사용자 신원이어야 한다. service token은 브리지 자체만 인증하며 사용자로 가장할 수 없다.
+- Claim 제출, 사용자 확인, 단일 Claim 검증, 문서 보고서는 동일 actor에 묶인다. Wiki 문서는 확인·검증 시점의 read ACL을 다시 검사하고, 직접 제출 문서는 최초 제출자만 사용할 수 있다.
+- 수동 수정의 `supersedes_claim_id`는 실제로 존재하는 같은 actor·같은 문서의 선행 Claim만 가리킬 수 있다.
+- Agent가 제출한 수량·조건은 사용자 화면에서 명시적으로 다시 작성되기 전에는 Rule applicability에 사용하지 않는다. 공정 단계·물질 상태는 결과를 바꾸는 모호성으로 노출되고 확인되기 전에는 판정하지 않는다.
+- 단독 Evidence 조회는 원문 검토 기능이며 운영 적격성을 주장하지 않는다. 빨간 표시는 immutable report의 active Release binding과 reviewed-source identity까지 확인해야 한다.
+
 ### Release Gate
 
 | Gate | 확인 내용 |

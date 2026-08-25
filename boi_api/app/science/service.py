@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.anchors import resolve_anchor
+from boi_api.app.science.authorization import ScienceAuthorizationError
 from boi_api.app.science.digests import sha256_digest
 from boi_api.app.science.engine import verify_claim as verify_scientific_claim
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
@@ -94,6 +95,7 @@ class ScienceService:
         dictionary_release_id: str,
         ontology_release_id: str,
         ontology_binding_ids: Sequence[str],
+        document_access_check: Callable[[AuthIdentity, str], bool],
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.catalog = catalog
@@ -102,7 +104,33 @@ class ScienceService:
         self.dictionary_release_id = dictionary_release_id
         self.ontology_release_id = ontology_release_id
         self.ontology_binding_ids = tuple(ontology_binding_ids)
+        self._document_access_check = document_access_check
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def _require_interpretation_access(
+        self,
+        interpretation: InterpretationRecord,
+        *,
+        identity: AuthIdentity,
+    ) -> None:
+        if interpretation.operation_binding.actor_id != identity.employee_id:
+            raise ScienceAuthorizationError(
+                "Science interpretation owner does not match trusted identity"
+            )
+        document_refs = {
+            claim.document_ref for claim in interpretation.candidate_claims
+        }
+        if len(document_refs) != 1:
+            raise ScienceAuthorizationError(
+                "Science interpretation document binding is not authorized"
+            )
+        document_ref = next(iter(document_refs))
+        if document_ref.startswith("boi:submitted:"):
+            return
+        if not self._document_access_check(identity, document_ref):
+            raise ScienceAuthorizationError(
+                "Science interpretation document access is not authorized"
+            )
 
     @staticmethod
     def _idempotency_digest(value: str) -> str:
@@ -292,6 +320,7 @@ class ScienceService:
         document_digest: str,
         selection_start: int,
         ontology_index: Mapping[str, Mapping[str, object]],
+        client_kind: ClaimSubmissionClientKind,
     ) -> tuple[
         ClaimPacket,
         list[CandidateMeaningRecord],
@@ -328,6 +357,21 @@ class ScienceService:
             issues.add("ONTOLOGY_REF_MISMATCH")
 
         normalized = candidate.normalized_claim
+        has_outcome_context_ambiguity = any(
+            impact.changes_outcome for impact in candidate.decision_impact
+        )
+        if client_kind != "user" and (
+            normalized.quantities
+            or normalized.conditions
+            or (
+                (
+                    normalized.process_stage is not None
+                    or normalized.material_state is not None
+                )
+                and not has_outcome_context_ambiguity
+            )
+        ):
+            issues.add("EXTERNAL_CONTEXT_REQUIRES_USER_REVISION")
         by_role: dict[str, list[Any]] = {"subject": [], "relation": [], "object": []}
         for meaning in candidate.candidate_meanings:
             by_role[meaning.concept_role].append(meaning)
@@ -464,6 +508,7 @@ class ScienceService:
                 "BINDING_CONCEPT_MISMATCH",
                 "ALIAS_BINDING_MISMATCH",
                 "COMPLETE_RELATION_SPAN_REQUIRED",
+                "EXTERNAL_CONTEXT_REQUIRES_USER_REVISION",
             )
             if issue in issues
         ]
@@ -579,6 +624,47 @@ class ScienceService:
             ),
         )
         document_digest = sha256_digest(document_text)
+        if supersedes_claim_id is not None:
+            resolver = getattr(
+                self.runtime_store, "interpretations_for_claim", None
+            )
+            if callable(resolver):
+                predecessors = list(resolver(supersedes_claim_id))
+            else:
+                predecessors = [
+                    record
+                    for record in getattr(
+                        self.runtime_store, "interpretations", {}
+                    ).values()
+                    if record.operation_binding.operation
+                    in {"interpret_document", "submit_claim_candidate"}
+                    and any(
+                        claim.claim_id == supersedes_claim_id
+                        for claim in record.candidate_claims
+                    )
+                ]
+            if not predecessors:
+                raise ScienceConfirmationRequired(
+                    "superseded Claim provenance is unavailable"
+                )
+            owned = [
+                record
+                for record in predecessors
+                if record.operation_binding.actor_id == identity.employee_id
+            ]
+            if not owned:
+                raise ScienceAuthorizationError(
+                    "superseded Claim owner does not match trusted identity"
+                )
+            if not any(
+                record.document_digest == document_digest
+                and len(record.candidate_claims) == 1
+                and record.candidate_claims[0].document_ref == document_ref
+                for record in owned
+            ):
+                raise ScienceConfirmationRequired(
+                    "superseded Claim does not match the exact source document"
+                )
         prompt_digest = self._claim_submission_prompt_digest()
         interpretation_id = self._record_id("interpretation", idempotency_key)
         request_digest = sha256_digest(
@@ -633,6 +719,7 @@ class ScienceService:
             document_digest=document_digest,
             selection_start=selection_start,
             ontology_index=self._ontology_index(),
+            client_kind=client_kind,
         )
         claims = [claim]
         operation_binding = pending_binding.model_copy(
@@ -771,6 +858,7 @@ class ScienceService:
                 document_digest=document_digest,
                 selection_start=selection_start,
                 ontology_index=ontology_index,
+                client_kind="qwen",
             )
             claims.append(claim)
             meanings.extend(candidate_meanings)
@@ -847,6 +935,7 @@ class ScienceService:
             raise ScienceOperationalError(
                 "stored interpretation identity does not match the requested record"
             )
+        self._require_interpretation_access(source, identity=identity)
         if source.operation_binding.operation not in {
             "interpret_document",
             "submit_claim_candidate",
@@ -1213,7 +1302,7 @@ class ScienceService:
         return annotations
 
     def _authoritative_confirmation(
-        self, interpretation_id: str
+        self, interpretation_id: str, *, identity: AuthIdentity
     ) -> InterpretationRecord:
         """Resolve an explicit confirmation and its immutable proposal dependency."""
 
@@ -1241,6 +1330,7 @@ class ScienceService:
             raise ScienceConfirmationRequired(
                 "verification requires an explicit identity-bound confirmation"
             )
+        self._require_interpretation_access(interpretation, identity=identity)
         try:
             source_stored = self.runtime_store.load_interpretation(
                 binding.source_interpretation_id
@@ -1266,6 +1356,7 @@ class ScienceService:
             raise ScienceConfirmationRequired(
                 "confirmation proposal dependency is invalid"
             )
+        self._require_interpretation_access(source, identity=identity)
 
         selected = set(binding.claim_ids)
         expected_claims = [
@@ -1309,8 +1400,12 @@ class ScienceService:
         interpretation_id: str,
         claim_id: str,
         selection: ReleaseSelection,
+        *,
+        identity: AuthIdentity,
     ) -> VerdictPacket:
-        interpretation = self._authoritative_confirmation(interpretation_id)
+        interpretation = self._authoritative_confirmation(
+            interpretation_id, identity=identity
+        )
         matching = [
             claim
             for claim in interpretation.candidate_claims
@@ -1354,7 +1449,9 @@ class ScienceService:
         identity: AuthIdentity,
         idempotency_key: str,
     ) -> VerificationReport:
-        interpretation = self._authoritative_confirmation(interpretation_id)
+        interpretation = self._authoritative_confirmation(
+            interpretation_id, identity=identity
+        )
         if interpretation.interpretation_id != interpretation_id:
             raise ScienceOperationalError(
                 "stored interpretation identity does not match the requested record"

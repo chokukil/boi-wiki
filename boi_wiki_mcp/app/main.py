@@ -956,7 +956,7 @@ async def science_verify_document(
 async def science_evidence_get(
     evidence_id: str,
 ) -> dict[str, Any]:
-    """Return source-visible Evidence with integrity and applicability metadata."""
+    """Return source-visible Evidence; standalone lookup has no verdict authority."""
     return await api_get(
         f"/api/science/evidence/{evidence_id}",
         employee_id=None,

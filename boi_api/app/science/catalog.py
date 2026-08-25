@@ -673,7 +673,7 @@ class ScienceCatalog:
             *release_set.domain_releases,
             *release_set.application_releases,
         )
-        if any(release.status not in {"active", "superseded"} for release in releases):
+        if any(release.status != "active" for release in releases):
             raise ScienceOperationalError(
                 "release candidate or withdrawn release cannot be evaluated as active"
             )

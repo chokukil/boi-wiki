@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-import pytest
 
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.authorization import ScienceAuthorization
@@ -49,6 +48,7 @@ class FakeService:
         interpretation_id: str,
         claim_id: str,
         selection: ReleaseSelection,
+        **_kwargs,
     ):
         self.calls.append(("verify_claim", (interpretation_id, claim_id, selection)))
         return SimpleNamespace(
@@ -143,6 +143,7 @@ def _client(
     can_export: bool = True,
     employee_id: str = "100001",
     runtime_store: object | None = None,
+    auth_source: str = "dev",
 ) -> tuple[TestClient, FakeService]:
     from boi_api.app.science.routes import (
         ScienceRouteDependencies,
@@ -153,6 +154,7 @@ def _client(
         employee_id=employee_id,
         display_name="Science Admin",
         roles=roles or ["science.admin", "boi.viewer"],
+        auth_source=auth_source,
     )
     report = _report()
     service = FakeService(report)
@@ -175,6 +177,31 @@ def _client(
     app = FastAPI()
     app.include_router(create_science_router(dependencies))
     return TestClient(app), service
+
+
+def test_science_rest_rejects_service_token_identity_spoofing():
+    client, service = _client(auth_source="service_token")
+
+    response = client.post(
+        "/api/science/aliases/detect",
+        json={"document": "RPM 증가", "request_id": "service-token-spoof"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "science_access_denied"
+    assert service.calls == []
+
+
+def test_standalone_evidence_lookup_never_claims_operational_eligibility():
+    client, _service = _client()
+
+    response = client.get("/api/science/evidence/sci:evidence:fixture")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["authority_scope"] == "standalone_lookup_non_authoritative"
+    assert payload["operational_eligibility"] is False
+    assert payload["release_binding"] is None
 
 
 def _claim_candidate() -> dict:

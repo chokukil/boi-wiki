@@ -154,6 +154,12 @@ def test_manual_claim_editor_exposes_roles_conditions_and_local_proposal_boundar
     assert "이번 검증에서만 수정" in html
     assert "전역 용어 개선 제안" in html
     assert "Power User 또는 Admin이 채택하기 전에는 전역 지식이 바뀌지 않습니다" in html
+    script = (REPO_ROOT / "boi_api/app/static/science_verifier.js").read_text(
+        encoding="utf-8"
+    )
+    assert "사용자 확인 대상 조건" in script
+    assert "Rule에 조건이 필요하면 판정을 보류합니다" in script
+    assert "Science API returned invalid JSON; no result was accepted." in script
 
 
 def test_browser_contract_builds_exact_manual_candidate_and_gates_red_mark() -> None:
@@ -182,7 +188,14 @@ def test_browser_contract_builds_exact_manual_candidate_and_gates_red_mark() -> 
       }};
       const annotation = {{ evidence_links:[{{
         evidence_id:'sci:evidence:1',
-        locator:{{ section:'3.2' }},
+        locator:{{
+          medium:'pdf', exact:true, section:'3.2', pdf_page_index:6,
+          printed_page:'7', resource_url:'https://example.test/source.pdf',
+          requested_url:'https://example.test/source.pdf',
+          resolved_url:'https://example.test/source.pdf',
+          content_hash:'sha256:{'1' * 64}', retrieved_at:'2026-08-25T00:00:00Z',
+          hash_scope:'retrieved_resource'
+        }},
         reviewed_source:{{ qualification_state:'active' }},
         url:'https://example.org/source'
       }}] }};

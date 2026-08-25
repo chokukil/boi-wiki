@@ -33,3 +33,18 @@ def test_main_application_keeps_science_authorization_separate(boi_app_module) -
 
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "science_access_denied"
+
+
+def test_main_application_rejects_service_token_only_science_identity(
+    boi_app_module,
+) -> None:
+    client = TestClient(boi_app_module.app)
+
+    response = client.post(
+        "/api/science/aliases/detect?employee_id=100001",
+        headers={"x-service-token": boi_app_module.SERVICE_TOKEN},
+        json={"document": "RPM 증가", "request_id": "service-token-spoof"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "science_access_denied"

@@ -1492,6 +1492,61 @@ class ScienceRuntimeStore:
     def load_interpretation(self, interpretation_id: str) -> InterpretationRecord:
         return self._load("interpretations", interpretation_id, InterpretationRecord)
 
+    def interpretations_for_claim(
+        self, claim_id: str
+    ) -> tuple[InterpretationRecord, ...]:
+        """Return immutable proposal records containing one exact Claim identity."""
+
+        matches: list[InterpretationRecord] = []
+        with self._exclusive():
+            for name in sorted(os.listdir(self._dir_fds["interpretations"])):
+                if not re.fullmatch(r"[0-9a-f]{64}\.json", name):
+                    raise UnsafeScienceRuntimePathError(
+                        f"unexpected Science interpretation entry: {name}"
+                    )
+                descriptor = self._open_existing(
+                    self._dir_fds["interpretations"],
+                    name,
+                    label="Science interpretation record",
+                )
+                try:
+                    canonical = self._read_all(descriptor)
+                finally:
+                    os.close(descriptor)
+                payload = validate_with_closed_error(
+                    lambda canonical=canonical: json.loads(
+                        canonical.decode("utf-8")
+                    ),
+                    caught=(UnicodeDecodeError, json.JSONDecodeError, ValueError),
+                    closed_error=ImmutableScienceRecordError(
+                        "Science runtime record is invalid"
+                    ),
+                )
+                record = validate_with_closed_error(
+                    lambda payload=payload: InterpretationRecord.model_validate(payload),
+                    caught=(ValidationError, ScienceSensitivePersistenceError, ValueError),
+                    closed_error=ScienceSensitivePersistenceError(
+                        "unsafe Science runtime record rejected"
+                    ),
+                )
+                if (
+                    name != self._filename(record.interpretation_id)
+                    or canonical_json_bytes(record) != canonical
+                ):
+                    raise ImmutableScienceRecordError(
+                        "Science runtime interpretation identity is invalid"
+                    )
+                if (
+                    record.operation_binding.operation
+                    in {"interpret_document", "submit_claim_candidate"}
+                    and any(
+                        claim.claim_id == claim_id
+                        for claim in record.candidate_claims
+                    )
+                ):
+                    matches.append(record)
+        return tuple(sorted(matches, key=lambda item: item.interpretation_id))
+
     @staticmethod
     def _validate_confirmation_dependency(
         interpretation: InterpretationRecord,
@@ -1503,6 +1558,7 @@ class ScienceRuntimeStore:
             or binding.source_interpretation_id != source.interpretation_id
             or source.operation_binding.operation
             not in {"interpret_document", "submit_claim_candidate"}
+            or binding.actor_id != source.operation_binding.actor_id
         ):
             raise ImmutableScienceRecordError(
                 "Science confirmation proposal dependency is invalid"
@@ -1565,6 +1621,9 @@ class ScienceRuntimeStore:
             report.operation_binding.source_interpretation_id != interpretation_id
             or report.document_digest != interpretation.document_digest
             or report.confirmed_claims != confirmed_claims
+            or report.created_by != interpretation.operation_binding.actor_id
+            or report.operation_binding.actor_id
+            != interpretation.operation_binding.actor_id
             or report.operation_binding.prompt_digest
             != interpretation.operation_binding.prompt_digest
         ):
