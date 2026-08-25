@@ -1172,6 +1172,39 @@ def test_detect_aliases_returns_exact_catalog_matches_without_a_verdict(
     assert "verdict" not in json.dumps(payload).lower()
 
 
+def test_detect_aliases_requires_ascii_token_boundaries_but_keeps_standalone_r(
+    science_identity: AuthIdentity,
+):
+    """A substring matcher must not interpret the R inside RPM as resistance."""
+
+    service, catalog, _store, _llm = _service()
+    catalog.bindings["sci:binding:resistance"] = SimpleNamespace(
+        object_id="sci:binding:resistance",
+        digest=sha256_digest("fixture-resistance-binding"),
+        ontology_release_id="sci:ontology:0.1",
+        concept_id="sci:concept:resistance",
+        aliases=["R"],
+        meaning="electrical resistance",
+        domain="circuits",
+    )
+    service.ontology_binding_ids = sorted(catalog.bindings)
+    document = "RPM은 회전 속도이고, R은 저항이다."
+
+    result = service.detect_aliases(
+        document,
+        document_ref="boi:public:science:document:fixture",
+    )
+
+    resistance_matches = [
+        match
+        for match in result.matches
+        if match.ontology_ref == "sci:binding:resistance"
+    ]
+    assert [(match.surface_term, match.start, match.end) for match in resistance_matches] == [
+        ("R", document.index(", R") + 2, document.index(", R") + 3)
+    ]
+
+
 def test_external_claim_submission_reuses_server_validation_and_never_calls_llm(
     science_identity: AuthIdentity,
 ):

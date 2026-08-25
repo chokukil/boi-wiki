@@ -60,6 +60,29 @@ class ScienceIdempotencyConflict(ScienceOperationalError):
 CLAIM_SUBMISSION_VERSION = "science-claim-submission/0.1.0"
 
 
+def _has_deterministic_alias_boundary(
+    text: str,
+    *,
+    alias: str,
+    start: int,
+) -> bool:
+    """Keep ASCII identifier aliases out of larger ASCII identifiers."""
+
+    ascii_token = alias.isascii() and all(
+        character.isalnum() or character == "_" for character in alias
+    )
+    if not ascii_token:
+        return True
+    end = start + len(alias)
+    is_ascii_identifier = lambda value: value.isascii() and (
+        value.isalnum() or value == "_"
+    )
+    return (
+        (start == 0 or not is_ascii_identifier(text[start - 1]))
+        and (end == len(text) or not is_ascii_identifier(text[end]))
+    )
+
+
 class ScienceService:
     """Keep untrusted language interpretation outside the verdict boundary."""
 
@@ -486,6 +509,13 @@ class ScienceService:
                     continue
                 offset = 0
                 while (position := search_text.find(alias, offset)) >= 0:
+                    offset = position + 1
+                    if not _has_deterministic_alias_boundary(
+                        search_text,
+                        alias=alias,
+                        start=position,
+                    ):
+                        continue
                     start = selection_start + position
                     matches.append(
                         DetectedAlias(
@@ -500,7 +530,6 @@ class ScienceService:
                             binding_digest=str(binding["binding_digest"]),
                         )
                     )
-                    offset = position + 1
         matches.sort(
             key=lambda match: (
                 match.start,

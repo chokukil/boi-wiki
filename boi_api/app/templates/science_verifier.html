@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Science Verifier · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('science_verifier.js') }}" defer></script>
+</head>
+<body>
+  {% include "_app_shell.html" %}
+  <main
+    class="science-verifier-page"
+    data-science-review-canvas
+    data-release-status="{{ release.status }}"
+    data-operational="{{ 'true' if release.operational else 'false' }}"
+    data-employee-id="{{ employee_id }}"
+    data-document-ref="{{ document_ref }}"
+    data-science-core-url="{{ asset_url('science_verifier_core.mjs') }}"
+  >
+    <section class="science-release-notice" aria-labelledby="science-release-title">
+      <div>
+        {% if release.operational %}
+        <span class="science-preview-label active">Active Science Release</span>
+        <h2 id="science-release-title">활성 지식 검증</h2>
+        <p>현재 활성 릴리스에 고정된 검증 흐름입니다.</p>
+        {% else %}
+        <span class="science-preview-label">{% if role_label == 'Admin' %}Admin candidate qualification preview{% else %}Inactive candidate review{% endif %}</span>
+        <h2 id="science-release-title">후보 지식 검증 미리보기</h2>
+        <p><strong>운영 판정이 아닙니다.</strong> 이 릴리스는 Admin 검토·승인·활성화 전의 비활성 후보입니다.</p>
+        {% endif %}
+      </div>
+      <dl class="science-release-meta">
+        <div><dt>릴리스</dt><dd><code>{{ release.release_id }}</code></dd></div>
+        <div><dt>상태</dt><dd>{{ release.status }}</dd></div>
+        <div><dt>접근</dt><dd>{{ role_label }} · {{ access_mode }}</dd></div>
+      </dl>
+    </section>
+
+    <section class="science-input-panel" aria-labelledby="science-input-title">
+      <div class="science-panel-heading">
+        <div>
+          <p class="eyebrow">Document review</p>
+          <h2 id="science-input-title">검토할 문서</h2>
+          <p>문서를 직접 붙여넣거나 Wiki에서 선택한 영역을 가져오세요. 기본 경로는 등록된 별칭을 결정적으로 찾고 사용자가 주장 구조를 확인합니다.</p>
+        </div>
+        <a class="button secondary" href="?employee_id={{ employee_id }}&demo=1">후보 Qualification 예시 보기</a>
+      </div>
+      <form data-science-interpret-form>
+        <label for="science-document-input">문서 또는 질문</label>
+        <textarea id="science-document-input" name="document" rows="10" placeholder="과학적으로 검토할 문서를 입력하세요.">{{ initial_document }}</textarea>
+        <input type="hidden" name="document_ref" value="{{ document_ref }}" />
+        <div class="science-input-actions">
+          <button type="submit" data-science-alias-detect>1. 등록 용어 찾기</button>
+          <button type="button" class="secondary-button science-experimental-action" data-science-qwen-experimental>선택적·실험적 Qwen 해석</button>
+          <span class="science-runtime-boundary">Qwen 없이도 검토와 검증을 완료할 수 있습니다. 해석 확정 전에는 판정하지 않습니다.</span>
+        </div>
+        <p class="science-form-status" data-science-status role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="science-candidate-editor" data-science-candidate-editor hidden aria-labelledby="science-candidate-title">
+      <div class="science-panel-heading">
+        <div>
+          <p class="eyebrow">Human-confirmed claim</p>
+          <h2 id="science-candidate-title">2. 주장 구조 확인</h2>
+          <p>표시된 등록 용어 중 주어·관계·목적어를 직접 고르세요. 서버가 원문 구간, 별칭, 개념 역할, ontology_ref를 다시 교차 검증합니다.</p>
+        </div>
+      </div>
+      <form data-science-candidate-form>
+        <fieldset class="science-role-grid">
+          <legend>주장의 세 역할</legend>
+          <label>주어
+            <select name="subject_match" required><option value="">등록 용어를 먼저 찾으세요</option></select>
+          </label>
+          <label>관계
+            <select name="relation_match" required><option value="">등록 용어를 먼저 찾으세요</option></select>
+          </label>
+          <label>목적어
+            <select name="object_match" required><option value="">등록 용어를 먼저 찾으세요</option></select>
+          </label>
+        </fieldset>
+        <div class="science-claim-options">
+          <label>관계 유형
+            <select name="relation_kind">
+              <option value="monotonic_direction">단조 방향</option>
+              <option value="equation">수식 관계</option>
+              <option value="dimensional_relation">차원 관계</option>
+              <option value="causal_relation">인과 관계</option>
+              <option value="empirical_relation">경험 관계</option>
+            </select>
+          </label>
+          <label>극성
+            <select name="polarity"><option value="positive">긍정</option><option value="negative">부정</option></select>
+          </label>
+          <label>공정 단계<input name="process_stage" placeholder="예: final_coat_spin" /></label>
+          <label>물질 상태<input name="material_state" placeholder="예: liquid_film" /></label>
+        </div>
+        <label>적용 조건
+          <textarea name="conditions" rows="4" placeholder="한 줄에 하나씩 condition_id=value 형식으로 입력하세요. 예: same_resist=true"></textarea>
+        </label>
+        <div class="science-alias-results" data-science-alias-results aria-live="polite"></div>
+        <div class="science-input-actions">
+          <button type="submit" data-science-submit-candidate>3. 확정한 주장 검증</button>
+          <button type="button" class="secondary-button" data-science-local-edit>이번 검증에서만 수정</button>
+          <button type="button" class="secondary-button" data-science-proposal>전역 용어 개선 제안</button>
+        </div>
+        <p class="science-proposal-boundary">Power User 또는 Admin이 채택하기 전에는 전역 지식이 바뀌지 않습니다.</p>
+      </form>
+    </section>
+
+    <section class="science-live-review" data-science-live-review hidden aria-live="polite">
+      <div class="science-panel-heading">
+        <div><p class="eyebrow">Review result</p><h2>문서 위 검토 결과</h2></div>
+      </div>
+      <div class="science-live-grid">
+        <article class="science-document-sheet" data-science-live-document></article>
+        <aside class="science-correction-stack" data-science-live-claims></aside>
+      </div>
+    </section>
+
+    {% if demo %}
+    <section class="science-demo-boundary" role="note">
+      <strong>자동화 후보 Qualification 기대 결과</strong>
+      <p>아래 표시는 릴리스에 고정된 후보 Rule·Case·Evidence의 검토 예시입니다. 사람의 승인이나 운영 Verification Report가 아닙니다.</p>
+    </section>
+    <section class="science-review-layout" data-science-demo>
+      <article class="science-document-sheet" aria-labelledby="science-demo-document-title">
+        <header>
+          <span>후보 Qualification fixture</span>
+          <h2 id="science-demo-document-title">Spin coating 주장 검토</h2>
+        </header>
+        <p>
+          <span class="science-preview-expected-violation">{{ demo.violation.claim.source_span.exact }}</span>
+        </p>
+        <p>
+          <span class="science-ambiguity">{{ demo.ambiguity.claim.source_span.exact }}</span>
+        </p>
+        <aside class="science-mark-legend" aria-label="표시 기준">
+          <span><i class="legend-line candidate"></i>비활성 후보의 VIOLATION 기대값(운영 표시 아님)</span>
+          <span><i class="legend-line ambiguity"></i>판정이 달라지는 해석 모호성</span>
+        </aside>
+      </article>
+
+      <aside class="science-correction-stack" aria-label="주장 검토 카드">
+        <article class="science-correction-card candidate-expected" data-preview-outcome="{{ demo.violation.expected_outcome }}">
+          <header>
+            <span class="science-verdict neutral">후보 기대: {{ demo.violation.expected_outcome }}</span>
+            <small>{{ demo.rule_id }}</small>
+          </header>
+          <h2>교정</h2>
+          <p class="science-corrected-claim">{{ demo.evidence.reviewed_translation }}</p>
+          <section class="science-explanation">
+            <h3>충분한 과학적 설명</h3>
+            <p>{{ demo.knowledge_statement }}</p>
+            <p>이 방향성은 최종 coat spin, photoresist spin coating, 그리고 건조가 유동을 멈출 때까지 thinning이 계속된다는 조건에서만 비교합니다. 정확한 장비별 두께값은 이 방향 Rule로 산출하지 않습니다.</p>
+          </section>
+          <p class="science-source-line">
+            <strong>결정 근거 1</strong>
+            <a href="{{ demo.source.url }}" target="_blank" rel="noopener noreferrer">{{ demo.source.title }}</a>
+          </p>
+          <details class="science-evidence-details">
+            <summary>근거와 해석 경로 펼쳐보기</summary>
+            <dl>
+              <div><dt>원문</dt><dd lang="en">{{ demo.evidence.original_text }}</dd></div>
+              <div><dt>검토 번역</dt><dd>{{ demo.evidence.reviewed_translation }}</dd></div>
+              <div><dt>원문 위치</dt><dd>{{ demo.evidence.locator_text }}</dd></div>
+              <div><dt>Source URL</dt><dd><a href="{{ demo.source.url }}" target="_blank" rel="noopener noreferrer">{{ demo.source.url }}</a></dd></div>
+              <div><dt>Evidence</dt><dd><code>{{ demo.evidence.evidence_id }}</code> · {{ demo.evidence.review_status }}</dd></div>
+            </dl>
+            <section class="science-ontology-trace">
+              <h3>용어 해석에 참조한 온톨로지</h3>
+              <p>온톨로지는 해석에만 사용하며 판정 방향을 만들지 않습니다.</p>
+              <ul>
+                {% for binding in demo.ontology %}
+                <li><code>{{ binding.binding_id }}</code><span>{{ binding.meaning }}</span></li>
+                {% endfor %}
+              </ul>
+            </section>
+          </details>
+          <div class="science-card-actions">
+            <button type="button" class="secondary-button" data-science-local-edit data-claim-text="{{ demo.violation.claim.source_span.exact }}">이번 검증에서 수정</button>
+            <button type="button" class="secondary-button" data-science-proposal data-claim-text="{{ demo.violation.claim.source_span.exact }}">전역 개선 제안</button>
+          </div>
+        </article>
+
+        <article class="science-correction-card ambiguity" data-preview-outcome="{{ demo.ambiguity.expected_outcome }}">
+          <header>
+            <span class="science-verdict ambiguity">해석 확인 필요</span>
+            <small>{{ demo.ambiguity.case_id }}</small>
+          </header>
+          <h2>판정이 달라지는 모호성</h2>
+          <p>문서의 표시가 이 주장을 긍정하는지 부정하는지 확인해야 합니다. 확인 전에는 빨간 표시나 판정을 만들지 않습니다.</p>
+          <div class="science-ambiguity-actions">
+            <button type="button" data-science-reinterpret data-claim-text="{{ demo.ambiguity.claim.source_span.exact }}">주장을 수정해 이 항목만 다시 해석</button>
+          </div>
+        </article>
+      </aside>
+    </section>
+    {% endif %}
+
+    <dialog class="science-edit-dialog" data-science-edit-dialog>
+      <form method="dialog">
+        <header><h2 data-science-dialog-title>이번 검증에서 수정</h2><button value="cancel" aria-label="닫기">×</button></header>
+        <p data-science-dialog-help>이 변경은 현재 검증에만 적용됩니다.</p>
+        <textarea rows="6" data-science-dialog-text></textarea>
+        <div class="science-card-actions">
+          <button value="cancel" class="secondary-button">취소</button>
+          <button value="apply" data-science-dialog-apply>이 주장만 다시 해석</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script id="science-verifier-bootstrap" type="application/json">{{ bootstrap | tojson }}</script>
+  </main>
+</body>
+</html>
