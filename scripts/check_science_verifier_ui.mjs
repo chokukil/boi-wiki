@@ -14,6 +14,7 @@ function parseArgs(argv) {
     timeoutMs: 60000,
     screenshot: "",
     mobileScreenshot: "",
+    equationScreenshot: "",
     reportJson: "",
     gitCommit: "",
     strict: false,
@@ -24,11 +25,12 @@ function parseArgs(argv) {
     else if (item === "--timeout-ms") args.timeoutMs = Number(argv[++index] || args.timeoutMs);
     else if (item === "--screenshot") args.screenshot = argv[++index] || "";
     else if (item === "--mobile-screenshot") args.mobileScreenshot = argv[++index] || "";
+    else if (item === "--equation-screenshot") args.equationScreenshot = argv[++index] || "";
     else if (item === "--report-json") args.reportJson = argv[++index] || "";
     else if (item === "--git-commit") args.gitCommit = argv[++index] || "";
     else if (item === "--strict") args.strict = true;
     else if (item === "-h" || item === "--help") {
-      console.log("Usage: node scripts/check_science_verifier_ui.mjs [--url URL] [--timeout-ms MS] [--screenshot FILE] [--mobile-screenshot FILE] [--report-json FILE] [--git-commit SHA] [--strict]");
+      console.log("Usage: node scripts/check_science_verifier_ui.mjs [--url URL] [--timeout-ms MS] [--screenshot FILE] [--mobile-screenshot FILE] [--equation-screenshot FILE] [--report-json FILE] [--git-commit SHA] [--strict]");
       process.exit(0);
     }
   }
@@ -130,6 +132,30 @@ class CdpClient {
     if (path && result.data) writeFileSync(path, Buffer.from(result.data, "base64"));
   }
 
+  async screenshotElement(path, selector) {
+    const box = await this.evaluate(`
+      (() => {
+        const element = document.querySelector(${JSON.stringify(selector)});
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return {
+          x: Math.max(0, rect.left + window.scrollX),
+          y: Math.max(0, rect.top + window.scrollY),
+          width: Math.max(1, rect.width),
+          height: Math.max(1, rect.height),
+        };
+      })()
+    `);
+    if (!box) throw new Error(`screenshot target not found: ${selector}`);
+    const result = await this.send("Page.captureScreenshot", {
+      format: "png",
+      fromSurface: true,
+      captureBeyondViewport: true,
+      clip: { ...box, scale: 1 },
+    });
+    if (path && result.data) writeFileSync(path, Buffer.from(result.data, "base64"));
+  }
+
   close() { this.ws?.close(); }
 }
 
@@ -158,6 +184,13 @@ function relevantConsoleErrors(errors) {
 
 async function main() {
   const args = parseArgs(process.argv);
+  const committedEquationManifest = JSON.parse(
+    readFileSync(new URL("../boi_api/app/static/science-equations.json", import.meta.url), "utf8"),
+  );
+  const committedEquationAsset = committedEquationManifest.assets?.find(
+    (asset) => asset.equation_id === "sci:equation:materials:arrhenius-diffusion",
+  );
+  if (!committedEquationAsset) throw new Error("committed representative equation asset missing from repository manifest");
   const chrome = findChrome();
   const profileDir = mkdtempSync(join(tmpdir(), "science-verifier-chrome-"));
   const port = 9400 + Math.floor(Math.random() * 500);
@@ -455,6 +488,203 @@ async function main() {
       }))()
     `);
 
+    const equationQa = await cdp.evaluate(`
+      (async () => {
+        const redCount = () => document.querySelectorAll('.science-violation').length;
+        const redBefore = redCount();
+        const manifestResponse = await fetch('/static/science-equations.json', { cache: 'no-store' });
+        if (!manifestResponse.ok) throw new Error('equation asset manifest unavailable: ' + manifestResponse.status);
+        const manifest = await manifestResponse.json();
+        const committed = manifest.assets?.find(
+          (asset) => asset.equation_id === 'sci:equation:materials:arrhenius-diffusion',
+        );
+        if (!committed) throw new Error('committed representative equation asset unavailable');
+
+        const asset = {
+          ...committed,
+          variables: [
+            { symbol: 'D', definition: '확산 계수', unit: 'm²/s' },
+            { symbol: 'D₀', definition: '지수 앞 계수', unit: 'm²/s' },
+            { symbol: 'Eₐ', definition: '활성화 에너지', unit: 'J' },
+            { symbol: 'kB', definition: '볼츠만 상수', unit: 'J/K' },
+            { symbol: 'T', definition: '절대 온도', unit: 'K' },
+          ],
+          applicability: [
+            '인용된 확산 메커니즘과 물질 상태에 대한 Arrhenius 표현',
+            '절대 온도 T > 0',
+          ],
+          invalid_outside: [
+            '확산 메커니즘 또는 상이 바뀌는 경우',
+            '파라미터가 정의되지 않았거나 검증 범위를 벗어난 경우',
+          ],
+          evidence_links: [{
+            evidence_id: 'sci-evidence:materials:diffusion-arrhenius',
+            source_id: 'sci-source:mit-3-091',
+            url: 'https://ocw.mit.edu/courses/3-091-introduction-to-solid-state-chemistry-fall-2018/aa1e1cabaa1d4904209040f98b4436a3_MIT3_091F18_REC26.pdf',
+          }],
+        };
+        const claimId = 'browser-equation-visual-qa';
+        const report = {
+          explanations: [{
+            claim_id: claimId,
+            equation_refs: [{
+              equation_id: asset.equation_id,
+              equation_digest: asset.equation_digest,
+            }],
+          }],
+          equation_assets: [asset],
+        };
+        const equationView = await import('/static/science_equation_view.mjs');
+
+        document.querySelector('[data-science-equation-qa]')?.remove();
+        const qa = document.createElement('section');
+        qa.dataset.scienceEquationQa = 'non-operational';
+        qa.setAttribute('aria-labelledby', 'science-equation-qa-title');
+        qa.className = 'science-panel';
+        qa.style.cssText = 'margin:28px auto;max-width:720px;border:2px dashed #7c3aed;background:#faf5ff;';
+        const title = document.createElement('h2');
+        title.id = 'science-equation-qa-title';
+        title.textContent = '비운영 표시 검수 — 판정 근거 아님';
+        const notice = document.createElement('p');
+        notice.textContent = '커밋된 표시 자산의 브라우저 렌더링만 검수합니다. 이 영역은 운영 주장·판정·빨간 표시를 만들거나 제출하지 않습니다.';
+        const qaStyle = document.createElement('style');
+        qaStyle.textContent = '[data-science-equation-qa] [data-equation-qa-case="trusted-asset"] .science-equation-scroll svg { width:760px; min-width:760px; }';
+        qa.append(title, notice, qaStyle);
+
+        const normalHost = document.createElement('div');
+        normalHost.dataset.equationQaCase = 'trusted-asset';
+        normalHost.className = 'science-equation-host';
+        normalHost.style.maxWidth = '650px';
+        qa.appendChild(normalHost);
+        document.querySelector('main')?.appendChild(qa);
+
+        const copied = [];
+        await equationView.mountEquationAssets(normalHost, report, claimId, {
+          writeClipboard: async (value) => copied.push(value),
+        });
+        const normalView = normalHost.querySelector('.science-equation-view');
+        const normalSvg = normalView?.querySelector('svg');
+        const originalSvg = new DOMParser().parseFromString(asset.sanitized_svg, 'image/svg+xml').documentElement;
+        const fallback = normalView?.querySelector('.science-equation-fallback');
+        const details = normalView?.querySelector('.science-equation-details');
+        if (details) details.open = true;
+        for (const button of normalView?.querySelectorAll('.science-equation-copy') || []) {
+          button.click();
+          await Promise.resolve();
+        }
+
+        const evidenceLinks = equationView.equationEvidenceLinks([asset]);
+        const evidenceRow = document.createElement('p');
+        evidenceRow.dataset.equationQaEvidence = 'true';
+        evidenceRow.append(document.createTextNode('근거 출처: '));
+        for (const link of evidenceLinks) {
+          const anchor = document.createElement('a');
+          anchor.href = link.url;
+          anchor.textContent = link.source_id;
+          anchor.rel = 'noreferrer';
+          evidenceRow.appendChild(anchor);
+        }
+        qa.appendChild(evidenceRow);
+
+        const digest = async (value) => {
+          const bytes = new TextEncoder().encode(value);
+          const result = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+          return 'sha256:' + [...new Uint8Array(result)]
+            .map((item) => item.toString(16).padStart(2, '0')).join('');
+        };
+        const hostileSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="10ex" height="2ex" role="img" focusable="false" viewBox="0 0 100 20" aria-label="'
+          + asset.accessibility_reading
+          + '"><path d="M0 0 L10 10" onload="window.__scienceEquationHostileExecuted=true"/></svg>';
+        const cases = [
+          ['digest-mismatch', { ...asset, plain_text: 'digest mismatch fallback', svg_digest: 'sha256:' + '0'.repeat(64) }, {}],
+          ['hostile-svg', { ...asset, plain_text: 'hostile SVG fallback', sanitized_svg: hostileSvg, svg_digest: await digest(hostileSvg) }, {}],
+          ['web-crypto-absent', { ...asset, plain_text: 'Web Crypto unavailable fallback' }, { crypto: null }],
+        ];
+        const failures = {};
+        const failureGrid = document.createElement('section');
+        failureGrid.setAttribute('aria-label', '수식 평문 대체 표시 실패 경로');
+        failureGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-top:14px;';
+        qa.appendChild(failureGrid);
+        for (const [caseId, candidate, overrides] of cases) {
+          const host = document.createElement('div');
+          host.dataset.equationQaCase = caseId;
+          host.setAttribute('aria-label', caseId + ' 평문 대체 표시');
+          failureGrid.appendChild(host);
+          const candidateReport = {
+            explanations: [{
+              claim_id: claimId,
+              equation_refs: [{ equation_id: candidate.equation_id, equation_digest: candidate.equation_digest }],
+            }],
+            equation_assets: [candidate],
+          };
+          await equationView.mountEquationAssets(host, candidateReport, claimId, overrides);
+          const caseFallback = host.querySelector('.science-equation-fallback');
+          failures[caseId] = {
+            fallbackVisible: Boolean(
+              caseFallback
+              && !caseFallback.hidden
+              && getComputedStyle(caseFallback).display !== 'none'
+              && getComputedStyle(caseFallback).visibility !== 'hidden'
+            ),
+            fallbackText: caseFallback?.textContent || '',
+            svgCount: host.querySelectorAll('svg').length,
+            redCount: redCount(),
+          };
+        }
+
+        const scroll = normalView?.querySelector('.science-equation-scroll');
+        const renderedIdentity = normalView ? {
+          equationId: normalView.dataset.equationId,
+          equationDigest: normalView.dataset.equationDigest,
+        } : {};
+        return {
+          manifestSchema: manifest.schema_version,
+          manifestDigest: manifest.manifest_digest,
+          committedAssetCount: manifest.assets?.length || 0,
+          selectedAssetDigest: asset.asset_digest,
+          equationId: asset.equation_id,
+          equationDigest: asset.equation_digest,
+          renderedIdentity,
+          exactSvgTree: Boolean(normalSvg && originalSvg.isEqualNode(normalSvg)),
+          svgAria: normalSvg?.getAttribute('aria-label') || '',
+          fallbackHidden: fallback?.hidden === true,
+          scrollAria: scroll?.getAttribute('aria-label') || '',
+          scrollFocusable: scroll?.tabIndex === 0,
+          horizontalScrollCss: scroll ? getComputedStyle(scroll).overflowX : '',
+          detailSummary: details?.querySelector('summary')?.textContent || '',
+          detailText: details?.textContent || '',
+          copyLabels: [...(normalView?.querySelectorAll('.science-equation-copy') || [])].map((node) => node.textContent),
+          copied,
+          copyStatus: normalView?.querySelector('[aria-live="polite"]')?.textContent || '',
+          evidenceCount: evidenceLinks.length,
+          evidenceHref: evidenceRow.querySelector('a')?.href || '',
+          failures,
+          hostileExecuted: globalThis.__scienceEquationHostileExecuted === true,
+          boundaryLabel: title.textContent,
+          redBefore,
+          redAfter: redCount(),
+        };
+      })()
+    `);
+    await cdp.evaluate("document.querySelector('[data-science-equation-qa]')?.scrollIntoView({ block: 'start' })");
+    await sleep(200);
+    if (args.equationScreenshot) {
+      await cdp.evaluate(`
+        (() => {
+          window.__scienceEquationQaChrome = [...document.querySelectorAll('.global-nav, .section-subnav')]
+            .map((node) => ({ node, visibility: node.style.visibility }));
+          for (const item of window.__scienceEquationQaChrome) item.node.style.visibility = 'hidden';
+        })()
+      `);
+      await cdp.screenshotElement(args.equationScreenshot, "[data-science-equation-qa]");
+      await cdp.evaluate(`
+        (() => {
+          for (const item of window.__scienceEquationQaChrome || []) item.node.style.visibility = item.visibility;
+          delete window.__scienceEquationQaChrome;
+        })()
+      `);
+    }
+
     await cdp.send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await sleep(250);
     const mobile = await cdp.evaluate(`
@@ -464,6 +694,20 @@ async function main() {
         horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
         editorVisible: !document.querySelector('[data-science-candidate-editor]').hidden,
       }))()
+    `);
+    const equationMobile = await cdp.evaluate(`
+      (() => {
+        const qa = document.querySelector('[data-science-equation-qa]');
+        const scroll = qa?.querySelector('[data-equation-qa-case="trusted-asset"] .science-equation-scroll');
+        return {
+          qaVisible: Boolean(qa && getComputedStyle(qa).display !== 'none'),
+          regionClientWidth: scroll?.clientWidth || 0,
+          regionScrollWidth: scroll?.scrollWidth || 0,
+          regionOverflowCss: scroll ? getComputedStyle(scroll).overflowX : '',
+          pageHorizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+          redCount: document.querySelectorAll('.science-violation').length,
+        };
+      })()
     `);
     if (args.mobileScreenshot) await cdp.screenshot(args.mobileScreenshot);
 
@@ -611,6 +855,12 @@ async function main() {
       actions_separated_and_focusable: desktop.distinctActions && desktop.focusVisibleTarget,
       desktop_no_overflow: !desktop.horizontalOverflow,
       mobile_single_column: mobile.width === 390 && mobile.columns.split(" ").length === 1 && !mobile.horizontalOverflow && mobile.editorVisible,
+      equation_committed_asset_renders_exact_svg: equationQa.manifestSchema === "science-equation-assets/0.1" && equationQa.manifestDigest === committedEquationManifest.manifest_digest && equationQa.selectedAssetDigest === committedEquationAsset.asset_digest && equationQa.equationDigest === committedEquationAsset.equation_digest && equationQa.committedAssetCount === committedEquationManifest.assets.length && equationQa.exactSvgTree && equationQa.fallbackHidden,
+      equation_identity_and_evidence_visible: equationQa.renderedIdentity.equationId === equationQa.equationId && equationQa.renderedIdentity.equationDigest === equationQa.equationDigest && equationQa.evidenceCount === 1 && equationQa.evidenceHref.startsWith("https://ocw.mit.edu/"),
+      equation_details_copy_and_accessibility: equationQa.svgAria.length > 20 && equationQa.scrollAria === "수식 표시 영역" && equationQa.scrollFocusable && equationQa.horizontalScrollCss === "auto" && equationQa.detailSummary === "변수·적용 조건·한계" && ["변수", "적용 조건", "적용 범위 밖"].every((label) => equationQa.detailText.includes(label)) && equationQa.copyLabels.join("|") === "LaTeX 복사|일반 텍스트 복사" && equationQa.copied.length === 2 && equationQa.copyStatus.includes("일반 텍스트를 복사했습니다"),
+      equation_failures_keep_plain_fallback_without_red: Object.values(equationQa.failures).every((item) => item.fallbackVisible && item.svgCount === 0 && item.redCount === equationQa.redBefore) && !equationQa.hostileExecuted && equationQa.redAfter === equationQa.redBefore,
+      equation_mobile_scroll_is_contained: equationMobile.qaVisible && equationMobile.regionClientWidth > 0 && equationMobile.regionScrollWidth > equationMobile.regionClientWidth && equationMobile.regionOverflowCss === "auto" && !equationMobile.pageHorizontalOverflow && equationMobile.redCount === equationQa.redBefore,
+      equation_qa_is_explicitly_non_operational: equationQa.boundaryLabel === "비운영 표시 검수 — 판정 근거 아님" && equationQa.redBefore === equationQa.redAfter,
       wiki_selection_handoff: handoff.documentRef === "boi:public:science:knowledge:spin-coating:004" && handoff.textareaHasContent && handoff.selectionReady,
       wiki_local_revision_preserves_lineage: wikiLocalRevision.initialAliasesPresent && wikiLocalRevision.revisedAliasesPresent && wikiLocalRevision.onlySelectedClaimChanged && wikiLocalRevision.successfulSubmissions === 2 && wikiLocalRevision.successfulConfirmations === 2 && wikiLocalRevision.firstDocumentRef === canonicalWikiRef && wikiLocalRevision.revisedDocumentRef.startsWith("boi:submitted:") && wikiLocalRevision.revisedSupersedesFirst && wikiLocalRevision.revisedCanonicalSourceRef === canonicalWikiRef && wikiLocalRevision.bothClaimsConfirmed && wikiLocalRevision.finalStatus.includes("활성 Science Release가 없어 판정을 실행하지 않았습니다") && wikiLocalRevision.redCount === 0,
       console_clean: relevantConsoleErrors(consoleErrors).length === 0,
@@ -620,6 +870,8 @@ async function main() {
       checks,
       desktop,
       mobile,
+      equationQa,
+      equationMobile,
       handoff,
       wikiLocalRevision,
       manualRoute,
@@ -630,6 +882,7 @@ async function main() {
       consoleErrors: relevantConsoleErrors(consoleErrors),
       screenshot: args.screenshot,
       mobileScreenshot: args.mobileScreenshot,
+      equationScreenshot: args.equationScreenshot,
       browser: "Chrome DevTools Protocol",
       browserFallbackReason: "agent-browser CLI unavailable; used the repository CDP verification pattern.",
     };
@@ -638,7 +891,7 @@ async function main() {
         ? `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`
         : "";
       const manifestDir = dirname(args.reportJson);
-      const captures = [args.screenshot, args.mobileScreenshot]
+      const captures = [args.screenshot, args.mobileScreenshot, args.equationScreenshot]
         .filter((path) => path && existsSync(path))
         .map((path) => ({ path: relative(manifestDir, path) || basename(path), sha256: fileDigest(path) }));
       const captureManifest = {
@@ -653,6 +906,17 @@ async function main() {
         screenshots: {
           desktop: { path: args.screenshot, sha256: fileDigest(args.screenshot) },
           mobile: { path: args.mobileScreenshot, sha256: fileDigest(args.mobileScreenshot) },
+          equation: { path: args.equationScreenshot, sha256: fileDigest(args.equationScreenshot) },
+        },
+        equation_qa: {
+          label: equationQa.boundaryLabel,
+          equation_id: equationQa.equationId,
+          equation_digest: equationQa.equationDigest,
+          asset_digest: equationQa.selectedAssetDigest,
+          manifest_digest: equationQa.manifestDigest,
+          operational: false,
+          verdict_effect: "none",
+          red_mark_effect: "none",
         },
         science_requests: scienceRequests.map((item) => ({ path: new URL(item.url).pathname, method: item.method })),
         qwen_diagnostics: scienceResponses
