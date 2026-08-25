@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from io import BytesIO
+from typing import Any
 
+from reportlab.graphics import renderPDF
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
@@ -16,6 +19,7 @@ from boi_api.app.science.models import (
     GroundedAnnotation,
     VerificationReport,
 )
+from boi_api.app.science.equation_rendering import safe_equation_svg_to_drawing
 
 _PDF_FONT = "HYSMyeongJo-Medium"
 _PAGE_WIDTH, _PAGE_HEIGHT = A4
@@ -57,6 +61,52 @@ def _annotations_by_claim(
     return grouped
 
 
+def _explanations_by_claim(report: VerificationReport) -> dict[str, list[Any]]:
+    grouped: dict[str, list[Any]] = {}
+    for explanation in getattr(report, "explanations", []):
+        grouped.setdefault(explanation.claim_id, []).append(explanation)
+    return grouped
+
+
+def _equation_asset_index(report: VerificationReport) -> dict[tuple[str, str], Any]:
+    return {
+        (asset.equation_id, asset.equation_digest): asset
+        for asset in getattr(report, "equation_assets", [])
+    }
+
+
+def _identity_text(reference: Any) -> str:
+    return f"`{reference.object_id}` (`{reference.object_digest}`)"
+
+
+def _plain_identity_text(reference: Any) -> str:
+    return f"{reference.object_id} ({reference.object_digest})"
+
+
+def _dimension_text(variable: Any) -> str:
+    dimension = variable.dimension.model_dump(mode="python")
+    nonzero = [f"{name}={exponent}" for name, exponent in dimension.items() if exponent]
+    return ", ".join(nonzero) or "dimensionless"
+
+
+def _boundary_condition_text(condition: Any) -> str:
+    details: list[str] = []
+    if condition.variable_id:
+        details.append(f"variable={condition.variable_id}")
+    details.append(f"operator={condition.operator}")
+    if condition.value is not None:
+        details.append(f"value={condition.value}")
+    if condition.minimum is not None:
+        bracket = "inclusive" if condition.minimum_inclusive else "exclusive"
+        details.append(f"minimum={condition.minimum} ({bracket})")
+    if condition.maximum is not None:
+        bracket = "inclusive" if condition.maximum_inclusive else "exclusive"
+        details.append(f"maximum={condition.maximum} ({bracket})")
+    if condition.unit:
+        details.append(f"unit={condition.unit}")
+    return f"{condition.condition_id}: {condition.statement} ({'; '.join(details)})"
+
+
 def _markdown_evidence(link: EvidenceLink) -> list[str]:
     return [
         f"  - Evidence: `{link.evidence_id}`",
@@ -67,12 +117,120 @@ def _markdown_evidence(link: EvidenceLink) -> list[str]:
     ]
 
 
+def _markdown_equation(asset: Any, equation_ref: Any) -> list[str]:
+    lines = [
+        "##### Reviewed equation",
+        "",
+        "$$",
+        asset.display_latex,
+        "$$",
+        "",
+        f"Plain-text fallback: `{asset.plain_text}`",
+        "",
+        f"- Equation: `{asset.equation_id}` (`{asset.equation_digest}`)",
+        f"- Knowledge: `{asset.knowledge_id}` (`{asset.knowledge_digest}`)",
+        f"- Scientific role: `{asset.scientific_role}`",
+        f"- Decision use: `{asset.decision_use}`",
+        (f"- Rule: `{equation_ref.rule_id}` (`{equation_ref.rule_digest}`)"),
+        (
+            f"- Evaluator: `{equation_ref.evaluator_id}` "
+            f"version `{equation_ref.evaluator_version}` "
+            f"(`{equation_ref.evaluator_digest}`)"
+        ),
+        f"- Rule binding digest: `{equation_ref.binding_digest}`",
+        "- Variables:",
+    ]
+    for variable in asset.variables:
+        lines.append(
+            "  - "
+            f"`{variable.symbol}` (`{variable.variable_id}`): {variable.definition}; "
+            f"concept `{variable.concept_ref}`; quantity `{variable.quantity_kind}`; "
+            f"dimension `{_dimension_text(variable)}`; unit `{variable.unit}`; "
+            f"domain `{variable.domain}`; sign `{variable.sign_constraint}`"
+        )
+    lines.append("- Claim-variable mapping:")
+    for mapping in equation_ref.variable_mappings:
+        lines.append(
+            "  - "
+            f"`{mapping.equation_variable_id}` → claim quantity "
+            f"`{mapping.claim_quantity_kind}` at `{mapping.constraint_operand}`"
+        )
+    for heading, values in (
+        ("Assumptions", asset.assumptions),
+        ("Applicability", asset.applicability),
+        ("Invalid outside", asset.invalid_outside),
+    ):
+        lines.append(f"- {heading}:")
+        lines.extend(f"  - {value}" for value in values)
+    lines.append("- Boundary conditions:")
+    if asset.boundary_conditions:
+        lines.extend(
+            f"  - {_boundary_condition_text(condition)}"
+            for condition in asset.boundary_conditions
+        )
+    else:
+        lines.append("  - none declared")
+    lines.append("- Equation Evidence:")
+    for link in asset.evidence_links:
+        lines.extend(_markdown_evidence(link))
+    return lines
+
+
+def _markdown_explanation(
+    explanation: Any, assets: dict[tuple[str, str], Any]
+) -> list[str]:
+    lines = [f"Grounded explanation fact: `{explanation.fact_id}`", ""]
+    for block in sorted(explanation.blocks, key=lambda item: item.sequence):
+        label = block.block_kind.replace("_", " ").title()
+        lines.extend([f"**{block.sequence}. {label}** — {block.text}"])
+        if block.knowledge_refs:
+            lines.append(
+                "- Knowledge references: "
+                + ", ".join(_identity_text(item) for item in block.knowledge_refs)
+            )
+        if block.rule_refs:
+            lines.append(
+                "- Rule references: "
+                + ", ".join(_identity_text(item) for item in block.rule_refs)
+            )
+        if block.evidence_refs:
+            lines.append(
+                "- Evidence references: "
+                + ", ".join(_identity_text(item) for item in block.evidence_refs)
+            )
+        lines.append("")
+    for equation_ref in explanation.equation_refs:
+        asset = assets.get((equation_ref.equation_id, equation_ref.equation_digest))
+        if asset is None:
+            lines.extend(
+                [
+                    "##### Reviewed equation",
+                    "",
+                    (
+                        f"Presentation unavailable for `{equation_ref.equation_id}` "
+                        f"(`{equation_ref.equation_digest}`). The stored verdict is unchanged."
+                    ),
+                    "",
+                ]
+            )
+            continue
+        lines.extend(_markdown_equation(asset, equation_ref))
+        lines.append("")
+    lines.append("Grounded Evidence:")
+    for link in explanation.evidence_links:
+        lines.extend(_markdown_evidence(link))
+    lines.append("")
+    return lines
+
+
 def render_report_markdown(report: VerificationReport) -> str:
     """Render one stored report without recomputation or language generation."""
 
     stored = _require_stored_report(report)
     claims = {claim.claim_id: claim for claim in stored.confirmed_claims}
     annotations = _annotations_by_claim(stored.annotations)
+    explanations = _explanations_by_claim(stored)
+    equation_assets = _equation_asset_index(stored)
     lines = [
         "# Science Verification Report",
         "",
@@ -146,6 +304,8 @@ def render_report_markdown(report: VerificationReport) -> str:
                     "",
                 ]
             )
+        for explanation in explanations.get(verdict.claim_id, []):
+            lines.extend(_markdown_explanation(explanation, equation_assets))
         if verdict.limitations:
             lines.extend(["#### Limits", ""])
             lines.extend(f"- {limitation}" for limitation in verdict.limitations)
@@ -165,10 +325,147 @@ def render_report_markdown(report: VerificationReport) -> str:
     return "\n".join(lines)
 
 
-def _pdf_lines(report: VerificationReport) -> list[tuple[str, float]]:
+@dataclass(frozen=True, slots=True)
+class _PDFEquation:
+    asset: Any
+
+
+def _pdf_equation_lines(asset: Any, equation_ref: Any) -> list[tuple[str, float]]:
+    lines: list[tuple[str, float]] = [
+        (f"Plain-text fallback: {asset.plain_text}", 9),
+        (f"Equation: {asset.equation_id} ({asset.equation_digest})", 7),
+        (f"Knowledge: {asset.knowledge_id} ({asset.knowledge_digest})", 7),
+        (f"Scientific role: {asset.scientific_role}", 8),
+        (f"Decision use: {asset.decision_use}", 8),
+        (f"Rule: {equation_ref.rule_id} ({equation_ref.rule_digest})", 7),
+        (
+            f"Evaluator: {equation_ref.evaluator_id} "
+            f"version {equation_ref.evaluator_version} "
+            f"({equation_ref.evaluator_digest})",
+            7,
+        ),
+        (f"Rule binding digest: {equation_ref.binding_digest}", 7),
+        ("Variables", 9),
+    ]
+    for variable in asset.variables:
+        lines.append(
+            (
+                f"{variable.symbol} ({variable.variable_id}): {variable.definition}; "
+                f"concept {variable.concept_ref}; quantity {variable.quantity_kind}; "
+                f"dimension {_dimension_text(variable)}; unit {variable.unit}; "
+                f"domain {variable.domain}; sign {variable.sign_constraint}",
+                7,
+            )
+        )
+    lines.append(("Claim-variable mapping", 9))
+    lines.extend(
+        (
+            f"{mapping.equation_variable_id} -> claim quantity "
+            f"{mapping.claim_quantity_kind} at {mapping.constraint_operand}",
+            7,
+        )
+        for mapping in equation_ref.variable_mappings
+    )
+    for heading, values in (
+        ("Assumptions", asset.assumptions),
+        ("Applicability", asset.applicability),
+        ("Invalid outside", asset.invalid_outside),
+    ):
+        lines.append((heading, 9))
+        lines.extend((f"• {value}", 8) for value in values)
+    lines.append(("Boundary conditions", 9))
+    lines.extend(
+        [
+            (_boundary_condition_text(condition), 8)
+            for condition in asset.boundary_conditions
+        ]
+        or [("none declared", 8)]
+    )
+    lines.append(("Equation Evidence", 9))
+    for link in asset.evidence_links:
+        lines.extend(
+            [
+                (f"Evidence: {link.evidence_id}", 8),
+                (f"Source: {link.url}", 7),
+                (f"Locator: {_locator_text(link.locator)}", 8),
+                (f"Evidence digest: {link.evidence_digest}", 7),
+                (f"Exact quote hash: {link.quote_hash}", 7),
+            ]
+        )
+    return lines
+
+
+def _pdf_explanation_items(
+    explanation: Any,
+    assets: dict[tuple[str, str], Any],
+) -> list[tuple[str, float] | _PDFEquation]:
+    items: list[tuple[str, float] | _PDFEquation] = [
+        (f"Grounded explanation fact: {explanation.fact_id}", 9)
+    ]
+    for block in sorted(explanation.blocks, key=lambda item: item.sequence):
+        label = block.block_kind.replace("_", " ").title()
+        items.append((f"{block.sequence}. {label}: {block.text}", 9))
+        if block.knowledge_refs:
+            items.append(
+                (
+                    "Knowledge references: "
+                    + ", ".join(
+                        _plain_identity_text(item) for item in block.knowledge_refs
+                    ),
+                    7,
+                )
+            )
+        if block.rule_refs:
+            items.append(
+                (
+                    "Rule references: "
+                    + ", ".join(_plain_identity_text(item) for item in block.rule_refs),
+                    7,
+                )
+            )
+        if block.evidence_refs:
+            items.append(
+                (
+                    "Evidence references: "
+                    + ", ".join(
+                        _plain_identity_text(item) for item in block.evidence_refs
+                    ),
+                    7,
+                )
+            )
+    for equation_ref in explanation.equation_refs:
+        asset = assets.get((equation_ref.equation_id, equation_ref.equation_digest))
+        if asset is None:
+            items.append(
+                (
+                    f"Equation presentation unavailable: {equation_ref.equation_id} "
+                    f"({equation_ref.equation_digest}); stored verdict unchanged.",
+                    8,
+                )
+            )
+            continue
+        items.extend([("Reviewed equation", 11), _PDFEquation(asset)])
+        items.extend(_pdf_equation_lines(asset, equation_ref))
+    items.append(("Grounded Evidence", 9))
+    for link in explanation.evidence_links:
+        items.extend(
+            [
+                (f"Evidence: {link.evidence_id}", 8),
+                (f"Source: {link.url}", 7),
+                (f"Locator: {_locator_text(link.locator)}", 8),
+                (f"Evidence digest: {link.evidence_digest}", 7),
+                (f"Exact quote hash: {link.quote_hash}", 7),
+            ]
+        )
+    return items
+
+
+def _pdf_items(report: VerificationReport) -> list[tuple[str, float] | _PDFEquation]:
     claims = {claim.claim_id: claim for claim in report.confirmed_claims}
     annotations = _annotations_by_claim(report.annotations)
-    lines: list[tuple[str, float]] = [
+    explanations = _explanations_by_claim(report)
+    equation_assets = _equation_asset_index(report)
+    lines: list[tuple[str, float] | _PDFEquation] = [
         ("Science Verification Report", 16),
         (f"Report ID: {report.report_id}", 9),
         (f"Report digest: {report.report_digest}", 8),
@@ -221,6 +518,8 @@ def _pdf_lines(report: VerificationReport) -> list[tuple[str, float]]:
         if verdict.limitations:
             lines.append(("Limits", 11))
             lines.extend((f"• {limitation}", 9) for limitation in verdict.limitations)
+        for explanation in explanations.get(verdict.claim_id, []):
+            lines.extend(_pdf_explanation_items(explanation, equation_assets))
     lines.extend(
         [
             ("Verdict boundary", 11),
@@ -234,6 +533,12 @@ def _pdf_lines(report: VerificationReport) -> list[tuple[str, float]]:
         ]
     )
     return lines
+
+
+def _pdf_lines(report: VerificationReport) -> list[tuple[str, float]]:
+    """Backward-compatible text projection used by older callers and tests."""
+
+    return [item for item in _pdf_items(report) if isinstance(item, tuple)]
 
 
 def _wrap_pdf_text(text: str, font_size: float, width: float) -> list[str]:
@@ -284,7 +589,63 @@ def render_report_pdf(report: VerificationReport) -> bytes:
         page_number += 1
         y = _PAGE_HEIGHT - _TOP
 
-    for text, font_size in _pdf_lines(stored):
+    for item in _pdf_items(stored):
+        if isinstance(item, _PDFEquation):
+            asset = item.asset
+            drawing = None
+            if asset.sanitized_svg is not None and asset.svg_digest is not None:
+                drawing = safe_equation_svg_to_drawing(
+                    asset.sanitized_svg,
+                    asset.svg_digest,
+                )
+            if drawing is None:
+                fallback = (
+                    "Equation rendering unavailable — plain text: "
+                    f"{asset.plain_text} (stored verdict unchanged)"
+                )
+                font_size = 9.0
+                spacing = max(font_size * 1.45, 11)
+                wrapped = _wrap_pdf_text(fallback, font_size, usable_width)
+                if y - spacing * len(wrapped) < _BOTTOM:
+                    next_page()
+                document.setFont(_PDF_FONT, font_size)
+                for line in wrapped:
+                    document.drawString(_LEFT, y, line)
+                    y -= spacing
+                y -= 2.0
+                continue
+            max_equation_height = 82.0
+            scale = min(
+                1.0,
+                usable_width / float(drawing.width),
+                max_equation_height / float(drawing.height),
+            )
+            rendered_height = float(drawing.height) * scale
+            if y - rendered_height < _BOTTOM:
+                next_page()
+            draw_failed = False
+            document.saveState()
+            try:
+                document.translate(_LEFT, y - rendered_height)
+                document.scale(scale, scale)
+                renderPDF.draw(drawing, document, 0, 0)
+            except Exception:
+                draw_failed = True
+            finally:
+                document.restoreState()
+            if draw_failed:
+                fallback = (
+                    "Equation rendering unavailable — plain text: "
+                    f"{asset.plain_text} (stored verdict unchanged)"
+                )
+                document.setFont(_PDF_FONT, 9)
+                for line in _wrap_pdf_text(fallback, 9, usable_width):
+                    document.drawString(_LEFT, y, line)
+                    y -= 13
+            else:
+                y -= rendered_height + 6.0
+            continue
+        text, font_size = item
         spacing = max(font_size * 1.45, 11)
         wrapped = _wrap_pdf_text(text, font_size, usable_width)
         if y - spacing * len(wrapped) < _BOTTOM:
