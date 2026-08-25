@@ -1,0 +1,32 @@
+{
+  "schema_version": "science-test-suite-contract/0.1",
+  "identity_format": "pytest-junit-classname::name",
+  "suites": {
+    "science_tests": {
+      "suite_id": "science-tests",
+      "pytest_args": [
+        "tests",
+        "-k",
+        "science and not mcp"
+      ],
+      "collected": 1438,
+      "testcase_identity_digest": "sha256:77a044189874aec85eb9f1caa2b4962b99f6d3337c28d8a22ebe1778142b2ce6"
+    },
+    "mcp_tests": {
+      "suite_id": "science-mcp",
+      "pytest_args": [
+        "tests/test_science_mcp.py"
+      ],
+      "collected": 14,
+      "testcase_identity_digest": "sha256:ec689239f39316fda086f2882268f79d23dc4deacdf4e766d7a558efbee0863e"
+    },
+    "full_regression": {
+      "suite_id": "full-regression",
+      "pytest_args": [
+        "tests"
+      ],
+      "collected": 2036,
+      "testcase_identity_digest": "sha256:1edf05b9ad25daa9d5d47e7a8dbbebd3faeb4b8ffe3435a959f66ee5b7b6114e"
+    }
+  }
+}

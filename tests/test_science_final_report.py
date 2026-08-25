@@ -5,14 +5,35 @@ import json
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
+from _pytest.junitxml import mangle_test_address
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BUILDER = PROJECT_ROOT / "scripts/build_science_verification_report.py"
 UI_CHECKER = PROJECT_ROOT / "scripts/check_science_verifier_ui.mjs"
+SUITE_CONTRACT_BUILDER = PROJECT_ROOT / "scripts/build_science_test_suite_contract.py"
+TRACKED_SUITE_CONTRACT = PROJECT_ROOT / "config/science-verifier-test-suites.json"
+SUITE_DEFINITIONS = {
+    "science_tests": {
+        "suite_id": "science-tests",
+        "pytest_args": ["tests", "-k", "science and not mcp"],
+        "bundle_key": "science",
+    },
+    "mcp_tests": {
+        "suite_id": "science-mcp",
+        "pytest_args": ["tests/test_science_mcp.py"],
+        "bundle_key": "mcp",
+    },
+    "full_regression": {
+        "suite_id": "full-regression",
+        "pytest_args": ["tests"],
+        "bundle_key": "full",
+    },
+}
 MANDATORY_BROWSER_CHECK_IDS = {
     "page_loaded",
     "candidate_not_operational",
@@ -54,6 +75,15 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
+def _identity(testcase: tuple[str, str, bool]) -> str:
+    classname, case_name, _ = testcase
+    return f"{classname}::{case_name}"
+
+
+def _default_testcases(suite_name: str, tests: int = 4) -> list[tuple[str, str, bool]]:
+    return [(f"fixture.{suite_name}", f"test_{index}", False) for index in range(tests)]
+
+
 def _junit(
     path: Path,
     *,
@@ -62,19 +92,44 @@ def _junit(
     failures: int = 0,
     skipped: int = 0,
     skipped_cases: list[tuple[str, str]] | None = None,
-) -> None:
-    suite_id = {
-        "science": "science-tests",
-        "mcp": "science-mcp",
-        "full": "full-regression",
-    }.get(path.stem, "unknown-suite")
+    testcases: list[tuple[str, str, bool]] | None = None,
+) -> list[tuple[str, str, bool]]:
+    suite_name = next(
+        name
+        for name, definition in SUITE_DEFINITIONS.items()
+        if definition["bundle_key"] == path.stem
+    )
+    suite_id = str(SUITE_DEFINITIONS[suite_name]["suite_id"])
+    if testcases is not None:
+        tests = len(testcases)
+        skipped = sum(is_skipped for _, _, is_skipped in testcases)
     if skipped_cases is not None:
         skipped = len(skipped_cases)
-    else:
-        skipped_cases = [("fixture.Generic", f"skipped-{index}") for index in range(skipped)]
+        if skipped > tests:
+            raise ValueError("skipped testcase count cannot exceed total tests")
+        testcases = [
+            (classname, case_name, True) for classname, case_name in skipped_cases
+        ] + [
+            (f"fixture.{suite_name}", f"test_executed_{index}", False)
+            for index in range(tests - skipped)
+        ]
+    elif testcases is None and skipped:
+        skipped_cases = [
+            ("fixture.Generic", f"skipped-{index}") for index in range(skipped)
+        ]
+        testcases = [
+            (classname, case_name, True) for classname, case_name in skipped_cases
+        ] + [
+            (f"fixture.{suite_name}", f"test_executed_{index}", False)
+            for index in range(tests - skipped)
+        ]
+    elif testcases is None:
+        testcases = _default_testcases(suite_name, tests)
     cases = "".join(
-        f'<testcase classname="{classname}" name="{case_name}"><skipped message="fixture skip" /></testcase>'
-        for classname, case_name in skipped_cases
+        f'<testcase classname="{classname}" name="{case_name}">'
+        + ('<skipped message="fixture skip" />' if is_skipped else "")
+        + "</testcase>"
+        for classname, case_name, is_skipped in testcases
     )
     path.write_text(
         f'''<?xml version="1.0" encoding="utf-8"?>
@@ -85,6 +140,33 @@ def _junit(
 ''',
         encoding="utf-8",
     )
+    return testcases
+
+
+def _write_suite_contract(
+    repo: Path,
+    testcase_overrides: dict[str, list[tuple[str, str, bool]]] | None = None,
+) -> Path:
+    testcase_overrides = testcase_overrides or {}
+    suites: dict[str, object] = {}
+    for suite_name, definition in SUITE_DEFINITIONS.items():
+        testcases = testcase_overrides.get(suite_name, _default_testcases(suite_name))
+        identities = sorted(_identity(testcase) for testcase in testcases)
+        suites[suite_name] = {
+            "suite_id": definition["suite_id"],
+            "pytest_args": definition["pytest_args"],
+            "collected": len(identities),
+            "testcase_identity_digest": _canonical_digest(identities),
+        }
+    contract = {
+        "schema_version": "science-test-suite-contract/0.1",
+        "identity_format": "pytest-junit-classname::name",
+        "suites": suites,
+    }
+    path = repo / "config/science-verifier-test-suites.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
+    return path
 
 
 def _qualification_markdown(*, g3: str = "PASS") -> str:
@@ -114,8 +196,9 @@ def _fixture_bundle(tmp_path: Path) -> dict[str, Path | str]:
     _git(repo, "config", "user.name", "Science Test")
     qualification = repo / "qualification.md"
     qualification.write_text(_qualification_markdown(), encoding="utf-8")
-    _git(repo, "add", "qualification.md")
-    _git(repo, "commit", "-m", "qualification fixture")
+    contract = _write_suite_contract(repo)
+    _git(repo, "add", "qualification.md", str(contract.relative_to(repo)))
+    _git(repo, "commit", "-m", "qualification and suite contract fixture")
     commit = _git(repo, "rev-parse", "HEAD")
 
     evidence = tmp_path / "evidence"
@@ -169,6 +252,7 @@ def _fixture_bundle(tmp_path: Path) -> dict[str, Path | str]:
         "browser": browser,
         "capture": capture,
         "review": review,
+        "contract": contract,
     }
 
 
@@ -210,15 +294,23 @@ def _manifest(output: Path) -> dict[str, object]:
     )
 
 
-def _refresh_commit_bindings(bundle: dict[str, Path | str]) -> str:
+def _refresh_commit_bindings(
+    bundle: dict[str, Path | str],
+    testcase_overrides: dict[str, list[tuple[str, str, bool]]] | None = None,
+) -> str:
+    testcase_overrides = testcase_overrides or {}
     repo = bundle["repo"]
     assert isinstance(repo, Path)
     commit = _git(repo, "rev-parse", "HEAD")
     bundle["commit"] = commit
-    for name in ("science", "mcp", "full"):
-        summary = bundle[name]
+    for suite_name, definition in SUITE_DEFINITIONS.items():
+        summary = bundle[str(definition["bundle_key"])]
         assert isinstance(summary, Path)
-        _junit(summary, commit=commit)
+        _junit(
+            summary,
+            commit=commit,
+            testcases=testcase_overrides.get(suite_name),
+        )
     browser = bundle["browser"]
     review = bundle["review"]
     assert isinstance(browser, Path) and isinstance(review, Path)
@@ -229,6 +321,19 @@ def _refresh_commit_bindings(bundle: dict[str, Path | str]) -> str:
     review_data["reviewed_git_commit"] = commit
     review.write_text(json.dumps(review_data, indent=2) + "\n", encoding="utf-8")
     return commit
+
+
+def _replace_suite_contract(
+    bundle: dict[str, Path | str],
+    suite_name: str,
+    testcases: list[tuple[str, str, bool]],
+) -> None:
+    repo = bundle["repo"]
+    assert isinstance(repo, Path)
+    _write_suite_contract(repo, {suite_name: testcases})
+    _git(repo, "add", "config/science-verifier-test-suites.json")
+    _git(repo, "commit", "-m", f"replace {suite_name} contract fixture")
+    _refresh_commit_bindings(bundle, {suite_name: testcases})
 
 
 def test_verified_is_derived_from_clean_hash_bound_machine_evidence(
@@ -252,7 +357,13 @@ def test_verified_is_derived_from_clean_hash_bound_machine_evidence(
         "status_digest": "sha256:" + hashlib.sha256(b"").hexdigest(),
     }
     evidence = manifest["evidence"]
+    assert evidence["test_suite_contract"]["passed"] is True
+    assert evidence["test_suite_contract"]["sha256"] == _sha256(bundle["contract"])
     assert evidence["science_tests"]["tests"] == 4
+    assert evidence["science_tests"]["testcase_count"] == 4
+    assert evidence["science_tests"]["testcase_identity_digest"] == _canonical_digest(
+        sorted(_identity(testcase) for testcase in _default_testcases("science_tests"))
+    )
     assert evidence["full_regression"]["sha256"] == _sha256(bundle["full"])
     assert evidence["browser"]["checks"] == 20
     assert evidence["browser"]["captures"] == 1
@@ -278,6 +389,90 @@ def test_mandatory_browser_checks_match_the_ui_checker_contract() -> None:
 
     assert len(produced_ids) == 20
     assert produced_ids == MANDATORY_BROWSER_CHECK_IDS
+
+
+def test_tracked_suite_contract_matches_exact_pytest_collect_only(
+    tmp_path: Path,
+) -> None:
+    generated = tmp_path / "science-verifier-test-suites.json"
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(SUITE_CONTRACT_BUILDER),
+            "--repo-root",
+            str(PROJECT_ROOT),
+            "--output",
+            str(generated),
+        ],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(generated.read_text(encoding="utf-8")) == json.loads(
+        TRACKED_SUITE_CONTRACT.read_text(encoding="utf-8")
+    )
+
+
+def test_collect_only_mangle_matches_actual_parametrized_pytest_junit(
+    tmp_path: Path,
+) -> None:
+    target = (
+        "tests/test_science_authorization.py::"
+        "test_access_mode_uses_only_the_complete_resolved_role_list"
+    )
+    collected = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "--collect-only",
+            "-q",
+            "--capture=no",
+            target,
+        ],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    node_ids = [
+        line.strip()
+        for line in collected.stdout.splitlines()
+        if line.startswith("tests/") and "::" in line
+    ]
+    assert len(node_ids) > 1
+    assert any("[" in node_id and "]" in node_id for node_id in node_ids)
+    expected = set()
+    for node_id in node_ids:
+        address = mangle_test_address(node_id)
+        expected.add(f"{'.'.join(address[:-1])}::{address[-1]}")
+
+    junit = tmp_path / "parametrized.xml"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "--capture=no",
+            f"--junitxml={junit}",
+            target,
+        ],
+        cwd=PROJECT_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    root = ET.parse(junit).getroot()
+    actual = {
+        f"{case.get('classname')}::{case.get('name')}"
+        for case in root.findall(".//testcase")
+    }
+
+    assert actual == expected
 
 
 def test_arbitrary_single_browser_check_cannot_qualify(tmp_path: Path) -> None:
@@ -340,20 +535,38 @@ def test_unexpected_skipped_junit_test_fails_closed(tmp_path: Path) -> None:
     assert "full_regression:unexpected_skipped_tests" in manifest["failure_reasons"]
 
 
-def test_exact_powershell_runtime_skip_is_allowed_and_disclosed(tmp_path: Path) -> None:
+def test_exact_allowlisted_all_skipped_suite_fails_closed(tmp_path: Path) -> None:
     bundle = _fixture_bundle(tmp_path)
-    full = bundle["full"]
-    assert isinstance(full, Path)
-    _junit(
-        full,
-        commit=str(bundle["commit"]),
-        skipped_cases=[
-            (
-                "tests.test_repository_source_and_mcp.RepositorySourceContractTests",
-                "test_internal_success_skips_external_probe",
-            )
-        ],
-    )
+    testcases = [
+        (
+            "tests.test_repository_source_and_mcp.RepositorySourceContractTests",
+            "test_internal_success_skips_external_probe",
+            True,
+        )
+    ]
+    _replace_suite_contract(bundle, "full_regression", testcases)
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 2
+    manifest = _manifest(tmp_path / "report")
+    assert manifest["evidence"]["full_regression"]["executed"] == 0
+    assert "full_regression:no_executed_tests" in manifest["failure_reasons"]
+
+
+def test_exact_allowlisted_partial_skip_is_allowed_when_contract_matches(
+    tmp_path: Path,
+) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    testcases = [
+        (
+            "tests.test_repository_source_and_mcp.RepositorySourceContractTests",
+            "test_internal_success_skips_external_probe",
+            True,
+        ),
+        ("fixture.full_regression", "test_executed", False),
+    ]
+    _replace_suite_contract(bundle, "full_regression", testcases)
 
     completed = _run(bundle, tmp_path / "report")
 
@@ -361,6 +574,7 @@ def test_exact_powershell_runtime_skip_is_allowed_and_disclosed(tmp_path: Path) 
     evidence = _manifest(tmp_path / "report")["evidence"]["full_regression"]
     assert evidence["passed"] is True
     assert evidence["skipped"] == 1
+    assert evidence["executed"] == 1
     assert evidence["skip_policy"] == "powershell-wsl-exact-allowlist/0.1"
 
 
@@ -418,6 +632,100 @@ def test_mismatched_junit_suite_identity_fails_closed(tmp_path: Path) -> None:
     assert completed.returncode == 2
     assert (
         "science_tests:suite_id_mismatch"
+        in _manifest(tmp_path / "report")["failure_reasons"]
+    )
+
+
+def test_altered_junit_testcase_identity_digest_fails_closed(tmp_path: Path) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    science = bundle["science"]
+    assert isinstance(science, Path)
+    science.write_text(
+        science.read_text(encoding="utf-8").replace(
+            'name="test_0"', 'name="test_altered"', 1
+        ),
+        encoding="utf-8",
+    )
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 2
+    assert (
+        "science_tests:testcase_identity_digest_mismatch"
+        in _manifest(tmp_path / "report")["failure_reasons"]
+    )
+
+
+def test_duplicate_junit_testcase_identity_is_invalid(tmp_path: Path) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    science = bundle["science"]
+    assert isinstance(science, Path)
+    science.write_text(
+        science.read_text(encoding="utf-8").replace(
+            'name="test_1"', 'name="test_0"', 1
+        ),
+        encoding="utf-8",
+    )
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 2
+    assert "science_tests:invalid" in _manifest(tmp_path / "report")["failure_reasons"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["schema", "suite_id", "digest_format", "count_type", "negative_count"],
+)
+def test_invalid_tracked_suite_contract_fails_closed(
+    tmp_path: Path, mutation: str
+) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    repo = bundle["repo"]
+    contract = bundle["contract"]
+    assert isinstance(repo, Path) and isinstance(contract, Path)
+    payload = json.loads(contract.read_text(encoding="utf-8"))
+    if mutation == "schema":
+        payload["schema_version"] = "science-test-suite-contract/untrusted"
+    elif mutation == "suite_id":
+        payload["suites"]["science_tests"]["suite_id"] = "full-regression"
+    elif mutation == "digest_format":
+        payload["suites"]["science_tests"]["testcase_identity_digest"] = "sha256:short"
+    elif mutation == "count_type":
+        payload["suites"]["science_tests"]["collected"] = "4"
+    else:
+        payload["suites"]["science_tests"]["collected"] = -1
+    contract.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    _git(repo, "add", "config/science-verifier-test-suites.json")
+    _git(repo, "commit", "-m", f"invalid {mutation} contract fixture")
+    _refresh_commit_bindings(bundle)
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 2
+    assert (
+        "test_suite_contract:invalid"
+        in _manifest(tmp_path / "report")["failure_reasons"]
+    )
+
+
+def test_junit_testcase_count_must_equal_tracked_contract(tmp_path: Path) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    repo = bundle["repo"]
+    contract = bundle["contract"]
+    assert isinstance(repo, Path) and isinstance(contract, Path)
+    payload = json.loads(contract.read_text(encoding="utf-8"))
+    payload["suites"]["science_tests"]["collected"] += 1
+    contract.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    _git(repo, "add", "config/science-verifier-test-suites.json")
+    _git(repo, "commit", "-m", "mismatched suite count fixture")
+    _refresh_commit_bindings(bundle)
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 2
+    assert (
+        "science_tests:testcase_count_mismatch"
         in _manifest(tmp_path / "report")["failure_reasons"]
     )
 

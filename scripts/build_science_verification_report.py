@@ -55,6 +55,11 @@ EXPECTED_JUNIT_SUITE_IDS = {
     "mcp_tests": "science-mcp",
     "full_regression": "full-regression",
 }
+EXPECTED_JUNIT_PYTEST_ARGS = {
+    "science_tests": ["tests", "-k", "science and not mcp"],
+    "mcp_tests": ["tests/test_science_mcp.py"],
+    "full_regression": ["tests"],
+}
 ALLOWED_FULL_REGRESSION_SKIPS = frozenset(
     {
         "tests.test_repository_source_and_mcp.RepositorySourceContractTests::test_internal_success_skips_external_probe",
@@ -162,8 +167,79 @@ def _nonnegative_int(value: object) -> int:
     return number
 
 
+def _test_suite_contract(
+    repo_root: Path,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]], list[str]]:
+    path = repo_root / "config/science-verifier-test-suites.json"
+    record, data = _base_evidence(path, repo_root)
+    if data is None:
+        return record, {}, ["test_suite_contract:missing"]
+    try:
+        payload = json.loads(data)
+        if not isinstance(payload, dict) or set(payload) != {
+            "schema_version",
+            "identity_format",
+            "suites",
+        }:
+            raise ValueError("suite contract must be a closed object")
+        if payload["schema_version"] != "science-test-suite-contract/0.1":
+            raise ValueError("unsupported suite contract schema")
+        if payload["identity_format"] != "pytest-junit-classname::name":
+            raise ValueError("unsupported testcase identity format")
+        suites = payload["suites"]
+        if not isinstance(suites, dict) or set(suites) != set(EXPECTED_JUNIT_SUITE_IDS):
+            raise ValueError("exact suite set is required")
+        normalized: dict[str, dict[str, Any]] = {}
+        for name in EXPECTED_JUNIT_SUITE_IDS:
+            suite = suites[name]
+            if not isinstance(suite, dict) or set(suite) != {
+                "suite_id",
+                "pytest_args",
+                "collected",
+                "testcase_identity_digest",
+            }:
+                raise ValueError("suite definition must be closed")
+            if isinstance(suite["collected"], bool) or not isinstance(
+                suite["collected"], int
+            ):
+                raise ValueError("suite collected count must be an integer")
+            collected = suite["collected"]
+            digest = suite["testcase_identity_digest"]
+            if collected <= 0:
+                raise ValueError("suite contract cannot be empty")
+            if suite["suite_id"] != EXPECTED_JUNIT_SUITE_IDS[name]:
+                raise ValueError("suite ID does not match the fixed report input")
+            if suite["pytest_args"] != EXPECTED_JUNIT_PYTEST_ARGS[name]:
+                raise ValueError("pytest collect-only arguments do not match")
+            if not isinstance(digest, str) or not DIGEST_RE.fullmatch(digest):
+                raise ValueError("invalid testcase identity digest")
+            normalized[name] = {
+                "suite_id": suite["suite_id"],
+                "pytest_args": list(suite["pytest_args"]),
+                "collected": collected,
+                "testcase_identity_digest": digest,
+            }
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        record.update({"valid": False, "passed": False})
+        return record, {}, ["test_suite_contract:invalid"]
+    record.update(
+        {
+            "valid": True,
+            "passed": True,
+            "schema_version": payload["schema_version"],
+            "identity_format": payload["identity_format"],
+            "suites": normalized,
+        }
+    )
+    return record, normalized, []
+
+
 def _junit_evidence(
-    name: str, path: Path | None, repo_root: Path, current_commit: str | None
+    name: str,
+    path: Path | None,
+    repo_root: Path,
+    current_commit: str | None,
+    suite_contract: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], list[str]]:
     record, data = _base_evidence(path, repo_root)
     if data is None:
@@ -201,18 +277,41 @@ def _junit_evidence(
         if len(suite_ids) != 1:
             raise ValueError("exactly one suite_id property is required")
         suite_id = suite_ids.pop()
-        skipped_cases = {
-            f"{case.get('classname', '')}::{case.get('name', '')}"
-            for case in root.findall(".//testcase")
-            if case.find("skipped") is not None
-        }
+        testcase_nodes = root.findall(".//testcase")
+        testcase_identities: list[str] = []
+        skipped_cases: set[str] = set()
+        for case in testcase_nodes:
+            classname = case.get("classname")
+            case_name = case.get("name")
+            if not isinstance(classname, str) or not classname:
+                raise ValueError("every testcase needs a classname")
+            if not isinstance(case_name, str) or not case_name:
+                raise ValueError("every testcase needs a name")
+            identity = f"{classname}::{case_name}"
+            testcase_identities.append(identity)
+            if case.find("skipped") is not None:
+                skipped_cases.add(identity)
+        if len(testcase_identities) != len(set(testcase_identities)):
+            raise ValueError("testcase identities must be unique")
+        if len(testcase_identities) != counts["tests"]:
+            raise ValueError("declared test count must equal testcase node count")
         if len(skipped_cases) != counts["skipped"]:
             raise ValueError("every skipped test needs an identifiable testcase")
+        testcase_identity_digest = canonical_digest(sorted(testcase_identities))
     except (ET.ParseError, TypeError, ValueError):
         record.update({"format": "junit-xml", "valid": False})
         return record, [f"{name}:invalid"]
 
-    expected_suite_id = EXPECTED_JUNIT_SUITE_IDS[name]
+    expected_suite_id = (
+        suite_contract["suite_id"] if suite_contract else EXPECTED_JUNIT_SUITE_IDS[name]
+    )
+    expected_count = suite_contract["collected"] if suite_contract else None
+    expected_identity_digest = (
+        suite_contract["testcase_identity_digest"] if suite_contract else None
+    )
+    count_matches = counts["tests"] == expected_count
+    identity_digest_matches = testcase_identity_digest == expected_identity_digest
+    executed = counts["tests"] - counts["skipped"]
     allowed_skips = (
         ALLOWED_FULL_REGRESSION_SKIPS if name == "full_regression" else frozenset()
     )
@@ -224,12 +323,23 @@ def _junit_evidence(
             **counts,
             "git_commit": evidence_commit,
             "suite_id": suite_id,
+            "testcase_count": len(testcase_identities),
+            "testcase_identity_digest": testcase_identity_digest,
+            "contract_collected": expected_count,
+            "contract_testcase_identity_digest": expected_identity_digest,
+            "executed": executed,
             "passed": counts["tests"] > 0
             and counts["failures"] == 0
             and counts["errors"] == 0
+            and suite_contract is not None
             and suite_id == expected_suite_id
+            and count_matches
+            and identity_digest_matches
+            and executed > 0
             and not unexpected_skips,
-            "skip_policy": "none" if name != "full_regression" else "powershell-wsl-exact-allowlist/0.1",
+            "skip_policy": "none"
+            if name != "full_regression"
+            else "powershell-wsl-exact-allowlist/0.1",
             "skipped_cases": sorted(skipped_cases),
             "unexpected_skipped_cases": sorted(unexpected_skips),
         }
@@ -239,8 +349,16 @@ def _junit_evidence(
         failures.append(f"{name}:zero_tests")
     if counts["failures"] or counts["errors"]:
         failures.append(f"{name}:test_failures")
+    if suite_contract is None:
+        failures.append(f"{name}:suite_contract_unavailable")
     if suite_id != expected_suite_id:
         failures.append(f"{name}:suite_id_mismatch")
+    if not count_matches:
+        failures.append(f"{name}:testcase_count_mismatch")
+    if not identity_digest_matches:
+        failures.append(f"{name}:testcase_identity_digest_mismatch")
+    if executed <= 0:
+        failures.append(f"{name}:no_executed_tests")
     if unexpected_skips:
         failures.append(f"{name}:unexpected_skipped_tests")
     if evidence_commit != current_commit:
@@ -517,6 +635,7 @@ def _markdown(record: dict[str, Any]) -> str:
     )
     source_rows: list[str] = []
     for key, label in (
+        ("test_suite_contract", "Tracked pytest suite contract"),
         ("science_tests", "Science 회귀 JUnit"),
         ("mcp_tests", "MCP 계약 JUnit"),
         ("full_regression", "전체 저장소 회귀 JUnit"),
@@ -525,7 +644,9 @@ def _markdown(record: dict[str, Any]) -> str:
         ("independent_review", "독립 코드 리뷰"),
     ):
         item = evidence[key]
-        if key.endswith("tests") or key == "full_regression":
+        if key == "test_suite_contract":
+            result = f"schema={item.get('schema_version', 'unknown')}, suites={len(item.get('suites', {}))}"
+        elif key.endswith("tests") or key == "full_regression":
             result = f"tests={item.get('tests', 0)}, failures={item.get('failures', 0)}, errors={item.get('errors', 0)}, skipped={item.get('skipped', 0)}"
         elif key == "browser":
             result = (
@@ -714,6 +835,7 @@ def _pdf(path: Path, record: dict[str, Any]) -> None:
     )
     evidence_rows: list[list[Any]] = [["증빙", "상태", "기계 결과"]]
     for key, label in (
+        ("test_suite_contract", "Suite contract"),
         ("science_tests", "Science JUnit"),
         ("mcp_tests", "MCP JUnit"),
         ("full_regression", "Full regression"),
@@ -722,7 +844,9 @@ def _pdf(path: Path, record: dict[str, Any]) -> None:
         ("independent_review", "Independent review"),
     ):
         item = record["evidence"][key]
-        if key.endswith("tests") or key == "full_regression":
+        if key == "test_suite_contract":
+            result = f"schema={item.get('schema_version', 'unknown')}, suites={len(item.get('suites', {}))}"
+        elif key.endswith("tests") or key == "full_regression":
             result = f"tests={item.get('tests', 0)}, failures={item.get('failures', 0)}, errors={item.get('errors', 0)}, skipped={item.get('skipped', 0)}"
         elif key == "browser":
             result = (
@@ -779,13 +903,21 @@ def _pdf(path: Path, record: dict[str, Any]) -> None:
 def _collect(args: argparse.Namespace) -> dict[str, Any]:
     git, failures = _git_state(args.repo_root)
     evidence: dict[str, Any] = {}
+    evidence["test_suite_contract"], suite_contracts, source_failures = (
+        _test_suite_contract(args.repo_root)
+    )
+    failures.extend(source_failures)
     for name, path in (
         ("science_tests", args.science_test_summary),
         ("mcp_tests", args.mcp_test_summary),
         ("full_regression", args.full_regression_summary),
     ):
         evidence[name], source_failures = _junit_evidence(
-            name, path, args.repo_root, git["commit"]
+            name,
+            path,
+            args.repo_root,
+            git["commit"],
+            suite_contracts.get(name),
         )
         failures.extend(source_failures)
     evidence["browser"], source_failures = _browser_evidence(
