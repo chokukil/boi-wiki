@@ -23,7 +23,7 @@ AI는 사내 Bitbucket 저장소를 먼저 읽어 보고, DNS·라우팅·연결
 이 저장소는 공유 런타임입니다.
 
 - BoI Wiki Web UI와 BoI API
-- 활성 Science Release의 Rule·Evidence만 사용하는 문서 중심 Science Verifier
+- 활성 Science Release가 있을 때에만 그 Rule·Evidence를 사용하는 문서 중심 Science Verifier
 - Kafka Event Broker와 Event Router
 - API, Webhook, MCP, Langflow, Manual, Event Broker, BoI Writer action을 실행하는 Action Gateway
 - Event Contract, WorkflowDefinition, Action/Event Skill registry
@@ -113,7 +113,9 @@ curl -s http://localhost:28000/api/harness/acceptance
 
 기본 인증 모드는 `BOI_AUTH_MODE=dev`입니다. PoC와 테스트 편의를 위해 `employee_id` selector/query를 허용합니다.
 
-Science Verifier는 기본적으로 LLM 없이 동작합니다. 등록 별칭을 결정론적으로 찾고, 사용자 또는 Codex·Claude 같은 외부 Agent가 제출한 Claim 후보를 서버가 다시 검증한 뒤, 사람에게 확인된 Claim만 활성 Release로 판정합니다. Qwen 경로는 `BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED=1`일 때만 노출되는 선택적 실험 어댑터이며 장애 시 판정과 빨간 표시를 만들지 않습니다. 운영·권한·Release 승인 경계는 [Science Verifier 운영 가이드](data/boi/public/boi-wiki-manual/guide/science-verifier-operation.md)를 따릅니다.
+Science Verifier는 기본적으로 LLM 없이 동작합니다. 사용자·Codex·Claude·Qwen은 untrusted Claim 후보만 제출하고, 서버가 문서 span·별칭·ontology reference·subject/relation/object 역할·조건을 다시 검증합니다. 사람에게 확인된 Claim만 active Release가 있을 때 결정론적으로 판정할 수 있으며, client가 보낸 verdict·Rule·Evidence·citation은 권위가 없습니다. Qwen 경로는 `BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED=1`일 때만 노출되는 선택적 실험 어댑터입니다. live availability, tuning, context size, 특정 모델 응답은 release 조건이 아니고, 장애 시에도 Claim·판정·빨간 표시를 만들지 않습니다.
+
+현재 Science Release는 `release_candidate`이며 inactive입니다. 자동 Candidate qualification은 `G0..G4`까지만 통과할 수 있고, 독립 sealed holdout `G5`, active stored-report parity `G6`, 사람 Science Admin 원문 검토·activation audit `G7`은 별도 증거 전까지 `PENDING`입니다. 구현 증거의 `FINAL / VERIFIED`는 Git revision에 묶인 pytest suite identity(수량·digest와 실제 실행), 정확히 21개 browser check와 capture hash, Candidate qualification, exact-commit 독립 리뷰가 일치한다는 뜻일 뿐, 과학적 진실·안전·공정 승인·Release activation을 뜻하지 않습니다. 운영·권한·Release 승인 경계는 [Science Verifier 운영 가이드](data/boi/public/boi-wiki-manual/guide/science-verifier-operation.md)를 따릅니다.
 
 BoI Agent의 Pilot 완료 기준은 단일 질문이 아니라 REST/Web Pet/MCP 시나리오 매트릭스 통과입니다. 상세 기준은 http://localhost:28000/docs/boi:public:boi-wiki-manual:agent:boi-agent-scenario-validation?employee_id=100001 에 정리되어 있습니다.
 

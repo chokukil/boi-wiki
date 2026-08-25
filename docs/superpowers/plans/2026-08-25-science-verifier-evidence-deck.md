@@ -10,13 +10,15 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-25-science-verifier-design.md`
 
+> **계획 이력 보정(2026-08-25):** Deck의 “final”은 activation 완료의 동의어가 아니다. build 입력은 exact `FINAL` verification manifest, UI capture digest, 검증된 PDF render, tracked clean source여야 한다. Candidate가 inactive인 동안에는 G5·G6·G7 `PENDING`과 release boundary를 보존한다. build scorecard의 사람 육안 검수는 실제 사람이 슬라이드를 확인하기 전까지 `PENDING`이며, 과거 계획의 PNG 생성만으로 PASS라고 기록하지 않는다.
+
 ## Global Constraints
 
 - The deck has exactly three content slides and no cover slide.
 - Every slide is 16:9 and shows `1/3`, `2/3`, or `3/3` at the bottom right.
 - Slide 1 is a full-canvas concept infographic generated with imagegen; exact Korean copy and source notes remain editable PowerPoint text.
 - Slide 2 uses an actual running Science Verifier screen showing document-centered red violation annotation, correction explanation, and visible source links.
-- Slide 3 uses the actual final qualification report and displays real counts/digests only after verification completes.
+- Slide 3 uses the actual final implementation-evidence report and displays real counts/digests only after exact `FINAL` manifest verification completes; it must visibly distinguish inactive Candidate qualification from activation.
 - No fabricated UI, placeholder metric, or unverified success claim may appear.
 - Reader-facing slides contain no production instructions, review reminders, internal credentials, or private endpoint URL.
 - The PPTX, per-slide PNGs, a whole-deck preview, production brief, and build evidence are preserved under `artifacts/science-verifier/deck/`.
@@ -60,7 +62,7 @@ Audience is internal Science Verifier pilot reviewers. The story is: “AI의 �
 
 - [ ] **Step 4: Build the asset manifest with hashes**
 
-Record planned inputs at these exact paths: `artifacts/science-verifier/deck/assets/science-integrity-layer.png`, `review-canvas-desktop.png`, `review-canvas-mobile.png`, `final-qualification-report.png`, `artifacts/science-verifier/qualification-report.md`, and `qualification-report.pdf`. Record report digest, release digest, and source URLs. The manifest uses workspace-relative paths and SHA-256; no asset may be marked final before its source file exists.
+Record planned inputs at these exact paths: `artifacts/science-verifier/deck/assets/science-integrity-layer.png`, `review-canvas-desktop.png`, `review-canvas-mobile.png`, `final-qualification-report.png`, `artifacts/science-verifier/qualification-report.md`, and `qualification-report.pdf`. Record exact `FINAL` verification-manifest digest, report digest, release digest, UI capture digests, verified PDF-render digest, and source URLs. The manifest uses workspace-relative paths and SHA-256; no asset may be marked final before its source file exists and the source checkout is tracked-clean.
 
 - [ ] **Step 5: Run tests and commit**
 
@@ -186,7 +188,7 @@ Use the available bundled or system LibreOffice renderer, then `pdftoppm` or the
 
 - [ ] **Step 2: Inspect every slide at full size**
 
-Check text overflow/collision, title reading zones, source visibility, actual screenshot cropping, infographic balance, metric units, Korean spelling, and page number placement. Slide 3 must remain readable independently and separate metrics from the busy report screenshot.
+Check text overflow/collision, title reading zones, source visibility, actual screenshot cropping, infographic balance, metric units, Korean spelling, and page number placement. Slide 3 must remain readable independently and separate metrics from the busy report screenshot. Record this as human visual QA: `PENDING` until an actual reviewer inspects the rendered slides; rendering itself is not visual approval.
 
 - [ ] **Step 3: Fix only failing slides and re-render**
 

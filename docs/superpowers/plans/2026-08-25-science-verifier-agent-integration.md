@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-25-science-verifier-design.md`
 
+> **계획 이력 보정(2026-08-25):** 이 문서의 과거 “live Qwen” 단계는 선택 실험의 관찰 항목으로 바뀐다. Qwen availability, tuning, context size, exact model response는 release-blocking이 아니며 failure가 Science Verifier를 실패시켜서는 안 된다. 현재 Candidate는 inactive이고 `G5`·`G6`·`G7`은 사람이 별도 증거를 만들기 전까지 `PENDING`이다.
+
 ## Global Constraints
 
 - BoI Wiki must not provide a new autonomous Science agent; user-owned agents call REST or MCP.
@@ -242,7 +244,7 @@ Record the current commit as `rule_freeze_commit`. A separate reviewer agent rec
 
 - [ ] **Step 4: Implement the checker and report inventory**
 
-The checker calls the public REST and MCP interfaces rather than importing the engine. It asks the Admin validation API to run `G0..G7` using the rule-frozen sealed holdout and confirms every gate passes for the exact inactive Release Candidate. It must not synthesize approval events or activate the candidate. Activation is tested separately with authorization fixtures; an operational Release can activate only after a human Admin has reviewed the original material and exact object digests. The checker writes case ID, claim text, expected/actual verdict, decisive Rule, Evidence URLs, limitations, interpretation refs, and classification into the report. It has explicit sections for detected errors, missed errors, false-red, interpretation errors, validity errors, broken locators, ungrounded explanations, changed Knowledge/Rules, and regression tests. No aggregate trust score is emitted.
+The checker calls the public REST and MCP interfaces rather than importing the engine. It records `G0..G4` automated Candidate qualification for the exact inactive Release Candidate; it must leave `G5` (independent sealed holdout), `G6` (active stored-report parity), and `G7` (human Science Admin review/activation audit) as `PENDING` until their own evidence exists. It must not synthesize approval events or activate the candidate. The checker writes case ID, claim text, expected/actual verdict, decisive Rule, Evidence URLs, limitations, interpretation refs, and classification into the report. It has explicit sections for detected errors, missed errors, false-red, interpretation errors, validity errors, broken locators, ungrounded explanations, changed Knowledge/Rules, and regression tests. No aggregate trust score is emitted.
 
 The final report of record is `artifacts/science-verifier/qualification-report.{md,pdf}`. It embeds the digest of `data/boi/public/science/qualification/reports/release-gate-preflight-science-release-0.1.0.md`; the preflight document is not presented as the final result. Automated tests extract claim/verdict/Evidence/release/report identifiers from Markdown and PDF and require equality.
 
@@ -250,13 +252,13 @@ The final report of record is `artifacts/science-verifier/qualification-report.{
 
 README and operator guide explain the new menu, access mode, role assignment, Science runtime volume, MCP tools, report exports, release activation/withdrawal, and external agent skills. Show environment variable names and a local example without committing the internal LM Studio URL or credentials.
 
-- [ ] **Step 6: Exercise the configured Qwen interpreter without trusting its verdict**
+- [ ] **Step 6 (revised): Verify the disabled-Qwen boundary without trusting a model response**
 
-Load the untracked workspace `.env` and run `python scripts/check_science_llm_live.py --require-live-llm --expected-model qwen/qwen3.8-27b`. The script calls the OpenAI-compatible `/v1/chat/completions` endpoint through `ScienceLLMClient` and submits at least one cross-domain claim and the Spin-Coating claim. It asserts that the actual response model resolves to `qwen/qwen3.8-27b`, JSON validates as an interpretation candidate, and the response contains no verdict, Evidence ID, locator, or citation fields. Feed the validated candidate through the deterministic API and record only sanitized model ID, non-secret settings, prompt version, Dictionary/Ontology Release, response digest, HTTP timing, Claim Packet digest, release digest, and Verdict Packet digest in `verification-manifest.json`; never record endpoint or credentials. Failure is release-blocking.
+Run the default path with `BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED=0` and exercise the unavailable/timeout/empty-content/invalid-JSON/schema-mismatch boundary through the adapter seam. Each result must create no authoritative Claim, Rule, Evidence, verdict, report, or red annotation. A live endpoint may be sampled separately as a non-release experiment, but neither `--require-live-llm`, a fixed Qwen model name, response context size, nor a successful response belongs in the final manifest or release gate. Record only non-secret experiment provenance if an operator chooses to run it.
 
 - [ ] **Step 7: Capture real UI and final-report evidence**
 
-Run the server with the exact validated candidate pinned in Admin preview mode, or with a separately human-reviewed active Release, and the live stored report; then execute `node scripts/capture_science_evidence.mjs`. It must use the real `/science-verifier` route, not fixture HTML, and save the exact desktop/mobile/report paths listed in this Task. `capture-manifest.json` records viewport, timestamp, Git commit, report ID/digest, Release ID/digest, lifecycle state, and URL path with host/credentials removed. The script fails if the violation span, source links, scientific explanation, final report digest, or candidate/active label is absent.
+Run the server on the exact inactive Candidate boundary and execute `node scripts/capture_science_evidence.mjs`. It must use the real `/science-verifier` route, not fixture HTML, and save the exact desktop/mobile/report paths listed in this Task. `capture-manifest.json` records the 21 named check IDs, viewport, timestamp, Git commit, capture hashes, Release ID/digest, lifecycle state, and URL path with host/credentials removed. It includes a real disabled-Qwen API boundary and Wiki local-revision path. It must not imply a live Qwen response, active Release, or stored-report operational parity.
 
 - [ ] **Step 8: Run the complete verification matrix**
 
@@ -265,13 +267,12 @@ Run narrow checks first, then:
 ```bash
 pytest tests -q -s
 python scripts/okf_lint.py --root data --include-logs --strict-links --strict-media
-python scripts/check_science_llm_live.py --require-live-llm --expected-model qwen/qwen3.8-27b
 python scripts/check_science_verifier.py
 python scripts/check_boi_wiki_mcp.py
 node scripts/check_science_verifier_ui.mjs
 ```
 
-Expected: all commands exit 0; qualification report shows zero missed required violation, zero false-red, zero broken decisive Evidence locator, zero ungrounded decision Rule/explanation, and exact REST/MCP/export packet parity.
+Expected: automated Candidate checks exit 0; qualification report separates `G0..G4 PASS` from `G5..G7 PENDING`, shows zero missed required violation/false-red/broken decisive Evidence locator/ungrounded decision Rule or explanation within its candidate scope, and records only the parity that is actually exercised. It must not claim operational activation or active stored-report parity.
 
 - [ ] **Step 9: Inspect generated artifacts and commit documentation**
 

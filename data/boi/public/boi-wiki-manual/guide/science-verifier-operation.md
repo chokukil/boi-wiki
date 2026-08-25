@@ -43,7 +43,8 @@ Science Verifier는 AI 답변을 신뢰하는 기능이 아니다. 사용자·Co
    - Agent가 넣은 수량·조건은 곧바로 Rule 적용 사실이 되지 않는다. 사용자 화면에서 값과 단위를 명시적으로 확인하고 `client_kind=user`의 새 Claim으로 다시 제출해야 한다.
    - Agent가 넣은 공정 단계·물질 상태도 자기 선언한 모호성 여부와 무관하게 차단한다. 사용자가 화면에서 직접 작성한 새 Claim만 적용 조건 후보가 된다.
 4. 결과를 바꿀 수 있는 모호성만 보라색 점선으로 표시한다. 사용자가 확인하면 그 Claim만 새 immutable interpretation으로 다시 검증한다.
-   - 직접 붙여 넣은 문서를 수정할 때는 서버가 돌려준 submitted document ref와 이전 digest를 함께 보낸다. 서버가 같은 actor의 실제 선행 Claim을 확인한 경우에만 `supersedes_claim_id` 계보를 잇고, 이전 record는 변경하지 않는다.
+   - 직접 붙여 넣은 문서를 수정할 때는 서버가 돌려준 submitted document ref와 이전 digest를 함께 보낸다. 서버가 같은 actor의 실제 선행 Claim을 확인한 경우에만 `supersedes_claim_id` 계보를 잇고, 이전 record는 변경하지 않는다. raw pasted document는 이 owner-only semantics를 유지한다.
+   - Wiki local revision은 원본 `boi:*`를 고치지 않는다. 서버가 원본 Wiki의 exact ref/digest와 source ACL을 다시 확인한 뒤에만 server-derived `boi:submitted:*` lineage를 만든다. 이 canonical source ref/digest는 submit, confirm, `verify_claim`, `verify_document`마다 재확인되고 저장소 재시작 뒤에도 보존된다. lineage가 누락·위조·malformed면 예전 record나 client payload로 보완하지 않고 fail closed한다.
 5. 활성 Release가 없거나 Rule·적용 조건·정확한 Evidence locator가 부족하면 판정을 보류한다. 빨간 표시를 만들지 않는다.
 6. 결정론적 `VIOLATION`에만 빨간 밑줄과 음영을 표시한다. 교정 카드에는 충분한 과학적 설명과 출처 1~2개를 항상 보이고, 펼쳐보기에서 원문·검토된 번역·locator·원본 URL을 제공한다.
 
@@ -60,7 +61,7 @@ Science Verifier는 AI 답변을 신뢰하는 기능이 아니다. 사용자·Co
 
 Claim 제출 payload에 `verdict`, `rule`, `evidence`, `citation`, `correction`을 넣어도 서버가 권위로 받아들이지 않는다. 존재하지 않는 `ontology_ref`, 문서에 없는 별칭, 겹치거나 불완전한 역할 구간, 미확인 조건은 판정 전에 차단한다. 같은 canonical Claim과 Release는 `client_kind`가 user, codex, claude, qwen 중 무엇이든 같은 결과를 내야 한다.
 
-최종 구현 보고서는 현재 Git revision과 suite identity가 묶인 JUnit, 필수 20개 브라우저 check와 캡처 hash, Candidate qualification, Critical·Important 0건의 독립 리뷰가 모두 일치할 때만 `FINAL / VERIFIED`가 된다. WSL에서 Windows PowerShell 실행 자체가 불가능한 9개 계약 테스트만 정확한 node ID allowlist로 skip할 수 있으며 보고서에 수치를 그대로 노출한다. PPT도 이 verification manifest와 PDF hash를 읽지 못하면 생성하지 않는다.
+최종 구현 증거 보고서는 현재 Git revision과 tracked pytest suite identity 계약(각 suite의 수량·testcase identity digest, 최소 한 건의 실제 실행)이 묶인 JUnit, 필수 **21개** 브라우저 check와 각 캡처 hash, Candidate qualification, exact-commit 독립 리뷰의 Critical·Important 0건이 모두 일치할 때만 `FINAL / VERIFIED`로 표기할 수 있다. 이 표기는 구현 증거가 완결됐다는 뜻일 뿐 과학적 진실·안전·공정 승인·Release activation은 뜻하지 않는다. WSL에서 Windows PowerShell 실행 자체가 불가능한 9개 계약 테스트만 정확한 node ID allowlist로 skip할 수 있으며 보고서에 수치를 그대로 노출한다. PPT는 exact `FINAL` verification manifest, UI digest, 검증된 PDF render, tracked clean source를 읽지 못하면 생성하지 않는다. build scorecard의 사람 visual QA는 실제 검토 전까지 `PENDING`이다.
 
 # Qwen 실험 어댑터
 
@@ -105,13 +106,13 @@ SCIENCE_RUNTIME_ROOT=/runtime/science
 
 # 운영 검증과 완료 경계
 
-자동 검증은 Qwen 장애 5종, 잘못된 ontology/alias/span, 수동 수정, REST/MCP/client parity, inactive Release, 근거 없는 빨간 표시, 저장소 재시작과 idempotency를 포함한다. Web·REST·MCP·Markdown·PDF는 Claim ID, verdict, Evidence ID, Release ID, report digest가 같아야 한다.
+자동 검증은 disabled-Qwen 및 Qwen 장애 5종, 잘못된 ontology/alias/span, 수동 수정, Wiki local revision의 ACL·canonical lineage, REST/MCP/client parity, inactive Release, 근거 없는 빨간 표시, 저장소 재시작과 idempotency를 포함한다. Browser evidence에는 disabled-Qwen API boundary와 Wiki local revision path를 포함한 정확히 21개 named check 및 capture hash가 필요하다. Web·REST·MCP·Markdown·PDF의 active stored-report parity는 Claim ID, verdict, Evidence ID, Release ID, report digest가 같아야 하지만 inactive Candidate에서 자동 통과로 표현하지 않는다.
 
-자동 회귀가 통과해도 다음은 사람 승인 전까지 `PENDING`이다.
+자동 Candidate qualification `G0..G4`가 통과해도 Release는 `release_candidate`/inactive다. 다음은 자체 증거가 생기기 전까지 `PENDING`이다.
 
-- 개발에 쓰지 않은 독립 holdout 평가
-- Admin의 Source·Evidence·Knowledge·Rule 원문 검토
-- Release activation과 activation audit
+- `G5`: 개발에 쓰지 않은 독립 sealed holdout 평가
+- `G6`: 활성 Release의 stored-report Web/REST/MCP/Markdown/PDF parity
+- `G7`: Admin의 Source·Evidence·Knowledge·Rule 원문 검토와 Release activation audit
 - 운영 데이터에 대한 별도 qualification
 
 문제가 있는 활성 Release는 삭제하지 않고 withdraw한다. 과거 보고서는 당시 Release digest와 함께 immutable하게 보존한다.

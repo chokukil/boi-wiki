@@ -43,7 +43,7 @@ review:
 
 ## Observation
 
-문서에서 정확한 source span, interpretation candidates, outcome-changing ambiguity, Rule reason codes, Knowledge/Evidence/Source identities를 관찰한다. 모델 ID와 prompt version은 provenance일 뿐 과학 권위가 아니다. endpoint·credential·transport cause는 저장하거나 표시하지 않는다.
+문서에서 정확한 source span, interpretation candidates, outcome-changing ambiguity, Rule reason codes, Knowledge/Evidence/Source identities를 관찰한다. Wiki local revision에는 canonical source ref/digest와 ACL 재검사 결과, server-derived submitted lineage를 함께 관찰한다. 모델 ID와 prompt version은 provenance일 뿐 과학 권위가 아니다. endpoint·credential·transport cause는 저장하거나 표시하지 않는다.
 
 ## Context
 
@@ -62,7 +62,7 @@ AI 해석은 proposal이다. `POST /api/science/aliases/detect`는 등록 alias�
 
 ## Action
 
-1. 서버가 canonical document와 ACL을 다시 확인하고 anchor를 resolve한다.
+1. 서버가 canonical document와 ACL을 다시 확인하고 anchor를 resolve한다. Wiki local revision은 submit·confirm·`verify_claim`·`verify_document`마다 exact source ACL과 canonical ref/digest를 재검사한다. 원본 `boi:*`는 덮어쓰지 않고 server-derived `boi:submitted:*` lineage로만 전환한다.
 2. 등록 alias를 결정론적으로 탐지하고 exact `binding_id`, `concept_id`, `surface_term`, start/end, binding digest를 반환한다. 이 단계는 verdict를 만들지 않는다.
 3. User·Codex·Claude·Qwen 후보를 closed schema로 검사하고 ontology refs, subject/relation/object 역할, 조건, alias, non-overlapping complete span을 pinned binding과 대조한다. client가 보낸 verdict·Evidence·Rule 필드는 거부한다.
 4. 결과에 영향 없는 용어 차이는 기록만 하고, 결과가 달라질 모호성만 사용자에게 확인한다. 수동 교정은 기존 record를 고치지 않고 `supersedes_claim_id`를 가진 새 제출로 저장한다.
@@ -74,11 +74,13 @@ AI 해석은 proposal이다. `POST /api/science/aliases/detect`는 등록 alias�
 
 ## State
 
-Interpretation, external Claim submission, correction resubmission, confirmation event, Verdict Packet, Report, export는 append-only immutable record다. 동일 actor·request digest·idempotency key의 재시도는 같은 bytes를 반환한다. 새 Release가 활성화되거나 이전 Release가 withdraw되어도 과거 `report_digest`와 component digests는 변하지 않는다.
+Interpretation, external Claim submission, correction resubmission, confirmation event, Verdict Packet, Report, export는 append-only immutable record다. Wiki revision의 canonical source lineage도 이 record에 저장되고 재시작 뒤 보존된다. 동일 actor·request digest·idempotency key의 재시도는 같은 bytes를 반환한다. 새 Release가 활성화되거나 이전 Release가 withdraw되어도 과거 `report_digest`와 component digests는 변하지 않는다. raw pasted document는 최초 owner만 접근하는 semantics를 유지한다.
 
 ## Verification
 
 - stale/duplicate/missing Unicode code point anchor를 fail closed하는지 확인한다.
+- Wiki local revision의 source ACL이 submit, confirm, `verify_claim`, `verify_document`에서 다시 확인되는지, canonical lineage가 재시작 후에도 남는지 확인한다.
+- lineage field가 모두 제거되었거나 ref/digest가 위조·malformed된 Wiki revision이 confirmation·verification으로 진행되지 않고 fail closed하는지 확인한다.
 - ontology mismatch, partial relation span, LLM `changes_outcome=false`가 user confirmation을 우회하지 못하는지 확인한다.
 - 존재하지 않는 ontology_ref, 문서에 없는 alias, 겹치거나 불완전한 role span이 confirmation과 verdict로 진행되지 않는지 확인한다.
 - unconfirmed agent condition/process_stage/material_state가 verdict나 report applicability fact가 되지 않는지 확인한다.
@@ -91,6 +93,7 @@ Interpretation, external Claim submission, correction resubmission, confirmation
 - Web, REST, MCP, Markdown, PDF가 claim ID, verdict, Evidence ID, Release ID, `report_digest`에서 완전히 같은지 확인한다.
 - 과학적 설명이 충분하되 Rule/Evidence 범위를 넘는 권고나 종합 점수를 만들지 않는지 확인한다.
 - restart, retry, concurrent same-key request에서도 같은 report bytes와 audit count를 유지하는지 확인한다.
+- 구현 증거가 tracked pytest suite identity(수량·testcase identity digest, 실제 실행 1건 이상), 정확히 21 named browser checks와 capture hashes, Candidate qualification, exact-commit independent review를 함께 묶는지 확인한다. 이는 implementation evidence의 `FINAL / VERIFIED` 조건일 뿐 activation 증명이 아니다.
 
 ## Failure Artifacts
 
@@ -105,6 +108,10 @@ sanitized model ID, prompt version, document/Claim/Release/report digest, anchor
 - idempotency/restart 후 report bytes 변경
 - Admin review 부재, self-approval, inactive component 사용
 
+## Candidate와 activation gate 분리
+
+`release_candidate`는 inactive다. G0–G4 자동 Candidate qualification은 통과할 수 있지만, G5 독립 sealed holdout, G6 active stored-report Web/REST/MCP/Markdown/PDF parity, G7 사람 Science Admin의 원문 review·activation audit는 자체 증거가 생길 때까지 `PENDING`이다. Qwen live availability, tuning, context size 또는 성공 응답은 이 gate 어느 것도 통과시키거나 실패시키지 않는다.
+
 | Gate | 이 하네스의 통과 조건 |
 |---|---|
 | G0 | packet/profile/anchor schema와 identity가 유효하다. |
@@ -113,5 +120,5 @@ sanitized model ID, prompt version, document/Claim/Release/report digest, anchor
 | G3 | exact Release의 deterministic verdict만 사용한다. |
 | G4 | 공개 cases에서 missed violation/false-red가 없다. |
 | G5 | 독립 holdout에서 해석·범위·판정 실패가 없다. |
-| G6 | Web/REST/MCP/export/restart/security parity가 통과한다. |
-| G7 | 별도 Admin review 후 immutable Release만 활성화된다. |
+| G6 | 활성 Release의 stored report가 Web/REST/MCP/Markdown/PDF/export/restart/security parity를 통과한다. |
+| G7 | 별도 사람 Science Admin review와 activation audit 후 immutable Release만 활성화된다. |

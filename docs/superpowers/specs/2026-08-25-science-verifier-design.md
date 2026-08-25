@@ -1,9 +1,11 @@
 # Science Verifier 설계 명세
 
-- 상태: 설계 승인, 구현 전
+- 상태: 설계 승인, 구현 근거 정렬 전
 - 작성일: 2026-08-25
 - 대상 저장소: `boi-wiki`
 - 대상 브랜치: `codex/science-verifier`
+
+> **최종 방향 보정(2026-08-25):** Qwen은 선택적·실험적 Claim 후보 해석기다. live availability, 모델명, context 크기, tuning 또는 성공 응답은 구현 완료·Candidate qualification·Release activation의 조건이 아니다. 이 문서는 Qwen 없이도 동작하는 결정론적 경로와 inactive Candidate의 release 경계를 정본으로 한다.
 
 ## 1. 제품 정의
 
@@ -742,6 +744,12 @@ release:
 - 단독 Evidence 조회는 원문 검토 기능이며 운영 적격성을 주장하지 않는다. 빨간 표시는 immutable report의 active Release binding과 reviewed-source identity까지 확인해야 한다.
 - 구현 완료 보고서와 3장 Evidence Deck은 현재 HEAD에 hash-bound된 JUnit suite identity, 필수 브라우저 check 집합, 캡처, qualification, 독립 리뷰 manifest에서만 상태와 수치를 읽는다. 누락·불일치·Important finding이 있으면 보고서는 DRAFT이고 Deck 생성을 중단한다.
 
+### 구현 증거와 Candidate 경계
+
+- 구현 증거의 `FINAL / VERIFIED`는 현재 Git revision에 결속된 tracked pytest suite identity 계약(수량과 testcase identity digest, 최소 한 건의 실제 실행), 정확히 21개의 named browser check와 각 capture hash, Candidate qualification, exact-commit 독립 리뷰(Critical·Important 0건)가 서로 일치할 때만 사용할 수 있다. 이 표기는 구현 증거의 완결성일 뿐 과학적 진실, 안전, 공정 승인 또는 Release activation이 아니다.
+- Deck은 exact `FINAL` verification manifest, UI capture digest, verified PDF render, tracked clean source를 함께 확인해야 한다. 렌더가 생성됐다는 사실만으로 사람 visual QA가 끝난 것은 아니며, 실제 사람이 검사하기 전의 scorecard는 `PENDING`이다.
+- `release_candidate`는 inactive다. 자동 Candidate qualification `G0..G4`와 별도로 G5(독립 sealed holdout), G6(active stored-report Web/REST/MCP/Markdown/PDF parity), G7(사람 Science Admin 원문 검토와 activation audit)은 자체 증거 전까지 `PENDING`으로 유지한다.
+
 ### Release Gate
 
 | Gate | 확인 내용 |
@@ -884,7 +892,7 @@ BOI_SCIENCE_LLM_MODEL → BOI_LLM_MODEL 상속
 BOI_SCIENCE_LLM_API_KEY → BOI_LLM_API_KEY 상속
 ```
 
-Pilot 배포에서는 사용자가 지정한 사내 LM Studio endpoint와 `qwen/qwen3.8-27b`를 추적되지 않는 `.env` overlay로 설정한다. 내부 endpoint를 저장소 문서·코드·fixture에 하드코딩하지 않는다.
+Pilot 배포에서 실험을 선택한 경우에만 사용자가 지정한 사내 LM Studio endpoint와 모델을 추적되지 않는 `.env` overlay로 설정할 수 있다. 특정 Qwen 모델의 live 응답은 요구하지 않는다. 내부 endpoint를 저장소 문서·코드·fixture에 하드코딩하지 않는다.
 
 실험적 어댑터는 기본값이 비활성이다. 연결 실패, timeout, 빈 content, invalid JSON, schema mismatch를 모두 fail-closed 처리한다. 이 경우 Claim, Evidence, Rule, verdict, 빨간 표시를 만들지 않으며 모델 재시도·튜닝을 운영 검증의 전제 조건으로 삼지 않는다.
 

@@ -10,10 +10,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-25-science-verifier-design.md`
 
+> **계획 이력 보정(2026-08-25):** 아래 checkbox는 당시의 구현 순서를 보존한다. Qwen의 실연결, 특정 모델의 응답, context 크기 또는 튜닝은 완료·Candidate qualification·Release activation의 조건이 아니다. Qwen은 선택적 실험 해석기이며, 실패해도 LLM 없는 결정론적 경로가 계속 동작해야 한다.
+
 ## Global Constraints
 
 - The Science Verifier is a review canvas, not a chat room and not a BoI-owned agent.
-- Web interpretation inherits `BOI_SCIENCE_LLM_*` from `BOI_LLM_*`; endpoint credentials never appear in reports or tracked files.
+- Web interpretation may inherit `BOI_SCIENCE_LLM_*` from `BOI_LLM_*` only when the optional experiment is enabled; endpoint credentials never appear in reports or tracked files.
 - LLM failure or schema failure returns an interpretation error and never fabricates a claim, verdict, evidence locator, or citation.
 - Only `VIOLATION` receives red shading and underline; only outcome-changing ambiguity receives a purple dotted underline.
 - One or two decisive source links remain visible on every correction card; original text, translation, locator, and ontology references are expandable for ordinary users with source access.
@@ -134,7 +136,7 @@ Use `POST {base_url}/chat/completions` with model inherited as follows: `BOI_SCI
 
 - [ ] **Step 5: Implement service orchestration and grounded explanations**
 
-`interpret_document` stores model ID, prompt version, ontology refs, ambiguity impact, and document digest. `verify_claim` resolves the exact release before calling the pure engine. `verify_document` verifies confirmed, unambiguous claims, stores unresolved ambiguity without a verdict, then assembles scientific explanation paragraphs only from `VerdictPacket.explanation_facts`. Server code injects evidence links from the catalog after generation and rejects sentences with no fact mapping.
+`interpret_document` stores model ID, prompt version, ontology refs, ambiguity impact, and document digest when the optional adapter is used. Its unavailability is an interpretation-unavailable result, not a verification failure. `verify_claim` resolves the exact release before calling the pure engine. `verify_document` verifies confirmed, unambiguous claims, stores unresolved ambiguity without a verdict, then assembles scientific explanation paragraphs only from `VerdictPacket.explanation_facts`. Server code injects evidence links from the catalog after generation and rejects sentences with no fact mapping.
 
 The stored `InterpretationRecord` must also persist non-secret model settings, Dictionary Release ID, Ontology Release ID, candidate meanings, per-candidate decision impact, user revision history, confirmed Claim Packet digest, and raw-response digest. Release-pinned `OntologyBinding` objects supply only candidate meanings and may not appear in a `RuleEvaluation` outcome.
 
@@ -310,11 +312,11 @@ Each correction card displays verdict label, corrected claim when applicable, a 
 
 - [ ] **Step 5: Implement Wiki selection transfer with server re-anchoring**
 
-Add a document page action and selection popover. Store the short transfer record in `sessionStorage` under `boi.science.selection.v1`, navigate to `/science-verifier?document_ref=...`, and let the server load the ACL-checked canonical Markdown body. JavaScript sends selected `exact/prefix/suffix`; the server resolves canonical offsets and digest before annotation.
+Add a document page action and selection popover. Store the short transfer record in `sessionStorage` under `boi.science.selection.v1`, navigate to `/science-verifier?document_ref=...`, and let the server load the ACL-checked canonical Markdown body. JavaScript sends selected `exact/prefix/suffix`; the server resolves canonical offsets and digest before annotation. Wiki local revision은 원본 `boi:*` ref를 덮어쓰지 않고 server-derived `boi:submitted:*` 계보로 전환한다. 서버는 submit·confirm·`verify_claim`·`verify_document`마다 원본 Wiki ACL과 exact canonical ref/digest를 재확인하며, 재시작 후에도 canonical source lineage가 남아야 한다. lineage가 누락·위조·malformed면 fail closed한다. raw pasted document는 최초 owner만 접근하는 별도 semantics를 유지한다.
 
 - [ ] **Step 6: Add headless browser verification**
 
-Follow existing CDP scripts. Verify desktop and mobile widths, nav order, a real Wiki text selection, exact red/purple spans, evidence expansion, keyboard focus, Markdown/PDF download MIME and digest headers, and absence of browser console errors.
+Follow existing CDP scripts. Verify desktop and mobile widths, nav order, a real Wiki text selection, exact red/purple spans, evidence expansion, keyboard focus, Markdown/PDF download MIME and digest headers, disabled-Qwen API boundary, Wiki local revision lineage, and absence of browser console errors. Final evidence requires exactly 21 named browser checks and capture hashes; this plan does not claim that the historical 20-check step ran.
 
 - [ ] **Step 7: Run UI checks and commit**
 
