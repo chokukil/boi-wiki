@@ -26,6 +26,30 @@ DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 GATE_RE = re.compile(r"^- (G[0-7]) \| ([A-Z_]+) \| (.+)$", re.MULTILINE)
 REQUIRED_QUALIFICATION_GATES = tuple(f"G{i}" for i in range(5))
 ALL_QUALIFICATION_GATES = tuple(f"G{i}" for i in range(8))
+MANDATORY_BROWSER_CHECK_IDS = frozenset(
+    {
+        "page_loaded",
+        "candidate_not_operational",
+        "nav_order",
+        "inactive_release_has_no_red",
+        "deterministic_aliases_visible",
+        "manual_claim_editor_visible",
+        "qwen_is_separate_experimental_action",
+        "default_used_deterministic_non_qwen_path",
+        "manual_claim_confirmed_without_llm_or_verdict",
+        "ascii_alias_token_boundary",
+        "qwen_failure_matrix_has_no_red",
+        "invalid_claim_matrix_has_no_red",
+        "external_clients_submit_same_claim",
+        "red_gate_requires_active_rule_conditions_and_exact_evidence",
+        "prohibited_ui_absent",
+        "actions_separated_and_focusable",
+        "desktop_no_overflow",
+        "mobile_single_column",
+        "wiki_selection_handoff",
+        "console_clean",
+    }
+)
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -163,7 +187,9 @@ def _junit_evidence(
             "git_commit": evidence_commit,
             "passed": counts["tests"] > 0
             and counts["failures"] == 0
-            and counts["errors"] == 0,
+            and counts["errors"] == 0
+            and counts["skipped"] == 0,
+            "strict_no_skips": counts["skipped"] == 0,
         }
     )
     failures: list[str] = []
@@ -171,6 +197,8 @@ def _junit_evidence(
         failures.append(f"{name}:zero_tests")
     if counts["failures"] or counts["errors"]:
         failures.append(f"{name}:test_failures")
+    if counts["skipped"]:
+        failures.append(f"{name}:skipped_tests")
     if evidence_commit != current_commit:
         failures.append(f"{name}:git_commit_mismatch")
     return record, failures
@@ -207,6 +235,7 @@ def _browser_evidence(
                 raise ValueError("check IDs must be unique")
             check_ids.add(check_id)
             checks_passed = checks_passed and check.get("status") == "passed"
+        mandatory_checks_match = check_ids == MANDATORY_BROWSER_CHECK_IDS
         assert path is not None
         manifest_root = path.resolve().parent
         capture_records: list[dict[str, str]] = []
@@ -248,8 +277,12 @@ def _browser_evidence(
             "checks": len(checks),
             "captures": len(captures),
             "check_results": checks,
+            "mandatory_check_ids": sorted(MANDATORY_BROWSER_CHECK_IDS),
+            "missing_check_ids": sorted(MANDATORY_BROWSER_CHECK_IDS - check_ids),
+            "unexpected_check_ids": sorted(check_ids - MANDATORY_BROWSER_CHECK_IDS),
             "capture_files": capture_records,
             "passed": checks_passed
+            and mandatory_checks_match
             and capture_digests_match
             and commit == current_commit,
         }
@@ -259,6 +292,8 @@ def _browser_evidence(
         failures.append("browser:git_commit_mismatch")
     if not checks_passed:
         failures.append("browser:failed_checks")
+    if not mandatory_checks_match:
+        failures.append("browser:mandatory_checks_mismatch")
     if not capture_digests_match:
         failures.append("browser:capture_digest_mismatch")
     return record, failures
@@ -384,6 +419,7 @@ def _review_evidence(
             "findings": normalized_findings,
             "passed": status == "passed"
             and normalized_findings["critical"] == 0
+            and normalized_findings["important"] == 0
             and reviewed_commit == current_commit,
         }
     )
@@ -394,6 +430,8 @@ def _review_evidence(
         failures.append("independent_review:not_passed")
     if normalized_findings["critical"]:
         failures.append("independent_review:critical_findings")
+    if normalized_findings["important"]:
+        failures.append("independent_review:important_findings")
     return record, failures
 
 
@@ -649,7 +687,11 @@ def _pdf(path: Path, record: dict[str, Any]) -> None:
         elif key == "qualification":
             result = f"cases={item.get('public_case_count', 0)}"
         else:
-            result = f"status={item.get('status', 'unknown')}, critical={item.get('findings', {}).get('critical', 'unknown')}"
+            result = (
+                f"status={item.get('status', 'unknown')}, "
+                f"critical={item.get('findings', {}).get('critical', 'unknown')}, "
+                f"important={item.get('findings', {}).get('important', 'unknown')}"
+            )
         evidence_rows.append([label, _status_for(item), result])
     gate_rows = [["Gate", "상태", "근거"]]
     for gate, entry in sorted(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +12,29 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BUILDER = PROJECT_ROOT / "scripts/build_science_verification_report.py"
+UI_CHECKER = PROJECT_ROOT / "scripts/check_science_verifier_ui.mjs"
+MANDATORY_BROWSER_CHECK_IDS = {
+    "page_loaded",
+    "candidate_not_operational",
+    "nav_order",
+    "inactive_release_has_no_red",
+    "deterministic_aliases_visible",
+    "manual_claim_editor_visible",
+    "qwen_is_separate_experimental_action",
+    "default_used_deterministic_non_qwen_path",
+    "manual_claim_confirmed_without_llm_or_verdict",
+    "ascii_alias_token_boundary",
+    "qwen_failure_matrix_has_no_red",
+    "invalid_claim_matrix_has_no_red",
+    "external_clients_submit_same_claim",
+    "red_gate_requires_active_rule_conditions_and_exact_evidence",
+    "prohibited_ui_absent",
+    "actions_separated_and_focusable",
+    "desktop_no_overflow",
+    "mobile_single_column",
+    "wiki_selection_handoff",
+    "console_clean",
+}
 
 
 def _sha256(path: Path) -> str:
@@ -30,12 +54,19 @@ def _git(repo: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def _junit(path: Path, *, commit: str, tests: int = 4, failures: int = 0) -> None:
+def _junit(
+    path: Path,
+    *,
+    commit: str,
+    tests: int = 4,
+    failures: int = 0,
+    skipped: int = 0,
+) -> None:
     path.write_text(
         f'''<?xml version="1.0" encoding="utf-8"?>
-<testsuites tests="{tests}" failures="{failures}" errors="0" skipped="0">
+<testsuites tests="{tests}" failures="{failures}" errors="0" skipped="{skipped}">
   <properties><property name="git_commit" value="{commit}" /></properties>
-  <testsuite name="suite" tests="{tests}" failures="{failures}" errors="0" skipped="0" />
+  <testsuite name="suite" tests="{tests}" failures="{failures}" errors="0" skipped="{skipped}" />
 </testsuites>
 ''',
         encoding="utf-8",
@@ -90,8 +121,8 @@ def _fixture_bundle(tmp_path: Path) -> dict[str, Path | str]:
                 "schema_version": "science-browser-capture-manifest/0.1",
                 "git_commit": commit,
                 "checks": [
-                    {"check_id": "desktop-review", "status": "passed"},
-                    {"check_id": "manual-correction", "status": "passed"},
+                    {"check_id": check_id, "status": "passed"}
+                    for check_id in sorted(MANDATORY_BROWSER_CHECK_IDS)
                 ],
                 "captures": [{"path": capture.name, "sha256": _sha256(capture)}],
             },
@@ -209,7 +240,7 @@ def test_verified_is_derived_from_clean_hash_bound_machine_evidence(
     evidence = manifest["evidence"]
     assert evidence["science_tests"]["tests"] == 4
     assert evidence["full_regression"]["sha256"] == _sha256(bundle["full"])
-    assert evidence["browser"]["checks"] == 2
+    assert evidence["browser"]["checks"] == 20
     assert evidence["browser"]["captures"] == 1
     assert evidence["qualification"]["public_case_count"] == 40
     assert evidence["qualification"]["passed"] is True
@@ -222,6 +253,33 @@ def test_verified_is_derived_from_clean_hash_bound_machine_evidence(
     assert "구현 상태: VERIFIED" in markdown
     assert f"검증 코드 revision: `{bundle['commit']}`" in markdown
     assert "Science Knowledge Release: NOT ACTIVE" in markdown
+
+
+def test_mandatory_browser_checks_match_the_ui_checker_contract() -> None:
+    source = UI_CHECKER.read_text(encoding="utf-8")
+    checks_block = source.split("    const checks = {", 1)[1].split(
+        "\n    };\n    const report", 1
+    )[0]
+    produced_ids = set(re.findall(r"^      ([a-z0-9_]+):", checks_block, re.MULTILINE))
+
+    assert len(produced_ids) == 20
+    assert produced_ids == MANDATORY_BROWSER_CHECK_IDS
+
+
+def test_arbitrary_single_browser_check_cannot_qualify(tmp_path: Path) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    browser = bundle["browser"]
+    assert isinstance(browser, Path)
+    browser_data = json.loads(browser.read_text(encoding="utf-8"))
+    browser_data["checks"] = [{"check_id": "arbitrary-check", "status": "passed"}]
+    browser.write_text(json.dumps(browser_data) + "\n", encoding="utf-8")
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 2
+    manifest = _manifest(tmp_path / "report")
+    assert manifest["implementation_status"] == "UNVERIFIED"
+    assert "browser:mandatory_checks_mismatch" in manifest["failure_reasons"]
 
 
 @pytest.mark.parametrize("mode", ["missing", "zero", "failure"])
@@ -254,19 +312,36 @@ def test_full_regression_missing_zero_or_failure_fails_closed(
     )
 
 
-def test_critical_independent_review_fails_closed(tmp_path: Path) -> None:
+def test_skipped_junit_test_fails_closed(tmp_path: Path) -> None:
+    bundle = _fixture_bundle(tmp_path)
+    full = bundle["full"]
+    assert isinstance(full, Path)
+    _junit(full, commit=str(bundle["commit"]), skipped=1)
+
+    completed = _run(bundle, tmp_path / "report")
+
+    assert completed.returncode == 2
+    manifest = _manifest(tmp_path / "report")
+    assert manifest["evidence"]["full_regression"]["passed"] is False
+    assert "full_regression:skipped_tests" in manifest["failure_reasons"]
+
+
+@pytest.mark.parametrize("severity", ["critical", "important"])
+def test_blocking_independent_review_findings_fail_closed(
+    tmp_path: Path, severity: str
+) -> None:
     bundle = _fixture_bundle(tmp_path)
     review = bundle["review"]
     assert isinstance(review, Path)
     review_data = json.loads(review.read_text(encoding="utf-8"))
-    review_data["findings"]["critical"] = 1
+    review_data["findings"][severity] = 1
     review.write_text(json.dumps(review_data) + "\n", encoding="utf-8")
 
     completed = _run(bundle, tmp_path / "report")
 
     assert completed.returncode == 2
     assert (
-        "independent_review:critical_findings"
+        f"independent_review:{severity}_findings"
         in _manifest(tmp_path / "report")["failure_reasons"]
     )
 
