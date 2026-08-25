@@ -31,6 +31,7 @@ from boi_api.app.science.llm import (
 )
 from boi_api.app.science.models import (
     EvidenceLocator,
+    InterpretationRecord,
     PrimaryVerdict,
     ReleaseSelection,
     ResolvedComponent,
@@ -51,6 +52,7 @@ from boi_api.app.science.service import (
     ScienceConfirmationRequired,
     ScienceIdempotencyConflict,
     ScienceService,
+    submitted_root_document_ref,
     submitted_revision_document_ref,
 )
 from boi_api.app.science.source_identity import (
@@ -1558,12 +1560,34 @@ def test_manual_correction_is_an_immutable_resubmission(
     assert store.interpretations[original.interpretation_id] == original
 
 
+def test_root_submitted_claim_rejects_non_deterministic_destination(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    document = "RPM 증가 시 두께 변화"
+
+    with pytest.raises(ScienceConfirmationRequired, match="actor/digest bound"):
+        service.submit_claim_candidate(
+            document,
+            document_ref="boi:submitted:forged-or-derived-destination",
+            identity=science_identity,
+            client_kind="user",
+            candidate=ScienceInterpretationPayload.model_validate(
+                _llm_content()
+            ).claims[0],
+            idempotency_key="science-request:root-submitted-forged",
+        )
+
+
 def test_raw_submitted_document_revision_accepts_verified_server_lineage(
     science_identity: AuthIdentity,
 ):
     service, _catalog, store, _llm = _service()
     original_text = "RPM 증가 시 두께 변화"
-    document_ref = "boi:submitted:stable-logical-document"
+    document_ref = submitted_root_document_ref(
+        actor_id=science_identity.employee_id,
+        initial_document_digest=sha256_digest(original_text),
+    )
     original_candidate = ScienceInterpretationPayload.model_validate(
         _llm_content()
     ).claims[0]
@@ -1915,6 +1939,138 @@ def test_wiki_revision_legacy_lineage_is_traversed_and_forgery_fails_closed(
         )
 
 
+def test_wiki_revision_with_all_lineage_fields_stripped_fails_closed_in_memory(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, _llm = _service()
+    source_ref = "boi:public:science:document:fixture"
+    original_text = "RPM 증가 시 두께 변화"
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=source_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(_llm_content()).claims[0],
+        idempotency_key="science-request:wiki-stripped-memory-original",
+    )
+    revised_text = f"검토: {original_text}"
+    revised = service.submit_claim_candidate(
+        revised_text,
+        document_ref=submitted_revision_document_ref(
+            actor_id=science_identity.employee_id,
+            source_document_ref=source_ref,
+            source_document_digest=original.document_digest,
+        ),
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(
+            _llm_content(
+                extra={"source_span": _span(revised_text, original_text).model_dump()}
+            )
+        ).claims[0],
+        supersedes_claim_id=original.candidate_claims[0].claim_id,
+        source_lineage_document_ref=source_ref,
+        source_lineage_document_digest=original.document_digest,
+        idempotency_key="science-request:wiki-stripped-memory-revision",
+    )
+    stripped = revised.model_copy(
+        update={
+            "supersedes_claim_id": None,
+            "canonical_source_document_ref": None,
+            "canonical_source_document_digest": None,
+        },
+        deep=True,
+    )
+    store.interpretations[revised.interpretation_id] = stripped
+    service._document_access_check = lambda _identity, _document_ref: False
+
+    with pytest.raises(ScienceAuthorizationError, match="source lineage"):
+        service.confirm_interpretation(
+            revised.interpretation_id,
+            claim_ids=[revised.candidate_claims[0].claim_id],
+            identity=science_identity,
+            idempotency_key="science-request:wiki-stripped-memory-confirm",
+        )
+
+
+def test_wiki_revision_with_all_lineage_fields_stripped_fails_after_store_reopen(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, catalog, store, _llm = _real_service(tmp_path)
+    source_ref = "boi:public:science:document:fixture"
+    original_text = "RPM 증가 시 두께 변화"
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=source_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(_llm_content()).claims[0],
+        idempotency_key="science-request:wiki-stripped-store-original",
+    )
+    revised_text = f"검토: {original_text}"
+    revised = service.submit_claim_candidate(
+        revised_text,
+        document_ref=submitted_revision_document_ref(
+            actor_id=science_identity.employee_id,
+            source_document_ref=source_ref,
+            source_document_digest=original.document_digest,
+        ),
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(
+            _llm_content(
+                extra={"source_span": _span(revised_text, original_text).model_dump()}
+            )
+        ).claims[0],
+        supersedes_claim_id=original.candidate_claims[0].claim_id,
+        source_lineage_document_ref=source_ref,
+        source_lineage_document_digest=original.document_digest,
+        idempotency_key="science-request:wiki-stripped-store-revision",
+    )
+    path = store.record_path("interpretations", revised.interpretation_id)
+    payload = revised.model_dump(mode="json", exclude_none=False)
+    payload.pop("supersedes_claim_id")
+    payload.pop("canonical_source_document_ref")
+    payload.pop("canonical_source_document_digest")
+    stripped = InterpretationRecord.model_validate(payload)
+    runtime_root = store.root
+    store.close()
+    path.write_bytes(canonical_json_bytes(stripped))
+    path.chmod(0o600)
+
+    reopened_store = ScienceRuntimeStore(
+        runtime_root,
+        authorization=ScienceAuthorization(access_mode="pilot"),
+        roles_for=lambda _identity: ["science.admin"],
+        report_authority_validator=catalog.validate_verification_report_authority,
+    )
+    reopened_service = ScienceService(
+        catalog=catalog,
+        runtime_store=reopened_store,
+        llm_client=None,
+        dictionary_release_id="sci:dictionary:0.1",
+        ontology_release_id="sci:ontology:0.1",
+        ontology_binding_ids=[
+            "sci:binding:rpm",
+            "sci:binding:increases",
+            "sci:binding:film-thickness",
+        ],
+        document_access_check=lambda _identity, _document_ref: False,
+        clock=lambda: datetime(2026, 8, 25, 4, 0, tzinfo=timezone.utc),
+    )
+    try:
+        with pytest.raises(ScienceAuthorizationError, match="source lineage"):
+            reopened_service.confirm_interpretation(
+                revised.interpretation_id,
+                claim_ids=[revised.candidate_claims[0].claim_id],
+                identity=science_identity,
+                idempotency_key="science-request:wiki-stripped-store-confirm",
+            )
+    finally:
+        reopened_store.close()
+
+
 def test_real_store_persists_wiki_revision_canonical_acl_lineage(
     tmp_path: Path,
     science_identity: AuthIdentity,
@@ -2062,7 +2218,10 @@ def test_raw_submitted_document_revision_rejects_ref_digest_and_document_attacks
 ):
     service, _catalog, _store, _llm = _service()
     original_text = "RPM 증가 시 두께 변화"
-    document_ref = "boi:submitted:stable-logical-document"
+    document_ref = submitted_root_document_ref(
+        actor_id=science_identity.employee_id,
+        initial_document_digest=sha256_digest(original_text),
+    )
     candidate = ScienceInterpretationPayload.model_validate(_llm_content()).claims[0]
     original = service.submit_claim_candidate(
         original_text,

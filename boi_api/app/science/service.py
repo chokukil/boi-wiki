@@ -61,6 +61,22 @@ class ScienceIdempotencyConflict(ScienceOperationalError):
 CLAIM_SUBMISSION_VERSION = "science-claim-submission/0.1.0"
 
 
+def submitted_root_document_ref(
+    *,
+    actor_id: str,
+    initial_document_digest: str,
+) -> str:
+    """Derive the only owner-bound identity for an initial submitted document."""
+
+    submitted_id = sha256_digest(
+        {
+            "actor_id": actor_id,
+            "initial_document_digest": initial_document_digest,
+        }
+    ).removeprefix("sha256:")
+    return f"boi:submitted:{submitted_id}"
+
+
 def submitted_revision_document_ref(
     *,
     actor_id: str,
@@ -200,6 +216,17 @@ class ScienceService:
         predecessor_claim_id = interpretation.supersedes_claim_id
         if predecessor_claim_id is None:
             if persisted is not None:
+                raise ScienceAuthorizationError(
+                    "Science interpretation source lineage is not authorized"
+                )
+            if (
+                interpretation.submission_client_kind is not None
+                and document_ref
+                != submitted_root_document_ref(
+                    actor_id=identity.employee_id,
+                    initial_document_digest=interpretation.document_digest,
+                )
+            ):
                 raise ScienceAuthorizationError(
                     "Science interpretation source lineage is not authorized"
                 )
@@ -756,6 +783,18 @@ class ScienceService:
         ):
             raise ScienceConfirmationRequired(
                 "a document revision must be stored under a submitted document identity"
+            )
+        if (
+            document_ref.startswith("boi:submitted:")
+            and supersedes_claim_id is None
+            and document_ref
+            != submitted_root_document_ref(
+                actor_id=identity.employee_id,
+                initial_document_digest=document_digest,
+            )
+        ):
+            raise ScienceConfirmationRequired(
+                "submitted root document identity is not actor/digest bound"
             )
         canonical_source_lineage: tuple[str, str] | None = None
         if supersedes_claim_id is not None:

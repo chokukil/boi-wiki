@@ -34,6 +34,7 @@ from boi_api.app.science.reports import render_report_markdown, render_report_pd
 from boi_api.app.science.service import (
     ScienceConfirmationRequired,
     ScienceIdempotencyConflict,
+    submitted_root_document_ref,
     submitted_revision_document_ref,
 )
 from boi_api.app.science.storage import (
@@ -404,13 +405,10 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
                     source_document_digest=request.source_lineage.document_digest,
                 )
             else:
-                submitted_id = sha256_digest(
-                    {
-                        "actor_id": identity.employee_id,
-                        "initial_document_digest": sha256_digest(document),
-                    }
-                ).removeprefix("sha256:")
-                document_ref = f"boi:submitted:{submitted_id}"
+                document_ref = submitted_root_document_ref(
+                    actor_id=identity.employee_id,
+                    initial_document_digest=sha256_digest(document),
+                )
         result = _invoke(
             lambda: service().submit_claim_candidate(
                 document,
