@@ -37,7 +37,9 @@ _ALLOWED_LATEX_COMMANDS = {
     "bar",
     "beta",
     "begin",
+    "ce",
     "cdot",
+    "cdots",
     "chi",
     "delta",
     "Delta",
@@ -51,6 +53,7 @@ _ALLOWED_LATEX_COMMANDS = {
     "Gamma",
     "ge",
     "hat",
+    "hbar",
     "infty",
     "int",
     "kappa",
@@ -60,6 +63,15 @@ _ALLOWED_LATEX_COMMANDS = {
     "left",
     "ln",
     "log",
+    "mathbb",
+    "mathbf",
+    "mathcal",
+    "mathit",
+    "mathrm",
+    "mathsf",
+    "mathtt",
+    "max",
+    "min",
     "mu",
     "nabla",
     "neq",
@@ -78,6 +90,7 @@ _ALLOWED_LATEX_COMMANDS = {
     "Psi",
     "rho",
     "right",
+    "rightarrow",
     "sigma",
     "Sigma",
     "sqrt",
@@ -86,9 +99,13 @@ _ALLOWED_LATEX_COMMANDS = {
     "theta",
     "Theta",
     "times",
+    "to",
     "underline",
     "upsilon",
     "vec",
+    "varphi",
+    "varepsilon",
+    "vartheta",
     "xi",
     "Xi",
     "zeta",
@@ -627,7 +644,7 @@ class EquationTranscription(EquationModel):
     transcription_id: str = Field(min_length=1, max_length=128)
     original_notation: str = Field(min_length=1, max_length=4096)
     original_notation_hash: str
-    variable_context: list[EquationVariableContext] = Field(min_length=1, max_length=64)
+    variable_context: list[EquationVariableContext] = Field(max_length=64)
     variable_context_hash: str
     coordinate_convention: str = Field(min_length=1, max_length=2048)
     sign_convention: str = Field(min_length=1, max_length=2048)
@@ -941,15 +958,15 @@ class ScienceEquationKnowledge(EquationModel):
     semantic_expression: SemanticExpression
     display_latex: str = Field(min_length=1, max_length=4096)
     plain_text: str = Field(min_length=1, max_length=4096)
-    accessibility_reading: str = Field(min_length=1, max_length=4096)
-    variables: list[EquationVariable] = Field(min_length=1, max_length=64)
+    accessibility_reading: str = Field(min_length=1, max_length=1000)
+    variables: list[EquationVariable] = Field(max_length=64)
     assumptions: list[str] = Field(max_length=64)
     applicability: list[str] = Field(min_length=1, max_length=64)
     invalid_outside: list[str] = Field(min_length=1, max_length=64)
     boundary_conditions: list[BoundaryCondition] = Field(max_length=64)
     approximation: ApproximationMetadata | None = None
     empirical_fit: EmpiricalFitMetadata | None = None
-    original_notation_mapping: list[OriginalNotationMapping] = Field(min_length=1, max_length=64)
+    original_notation_mapping: list[OriginalNotationMapping] = Field(max_length=64)
     evidence_uses: list[EquationEvidenceUse] = Field(min_length=1, max_length=32)
     evaluator: EquationEvaluatorLink | None = None
     equation_digest: str

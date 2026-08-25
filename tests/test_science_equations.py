@@ -498,3 +498,64 @@ def test_semantic_expression_depth_is_bounded():
         SemanticExpression.model_validate(
             {"schema_version": "science-expression/0.1", "root": node}
         )
+
+
+def test_chemical_reaction_is_a_closed_explanation_only_equation_without_fake_variables():
+    from boi_api.app.science.equations import ScienceEquationKnowledge
+
+    payload = valid_equation_payload(decision_use="explanation_only")
+    payload["semantic_expression"]["root"] = {
+        "op": "chemical_reaction",
+        "reactants": [
+            {"species_id": "hydrogen", "stoichiometric_coefficient": "2"},
+            {"species_id": "oxygen", "stoichiometric_coefficient": "1"},
+        ],
+        "products": [
+            {"species_id": "water", "stoichiometric_coefficient": "2"}
+        ],
+        "reversible": False,
+    }
+    payload["display_latex"] = r"\\ce{2H2 + O2 -> 2H2O}"
+    payload["plain_text"] = "2 H2 + O2 -> 2 H2O"
+    payload["accessibility_reading"] = (
+        "Two molecules of hydrogen react with one molecule of oxygen to form two molecules of water."
+    )
+    payload["variables"] = []
+    payload["boundary_conditions"] = []
+    payload["original_notation_mapping"] = []
+    payload["evaluator"] = None
+    transcription = payload["evidence_uses"][0]["transcription"]
+    transcription["original_notation"] = "2H2 + O2 -> 2H2O"
+    transcription["original_notation_hash"] = _sha256_text(
+        transcription["original_notation"]
+    )
+    transcription["variable_context"] = []
+    transcription["variable_context_hash"] = sha256_digest([])
+    transcription["relation_notation"] = "reaction"
+    transcription["semantic_expression_digest"] = sha256_digest(
+        payload["semantic_expression"]
+    )
+    transcription["transcription_digest"] = sha256_digest(
+        {key: value for key, value in transcription.items() if key != "transcription_digest"}
+    )
+    payload["equation_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "equation_digest"}
+    )
+
+    equation = ScienceEquationKnowledge.model_validate(payload)
+
+    assert equation.semantic_expression.root.op == "chemical_reaction"
+    assert equation.variables == []
+
+
+def test_accessibility_reading_matches_the_local_renderer_limit():
+    from boi_api.app.science.equations import ScienceEquationKnowledge
+
+    payload = valid_equation_payload()
+    payload["accessibility_reading"] = "x" * 1001
+    payload["equation_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "equation_digest"}
+    )
+
+    with pytest.raises(ValidationError, match="at most 1000 characters"):
+        ScienceEquationKnowledge.model_validate(payload)
