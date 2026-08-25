@@ -250,6 +250,8 @@ def _candidate_qualification(
     catalog: ScienceCatalog,
 ) -> tuple[QualificationRuleSet, ResolvedReleaseSet]:
     components: list[ResolvedComponent] = []
+    equation_knowledge: dict[str, ResolvedComponent] = {}
+    equation_evidence: dict[str, ResolvedComponent] = {}
     for rule_id in _all_pack_rule_ids(catalog):
         stored = catalog.rule(rule_id)
         rule = _typed_rule(catalog, rule_id)
@@ -262,6 +264,25 @@ def _candidate_qualification(
                 semantic_digest=sha256_digest(rule),
             )
         )
+        if rule.equation_binding is not None:
+            resolved_equation = catalog.equation(rule.equation_binding.equation_id)
+            stored_knowledge = catalog.knowledge(resolved_equation.knowledge_id)
+            equation_knowledge[resolved_equation.knowledge_id] = ResolvedComponent(
+                ref=resolved_equation.knowledge_id,
+                kind="knowledge",
+                declared_digest=stored_knowledge.digest,
+                actual_digest=stored_knowledge.digest,
+            )
+            for evidence_use in resolved_equation.equation.evidence_uses:
+                stored_evidence = catalog.evidence(evidence_use.evidence_ref)
+                equation_evidence[evidence_use.evidence_ref] = ResolvedComponent(
+                    ref=evidence_use.evidence_ref,
+                    kind="evidence",
+                    declared_digest=stored_evidence.digest,
+                    actual_digest=stored_evidence.digest,
+                )
+    components.extend(equation_knowledge.values())
+    components.extend(equation_evidence.values())
     release = ResolvedRelease(
         release_id="sci-release:candidate-domain-packs-task3",
         schema_version="sci-profile/0.1",
