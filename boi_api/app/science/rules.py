@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from decimal import Decimal
-from typing import Literal, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 from pydantic import Field, field_validator, model_validator
 
+from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.equations import ScienceEquationKnowledge, SemanticExpression
 from boi_api.app.science.models import (
     ClaimCondition,
     ConditionConstraint,
@@ -29,6 +32,166 @@ from boi_api.app.science.units import (
 )
 
 ConditionValue: TypeAlias = str | int | float | bool | None
+
+_SHA256_PATTERN = r"^sha256:[0-9a-f]{64}$"
+EQUATION_EVALUATOR_ID = "sci-evaluator:closed-arithmetic-relation"
+EQUATION_EVALUATOR_VERSION = "0.1.0"
+
+
+class _FrozenDict(dict[str, Any]):
+    """A JSON-serializable mapping whose published contract cannot be changed."""
+
+    @staticmethod
+    def _immutable(*_args: Any, **_kwargs: Any) -> None:
+        raise TypeError("evaluator contract is immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+
+
+EQUATION_EVALUATOR_CONTRACT: _FrozenDict = _FrozenDict(
+    {
+        "evaluator_id": EQUATION_EVALUATOR_ID,
+        "version": EQUATION_EVALUATOR_VERSION,
+        "rule_kind": "equation_constraint",
+        "numeric_semantics": _FrozenDict(
+            {
+                "number_type": "decimal",
+                "unit_handling": "reviewed_unit_normalization",
+                "comparison": "absolute_error_lte_relative_tolerance_times_max_abs_right_or_one",
+            }
+        ),
+        "operators": _FrozenDict(
+            {
+                "equal": _FrozenDict({"right_arity": 1}),
+                "product": _FrozenDict({"right_arity": 2}),
+                "quotient": _FrozenDict({"right_arity": 2}),
+            }
+        ),
+    }
+)
+EQUATION_EVALUATOR_CONTRACT_DIGEST = sha256_digest(EQUATION_EVALUATOR_CONTRACT)
+EQUATION_EVALUATOR_REGISTRY: _FrozenDict = _FrozenDict(
+    {
+        f"{EQUATION_EVALUATOR_ID}@{EQUATION_EVALUATOR_VERSION}": (
+            EQUATION_EVALUATOR_CONTRACT
+        )
+    }
+)
+
+
+class EquationVariableClaimMapping(ScienceModel):
+    """An exact Equation variable to one Claim operand and quantity kind."""
+
+    equation_variable_id: str = Field(min_length=1, max_length=64)
+    claim_quantity_kind: str = Field(min_length=1, max_length=128)
+    constraint_operand: Literal["left", "right_1", "right_2"]
+
+    @field_validator("equation_variable_id", "claim_quantity_kind")
+    @classmethod
+    def closed_nonblank_identifier(cls, value: str, info) -> str:
+        if not value.strip():
+            raise ValueError(f"{info.field_name} must be nonempty")
+        if value != value.strip() or any(character.isspace() for character in value):
+            raise ValueError(f"{info.field_name} must be a closed nonempty identifier")
+        return value
+
+
+class EquationRuleBinding(ScienceModel):
+    """Digest-bound authorization for one exact closed Equation evaluator form."""
+
+    equation_id: str = Field(min_length=1, max_length=128)
+    equation_digest: str
+    evaluator_id: str = Field(min_length=1, max_length=128)
+    evaluator_version: str = Field(min_length=1, max_length=32)
+    evaluator_digest: str
+    constraint_operator: Literal["equal", "product", "quotient"]
+    variable_mappings: list[EquationVariableClaimMapping] = Field(min_length=1)
+    binding_digest: str = Field(pattern=_SHA256_PATTERN)
+
+    @model_validator(mode="before")
+    @classmethod
+    def exact_binding_digest_before_coercion(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        binding_digest = value.get("binding_digest")
+        if not isinstance(binding_digest, str) or not re.fullmatch(
+            _SHA256_PATTERN, binding_digest
+        ):
+            raise ValueError("binding_digest must be an exact SHA-256 digest")
+        payload = {key: item for key, item in value.items() if key != "binding_digest"}
+        if binding_digest != sha256_digest(payload):
+            raise ValueError("binding_digest must match the canonical binding payload")
+        return value
+
+    @field_validator("equation_id")
+    @classmethod
+    def science_equation_id(cls, value: str) -> str:
+        if value != value.strip() or not value.startswith("sci:equation:"):
+            raise ValueError("equation_id must name exact Science Equation Knowledge")
+        return value
+
+    @field_validator("equation_digest", "evaluator_digest")
+    @classmethod
+    def exact_sha256_digest(cls, value: str, info) -> str:
+        if not re.fullmatch(_SHA256_PATTERN, value):
+            raise ValueError(f"{info.field_name} must be an exact SHA-256 digest")
+        return value
+
+    @model_validator(mode="after")
+    def closed_registry_and_mapping(self) -> "EquationRuleBinding":
+        _assert_registered_equation_evaluator(self)
+        variable_ids = [item.equation_variable_id for item in self.variable_mappings]
+        quantity_kinds = [item.claim_quantity_kind for item in self.variable_mappings]
+        operands = [item.constraint_operand for item in self.variable_mappings]
+        expected_roles = _expected_operand_roles(self.constraint_operator)
+        if len(operands) != len(expected_roles):
+            raise ValueError("binding must contain the exact equation operand mapping")
+        if len(variable_ids) != len(set(variable_ids)):
+            raise ValueError("mapped equation variables must be unique")
+        if len(quantity_kinds) != len(set(quantity_kinds)):
+            raise ValueError("mapped Claim quantity kinds must be unique")
+        if len(operands) != len(set(operands)):
+            raise ValueError("mapped constraint operands must be unique")
+        if set(operands) != set(expected_roles):
+            raise ValueError("binding must contain the exact equation operand mapping")
+        return self
+
+
+class OperationalEquationBindingIdentity(ScienceModel):
+    """Identity a Catalog must cross-check against reviewed Equation Knowledge."""
+
+    equation_id: str
+    equation_digest: str = Field(pattern=_SHA256_PATTERN)
+    evaluator_id: Literal["sci-evaluator:closed-arithmetic-relation"]
+    evaluator_version: Literal["0.1.0"]
+    evaluator_digest: str = Field(pattern=_SHA256_PATTERN)
+    constraint_operator: Literal["equal", "product", "quotient"]
+    operand_variable_ids: dict[str, str]
+    claim_quantity_kinds: dict[str, str]
+    required_decision_use: Literal["deterministic_rule"] = "deterministic_rule"
+
+
+def _expected_operand_roles(operator: str) -> tuple[str, ...]:
+    contract = EQUATION_EVALUATOR_CONTRACT["operators"][operator]
+    arity = int(contract["right_arity"])
+    return ("left", *(f"right_{index}" for index in range(1, arity + 1)))
+
+
+def _assert_registered_equation_evaluator(binding: EquationRuleBinding) -> None:
+    if binding.evaluator_id != EQUATION_EVALUATOR_ID:
+        raise ValueError("equation evaluator is not registered")
+    if binding.evaluator_version != EQUATION_EVALUATOR_VERSION:
+        raise ValueError("equation evaluator version is not registered")
+    if binding.evaluator_digest != EQUATION_EVALUATOR_CONTRACT_DIGEST:
+        raise ValueError("equation evaluator contract digest does not match")
+    if binding.constraint_operator not in EQUATION_EVALUATOR_CONTRACT["operators"]:
+        raise ValueError("equation operator is not registered")
 
 
 class EquationConstraint(ScienceModel):
@@ -133,6 +296,7 @@ class VerificationRule(ScienceModel):
     carrier_conductivity_constraint: CarrierConductivityConstraint | None = None
     expected_dimensions: dict[str, str] = Field(default_factory=dict)
     equation: EquationConstraint | None = None
+    equation_binding: EquationRuleBinding | None = None
     knowledge_refs: list[str] = Field(min_length=1)
     evidence_refs: list[str] = Field(min_length=1)
     evidence_uses: list[EvidenceUse] = Field(min_length=1)
@@ -233,9 +397,160 @@ class VerificationRule(ScienceModel):
                 raise ValueError(
                     f"rule kind payload invalid for {self.rule_kind.value}"
                 )
+        if self.rule_kind is not RuleKind.EQUATION_CONSTRAINT:
+            if self.equation_binding is not None:
+                raise ValueError(
+                    "equation_binding is allowed for equation_constraint only"
+                )
+        elif self.equation_binding is not None:
+            assert self.equation is not None
+            _validate_binding_operand_mapping(self.equation, self.equation_binding)
         if self.rule_kind is RuleKind.VALIDITY_DOMAIN and not self.validity_conditions:
             raise ValueError("rule kind payload invalid for validity_domain")
         return self
+
+
+def _binding_operand_maps(
+    binding: EquationRuleBinding,
+) -> tuple[dict[str, str], dict[str, str]]:
+    variable_ids = {
+        item.constraint_operand: item.equation_variable_id
+        for item in binding.variable_mappings
+    }
+    quantity_kinds = {
+        item.constraint_operand: item.claim_quantity_kind
+        for item in binding.variable_mappings
+    }
+    return variable_ids, quantity_kinds
+
+
+def _validate_binding_operand_mapping(
+    equation: EquationConstraint, binding: EquationRuleBinding
+) -> None:
+    if binding.constraint_operator != equation.operator:
+        raise ValueError("binding must contain the exact equation operand mapping")
+    _variable_ids, mapped_quantities = _binding_operand_maps(binding)
+    expected_quantities = {
+        "left": equation.left_quantity_kind,
+        **{
+            f"right_{index}": quantity_kind
+            for index, quantity_kind in enumerate(
+                equation.right_quantity_kinds, start=1
+            )
+        },
+    }
+    if mapped_quantities != expected_quantities:
+        raise ValueError("binding must contain the exact equation operand mapping")
+
+
+def validate_operational_equation_binding(
+    rule: VerificationRule,
+) -> OperationalEquationBindingIdentity | None:
+    """Fail closed and return the identity the Catalog must bind to Knowledge.
+
+    Direct legacy Rule fixtures may still be parsed for compatibility, but an
+    operational ``equation_constraint`` is never eligible without this exact
+    binding.  No callable name is accepted from Rule data.
+    """
+
+    binding = rule.equation_binding
+    if rule.rule_kind is not RuleKind.EQUATION_CONSTRAINT:
+        if binding is not None:
+            raise ValueError("equation_binding is allowed for equation_constraint only")
+        return None
+    if rule.equation is None:
+        raise ValueError("operational equation rule requires an EquationConstraint")
+    if binding is None:
+        raise ValueError("operational equation rule requires equation_binding")
+
+    # Recheck mutable model instances at the trust boundary.  Registry identity
+    # is checked before the self-digest so evaluator spoofing is diagnosed as
+    # such and cannot reach a numerical outcome.
+    _assert_registered_equation_evaluator(binding)
+    checked = EquationRuleBinding.model_validate(binding.model_dump(mode="json"))
+    _validate_binding_operand_mapping(rule.equation, checked)
+    variable_ids, quantity_kinds = _binding_operand_maps(checked)
+    return OperationalEquationBindingIdentity(
+        equation_id=checked.equation_id,
+        equation_digest=checked.equation_digest,
+        evaluator_id=checked.evaluator_id,
+        evaluator_version=checked.evaluator_version,
+        evaluator_digest=checked.evaluator_digest,
+        constraint_operator=checked.constraint_operator,
+        operand_variable_ids=variable_ids,
+        claim_quantity_kinds=quantity_kinds,
+    )
+
+
+def validate_semantic_expression_for_operational_binding(
+    identity: OperationalEquationBindingIdentity,
+    expression: SemanticExpression,
+) -> None:
+    """Accept only the literal audited AST form; never infer equivalence.
+
+    Commuting, rearranging, simplifying, or otherwise proving an equivalent
+    expression would require a separately reviewed form.  There is no CAS or
+    LLM path here.
+    """
+
+    root = expression.root
+    if root.op != "relation" or root.relation != "eq":
+        raise ValueError("operational evaluator requires an exact equality relation")
+    if root.left is None or root.left.op != "variable":
+        raise ValueError("operational evaluator requires one exact left variable")
+    expected_right_operator = {
+        "equal": "variable",
+        "product": "multiply",
+        "quotient": "divide",
+    }[identity.constraint_operator]
+    if root.right is None or root.right.op != expected_right_operator:
+        raise ValueError(
+            f"operational evaluator requires the exact {identity.constraint_operator} form"
+        )
+
+    actual: dict[str, str | None] = {"left": root.left.variable_id}
+    if identity.constraint_operator == "equal":
+        actual["right_1"] = root.right.variable_id
+    else:
+        if (
+            root.right.left is None
+            or root.right.right is None
+            or root.right.left.op != "variable"
+            or root.right.right.op != "variable"
+        ):
+            raise ValueError(
+                f"operational evaluator requires the exact {identity.constraint_operator} form"
+            )
+        actual["right_1"] = root.right.left.variable_id
+        actual["right_2"] = root.right.right.variable_id
+    if actual != identity.operand_variable_ids:
+        raise ValueError("semantic expression does not match exact equation variable mapping")
+
+
+def validate_equation_knowledge_for_operational_binding(
+    identity: OperationalEquationBindingIdentity,
+    equation_knowledge: ScienceEquationKnowledge,
+) -> None:
+    """Cross-check one reviewed Equation Knowledge object without widening trust."""
+
+    if equation_knowledge.equation_id != identity.equation_id:
+        raise ValueError("equation Knowledge ID does not match operational binding")
+    if equation_knowledge.equation_digest != identity.equation_digest:
+        raise ValueError("equation Knowledge digest does not match operational binding")
+    if equation_knowledge.decision_use != identity.required_decision_use:
+        raise ValueError("explanation-only Equation Knowledge cannot drive a Rule")
+    evaluator = equation_knowledge.evaluator
+    if evaluator is None:
+        raise ValueError("deterministic Equation Knowledge requires an evaluator link")
+    if (
+        evaluator.evaluator_id != identity.evaluator_id
+        or evaluator.version != identity.evaluator_version
+        or evaluator.evaluator_digest != identity.evaluator_digest
+    ):
+        raise ValueError("Equation Knowledge evaluator identity does not match binding")
+    validate_semantic_expression_for_operational_binding(
+        identity, equation_knowledge.semantic_expression
+    )
 
 
 class ReleasedRule(ScienceModel):
@@ -901,6 +1216,8 @@ def evaluate_equation_constraint(
     claim: NormalizedClaim,
     qualified_observations: tuple[QualifiedObservation, ...] = (),
 ) -> DetailedRuleEvaluation:
+    if rule.equation_binding is not None:
+        validate_operational_equation_binding(rule)
     gated = _applicability_gate(rule, claim)
     if isinstance(gated, DetailedRuleEvaluation):
         return gated
