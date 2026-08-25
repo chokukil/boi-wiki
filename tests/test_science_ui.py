@@ -1,13 +1,219 @@
 from __future__ import annotations
 
+import base64
+from functools import partial
+import hashlib
+import html
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import re
+import shutil
 import subprocess
 from pathlib import Path
+from threading import Thread
 
 from fastapi.testclient import TestClient
+import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+class _QuietStaticHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:
+        return
+
+
+def _equation_browser_result(tmp_path: Path) -> dict[str, object]:
+    module_path = REPO_ROOT / "boi_api/app/static/science_equation_view.mjs"
+    target_module = tmp_path / module_path.name
+    if module_path.exists():
+        shutil.copyfile(module_path, target_module)
+    else:
+        target_module.write_text(
+            "export async function mountEquationAssets() { return []; }\n",
+            encoding="utf-8",
+        )
+    shutil.copyfile(REPO_ROOT / "boi_api/app/static/style.css", tmp_path / "style.css")
+
+    safe_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="80" '
+        'viewBox="0 0 240 80" role="img" focusable="false" '
+        'aria-label="전압은 전류와 저항의 곱입니다.">'
+        '<path d="M10 40 L230 40" fill="none" stroke="currentColor" '
+        'stroke-width="2"/></svg>'
+    )
+    hostile_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="80" '
+        'viewBox="0 0 240 80" role="img" focusable="false" '
+        'aria-label="공격 수식"><script>document.body.dataset.pwned="yes"</script>'
+        '<path d="M0 0 L10 10"/></svg>'
+    )
+    attribute_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="80" '
+        'viewBox="0 0 240 80" role="img" focusable="false" '
+        'aria-label="속성 공격"><path d="M0 0 L10 10" '
+        'style="fill:url(https://example.invalid/x)" href="https://example.invalid/x" '
+        'onload="document.body.dataset.pwned=\'yes\'"/></svg>'
+    )
+    xlink_svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+        'xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="80" '
+        'viewBox="0 0 240 80" role="img" focusable="false" '
+        'aria-label="링크 공격"><path d="M0 0 L10 10" '
+        'xlink:href="https://example.invalid/x"/></svg>'
+    )
+    safe_digest = "sha256:" + hashlib.sha256(safe_svg.encode()).hexdigest()
+    hostile_digest = "sha256:" + hashlib.sha256(hostile_svg.encode()).hexdigest()
+    equation_digest = "sha256:" + "a" * 64
+    asset_base = {
+        "equation_id": "sci:equation:ohms-law",
+        "equation_digest": equation_digest,
+        "display_latex": r"V = I \\cdot R",
+        "plain_text": "V = I * R",
+        "accessibility_reading": "전압은 전류와 저항의 곱입니다.",
+        "variables": [
+            {
+                "symbol": "V",
+                "definition": "전압",
+                "unit": "V",
+            },
+            {
+                "symbol": "I",
+                "definition": "전류",
+                "unit": "A",
+            },
+        ],
+        "applicability": ["검토된 저항 모델 안에서 사용"],
+        "invalid_outside": ["비선형 소자에 일반화하지 않음"],
+        "evidence_links": [
+            {
+                "evidence_id": "sci:evidence:ohms-law",
+                "source_id": "sci:source:ohms-law",
+                "url": "https://example.test/ohms-law",
+            },
+            {
+                "evidence_id": "sci:evidence:unsafe",
+                "source_id": "sci:source:unsafe",
+                "url": "javascript:document.body.dataset.pwned='yes'",
+            },
+        ],
+    }
+    payload = {
+        "safe_svg": safe_svg,
+        "safe_digest": safe_digest,
+        "hostile_svg": hostile_svg,
+        "hostile_digest": hostile_digest,
+        "attribute_svg": attribute_svg,
+        "attribute_digest": "sha256:"
+        + hashlib.sha256(attribute_svg.encode()).hexdigest(),
+        "xlink_svg": xlink_svg,
+        "xlink_digest": "sha256:" + hashlib.sha256(xlink_svg.encode()).hexdigest(),
+        "equation_digest": equation_digest,
+        "asset_base": asset_base,
+    }
+    encoded_payload = base64.b64encode(
+        json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    ).decode("ascii")
+    page = f"""<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="./style.css"></head>
+<body><mark class="science-violation">원문 위반 표시</mark><article id="card" class="science-correction-card violation"></article><pre id="result"></pre>
+<script type="module">
+import {{ equationEvidenceLinks, mountEquationAssets }} from './science_equation_view.mjs';
+const fixture = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('{encoded_payload}'), (character) => character.charCodeAt(0))));
+const report = (asset, refDigest = fixture.equation_digest) => ({{
+  explanations: [{{ claim_id: 'claim-1', equation_refs: [{{ equation_id: asset.equation_id, equation_digest: refDigest }}] }}],
+  equation_assets: [asset],
+}});
+const mount = async (asset, options = {{}}) => {{
+  const host = document.createElement('section');
+  document.querySelector('#card').appendChild(host);
+  await mountEquationAssets(host, report(asset), 'claim-1', options);
+  return host;
+}};
+const copied = [];
+const safe = await mount({{ ...fixture.asset_base, sanitized_svg: fixture.safe_svg, svg_digest: fixture.safe_digest }}, {{ writeClipboard: async (value) => copied.push(value) }});
+for (const button of safe.querySelectorAll('button')) {{ button.click(); await Promise.resolve(); }}
+const hostile = await mount({{ ...fixture.asset_base, plain_text: 'hostile fallback', accessibility_reading: '공격 수식', sanitized_svg: fixture.hostile_svg, svg_digest: fixture.hostile_digest }});
+const attributes = await mount({{ ...fixture.asset_base, plain_text: 'attribute fallback', accessibility_reading: '속성 공격', sanitized_svg: fixture.attribute_svg, svg_digest: fixture.attribute_digest }});
+const xlink = await mount({{ ...fixture.asset_base, plain_text: 'xlink fallback', accessibility_reading: '링크 공격', sanitized_svg: fixture.xlink_svg, svg_digest: fixture.xlink_digest }});
+const mismatched = await mount({{ ...fixture.asset_base, plain_text: 'digest fallback', sanitized_svg: fixture.safe_svg, svg_digest: 'sha256:' + '0'.repeat(64) }});
+const noCrypto = await mount({{ ...fixture.asset_base, plain_text: 'crypto fallback', sanitized_svg: fixture.safe_svg, svg_digest: fixture.safe_digest }}, {{ crypto: null }});
+const orphan = document.createElement('section');
+await mountEquationAssets(orphan, report({{ ...fixture.asset_base, sanitized_svg: fixture.safe_svg, svg_digest: fixture.safe_digest }}, 'sha256:' + 'b'.repeat(64)), 'claim-1');
+const legacy = document.createElement('section');
+await mountEquationAssets(legacy, {{ verdict_packets: [] }}, 'claim-1');
+const detail = safe.querySelector('.science-equation-detail-list');
+const scroll = safe.querySelector('.science-equation-scroll');
+document.querySelector('#result').textContent = JSON.stringify({{
+  safeSvg: Boolean(safe.querySelector('svg')),
+  safeAria: safe.querySelector('svg')?.getAttribute('aria-label') || null,
+  safeFallbackHidden: safe.querySelector('.science-equation-fallback')?.hidden === true,
+  hostileFallback: hostile.querySelector('.science-equation-fallback')?.textContent || null,
+  hostileSvg: Boolean(hostile.querySelector('svg, script')),
+  attributeFallback: attributes.querySelector('.science-equation-fallback')?.textContent || null,
+  attributeSvg: Boolean(attributes.querySelector('svg')),
+  xlinkFallback: xlink.querySelector('.science-equation-fallback')?.textContent || null,
+  xlinkSvg: Boolean(xlink.querySelector('svg')),
+  mismatchFallback: mismatched.querySelector('.science-equation-fallback')?.textContent || null,
+  noCryptoFallback: noCrypto.querySelector('.science-equation-fallback')?.textContent || null,
+  orphanChildren: orphan.childElementCount,
+  legacyChildren: legacy.childElementCount,
+  copied,
+  buttonLabels: [...safe.querySelectorAll('button')].map((node) => node.textContent),
+  live: safe.querySelector('[aria-live="polite"]')?.textContent || null,
+  summary: safe.querySelector('summary')?.textContent || null,
+  equationEvidence: equationEvidenceLinks([fixture.asset_base]).map((link) => link.source_id),
+  cardClass: document.querySelector('#card').className,
+  redMarks: document.querySelectorAll('.science-violation').length,
+  pwned: document.body.dataset.pwned || null,
+  mobileColumns: detail ? getComputedStyle(detail).gridTemplateColumns : null,
+  scrollOverflow: scroll ? getComputedStyle(scroll).overflowX : null,
+}});
+</script></body></html>"""
+    (tmp_path / "index.html").write_text(page, encoding="utf-8")
+
+    handler = partial(_QuietStaticHandler, directory=str(tmp_path))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    chromium = (
+        shutil.which("chromium")
+        or shutil.which("chromium-browser")
+        or shutil.which("google-chrome")
+    )
+    assert chromium, "a Chromium browser is required for equation DOM tests"
+    try:
+        completed = subprocess.run(
+            [
+                chromium,
+                "--headless=new",
+                "--no-sandbox",
+                "--disable-gpu",
+                "--window-size=390,844",
+                "--dump-dom",
+                f"http://127.0.0.1:{server.server_port}/index.html",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
+    assert completed.returncode == 0, completed.stderr
+    match = re.search(r'<pre id="result">(.*?)</pre>', completed.stdout, re.S)
+    assert match, completed.stdout
+    return json.loads(html.unescape(match.group(1)))
+
+
+@pytest.fixture(scope="module")
+def equation_browser_result(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> dict[str, object]:
+    return _equation_browser_result(tmp_path_factory.mktemp("science-equation-view"))
 
 
 def test_admin_review_canvas_is_candidate_only_and_nav_follows_sop(
@@ -32,6 +238,63 @@ def test_admin_review_canvas_is_candidate_only_and_nav_follows_sop(
     assert "운영 판정이 아닙니다" in html
     assert "종합점수" not in html
     assert "DOE" not in html
+
+
+def test_equation_view_renders_only_explicitly_bound_safe_assets(
+    equation_browser_result: dict[str, object],
+) -> None:
+    assert equation_browser_result["safeSvg"] is True
+    assert equation_browser_result["safeAria"] == "전압은 전류와 저항의 곱입니다."
+    assert equation_browser_result["safeFallbackHidden"] is True
+    assert equation_browser_result["orphanChildren"] == 0
+    assert equation_browser_result["legacyChildren"] == 0
+
+
+def test_equation_view_fails_to_plain_text_without_mutating_verdict_marks(
+    equation_browser_result: dict[str, object],
+) -> None:
+    assert equation_browser_result["hostileFallback"] == "hostile fallback"
+    assert equation_browser_result["hostileSvg"] is False
+    assert equation_browser_result["attributeFallback"] == "attribute fallback"
+    assert equation_browser_result["attributeSvg"] is False
+    assert equation_browser_result["xlinkFallback"] == "xlink fallback"
+    assert equation_browser_result["xlinkSvg"] is False
+    assert equation_browser_result["mismatchFallback"] == "digest fallback"
+    assert equation_browser_result["noCryptoFallback"] == "crypto fallback"
+    assert equation_browser_result["cardClass"] == "science-correction-card violation"
+    assert equation_browser_result["redMarks"] == 1
+    assert equation_browser_result["pwned"] is None
+
+
+def test_equation_view_copy_aria_and_mobile_contract(
+    equation_browser_result: dict[str, object],
+) -> None:
+    assert equation_browser_result["copied"] == [r"V = I \\cdot R", "V = I * R"]
+    assert equation_browser_result["buttonLabels"] == [
+        "LaTeX 복사",
+        "일반 텍스트 복사",
+    ]
+    assert equation_browser_result["live"] == "일반 텍스트를 복사했습니다."
+    assert equation_browser_result["summary"] == "변수·적용 조건·한계"
+    assert equation_browser_result["equationEvidence"] == ["sci:source:ohms-law"]
+    assert equation_browser_result["mobileColumns"] != "none"
+    assert equation_browser_result["scrollOverflow"] == "auto"
+
+
+def test_science_verifier_loads_equation_view_as_optional_report_layer(
+    boi_app_module,
+) -> None:
+    client = TestClient(boi_app_module.app)
+
+    response = client.get("/science-verifier?employee_id=100001")
+
+    assert response.status_code == 200
+    assert "data-science-equation-view-url" in response.text
+    script = (REPO_ROOT / "boi_api/app/static/science_verifier.js").read_text(
+        encoding="utf-8"
+    )
+    assert "scienceEquationViewUrl" in script
+    assert "mountResolvedEquationAssets" in script
 
 
 def test_science_release_operational_ui_requires_exact_active_status(

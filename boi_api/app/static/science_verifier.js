@@ -2,6 +2,12 @@
   const root = document.querySelector("[data-science-review-canvas]");
   if (!root) return;
   const core = await import(root.dataset.scienceCoreUrl || "/static/science_verifier_core.mjs");
+  let equationView = null;
+  try {
+    equationView = await import(root.dataset.scienceEquationViewUrl || "/static/science_equation_view.mjs");
+  } catch {
+    equationView = null;
+  }
   let bootstrap = {};
   try { bootstrap = JSON.parse(document.querySelector("#science-verifier-bootstrap")?.textContent || "{}"); } catch { bootstrap = {}; }
 
@@ -171,22 +177,29 @@
       .filter((value) => value !== undefined && value !== null && String(value).trim()).join(" / ");
   }
 
-  function renderEvidence(card, state) {
+  function renderEvidence(card, state, claimId) {
     const annotations = state?.annotations || [];
-    const links = [...new Map(annotations.flatMap((item) => item.evidence_links || []).map((link) => [link.evidence_id, link])).values()].slice(0, 2);
-    if (!links.length) return;
-    const sourceLine = document.createElement("p");
-    sourceLine.className = "science-source-line";
-    appendText(sourceLine, "strong", "핵심 근거");
-    for (const link of links) {
-      const anchor = document.createElement("a");
-      anchor.href = link.url;
-      anchor.target = "_blank";
-      anchor.rel = "noopener noreferrer";
-      anchor.textContent = link.source_id;
-      sourceLine.appendChild(anchor);
+    const equations = equationView?.resolveEquationAssets?.(state?.report, claimId) || [];
+    const equationLinks = equationView?.equationEvidenceLinks?.(equations) || [];
+    const links = [...new Map([
+      ...annotations.flatMap((item) => item.evidence_links || []),
+      ...equationLinks,
+    ].map((link) => [link.evidence_id, link])).values()].slice(0, 2);
+    if (!links.length && !equations.length) return;
+    if (links.length) {
+      const sourceLine = document.createElement("p");
+      sourceLine.className = "science-source-line";
+      appendText(sourceLine, "strong", "핵심 근거");
+      for (const link of links) {
+        const anchor = document.createElement("a");
+        anchor.href = link.url;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.textContent = link.source_id;
+        sourceLine.appendChild(anchor);
+      }
+      card.appendChild(sourceLine);
     }
-    card.appendChild(sourceLine);
     const details = document.createElement("details");
     details.className = "science-evidence-details";
     appendText(details, "summary", "과학적 설명과 원문 근거 펼쳐보기");
@@ -194,6 +207,12 @@
     explanation.className = "science-explanation";
     appendText(explanation, "h3", "과학적 설명");
     for (const annotation of annotations) appendText(explanation, "p", annotation.text);
+    if (equations.length) {
+      const equationHost = document.createElement("div");
+      equationHost.className = "science-equation-host";
+      explanation.appendChild(equationHost);
+      void equationView.mountResolvedEquationAssets(equationHost, equations);
+    }
     details.appendChild(explanation);
     const list = document.createElement("dl");
     for (const link of links) {
@@ -247,7 +266,7 @@
         appendText(card, "p", (verdict.condition_evaluations || []).length ? verdict.condition_evaluations.map((item) => `${item.condition_id}: ${item.satisfied ? "충족" : "미충족"}`).join(" · ") : "적용 조건이 확인되지 않아 빨간 표시를 만들지 않습니다.");
         if (verdict.corrected_claim) appendText(card, "p", verdict.corrected_claim, "science-corrected-claim");
         for (const limitation of verdict.limitations || []) appendText(card, "p", limitation, "science-limitation");
-        renderEvidence(card, state);
+        renderEvidence(card, state, claim.claim_id);
       } else {
         appendText(card, "p", `해석 참조: ${(claim.interpretation?.ontology_refs || []).join(", ") || "확정되지 않음"}`, "science-ontology-summary");
         if (!claim.interpretation?.user_confirmed && impact?.issue_codes?.length) appendText(card, "p", `확인 필요: ${impact.issue_codes.join(", ")}`, "science-issue-codes");

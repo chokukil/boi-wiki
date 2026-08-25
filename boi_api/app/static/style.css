@@ -1087,6 +1087,24 @@ body:has(.ops-react-page) .boi-agent-panel { display:none !important; }
 .science-corrected-claim { padding:12px; border-left:3px solid #2563eb; border-radius:0 8px 8px 0; background:#eff6ff; color:#1e3a8a !important; font-weight:750; }
 .science-explanation { margin-top:13px; }
 .science-explanation h3 { font-size:15px; }
+.science-equation-host { display:grid; gap:12px; margin-top:14px; min-width:0; }
+.science-equation-view { min-width:0; padding:12px; border:1px solid #cbd5e1; border-radius:9px; background:#fff; }
+.science-equation-view h4 { margin:0 0 9px; color:#0f172a; font-size:14px; }
+.science-equation-view figure { margin:0; min-width:0; }
+.science-equation-scroll { max-width:100%; overflow-x:auto; padding:10px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc; }
+.science-equation-scroll:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+.science-equation-scroll svg { display:block; width:max-content; min-width:100%; height:auto; max-width:none; color:#0f172a; }
+.science-equation-fallback { margin:0; color:#0f172a !important; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space:pre-wrap; }
+.science-equation-copy-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:9px; }
+.science-equation-copy { min-height:36px; }
+.science-equation-copy-status { color:#475569; font-size:12px; }
+.science-equation-details { margin-top:10px; border-top:1px solid #e2e8f0; }
+.science-equation-details > summary { cursor:pointer; padding:10px 2px 2px; color:#334155; font-weight:900; }
+.science-equation-detail-list { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:9px; padding-top:10px; }
+.science-equation-detail-section { min-width:0; padding:9px; border:1px solid #e2e8f0; border-radius:7px; background:#f8fafc; }
+.science-equation-detail-section h5 { margin:0 0 6px; color:#334155; font-size:13px; }
+.science-equation-detail-section ul { display:grid; gap:5px; margin:0; padding-left:18px; }
+.science-equation-detail-section li { color:#475569; font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
 .science-source-line { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:14px 0 0; padding:9px 10px; border:1px solid #dbeafe; border-radius:8px; background:#f8fbff; font-size:13px; }
 .science-source-line strong { color:#334155; }
 .science-source-line a, .science-evidence-details a { color:#1d4ed8; font-weight:850; overflow-wrap:anywhere; }
@@ -1133,4 +1151,4 @@ body:has(.ops-react-page) .boi-agent-panel { display:none !important; }
 @media (max-width:900px) { .workflow-status-hero { grid-template-columns:1fr; } .workflow-stage-row { grid-template-columns:1fr; } .tat-insight-grid { grid-template-columns:1fr; } .tat-task-main { grid-template-columns:1fr; } }
 @media (max-width:1100px) { .ops-layout, .sop-lens-layout { grid-template-columns:1fr; } .ops-map { min-height:auto; display:grid; gap:10px; } .ops-map-edges { display:none; } .ops-me-node, .ops-sop-node { position:static; transform:none; width:100%; max-width:none; } .ops-sop-node:hover, .ops-sop-node.selected { transform:none; } .ops-workstream-edge-badges { position:static; transform:none; max-width:none; } }
 @media (max-width:1000px) { .science-review-layout, .science-live-grid { grid-template-columns:1fr; } .science-document-sheet { min-height:0; } .science-claim-options { grid-template-columns:1fr 1fr; } }
-@media (max-width:720px) { .science-verifier-page { padding:0 12px; } .science-release-notice, .science-panel-heading { flex-direction:column; } .science-release-meta { width:100%; min-width:0; } .science-document-sheet { padding:20px 18px; } .science-evidence-details > dl > div { grid-template-columns:1fr; gap:4px; } .science-role-grid, .science-claim-options { grid-template-columns:1fr; } }
+@media (max-width:720px) { .science-verifier-page { padding:0 12px; } .science-release-notice, .science-panel-heading { flex-direction:column; } .science-release-meta { width:100%; min-width:0; } .science-document-sheet { padding:20px 18px; } .science-evidence-details > dl > div, .science-equation-detail-list { grid-template-columns:1fr; gap:4px; } .science-role-grid, .science-claim-options { grid-template-columns:1fr; } .science-equation-view { padding:10px; } }
