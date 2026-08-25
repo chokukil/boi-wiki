@@ -21,7 +21,6 @@ from reportlab.graphics import renderPDF
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from svglib.svglib import svg2rlg
 
 
 MAX_SVG_BYTES: Final = 512 * 1024
@@ -235,6 +234,12 @@ def equation_svg_to_drawing(
 
     validated = validate_equation_svg(svg, expected_digest)
     try:
+        # PDF conversion is an optional presentation path. Importing the
+        # Science profile, OKF linter, REST service, or deterministic verifier
+        # must not require svglib. A missing converter therefore fails this
+        # rendering call closed and leaves the stored verdict unchanged.
+        from svglib.svglib import svg2rlg
+
         drawing = svg2rlg(BytesIO(validated.svg_bytes))
     except Exception as error:  # svglib/lxml/reportlab failures are presentation-only
         raise EquationSVGConversionError("svglib could not convert the equation SVG") from error

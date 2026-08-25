@@ -1,3 +1,39 @@
+---
+{
+  "okf_version": "0.1",
+  "boi_profile_version": "0.1",
+  "type": "boi/reference",
+  "title": "Independent sealed holdout contract",
+  "description": "Non-authorizing operating contract for externally sealed Science Release holdouts",
+  "tags": [
+    "ScienceVerifier",
+    "Holdout",
+    "Qualification"
+  ],
+  "timestamp": "2026-08-25T16:00:00+09:00",
+  "boi_id": "boi:public:science:holdout-contract:0.1",
+  "visibility": "public",
+  "classification": "internal",
+  "owner": "science-admin",
+  "author": {
+    "type": "agent",
+    "agent_id": "codex"
+  },
+  "acl_policy": "acl:public",
+  "status": "draft",
+  "source_refs": [
+    {
+      "type": "boi",
+      "ref": "boi:public:science:release:0.1.0"
+    }
+  ],
+  "review": {
+    "review_status": "pending_review",
+    "required_role": "Admin",
+    "authorized_review_events": []
+  }
+}
+---
 # Independent sealed holdout contract
 
 This directory contains only the public manifest and audit identity for an

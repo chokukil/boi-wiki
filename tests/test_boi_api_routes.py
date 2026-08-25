@@ -7128,7 +7128,15 @@ def test_boi_inbox_nav_page_and_api_are_canonical(boi_app_module):
 
     assert page.status_code == 200
     nav_labels = re.findall(r'class="global-nav-link[^"]*"[^>]*>([^<]+)</a>', body)
-    assert nav_labels[:6] == ["BoI Wiki", "BoI Inbox", "SOP", "Event Broker", "Action", "Advanced"]
+    assert nav_labels[:7] == [
+        "BoI Wiki",
+        "BoI Inbox",
+        "SOP",
+        "Science Verifier",
+        "Event Broker",
+        "Action",
+        "Advanced",
+    ]
     assert 'data-nav-id="inbox" class="global-nav-link active"' in body
     assert "BoI Operations Center" not in body
     assert "받은 보고서" in body
