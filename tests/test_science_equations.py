@@ -431,6 +431,108 @@ def test_approximate_relation_cannot_be_transcribed_as_exact_equality():
         ScienceEquationKnowledge.model_validate(payload)
 
 
+def test_proportional_relation_is_typed_but_never_a_deterministic_equality():
+    from boi_api.app.science.equations import ScienceEquationKnowledge
+
+    payload = valid_equation_payload(decision_use="explanation_only")
+    payload["scientific_role"] = "approximation"
+    payload["semantic_expression"]["root"] = {
+        "op": "relation",
+        "relation": "proportional",
+        "left": {"op": "variable", "variable_id": "thickness"},
+        "right": {
+            "op": "power",
+            "left": {"op": "variable", "variable_id": "angular_speed"},
+            "right": {"op": "literal", "value": "-0.5"},
+        },
+    }
+    payload["display_latex"] = r"h \propto \omega^{-1/2}"
+    payload["plain_text"] = "h is proportional to angular speed to the power -1/2"
+    payload["variables"] = [
+        {
+            "variable_id": "thickness",
+            "symbol": "h",
+            "concept_ref": "sci:concept:film-thickness",
+            "quantity_kind": "film_thickness",
+            "dimension": {"length": 1},
+            "unit": "meter",
+            "definition": "Attainable dry film thickness.",
+            "domain": "real",
+            "sign_constraint": "positive",
+        },
+        {
+            "variable_id": "angular_speed",
+            "symbol": "omega",
+            "concept_ref": "sci:concept:angular-speed",
+            "quantity_kind": "angular_speed",
+            "dimension": {"time": -1},
+            "unit": "radian / second",
+            "definition": "Final spin angular speed.",
+            "domain": "real",
+            "sign_constraint": "positive",
+        },
+    ]
+    payload["boundary_conditions"] = []
+    payload["approximation"] = {
+        "approximation_kind": "continuum_model",
+        "error_statement": "The exponent is an approximate process relation, not a recipe guarantee.",
+        "validity_conditions": ["Drying terminates radial thinning."],
+    }
+    payload["original_notation_mapping"] = [
+        {"source_symbol": "film thickness", "variable_id": "thickness"},
+        {"source_symbol": "spin speed", "variable_id": "angular_speed"},
+    ]
+    transcription = payload["evidence_uses"][0]["transcription"]
+    transcription["original_notation"] = (
+        "film thickness decreases in a good approximation with the reciprocal "
+        "square root of the spin speed"
+    )
+    transcription["original_notation_hash"] = _sha256_text(
+        transcription["original_notation"]
+    )
+    transcription["variable_context"] = [
+        {
+            "source_symbol": "film thickness",
+            "definition": "Attainable dry film thickness.",
+            "unit_text": "not specified in the cited sentence",
+        },
+        {
+            "source_symbol": "spin speed",
+            "definition": "Attained spin speed.",
+            "unit_text": "not specified in the cited sentence",
+        },
+    ]
+    transcription["variable_context_hash"] = sha256_digest(
+        transcription["variable_context"]
+    )
+    transcription["relation_notation"] = "proportionality"
+    transcription["semantic_expression_digest"] = sha256_digest(
+        payload["semantic_expression"]
+    )
+    transcription["transcription_digest"] = sha256_digest(
+        {
+            key: value
+            for key, value in transcription.items()
+            if key != "transcription_digest"
+        }
+    )
+    payload["evaluator"] = None
+    payload["equation_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "equation_digest"}
+    )
+
+    equation = ScienceEquationKnowledge.model_validate(payload)
+    assert equation.semantic_expression.root.relation == "proportional"
+
+    payload["decision_use"] = "deterministic_rule"
+    payload["evaluator"] = valid_equation_payload()["evaluator"]
+    payload["equation_digest"] = sha256_digest(
+        {key: value for key, value in payload.items() if key != "equation_digest"}
+    )
+    with pytest.raises(ValidationError, match="exact equality"):
+        ScienceEquationKnowledge.model_validate(payload)
+
+
 def test_each_evidence_use_requires_complete_nonduplicated_variable_context():
     from boi_api.app.science.equations import ScienceEquationKnowledge
 

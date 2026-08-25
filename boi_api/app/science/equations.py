@@ -279,7 +279,9 @@ class SemanticNode(EquationModel):
     right: SemanticNode | None = None
     operands: list[SemanticNode] | None = Field(default=None, min_length=1, max_length=32)
     function_name: Literal["sqrt", "exp", "ln", "log10", "abs"] | None = None
-    relation: Literal["eq", "approx", "lt", "lte", "gt", "gte"] | None = None
+    relation: Literal[
+        "eq", "approx", "proportional", "lt", "lte", "gt", "gte"
+    ] | None = None
     rows: list[list[SemanticNode]] | None = Field(default=None, min_length=1, max_length=16)
     expression: SemanticNode | None = None
     integrand: SemanticNode | None = None
@@ -783,7 +785,10 @@ _DIMENSIONLESS = (0, 0, 0, 0, 0, 0, 0)
 
 
 def _infer_dimension(
-    node: SemanticNode, variable_dimensions: dict[str, tuple[int, ...]]
+    node: SemanticNode,
+    variable_dimensions: dict[str, tuple[int, ...]],
+    *,
+    allow_undetermined_fractional_power: bool = False,
 ) -> tuple[int, ...] | None:
     if node.op == "variable":
         assert node.variable_id is not None
@@ -794,24 +799,48 @@ def _infer_dimension(
         return _DIMENSIONLESS
     if node.op == "negate":
         assert node.operand is not None
-        return _infer_dimension(node.operand, variable_dimensions)
+        return _infer_dimension(
+            node.operand,
+            variable_dimensions,
+            allow_undetermined_fractional_power=allow_undetermined_fractional_power,
+        )
     if node.op in {"add", "subtract", "relation"}:
         assert node.left is not None and node.right is not None
         left = _infer_dimension(node.left, variable_dimensions)
-        right = _infer_dimension(node.right, variable_dimensions)
+        right = _infer_dimension(
+            node.right,
+            variable_dimensions,
+            allow_undetermined_fractional_power=(
+                node.op == "relation" and node.relation == "proportional"
+            ),
+        )
+        if node.op == "relation" and node.relation == "proportional":
+            return _DIMENSIONLESS
         if left is not None and right is not None and left != right:
             raise ValueError("semantic expression is dimensionally inconsistent")
         return _DIMENSIONLESS if node.op == "relation" else left
     if node.op in {"multiply", "divide"}:
         assert node.left is not None and node.right is not None
-        left = _infer_dimension(node.left, variable_dimensions)
-        right = _infer_dimension(node.right, variable_dimensions)
+        left = _infer_dimension(
+            node.left,
+            variable_dimensions,
+            allow_undetermined_fractional_power=allow_undetermined_fractional_power,
+        )
+        right = _infer_dimension(
+            node.right,
+            variable_dimensions,
+            allow_undetermined_fractional_power=allow_undetermined_fractional_power,
+        )
         if left is None or right is None:
             return None
         return _dimension_add(left, right) if node.op == "multiply" else _dimension_subtract(left, right)
     if node.op == "power":
         assert node.left is not None and node.right is not None
-        base = _infer_dimension(node.left, variable_dimensions)
+        base = _infer_dimension(
+            node.left,
+            variable_dimensions,
+            allow_undetermined_fractional_power=allow_undetermined_fractional_power,
+        )
         exponent_dimension = _infer_dimension(node.right, variable_dimensions)
         if exponent_dimension != _DIMENSIONLESS:
             raise ValueError("semantic power exponent must be dimensionless")
@@ -822,6 +851,8 @@ def _infer_dimension(
         exponent = node.right.value
         if exponent != exponent.to_integral_value():
             if base != _DIMENSIONLESS:
+                if allow_undetermined_fractional_power:
+                    return None
                 raise ValueError("fractional semantic power requires a dimensionless base")
             return _DIMENSIONLESS
         return tuple(item * int(exponent) for item in base) if base is not None else None
@@ -938,6 +969,8 @@ def _expected_relation_notations(
         return {"equals", "definition"} if role == "definition" else {"equals"}
     if root.relation == "approx":
         return {"approximately_equals"}
+    if root.relation == "proportional":
+        return {"proportionality"}
     return {"inequality"}
 
 
@@ -1086,6 +1119,13 @@ class ScienceEquationKnowledge(EquationModel):
         if self.decision_use == "deterministic_rule":
             if self.evaluator is None:
                 raise ValueError("deterministic_rule requires an explicit reviewed evaluator")
+            if (
+                self.semantic_expression.root.op != "relation"
+                or self.semantic_expression.root.relation != "eq"
+            ):
+                raise ValueError(
+                    "deterministic_rule requires an exact equality semantic root"
+                )
             if not operators <= _DETERMINISTIC_OPERATORS:
                 raise ValueError("deterministic_rule cannot use unsupported expression operators")
             if not operators <= set(self.evaluator.allowed_operators):
