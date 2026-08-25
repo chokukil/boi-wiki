@@ -133,9 +133,47 @@ class ScienceService:
         *,
         identity: AuthIdentity,
     ) -> None:
+        canonical_source = self._canonical_source_lineage(
+            interpretation,
+            identity=identity,
+        )
+        if canonical_source is not None and not self._document_access_check(
+            identity, canonical_source[0]
+        ):
+            raise ScienceAuthorizationError(
+                "Science interpretation document access is not authorized"
+            )
+
+    def _proposal_records_for_claim(
+        self, claim_id: str
+    ) -> tuple[InterpretationRecord, ...]:
+        resolver = getattr(self.runtime_store, "interpretations_for_claim", None)
+        if callable(resolver):
+            return tuple(resolver(claim_id))
+        return tuple(
+            record
+            for record in getattr(self.runtime_store, "interpretations", {}).values()
+            if record.operation_binding.operation
+            in {"interpret_document", "submit_claim_candidate"}
+            and any(claim.claim_id == claim_id for claim in record.candidate_claims)
+        )
+
+    def _canonical_source_lineage(
+        self,
+        interpretation: InterpretationRecord,
+        *,
+        identity: AuthIdentity,
+        visited: frozenset[str] = frozenset(),
+    ) -> tuple[str, str] | None:
+        """Resolve a submitted revision back to its immutable Wiki ACL source."""
+
         if interpretation.operation_binding.actor_id != identity.employee_id:
             raise ScienceAuthorizationError(
                 "Science interpretation owner does not match trusted identity"
+            )
+        if interpretation.interpretation_id in visited:
+            raise ScienceAuthorizationError(
+                "Science interpretation source lineage is not authorized"
             )
         document_refs = {
             claim.document_ref for claim in interpretation.candidate_claims
@@ -145,12 +183,72 @@ class ScienceService:
                 "Science interpretation document binding is not authorized"
             )
         document_ref = next(iter(document_refs))
-        if document_ref.startswith("boi:submitted:"):
-            return
-        if not self._document_access_check(identity, document_ref):
+        persisted_ref = interpretation.canonical_source_document_ref
+        persisted_digest = interpretation.canonical_source_document_digest
+        persisted = (
+            (persisted_ref, persisted_digest)
+            if persisted_ref is not None and persisted_digest is not None
+            else None
+        )
+        if not document_ref.startswith("boi:submitted:"):
+            if persisted is not None:
+                raise ScienceAuthorizationError(
+                    "Science interpretation source lineage is not authorized"
+                )
+            return document_ref, interpretation.document_digest
+
+        predecessor_claim_id = interpretation.supersedes_claim_id
+        if predecessor_claim_id is None:
+            if persisted is not None:
+                raise ScienceAuthorizationError(
+                    "Science interpretation source lineage is not authorized"
+                )
+            return None
+
+        predecessors = self._proposal_records_for_claim(predecessor_claim_id)
+        owned = [
+            record
+            for record in predecessors
+            if record.operation_binding.actor_id == identity.employee_id
+        ]
+        if not owned:
             raise ScienceAuthorizationError(
-                "Science interpretation document access is not authorized"
+                "Science interpretation source lineage is not authorized"
             )
+        matching = [
+            record
+            for record in owned
+            if len(record.candidate_claims) == 1
+            and document_ref
+            == submitted_revision_document_ref(
+                actor_id=identity.employee_id,
+                source_document_ref=record.candidate_claims[0].document_ref,
+                source_document_digest=record.document_digest,
+            )
+        ]
+        if not matching:
+            raise ScienceAuthorizationError(
+                "Science interpretation source lineage is not authorized"
+            )
+        next_visited = visited | {interpretation.interpretation_id}
+        resolved = {
+            self._canonical_source_lineage(
+                record,
+                identity=identity,
+                visited=next_visited,
+            )
+            for record in matching
+        }
+        if len(resolved) != 1:
+            raise ScienceAuthorizationError(
+                "Science interpretation source lineage is not authorized"
+            )
+        canonical_source = next(iter(resolved))
+        if persisted is not None and persisted != canonical_source:
+            raise ScienceAuthorizationError(
+                "Science interpretation source lineage is not authorized"
+            )
+        return canonical_source
 
     @staticmethod
     def _idempotency_digest(value: str) -> str:
@@ -659,25 +757,11 @@ class ScienceService:
             raise ScienceConfirmationRequired(
                 "a document revision must be stored under a submitted document identity"
             )
+        canonical_source_lineage: tuple[str, str] | None = None
         if supersedes_claim_id is not None:
-            resolver = getattr(
-                self.runtime_store, "interpretations_for_claim", None
+            predecessors = list(
+                self._proposal_records_for_claim(supersedes_claim_id)
             )
-            if callable(resolver):
-                predecessors = list(resolver(supersedes_claim_id))
-            else:
-                predecessors = [
-                    record
-                    for record in getattr(
-                        self.runtime_store, "interpretations", {}
-                    ).values()
-                    if record.operation_binding.operation
-                    in {"interpret_document", "submit_claim_candidate"}
-                    and any(
-                        claim.claim_id == supersedes_claim_id
-                        for claim in record.candidate_claims
-                    )
-                ]
             if not predecessors:
                 raise ScienceConfirmationRequired(
                     "superseded Claim provenance is unavailable"
@@ -710,6 +794,11 @@ class ScienceService:
                     raise ScienceConfirmationRequired(
                         "submitted lineage digest does not match the predecessor Claim"
                     )
+                exact_lineage = [
+                    record
+                    for record in same_lineage
+                    if record.document_digest == source_lineage_document_digest
+                ]
                 expected_document_ref = submitted_revision_document_ref(
                     actor_id=identity.employee_id,
                     source_document_ref=str(source_lineage_document_ref),
@@ -718,6 +807,21 @@ class ScienceService:
                 if document_ref != expected_document_ref:
                     raise ScienceConfirmationRequired(
                         "submitted revision destination does not match trusted lineage"
+                    )
+                canonical_sources = {
+                    self._canonical_source_lineage(record, identity=identity)
+                    for record in exact_lineage
+                }
+                if len(canonical_sources) != 1:
+                    raise ScienceConfirmationRequired(
+                        "submitted document lineage is ambiguous"
+                    )
+                canonical_source_lineage = next(iter(canonical_sources))
+                if canonical_source_lineage is not None and not self._document_access_check(
+                    identity, canonical_source_lineage[0]
+                ):
+                    raise ScienceAuthorizationError(
+                        "Science interpretation document access is not authorized"
                     )
             elif not any(
                 record.document_digest == document_digest
@@ -741,6 +845,16 @@ class ScienceService:
                 "supersedes_claim_id": supersedes_claim_id,
                 "source_lineage_document_ref": source_lineage_document_ref,
                 "source_lineage_document_digest": source_lineage_document_digest,
+                "canonical_source_document_ref": (
+                    canonical_source_lineage[0]
+                    if canonical_source_lineage is not None
+                    else None
+                ),
+                "canonical_source_document_digest": (
+                    canonical_source_lineage[1]
+                    if canonical_source_lineage is not None
+                    else None
+                ),
                 "dictionary_release_id": self.dictionary_release_id,
                 "ontology_release_id": self.ontology_release_id,
             }
@@ -813,6 +927,16 @@ class ScienceService:
                 operation_binding=operation_binding,
                 submission_client_kind=client_kind,
                 supersedes_claim_id=supersedes_claim_id,
+                canonical_source_document_ref=(
+                    canonical_source_lineage[0]
+                    if canonical_source_lineage is not None
+                    else None
+                ),
+                canonical_source_document_digest=(
+                    canonical_source_lineage[1]
+                    if canonical_source_lineage is not None
+                    else None
+                ),
             ),
             caught=(ValidationError, ValueError),
             closed_error=ScienceInterpretationUnavailable(
@@ -1450,6 +1574,8 @@ class ScienceService:
             "response_digest",
             "submission_client_kind",
             "supersedes_claim_id",
+            "canonical_source_document_ref",
+            "canonical_source_document_digest",
         )
         if interpretation.candidate_claims != expected_claims or any(
             getattr(interpretation, field) != getattr(source, field)

@@ -1590,6 +1590,8 @@ class ScienceRuntimeStore:
             "response_digest",
             "submission_client_kind",
             "supersedes_claim_id",
+            "canonical_source_document_ref",
+            "canonical_source_document_digest",
         )
         if interpretation.candidate_claims != expected_claims or any(
             getattr(interpretation, field) != getattr(source, field)

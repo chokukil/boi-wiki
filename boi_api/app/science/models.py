@@ -698,6 +698,10 @@ class InterpretationRecord(ScienceModel):
     operation_binding: ScienceOperationBinding
     submission_client_kind: ClaimSubmissionClientKind | None = None
     supersedes_claim_id: str | None = Field(default=None, min_length=1)
+    canonical_source_document_ref: str | None = Field(default=None, min_length=1)
+    canonical_source_document_digest: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
 
     @field_validator("model_id")
     @classmethod
@@ -719,6 +723,22 @@ class InterpretationRecord(ScienceModel):
             raise ValueError("candidate meaning references an unknown claim")
         if {impact.claim_id for impact in self.decision_impact} != set(claim_ids):
             raise ValueError("decision impact must cover every candidate claim")
+        canonical_ref = self.canonical_source_document_ref
+        canonical_digest = self.canonical_source_document_digest
+        if (canonical_ref is None) != (canonical_digest is None):
+            raise ValueError("canonical source lineage must be an exact ref/digest pair")
+        if canonical_ref is not None:
+            if not canonical_ref.startswith("boi:") or canonical_ref.startswith(
+                "boi:submitted:"
+            ):
+                raise ValueError("canonical source lineage must reference a Wiki document")
+            if self.supersedes_claim_id is None or any(
+                not claim.document_ref.startswith("boi:submitted:")
+                for claim in self.candidate_claims
+            ):
+                raise ValueError(
+                    "canonical source lineage is only valid for a submitted revision"
+                )
         expected_refs = sorted(
             {
                 ref

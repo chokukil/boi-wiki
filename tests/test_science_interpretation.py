@@ -51,6 +51,7 @@ from boi_api.app.science.service import (
     ScienceConfirmationRequired,
     ScienceIdempotencyConflict,
     ScienceService,
+    submitted_revision_document_ref,
 )
 from boi_api.app.science.source_identity import (
     ReviewedSourceURLIdentity,
@@ -1608,7 +1609,18 @@ def test_raw_submitted_document_revision_accepts_verified_server_lineage(
     assert revised_claim.document_ref == original_claim.document_ref == document_ref
     assert revised.document_digest == sha256_digest(revised_text)
     assert revised.document_digest != original.document_digest
+    assert revised.canonical_source_document_ref is None
+    assert revised.canonical_source_document_digest is None
     assert store.interpretations[original.interpretation_id] == original
+
+    service._document_access_check = lambda _identity, _document_ref: False
+    confirmed = service.confirm_interpretation(
+        revised.interpretation_id,
+        claim_ids=[revised_claim.claim_id],
+        identity=science_identity,
+        idempotency_key="science-request:raw-lineage-confirm-owner-only",
+    )
+    assert confirmed.candidate_claims[0].interpretation.user_confirmed is True
 
 
 def test_wiki_document_local_revision_transitions_to_verified_submitted_lineage(
@@ -1662,6 +1674,295 @@ def test_wiki_document_local_revision_transitions_to_verified_submitted_lineage(
     assert revised.candidate_claims[0].document_ref != source_ref
     assert revised.document_digest == sha256_digest(revised_text)
     assert store.interpretations[original.interpretation_id] == original
+
+
+def test_wiki_revision_rechecks_canonical_acl_before_accepting_revision(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    source_ref = "boi:public:science:document:fixture"
+    original_text = "RPM 증가 시 두께 변화"
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=source_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(_llm_content()).claims[0],
+        idempotency_key="science-request:wiki-acl-revision-original",
+    )
+    revised_text = f"검토: {original_text}"
+    submitted_ref = submitted_revision_document_ref(
+        actor_id=science_identity.employee_id,
+        source_document_ref=source_ref,
+        source_document_digest=original.document_digest,
+    )
+    service._document_access_check = lambda _identity, _document_ref: False
+
+    with pytest.raises(ScienceAuthorizationError, match="document access"):
+        service.submit_claim_candidate(
+            revised_text,
+            document_ref=submitted_ref,
+            identity=science_identity,
+            client_kind="user",
+            candidate=ScienceInterpretationPayload.model_validate(
+                _llm_content(
+                    extra={"source_span": _span(revised_text, original_text).model_dump()}
+                )
+            ).claims[0],
+            supersedes_claim_id=original.candidate_claims[0].claim_id,
+            source_lineage_document_ref=source_ref,
+            source_lineage_document_digest=original.document_digest,
+            idempotency_key="science-request:wiki-acl-revision-revoked",
+        )
+
+
+def test_wiki_revision_persists_and_propagates_canonical_acl_lineage(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    source_ref = "boi:public:science:document:fixture"
+    original_text = "RPM 증가 시 두께 변화"
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=source_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(_llm_content()).claims[0],
+        idempotency_key="science-request:wiki-acl-propagation-original",
+    )
+    submitted_ref = submitted_revision_document_ref(
+        actor_id=science_identity.employee_id,
+        source_document_ref=source_ref,
+        source_document_digest=original.document_digest,
+    )
+    first_text = f"검토: {original_text}"
+    first = service.submit_claim_candidate(
+        first_text,
+        document_ref=submitted_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(
+            _llm_content(extra={"source_span": _span(first_text, original_text).model_dump()})
+        ).claims[0],
+        supersedes_claim_id=original.candidate_claims[0].claim_id,
+        source_lineage_document_ref=source_ref,
+        source_lineage_document_digest=original.document_digest,
+        idempotency_key="science-request:wiki-acl-propagation-first",
+    )
+    second_text = f"재검토: {original_text}"
+    second = service.submit_claim_candidate(
+        second_text,
+        document_ref=submitted_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(
+            _llm_content(
+                extra={"source_span": _span(second_text, original_text).model_dump()}
+            )
+        ).claims[0],
+        supersedes_claim_id=first.candidate_claims[0].claim_id,
+        source_lineage_document_ref=submitted_ref,
+        source_lineage_document_digest=first.document_digest,
+        idempotency_key="science-request:wiki-acl-propagation-second",
+    )
+
+    assert first.canonical_source_document_ref == source_ref
+    assert first.canonical_source_document_digest == original.document_digest
+    assert second.canonical_source_document_ref == source_ref
+    assert second.canonical_source_document_digest == original.document_digest
+
+
+def test_wiki_revision_rechecks_canonical_acl_before_confirm_and_verify(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    source_ref = "boi:public:science:document:fixture"
+    original_text = "RPM 증가 시 두께 변화"
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=source_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(_llm_content()).claims[0],
+        idempotency_key="science-request:wiki-acl-confirm-original",
+    )
+    submitted_ref = submitted_revision_document_ref(
+        actor_id=science_identity.employee_id,
+        source_document_ref=source_ref,
+        source_document_digest=original.document_digest,
+    )
+    revised_text = f"검토: {original_text}"
+    revised = service.submit_claim_candidate(
+        revised_text,
+        document_ref=submitted_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(
+            _llm_content(
+                extra={"source_span": _span(revised_text, original_text).model_dump()}
+            )
+        ).claims[0],
+        supersedes_claim_id=original.candidate_claims[0].claim_id,
+        source_lineage_document_ref=source_ref,
+        source_lineage_document_digest=original.document_digest,
+        idempotency_key="science-request:wiki-acl-confirm-revision",
+    )
+    claim_id = revised.candidate_claims[0].claim_id
+    service._document_access_check = lambda _identity, _document_ref: False
+
+    with pytest.raises(ScienceAuthorizationError, match="document access"):
+        service.confirm_interpretation(
+            revised.interpretation_id,
+            claim_ids=[claim_id],
+            identity=science_identity,
+            idempotency_key="science-request:wiki-acl-confirm-revoked",
+        )
+
+    service._document_access_check = lambda _identity, _document_ref: True
+    confirmed = service.confirm_interpretation(
+        revised.interpretation_id,
+        claim_ids=[claim_id],
+        identity=science_identity,
+        idempotency_key="science-request:wiki-acl-confirm-allowed",
+    )
+    service._document_access_check = lambda _identity, _document_ref: False
+
+    with pytest.raises(ScienceAuthorizationError, match="document access"):
+        service.verify_claim(
+            confirmed.interpretation_id,
+            claim_id,
+            ReleaseSelection(foundation="sci-release:foundation-0.1"),
+            identity=science_identity,
+        )
+    with pytest.raises(ScienceAuthorizationError, match="document access"):
+        service.verify_document(
+            confirmed.interpretation_id,
+            ReleaseSelection(foundation="sci-release:foundation-0.1"),
+            identity=science_identity,
+            idempotency_key="science-request:wiki-acl-report-revoked",
+        )
+
+
+def test_wiki_revision_legacy_lineage_is_traversed_and_forgery_fails_closed(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, _llm = _service()
+    source_ref = "boi:public:science:document:fixture"
+    original_text = "RPM 증가 시 두께 변화"
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=source_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(_llm_content()).claims[0],
+        idempotency_key="science-request:wiki-acl-legacy-original",
+    )
+    submitted_ref = submitted_revision_document_ref(
+        actor_id=science_identity.employee_id,
+        source_document_ref=source_ref,
+        source_document_digest=original.document_digest,
+    )
+    revised_text = f"검토: {original_text}"
+    revised = service.submit_claim_candidate(
+        revised_text,
+        document_ref=submitted_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(
+            _llm_content(
+                extra={"source_span": _span(revised_text, original_text).model_dump()}
+            )
+        ).claims[0],
+        supersedes_claim_id=original.candidate_claims[0].claim_id,
+        source_lineage_document_ref=source_ref,
+        source_lineage_document_digest=original.document_digest,
+        idempotency_key="science-request:wiki-acl-legacy-revision",
+    )
+    legacy = revised.model_copy(
+        update={
+            "canonical_source_document_ref": None,
+            "canonical_source_document_digest": None,
+        },
+        deep=True,
+    )
+    store.interpretations[revised.interpretation_id] = legacy
+    service._document_access_check = lambda _identity, _document_ref: False
+
+    with pytest.raises(ScienceAuthorizationError, match="document access"):
+        service.confirm_interpretation(
+            revised.interpretation_id,
+            claim_ids=[revised.candidate_claims[0].claim_id],
+            identity=science_identity,
+            idempotency_key="science-request:wiki-acl-legacy-confirm",
+        )
+
+    forged = revised.model_copy(
+        update={
+            "canonical_source_document_ref": "boi:public:science:document:other",
+            "canonical_source_document_digest": sha256_digest("forged origin"),
+        },
+        deep=True,
+    )
+    store.interpretations[revised.interpretation_id] = forged
+    service._document_access_check = lambda _identity, _document_ref: True
+
+    with pytest.raises(ScienceAuthorizationError, match="source lineage"):
+        service.confirm_interpretation(
+            revised.interpretation_id,
+            claim_ids=[revised.candidate_claims[0].claim_id],
+            identity=science_identity,
+            idempotency_key="science-request:wiki-acl-forged-confirm",
+        )
+
+
+def test_real_store_persists_wiki_revision_canonical_acl_lineage(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, _llm = _real_service(tmp_path)
+    source_ref = "boi:public:science:document:fixture"
+    original_text = "RPM 증가 시 두께 변화"
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=source_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(_llm_content()).claims[0],
+        idempotency_key="science-request:wiki-acl-store-original",
+    )
+    revised_text = f"검토: {original_text}"
+    submitted_ref = submitted_revision_document_ref(
+        actor_id=science_identity.employee_id,
+        source_document_ref=source_ref,
+        source_document_digest=original.document_digest,
+    )
+    revised = service.submit_claim_candidate(
+        revised_text,
+        document_ref=submitted_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(
+            _llm_content(
+                extra={"source_span": _span(revised_text, original_text).model_dump()}
+            )
+        ).claims[0],
+        supersedes_claim_id=original.candidate_claims[0].claim_id,
+        source_lineage_document_ref=source_ref,
+        source_lineage_document_digest=original.document_digest,
+        idempotency_key="science-request:wiki-acl-store-revision",
+    )
+
+    stored = store.load_interpretation(revised.interpretation_id)
+    assert stored.canonical_source_document_ref == source_ref
+    assert stored.canonical_source_document_digest == original.document_digest
+    service._document_access_check = lambda _identity, _document_ref: False
+    with pytest.raises(ScienceAuthorizationError, match="document access"):
+        service.confirm_interpretation(
+            stored.interpretation_id,
+            claim_ids=[stored.candidate_claims[0].claim_id],
+            identity=science_identity,
+            idempotency_key="science-request:wiki-acl-store-confirm-revoked",
+        )
 
 
 def test_wiki_document_revision_rejects_actor_ref_and_digest_attacks(
