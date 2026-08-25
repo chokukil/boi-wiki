@@ -74,9 +74,8 @@ def _has_deterministic_alias_boundary(
     if not ascii_token:
         return True
     end = start + len(alias)
-    is_ascii_identifier = lambda value: value.isascii() and (
-        value.isalnum() or value == "_"
-    )
+    def is_ascii_identifier(value: str) -> bool:
+        return value.isascii() and (value.isalnum() or value == "_")
     return (
         (start == 0 or not is_ascii_identifier(text[start - 1]))
         and (end == len(text) or not is_ascii_identifier(text[end]))
