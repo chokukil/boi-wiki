@@ -42,10 +42,10 @@ Science Verifier는 AI 답변을 신뢰하는 기능이 아니다. 사용자·Co
 1. `SOP` 다음의 `Science Verifier`를 열고 문서를 붙여 넣거나 Wiki 문서의 선택 영역에서 검토 화면으로 이동한다.
 2. `등록 용어 찾기`가 서버의 `POST /api/science/aliases/detect`를 호출한다. 이 단계는 Claim이나 verdict를 만들지 않는다.
 3. 사용자가 subject, relation, object, 조건과 문서 구간을 확인·수정한다. Codex·Claude 같은 외부 Agent가 같은 구조의 후보를 제출해도 서버 검사는 동일하다.
-   - Agent가 넣은 수량·조건은 곧바로 Rule 적용 사실이 되지 않는다. 사용자 화면에서 값과 단위를 명시적으로 확인하고 `client_kind=user`의 새 Claim으로 다시 제출해야 한다.
+   - Agent가 넣은 수량·조건은 곧바로 Rule 적용 사실이 되지 않는다. 일반 REST/MCP 호출은 `client_kind=user`를 선언할 수 없다. 사용자 화면은 browser session에 묶인 1회용 challenge를 발급받고, 정확히 같은 문서·Claim·수량·조건 payload로 한 번만 소비해 새 사용자 revision을 만든다.
    - Agent가 넣은 공정 단계·물질 상태도 자기 선언한 모호성 여부와 무관하게 차단한다. 사용자가 화면에서 직접 작성한 새 Claim만 적용 조건 후보가 된다.
    - 수식이 있으면 Agent는 정확한 수식 구간, 의미식 후보, 기호별 개념·수량·단위·조건 후보만 제출할 수 있다. 이것도 해석 제안일 뿐이다. 서버가 문서에 실제로 있는 완전한 구간인지, 기호가 실제 문맥에 있는지, 등록되지 않은 변수를 만들지 않았는지 다시 검사한다.
-4. 결과를 바꿀 수 있는 모호성만 보라색 점선으로 표시한다. 사용자가 확인하면 그 Claim만 새 immutable interpretation으로 다시 검증한다.
+4. 결과를 바꿀 수 있는 모호성만 보라색 점선으로 표시한다. 사용자가 확인하면 actor·원본 interpretation digest·claim 목록에 묶인 별도 1회용 challenge로 그 Claim만 새 immutable interpretation으로 다시 검증한다. challenge는 private runtime 저장소에서 원자적으로 소비되며 bearer Agent, service token, MCP, 다른 사용자, 만료·재사용 요청은 실패한다.
    - 직접 붙여 넣은 문서를 수정할 때는 서버가 돌려준 submitted document ref와 이전 digest를 함께 보낸다. 서버가 같은 actor의 실제 선행 Claim을 확인한 경우에만 `supersedes_claim_id` 계보를 잇고, 이전 record는 변경하지 않는다. raw pasted document는 이 owner-only semantics를 유지한다.
    - Wiki local revision은 원본 `boi:*`를 고치지 않는다. 서버가 원본 Wiki의 정확한 ref/digest와 source ACL을 다시 확인한 뒤에만 server-derived `boi:submitted:*` 계보를 만든다. 이 원본 source ref/digest는 submit, confirm, `verify_claim`, `verify_document`마다 재확인되고 저장소 재시작 뒤에도 보존된다. 계보가 누락·위조·malformed면 예전 record나 client payload로 보완하지 않고 fail closed한다.
 5. 활성 Release가 없거나 Rule·적용 조건·정확한 Evidence locator가 부족하면 판정을 보류한다. 빨간 표시를 만들지 않는다.
@@ -74,12 +74,12 @@ Web 설명은 검토된 수식과 읽기 표현을 함께 제공하고, 변수 �
 |---|---|---|---|
 | 등록 별칭 탐지 | `POST /api/science/aliases/detect` | `science_aliases_detect` | 정확한 Unicode 구간과 활성화와 무관한 해석 후보만 반환 |
 | Claim 후보 제출 | `POST /api/science/claims/submit` | `science_claim_submit` | 모든 클라이언트 입력을 untrusted로 재검증 |
-| 사용자 확인 | interpretation confirm endpoint | `science_interpretation_confirm` | 인증된 사용자의 명시적 확인만 허용 |
+| 사용자 확인 | browser-only user revision/confirmation challenge + commit endpoint | `science_interpretation_confirm`은 browser-required 오류만 반환 | browser session에 묶인 1회용 사용자 동작만 허용 |
 | 결정론적 검증 | claim/document verify endpoint | `science_verify_claim`, `science_verify_document` | 활성 Release의 Rule만 판정 |
 | 근거 확인 | evidence endpoint | `science_evidence_get` | ACL이 허용한 원문·번역·locator·URL. 단독 조회는 운영 적격성을 주장하지 않음 |
 | 보고서 | report/export endpoint | `science_report_get`, `science_report_export` | 같은 stored report를 Markdown/PDF로 표현 |
 
-Claim 제출 payload에 `verdict`, `rule`, `evidence`, `citation`, `correction`을 넣어도 서버가 권위로 받아들이지 않는다. 수식 후보의 `equation_id`, digest, 의미식, 변수·단위·조건도 모두 서버 재검증 대상이며 Agent가 제시한 Equation identity 자체를 신뢰하지 않는다. 존재하지 않는 `ontology_ref`, 문서에 없는 별칭, 겹치거나 불완전한 역할·수식 구간, 미확인 조건은 판정 전에 차단한다. 같은 표준화 Claim과 Release는 `client_kind`가 user, codex, claude, qwen 중 무엇이든 같은 결과를 내야 한다.
+Claim 제출 payload에 `verdict`, `rule`, `evidence`, `citation`, `correction`을 넣어도 서버가 권위로 받아들이지 않는다. 수식 후보의 `equation_id`, digest, 의미식, 변수·단위·조건도 모두 서버 재검증 대상이며 Agent가 제시한 Equation identity 자체를 신뢰하지 않는다. 존재하지 않는 `ontology_ref`, 문서에 없는 별칭, 겹치거나 불완전한 역할·수식 구간, 미확인 조건은 판정 전에 차단한다. 같은 확인된 표준화 Claim과 Release는 최초 후보를 codex, claude, qwen 또는 사용자가 작성했는지와 무관하게 같은 결정론적 결과를 내야 한다. MCP는 사용자 확인이나 Release 활성화를 대행하지 않는다.
 
 최종 구현 증거 보고서는 현재 Git revision과 tracked pytest suite identity 계약(각 suite의 수량·testcase identity digest, 최소 한 건의 실제 실행)이 묶인 JUnit, verification manifest가 요구하는 모든 named browser check와 각 캡처 hash, Candidate qualification, exact-commit 독립 리뷰의 Critical·Important 0건이 모두 일치할 때만 `FINAL / VERIFIED`로 표기할 수 있다. 이 표기는 구현 증거가 완결됐다는 뜻일 뿐 과학적 진실·안전·공정 승인·Release activation은 뜻하지 않는다. 환경상 실행할 수 없는 계약 테스트가 있으면 정확한 node ID allowlist와 사유를 보고서에 그대로 노출한다. PPT는 exact `FINAL` verification manifest, UI digest, 검증된 PDF render, tracked clean source를 읽지 못하면 생성하지 않는다. build scorecard의 사람 visual QA는 실제 검토 전까지 `PENDING`이다.
 
@@ -99,9 +99,14 @@ BOI_SCIENCE_ACCESS_MODE=admin_only
 BOI_SCIENCE_DICTIONARY_RELEASE_ID=boi:dictionary:current/0.1.0
 BOI_SCIENCE_ONTOLOGY_RELEASE_ID=sci:ontology:general-science-draft/0.1.0
 SCIENCE_RUNTIME_ROOT=/runtime/science
+BOI_SCIENCE_AUTHORITY_ROOT=/runtime/science/authority
 ```
 
 실험 어댑터를 켤 때만 `BOI_SCIENCE_LLM_BASE_URL`, `BOI_SCIENCE_LLM_MODEL`, `BOI_SCIENCE_LLM_API_KEY` 등 `.env` 값을 사용한다. 내부 endpoint와 credential은 코드·문서·fixture·보고서에 기록하지 않는다.
+
+`SCIENCE_RUNTIME_ROOT`와 그 아래 `authority/`, `locks/`는 서비스 uid 소유의 mode `0700`, 외부에서 provision하는 `science-release-authority-registry.json`은 mode `0600`이어야 한다. registry는 exact frozen Release·decision material·component·holdout manifest/result digest와 Web/REST/MCP/Markdown/PDF G6 parity digest를 닫힌 schema로 보존한다. 파일이 없거나, 권한·digest·채널 집합이 다르거나, caller가 임의 필드를 추가하면 activation만 fail-closed하며 현재 비활성 검토 UI는 계속 동작한다. 웹 애플리케이션은 이 registry를 만들거나 승인 값을 합성하지 않는다.
+
+Registry 최상위는 `schema_version: science-release-authority-registry/0.1`, `entries`, `registry_digest`만 허용한다. 각 entry는 `release_id`, `frozen_release_content_hash`, `decision_material_digest`, 전체 `component_digests`, `holdout_manifest_digest`, `holdout_result_digest`, `rule_freeze_commit`, `channel_parity_digest`, 정확히 `Web, REST, MCP, Markdown, PDF`인 `channels`, `channel_parity_status: passed`, `qualification_status: passed`, `record_digest`를 갖는다. `record_digest`는 자신을 제외한 entry, `registry_digest`는 자신을 제외한 최상위 객체의 정규화 JSON digest다. 이것은 Admin approval을 대신하지 않는다. 활성화 직전 staged Catalog가 신뢰 ID provider의 실제 Admin review/activation 역할, 모든 pinned component 승인, holdout reviewer 분리와 시점, Rule·Equation·Evidence 결속을 다시 확인한다.
 
 # 역할과 승인
 
@@ -112,6 +117,8 @@ SCIENCE_RUNTIME_ROOT=/runtime/science
 | `science.admin` | Source/Evidence, 법칙·수식·Rule과 evaluator binding 검토, Release 검증·활성화·철회 |
 
 용어 수정과 검증 중 수정은 분리한다. `이번 검증에서 수정`은 해당 Claim의 새 interpretation만 만들고, `개선 제안`은 별도 proposal을 만든다. 제안이 Release Candidate에 포함되더라도 현재 검증 결과나 전역 지식을 즉시 바꾸지 않는다.
+
+Release 활성화와 철회는 trusted browser session의 사람 Admin 동작만 받는다. REST/MCP bearer가 `user_confirmed=true`를 보내도 사람 동작으로 인정하지 않는다. 활성화 관리자는 승인이나 holdout을 대신 만들지 않고, 이미 승인된 Release에 대해 private authority registry, 신뢰 시계, 독립 holdout, G6 parity, 모든 component 승인과 exact digest를 임시 staged Catalog에서 먼저 확인한 뒤 lifecycle metadata만 원자적으로 교체한다. 실패하면 원본 bytes로 rollback한다.
 
 # 빨간 표시의 필수 조건
 

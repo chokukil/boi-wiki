@@ -11,6 +11,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from threading import Thread
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 import pytest
@@ -297,15 +298,44 @@ def test_science_verifier_loads_equation_view_as_optional_report_layer(
     assert "mountResolvedEquationAssets" in script
 
 
-def test_science_release_operational_ui_requires_exact_active_status(
+def test_science_release_operational_ui_requires_authoritative_catalog_capability(
     boi_app_module,
 ) -> None:
-    """Treating superseded knowledge as operational could authorize a red mark."""
+    """An active label must never substitute for the operational authority gate."""
 
-    assert boi_app_module.science_release_is_operational("active") is True
-    assert boi_app_module.science_release_is_operational("release_candidate") is False
-    assert boi_app_module.science_release_is_operational("superseded") is False
-    assert boi_app_module.science_release_is_operational("withdrawn") is False
+    class RejectingCatalog:
+        def active_release(self):
+            from boi_api.app.science.exceptions import ScienceOperationalError
+
+            raise ScienceOperationalError("holdout is not exact")
+
+    active = SimpleNamespace(release_id="sci-release:fixture", status="active")
+    candidate = SimpleNamespace(
+        release_id="sci-release:fixture", status="release_candidate"
+    )
+
+    assert boi_app_module.science_release_operational_state(
+        RejectingCatalog(), active
+    ) == (False, "operational_authority_unavailable")
+    assert boi_app_module.science_release_operational_state(
+        RejectingCatalog(), candidate
+    ) == (False, "release_not_active")
+
+    class AuthorizedCatalog:
+        def active_release(self):
+            return active
+
+        def resolve_release_set(self, selection):
+            assert selection.foundation == active.release_id
+            return "resolved-release-set"
+
+        def resolve_operational_rule_set(self, release_set):
+            assert release_set == "resolved-release-set"
+            return "operational-capability"
+
+    assert boi_app_module.science_release_operational_state(
+        AuthorizedCatalog(), active
+    ) == (True, "operational_authority_verified")
 
 
 def test_candidate_demo_never_renders_inactive_expected_violation_as_red(

@@ -115,6 +115,8 @@ curl -s http://localhost:28000/api/harness/acceptance
 
 Science Verifier는 기본적으로 LLM 없이 동작합니다. 사용자·Codex·Claude·Qwen은 untrusted Claim 후보만 제출하고, 서버가 문서 span·별칭·ontology reference·subject/relation/object 역할·조건을 다시 검증합니다. 사람에게 확인된 Claim만 active Release가 있을 때 결정론적으로 판정할 수 있으며, client가 보낸 verdict·Rule·Evidence·citation은 권위가 없습니다. Qwen 경로는 `BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED=1`일 때만 노출되는 선택적 실험 어댑터입니다. live availability, tuning, context size, 특정 모델 응답은 release 조건이 아니고, 장애 시에도 Claim·판정·빨간 표시를 만들지 않습니다.
 
+일반 REST/MCP 호출은 사용자 확인이나 Release 활성화를 대신할 수 없습니다. 문서 해석 수정·확인은 browser session과 exact revision에 묶인 1회용 challenge를 사용하고, Release lifecycle 변경은 사람 Admin의 browser action과 private `BOI_SCIENCE_AUTHORITY_ROOT`에 외부 provision된 G5/G6 exact authority가 모두 있을 때만 원자적으로 수행됩니다. authority가 없거나 불일치하면 활성화만 fail-closed하며 비활성 후보 검토는 계속 사용할 수 있습니다.
+
 현재 Science Release는 `release_candidate`이며 inactive입니다. 자동 Candidate qualification은 `G0..G4`까지만 통과할 수 있고, 독립 sealed holdout `G5`, active stored-report parity `G6`, 사람 Science Admin 원문 검토·activation audit `G7`은 별도 증거 전까지 `PENDING`입니다. 구현 증거의 `FINAL / VERIFIED`는 Git revision에 묶인 pytest suite identity(수량·digest와 실제 실행), 수식 표시 경계를 포함한 정확히 27개 browser check와 capture hash, Candidate qualification, exact-commit 독립 리뷰가 일치한다는 뜻일 뿐, 과학적 진실·안전·공정 승인·Release activation을 뜻하지 않습니다. 운영·권한·Release 승인 경계는 [Science Verifier 운영 가이드](data/boi/public/boi-wiki-manual/guide/science-verifier-operation.md)를 따릅니다.
 
 BoI Agent의 Pilot 완료 기준은 단일 질문이 아니라 REST/Web Pet/MCP 시나리오 매트릭스 통과입니다. 상세 기준은 http://localhost:28000/docs/boi:public:boi-wiki-manual:agent:boi-agent-scenario-validation?employee_id=100001 에 정리되어 있습니다.

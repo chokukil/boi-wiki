@@ -15,11 +15,13 @@ Read `harness/science-verification-harness.md`; for formulas also read `harness/
 2. Call `science_claim_submit`. Never submit verdict, Rule, Evidence, citation, correction, or Release. BoI re-resolves every span and concept role.
    - An **equation claim proposal** may include exact `source span`, parsed expression candidate, each `symbol`'s concept and `quantity kind`, `unit`, condition, `sign`, `reference direction`, and `ontology` refs. It is untrusted. BoI rejects incomplete/overlapping spans, absent symbols, **Agent가 만든 변수**, and **확인되지 않은 단위** or conditions.
    - If `V` could mean `voltage` or `volume` and change the result, show a **purple dotted** ambiguity. Record outcome-neutral notation silently.
-3. For **결과가 달라지는 모호성**, show alternatives, get **명시적 사용자 확인**, then call `science_interpretation_confirm` with `user_confirmed: true`. Never infer confirmation; re-run only that claim.
+3. For **결과가 달라지는 모호성**, show alternatives and require **명시적 사용자 확인** in the Science Verifier web review canvas. Stop until the user completes its browser-session-bound confirmation. MCP/REST Agents must not call a confirmation or manufacture `user_confirmed: true`; after the web action, resume from the stored confirmed interpretation and re-run only that claim.
 4. Call `science_verify_document`; use `science_verify_claim` only to resume one claim. Wiki revisions use server-issued lineage. Missing/forged lineage or ACL failure is `verification unavailable`.
 5. Red underline/shading requires deterministic `VIOLATION`, active Rule, satisfied applicability, and exact eligible Evidence locator. Ambiguity stays purple, never red.
 6. Show a sufficient scientific explanation and 1–2 links. Use `science_evidence_get` for expanded **원문**, translation, `locator`, URL, and integrity. Standalone Evidence is not operational authority.
 7. Call `science_report_get`; preserve `release`, digests, quote hashes, and `report_digest`. Use `science_report_export` for Markdown/PDF and preserve `export_digest`.
+
+Never call or emulate Release activation/withdrawal. Those are trusted browser actions for a human `science.admin` and also require an externally provisioned exact G5/G6 authority registry. A missing authority is a deliberate fail-closed state, not an Agent task.
 
 ## Equation boundary
 

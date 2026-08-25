@@ -39,18 +39,20 @@ def test_verifier_skill_preserves_boi_authority_and_the_confirmation_loop():
     for tool in (
         "science_aliases_detect",
         "science_claim_submit",
-        "science_interpretation_confirm",
         "science_verify_document",
         "science_evidence_get",
         "science_report_get",
         "science_report_export",
     ):
         assert tool in body
+    assert "science_interpretation_confirm" not in body
+    assert "browser-session-bound confirmation" in body
+    assert "must not call a confirmation" in body
     assert body.index("science_aliases_detect") < body.index("science_claim_submit")
     assert body.index("science_claim_submit") < body.index(
-        "science_interpretation_confirm"
+        "Science Verifier web review canvas"
     )
-    assert body.index("science_interpretation_confirm") < body.index(
+    assert body.index("Science Verifier web review canvas") < body.index(
         "science_verify_document"
     )
     for required in (

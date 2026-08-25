@@ -154,6 +154,10 @@ BOI_CONTENT_ROOT = Path(os.getenv("BOI_CONTENT_ROOT") or os.getenv("DATA_ROOT") 
 BOI_RUNTIME_ROOT = Path(os.getenv("BOI_RUNTIME_ROOT") or str(BOI_CONTENT_ROOT.parent))
 DATA_ROOT = Path(os.getenv("DATA_ROOT") or str(BOI_CONTENT_ROOT))
 SCIENCE_RUNTIME_ROOT = Path(os.getenv("SCIENCE_RUNTIME_ROOT") or str(BOI_RUNTIME_ROOT / "science"))
+BOI_SCIENCE_AUTHORITY_ROOT = Path(
+    os.getenv("BOI_SCIENCE_AUTHORITY_ROOT")
+    or str(SCIENCE_RUNTIME_ROOT / "authority")
+)
 BOI_SCIENCE_ACCESS_MODE = os.getenv("BOI_SCIENCE_ACCESS_MODE", "admin_only").strip().lower()
 BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED = os.getenv(
     "BOI_SCIENCE_EXPERIMENTAL_LLM_ENABLED", "0"
@@ -17872,10 +17876,25 @@ def science_candidate_demo_context(catalog: Any) -> dict[str, Any]:
     }
 
 
-def science_release_is_operational(status: str) -> bool:
-    """Permit new scientific verdict display only from the exact active lifecycle."""
+def science_release_operational_state(catalog: Any, release: Any) -> tuple[bool, str]:
+    """Use the same authority gate as verification before labeling UI operational."""
 
-    return status == "active"
+    if release.status != "active":
+        return False, "release_not_active"
+    from .science.exceptions import ScienceCatalogError, ScienceOperationalError
+    from .science.models import ReleaseSelection
+
+    try:
+        active_release = catalog.active_release()
+        if active_release.release_id != release.release_id:
+            return False, "different_release_is_operational"
+        release_set = catalog.resolve_release_set(
+            ReleaseSelection(foundation=release.release_id)
+        )
+        catalog.resolve_operational_rule_set(release_set)
+    except (ScienceCatalogError, ScienceOperationalError):
+        return False, "operational_authority_unavailable"
+    return True, "operational_authority_verified"
 
 
 @app.get("/science-verifier", response_class=HTMLResponse)
@@ -17907,7 +17926,9 @@ async def science_verifier_page(
         if any(role.startswith("science.power_user:") for role in roles)
         else "User"
     )
-    operational = science_release_is_operational(release.status)
+    operational, operational_reason = science_release_operational_state(
+        catalog, release
+    )
     demo_context = science_candidate_demo_context(catalog) if demo else None
     return templates.TemplateResponse(
         "science_verifier.html",
@@ -17927,6 +17948,7 @@ async def science_verifier_page(
                 "release_digest": release.content_hash,
                 "status": release.status,
                 "operational": operational,
+                "operational_reason": operational_reason,
                 "known_limitations": release.known_limitations,
             },
             "role_label": role_label,
@@ -17940,6 +17962,7 @@ async def science_verifier_page(
                 "release_id": release.release_id,
                 "release_status": release.status,
                 "operational": operational,
+                "operational_reason": operational_reason,
             },
         },
     )
@@ -32499,6 +32522,10 @@ def _configure_science_verifier() -> None:
     from .science.authorization import ScienceAuthorization
     from .science.catalog import ScienceCatalog
     from .science.llm import ScienceLLMClient, ScienceLLMConfig
+    from .science.release_manager import (
+        ScienceAuthorityRegistry,
+        ScienceReleaseManager,
+    )
     from .science.routes import ScienceRouteDependencies, create_science_router
     from .science.service import ScienceService
     from .science.storage import ScienceRuntimeStore
@@ -32508,15 +32535,53 @@ def _configure_science_verifier() -> None:
     def science_roles(identity: AuthIdentity) -> list[str]:
         return roles_for(identity.employee_id)
 
-    catalog = ScienceCatalog(
-        DATA_ROOT,
-        reviewer_role_resolver=lambda actor: roles_for(str(actor.get("user_id") or "")),
-    )
+    def science_trusted_clock() -> datetime:
+        return datetime.now(timezone.utc)
+
+    authority_registry = ScienceAuthorityRegistry(BOI_SCIENCE_AUTHORITY_ROOT)
+
+    def build_catalog(boi_root: Path) -> ScienceCatalog:
+        return ScienceCatalog(
+            boi_root,
+            reviewer_role_resolver=lambda actor: roles_for(
+                str(actor.get("user_id") or "")
+            ),
+            trusted_holdout_resolver=authority_registry.trusted_holdout_resolver,
+            trusted_clock=science_trusted_clock,
+        )
+
+    catalog_holder: dict[str, ScienceCatalog] = {
+        "catalog": build_catalog(DATA_ROOT)
+    }
+
+    class CurrentScienceCatalog:
+        """Delegate every lookup to the atomically reloaded Catalog snapshot."""
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(catalog_holder["catalog"], name)
+
+    catalog_proxy = CurrentScienceCatalog()
     runtime_store = ScienceRuntimeStore(
         SCIENCE_RUNTIME_ROOT,
         authorization=authorization,
         roles_for=science_roles,
-        report_authority_validator=catalog.validate_verification_report_authority,
+        report_authority_validator=lambda report: catalog_holder[
+            "catalog"
+        ].validate_verification_report_authority(report),
+    )
+
+    def reload_catalog(catalog: ScienceCatalog) -> None:
+        catalog_holder["catalog"] = catalog
+        app.state.science_catalog = catalog
+
+    release_manager = ScienceReleaseManager(
+        boi_root=DATA_ROOT,
+        lock_root=SCIENCE_RUNTIME_ROOT / "locks",
+        catalog_factory=build_catalog,
+        capability_validator=authority_registry.validate_activation_authority,
+        roles_for=roles_for,
+        clock=science_trusted_clock,
+        reload_callback=reload_catalog,
     )
 
     def load_document(identity: AuthIdentity, boi_ref: str) -> str | None:
@@ -32541,6 +32606,7 @@ def _configure_science_verifier() -> None:
         return check(identity, document_ref)
 
     def service_provider() -> ScienceService:
+        catalog = catalog_holder["catalog"]
         bindings = catalog.ontology_bindings_for_release(BOI_SCIENCE_ONTOLOGY_RELEASE_ID)
         return ScienceService(
             catalog=catalog,
@@ -32555,10 +32621,13 @@ def _configure_science_verifier() -> None:
             ontology_release_id=BOI_SCIENCE_ONTOLOGY_RELEASE_ID,
             ontology_binding_ids=[binding.object_id for binding in bindings],
             document_access_check=can_read_boi,
+            clock=science_trusted_clock,
         )
 
     app.state.science_authorization = authorization
-    app.state.science_catalog = catalog
+    app.state.science_catalog = catalog_holder["catalog"]
+    app.state.science_authority_registry = authority_registry
+    app.state.science_release_manager = release_manager
     app.state.science_runtime_store = runtime_store
     app.include_router(
         create_science_router(
@@ -32566,13 +32635,14 @@ def _configure_science_verifier() -> None:
                 authorization=authorization,
                 service_provider=service_provider,
                 runtime_store=runtime_store,
-                catalog=catalog,
+                catalog=catalog_proxy,
                 boi_root=DATA_ROOT,
                 current_identity_dependency=current_identity,
                 roles_for=roles_for,
                 load_document=load_document,
                 can_read_boi=can_read_boi,
                 can_export_boi=can_export_boi,
+                release_manager=release_manager,
                 can_read_report=lambda identity, report: report_access(identity, report, export=False),
                 can_export_report=lambda identity, report: report_access(identity, report, export=True),
             )

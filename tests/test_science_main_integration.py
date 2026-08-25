@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from boi_api.app.science.digests import sha256_digest
+
 
 def _manual_claim_candidate(document: str) -> dict:
     return {
@@ -69,8 +71,56 @@ def test_main_application_registers_science_verifier_routes(boi_app_module) -> N
         boi_app_module.app.state.science_runtime_store._report_authority_validator
     )
     assert validator is not None
-    assert validator.__self__ is boi_app_module.app.state.science_catalog
-    assert validator.__name__ == "validate_verification_report_authority"
+    catalog = boi_app_module.app.state.science_catalog
+    assert callable(catalog._trusted_clock)
+    assert callable(catalog._trusted_holdout_resolver)
+    assert boi_app_module.app.state.science_release_manager is not None
+    assert boi_app_module.app.state.science_authority_registry is not None
+
+
+def test_main_release_manager_is_wired_but_current_candidate_stays_unchanged(
+    boi_app_module,
+) -> None:
+    """A missing private G5/G6 authority must block, not disable, activation."""
+
+    catalog = boi_app_module.app.state.science_catalog
+    release = catalog.resolve_release("sci-release:0.1.0")
+    release_path = catalog._objects["release"][release.release_id].path
+    before = release_path.read_bytes()
+    request_digest = sha256_digest(
+        {
+            "operation": "activate",
+            "release_id": release.release_id,
+            "release_digest": release.content_hash,
+        }
+    )
+
+    client = TestClient(boi_app_module.app)
+    mutation = {
+        "release_digest": release.content_hash,
+        "request_digest": request_digest,
+        "idempotency_key": "main-current-candidate-activation",
+    }
+    challenge = client.post(
+        f"/api/science/admin/releases/{release.release_id}/activate-challenge"
+        "?employee_id=100001",
+        json=mutation,
+    )
+    assert challenge.status_code == 200
+    response = client.post(
+        f"/api/science/admin/releases/{release.release_id}/activate"
+        "?employee_id=100001",
+        json={
+            **mutation,
+            "challenge_id": challenge.json()["challenge_id"],
+            "user_confirmed": True,
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "science_operational_unavailable"
+    assert "manager_unavailable" not in response.text
+    assert release_path.read_bytes() == before
 
 
 def test_main_application_keeps_science_authorization_separate(boi_app_module) -> None:
@@ -124,13 +174,21 @@ def test_invalid_optional_qwen_config_does_not_break_llm_free_routes(
         "/api/science/aliases/detect?employee_id=100001",
         json={"document": document, "request_id": "invalid-qwen-aliases"},
     )
+    user_revision = {
+        "document": document,
+        "candidate": _manual_claim_candidate(document),
+        "idempotency_key": "invalid-qwen-manual-submit",
+    }
+    challenge = client.post(
+        "/api/science/user-revisions/challenge?employee_id=100001",
+        json=user_revision,
+    )
+    assert challenge.status_code == 200
     submitted = client.post(
-        "/api/science/claims/submit?employee_id=100001",
+        "/api/science/user-revisions/commit?employee_id=100001",
         json={
-            "document": document,
-            "client_kind": "user",
-            "candidate": _manual_claim_candidate(document),
-            "idempotency_key": "invalid-qwen-manual-submit",
+            **user_revision,
+            "challenge_id": challenge.json()["challenge_id"],
         },
     )
     interpreted = client.post(

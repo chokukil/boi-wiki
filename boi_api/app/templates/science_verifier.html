@@ -14,6 +14,7 @@
     data-science-review-canvas
     data-release-status="{{ release.status }}"
     data-operational="{{ 'true' if release.operational else 'false' }}"
+    data-operational-reason="{{ release.operational_reason }}"
     data-employee-id="{{ employee_id }}"
     data-document-ref="{{ document_ref }}"
     data-science-core-url="{{ asset_url('science_verifier_core.mjs') }}"
@@ -28,7 +29,11 @@
         {% else %}
         <span class="science-preview-label">{% if role_label == 'Admin' %}Admin candidate qualification preview{% else %}Inactive candidate review{% endif %}</span>
         <h2 id="science-release-title">후보 지식 검증 미리보기</h2>
+        {% if release.status == 'active' %}
+        <p><strong>운영 판정이 아닙니다.</strong> 저장 상태는 active지만 Admin 승인·독립 holdout·Rule·Evidence 운영 권한 검사를 모두 통과하지 못했습니다.</p>
+        {% else %}
         <p><strong>운영 판정이 아닙니다.</strong> 이 릴리스는 Admin 검토·승인·활성화 전의 비활성 후보입니다.</p>
+        {% endif %}
         {% endif %}
       </div>
       <dl class="science-release-meta">
