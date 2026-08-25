@@ -21,7 +21,7 @@
 ## 구현 증거와 완료 경계
 
 - 구현 검증 보고서의 정본은 `artifacts/science-verifier/qualification-report.md`와 같은 report digest에 결속된 PDF다. `FINAL / VERIFIED` 표기는 이 구현 증거 묶음의 완결성만 뜻하며, 과학적 진실·안전·공정 승인·Release activation을 뜻하지 않는다.
-- 이 묶음은 현재 Git revision에 결속된 tracked pytest suite identity 계약(각 suite의 수량과 testcase identity digest, 최소 한 건의 실제 실행), 정확히 21개의 브라우저 check와 각 캡처 hash, Candidate qualification, exact-commit 독립 리뷰(Critical·Important 0건)를 함께 검증해야 한다.
+- 이 묶음은 현재 Git revision에 결속된 tracked pytest suite identity 계약(각 suite의 수량과 testcase identity digest, 최소 한 건의 실제 실행), 수식 표시·fallback·모바일·비운영 경계를 포함한 정확히 27개의 브라우저 check와 각 캡처 hash, Candidate qualification, exact-commit 독립 리뷰(Critical·Important 0건)를 함께 검증해야 한다.
 - 발표 자료 정본은 `artifacts/science-verifier/deck/science-verifier-evidence.pptx`다. Deck은 exact `FINAL` verification manifest, UI capture digest, 검증된 PDF render, tracked clean source를 모두 읽을 수 있을 때만 최종본으로 만들 수 있다. 빌드 scorecard의 사람 육안 검수는 실제 검토 전까지 `PENDING`으로 남긴다.
 - Release는 `release_candidate`/inactive로 유지한다. `G0..G4` 자동 Candidate qualification 통과와 `G5..G7`의 `PENDING`을 한 문장으로 상쇄하거나 activation으로 표현하지 않는다.
 - 계획별 구현·검토 커밋과 최종 whole-branch review가 모두 끝난 뒤 feature branch만 push한다. branch는 `codex/science-verifier`이며 원격 SHA 일치를 확인한다.

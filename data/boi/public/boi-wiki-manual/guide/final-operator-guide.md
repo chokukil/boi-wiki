@@ -85,7 +85,7 @@ Science Verifier는 AI 답변을 과학 권위로 취급하지 않는다. User·
 
 Wiki 문서의 local revision은 원본 `boi:*`를 덮어쓰지 않는다. submit·confirm·`verify_claim`·`verify_document` 시점마다 server-derived canonical source ref/digest와 원본 ACL을 다시 확인한다. 계보는 재시작 뒤에도 남아야 하며 누락·위조·malformed lineage는 fail closed한다. 직접 붙여 넣은 문서는 최초 owner만 접근하는 semantics를 유지한다.
 
-구현 증거에서 `FINAL / VERIFIED`는 Git revision에 결속된 pytest suite identity(수량·digest·실제 실행), 정확히 21개의 browser check/capture hash, Candidate qualification, exact-commit 독립 리뷰가 일치한다는 뜻이다. 이것은 과학적 진실·안전·공정 승인·Release activation이 아니다. 현재 Release는 `release_candidate`/inactive이고, `G0..G4` 자동 Candidate qualification과 별개로 G5 독립 sealed holdout, G6 active stored-report parity, G7 사람 Science Admin review/activation audit는 `PENDING`이다.
+구현 증거에서 `FINAL / VERIFIED`는 Git revision에 결속된 pytest suite identity(수량·digest·실제 실행), 수식 asset·fallback·모바일·비운영 경계를 포함한 정확히 27개의 browser check/capture hash, Candidate qualification, exact-commit 독립 리뷰가 일치한다는 뜻이다. 이것은 과학적 진실·안전·공정 승인·Release activation이 아니다. 현재 Release는 `release_candidate`/inactive이고, `G0..G4` 자동 Candidate qualification과 별개로 G5 독립 sealed holdout, G6 active stored-report parity, G7 사람 Science Admin review/activation audit는 `PENDING`이다.
 
 # Final Architecture
 

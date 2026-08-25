@@ -316,7 +316,7 @@ Add a document page action and selection popover. Store the short transfer recor
 
 - [ ] **Step 6: Add headless browser verification**
 
-Follow existing CDP scripts. Verify desktop and mobile widths, nav order, a real Wiki text selection, exact red/purple spans, evidence expansion, keyboard focus, Markdown/PDF download MIME and digest headers, disabled-Qwen API boundary, Wiki local revision lineage, and absence of browser console errors. Final evidence requires exactly 21 named browser checks and capture hashes; this plan does not claim that the historical 20-check step ran.
+Follow existing CDP scripts. Verify desktop and mobile widths, nav order, a real Wiki text selection, exact red/purple spans, evidence expansion, keyboard focus, Markdown/PDF download MIME and digest headers, disabled-Qwen API boundary, Wiki local revision lineage, and absence of browser console errors. Final evidence requires exactly 27 named browser checks and capture hashes, including exact reviewed Equation asset rendering, Evidence/accessibility/copy controls, renderer failure fallback with no red effect, contained mobile equation scrolling, and an explicit non-operational QA label.
 
 - [ ] **Step 7: Run UI checks and commit**
 

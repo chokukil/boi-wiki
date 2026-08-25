@@ -746,7 +746,7 @@ release:
 
 ### 구현 증거와 Candidate 경계
 
-- 구현 증거의 `FINAL / VERIFIED`는 현재 Git revision에 결속된 tracked pytest suite identity 계약(수량과 testcase identity digest, 최소 한 건의 실제 실행), 정확히 21개의 named browser check와 각 capture hash, Candidate qualification, exact-commit 독립 리뷰(Critical·Important 0건)가 서로 일치할 때만 사용할 수 있다. 이 표기는 구현 증거의 완결성일 뿐 과학적 진실, 안전, 공정 승인 또는 Release activation이 아니다.
+- 구현 증거의 `FINAL / VERIFIED`는 현재 Git revision에 결속된 tracked pytest suite identity 계약(수량과 testcase identity digest, 최소 한 건의 실제 실행), 정확히 27개의 named browser check와 각 capture hash, Candidate qualification, exact-commit 독립 리뷰(Critical·Important 0건)가 서로 일치할 때만 사용할 수 있다. 27개에는 수식 asset identity·Evidence·접근성·copy, 실패 fallback·red 0건, 모바일 내부 scroll, 비운영 QA 경계 검사가 포함된다. 이 표기는 구현 증거의 완결성일 뿐 과학적 진실, 안전, 공정 승인 또는 Release activation이 아니다.
 - Deck은 exact `FINAL` verification manifest, UI capture digest, verified PDF render, tracked clean source를 함께 확인해야 한다. 렌더가 생성됐다는 사실만으로 사람 visual QA가 끝난 것은 아니며, 실제 사람이 검사하기 전의 scorecard는 `PENDING`이다.
 - `release_candidate`는 inactive다. 자동 Candidate qualification `G0..G4`와 별도로 G5(독립 sealed holdout), G6(active stored-report Web/REST/MCP/Markdown/PDF parity), G7(사람 Science Admin 원문 검토와 activation audit)은 자체 증거 전까지 `PENDING`으로 유지한다.
 

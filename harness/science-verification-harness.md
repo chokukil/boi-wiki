@@ -77,7 +77,7 @@ Interpretation, external Claim submission, correction resubmission, confirmation
 - Web, REST, MCP, Markdown, PDF가 claim ID, verdict, Evidence ID, Release ID, `report_digest`에서 완전히 같은지 확인한다.
 - 과학적 설명이 충분하되 Rule/Evidence 범위를 넘는 권고나 종합 점수를 만들지 않는지 확인한다.
 - restart, retry, concurrent same-key request에서도 같은 report bytes와 audit count를 유지하는지 확인한다.
-- 구현 증거가 tracked pytest suite identity(수량·testcase identity digest, 실제 실행 1건 이상), 정확히 21 named browser checks와 capture hashes, Candidate qualification, exact-commit independent review를 함께 묶는지 확인한다. 이는 implementation evidence의 `FINAL / VERIFIED` 조건일 뿐 activation 증명이 아니다.
+- 구현 증거가 tracked pytest suite identity(수량·testcase identity digest, 실제 실행 1건 이상), 정확히 27 named browser checks와 capture hashes, Candidate qualification, exact-commit independent review를 함께 묶는지 확인한다. browser set에는 exact Equation asset identity, Evidence·접근성·copy, hostile/digest/Web Crypto 실패 fallback과 red 0건, mobile contained scroll, 명시적 non-operational QA 경계가 포함되어야 한다. 이는 implementation evidence의 `FINAL / VERIFIED` 조건일 뿐 activation 증명이 아니다.
 
 ## Failure Artifacts
 
