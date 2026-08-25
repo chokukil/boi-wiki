@@ -220,7 +220,7 @@ metric(slide2, 10.28, 1.5, "0", "기본 Qwen 호출", C.teal);
 slide2.addShape(pptx.ShapeType.roundRect, { x: 5.96, y: 2.8, w: 6.32, h: 2.4, rectRadius: 0.07, fill: { color: C.white }, line: { color: C.border, width: 1 } });
 slide2.addText("서버가 다시 확인하는 것", { x: 6.25, y: 3.05, w: 2.8, h: 0.3, fontFace: "Aptos Display", fontSize: 15, bold: true, color: C.ink, margin: 0 });
 slide2.addText([
-  { text: "01  ", options: { bold: true, color: C.purple } }, { text: "canonical 문서의 exact Unicode span\n" },
+  { text: "01  ", options: { bold: true, color: C.purple } }, { text: "원본 문서의 정확한 Unicode 구간\n" },
   { text: "02  ", options: { bold: true, color: C.purple } }, { text: "등록 alias와 subject / relation / object 역할\n" },
   { text: "03  ", options: { bold: true, color: C.purple } }, { text: "ontology_ref, 조건, 사용자 확인 event\n" },
   { text: "04  ", options: { bold: true, color: C.purple } }, { text: "client_kind와 무관한 동일 Claim 결과" },
@@ -303,7 +303,7 @@ slideSvgs.push(svgFrame(`
   ${rounded(978, 180, 240, 118, "#FFFFFF", "#D7DCE5", 12)}${text(1002, 228, "0", 34, "#6D28D9", 700)}${text(1002, 270, "inactive 빨간 표시", 14, "#667085")}
   ${rounded(1238, 180, 240, 118, "#FFFFFF", "#D7DCE5", 12)}${text(1262, 228, "0", 34, "#0F766E", 700)}${text(1262, 270, "기본 Qwen 호출", 14, "#667085")}
   ${rounded(718, 334, 760, 286, "#FFFFFF", "#D7DCE5", 12)}${text(750, 376, "서버가 다시 확인하는 것", 23, "#111827", 700)}
-  ${lines(752, 425, "01   canonical 문서의 exact Unicode span\n02   등록 alias와 subject / relation / object 역할\n03   ontology_ref, 조건, 사용자 확인 event\n04   client_kind와 무관한 동일 Claim 결과", 18, "#111827", 400, 1.6)}
+  ${lines(752, 425, "01   원본 문서의 정확한 Unicode 구간\n02   등록 alias와 subject / relation / object 역할\n03   ontology_ref, 조건, 사용자 확인 event\n04   client_kind와 무관한 동일 Claim 결과", 18, "#111827", 400, 1.6)}
   ${rounded(718, 652, 760, 128, "#FFF7ED", "#D97706", 12, 2)}${text(750, 704, "release_candidate에서는 confirm 뒤에도 verify를 호출하지 않는다", 20, "#D97706", 700)}${text(750, 742, "문서 위 표시는 별칭 해석이며 판정이 아니다.", 15, "#667085")}
   ${text(54, 862, "Source · live /science-verifier · Chromium CDP strict run · 2026-08-25", 12, "#667085")}${page(2)}
 `));

@@ -47,7 +47,7 @@ Science Verifier는 AI 답변을 신뢰하는 기능이 아니다. 사용자·Co
    - 수식이 있으면 Agent는 정확한 수식 구간, 의미식 후보, 기호별 개념·수량·단위·조건 후보만 제출할 수 있다. 이것도 해석 제안일 뿐이다. 서버가 문서에 실제로 있는 완전한 구간인지, 기호가 실제 문맥에 있는지, 등록되지 않은 변수를 만들지 않았는지 다시 검사한다.
 4. 결과를 바꿀 수 있는 모호성만 보라색 점선으로 표시한다. 사용자가 확인하면 그 Claim만 새 immutable interpretation으로 다시 검증한다.
    - 직접 붙여 넣은 문서를 수정할 때는 서버가 돌려준 submitted document ref와 이전 digest를 함께 보낸다. 서버가 같은 actor의 실제 선행 Claim을 확인한 경우에만 `supersedes_claim_id` 계보를 잇고, 이전 record는 변경하지 않는다. raw pasted document는 이 owner-only semantics를 유지한다.
-   - Wiki local revision은 원본 `boi:*`를 고치지 않는다. 서버가 원본 Wiki의 exact ref/digest와 source ACL을 다시 확인한 뒤에만 server-derived `boi:submitted:*` lineage를 만든다. 이 canonical source ref/digest는 submit, confirm, `verify_claim`, `verify_document`마다 재확인되고 저장소 재시작 뒤에도 보존된다. lineage가 누락·위조·malformed면 예전 record나 client payload로 보완하지 않고 fail closed한다.
+   - Wiki local revision은 원본 `boi:*`를 고치지 않는다. 서버가 원본 Wiki의 정확한 ref/digest와 source ACL을 다시 확인한 뒤에만 server-derived `boi:submitted:*` 계보를 만든다. 이 원본 source ref/digest는 submit, confirm, `verify_claim`, `verify_document`마다 재확인되고 저장소 재시작 뒤에도 보존된다. 계보가 누락·위조·malformed면 예전 record나 client payload로 보완하지 않고 fail closed한다.
 5. 활성 Release가 없거나 Rule·적용 조건·정확한 Evidence locator가 부족하면 판정을 보류한다. 빨간 표시를 만들지 않는다.
 6. 결정론적 `VIOLATION`에만 빨간 밑줄과 음영을 표시한다. 교정 카드에는 충분한 과학적 설명과 출처 1~2개를 항상 보이고, 펼쳐보기에서 원문·검토된 번역·locator·원본 URL을 제공한다.
 
@@ -79,7 +79,7 @@ Web 설명은 검토된 수식과 읽기 표현을 함께 제공하고, 변수 �
 | 근거 확인 | evidence endpoint | `science_evidence_get` | ACL이 허용한 원문·번역·locator·URL. 단독 조회는 운영 적격성을 주장하지 않음 |
 | 보고서 | report/export endpoint | `science_report_get`, `science_report_export` | 같은 stored report를 Markdown/PDF로 표현 |
 
-Claim 제출 payload에 `verdict`, `rule`, `evidence`, `citation`, `correction`을 넣어도 서버가 권위로 받아들이지 않는다. 수식 후보의 `equation_id`, digest, 의미식, 변수·단위·조건도 모두 서버 재검증 대상이며 Agent가 제시한 Equation identity 자체를 신뢰하지 않는다. 존재하지 않는 `ontology_ref`, 문서에 없는 별칭, 겹치거나 불완전한 역할·수식 구간, 미확인 조건은 판정 전에 차단한다. 같은 canonical Claim과 Release는 `client_kind`가 user, codex, claude, qwen 중 무엇이든 같은 결과를 내야 한다.
+Claim 제출 payload에 `verdict`, `rule`, `evidence`, `citation`, `correction`을 넣어도 서버가 권위로 받아들이지 않는다. 수식 후보의 `equation_id`, digest, 의미식, 변수·단위·조건도 모두 서버 재검증 대상이며 Agent가 제시한 Equation identity 자체를 신뢰하지 않는다. 존재하지 않는 `ontology_ref`, 문서에 없는 별칭, 겹치거나 불완전한 역할·수식 구간, 미확인 조건은 판정 전에 차단한다. 같은 표준화 Claim과 Release는 `client_kind`가 user, codex, claude, qwen 중 무엇이든 같은 결과를 내야 한다.
 
 최종 구현 증거 보고서는 현재 Git revision과 tracked pytest suite identity 계약(각 suite의 수량·testcase identity digest, 최소 한 건의 실제 실행)이 묶인 JUnit, verification manifest가 요구하는 모든 named browser check와 각 캡처 hash, Candidate qualification, exact-commit 독립 리뷰의 Critical·Important 0건이 모두 일치할 때만 `FINAL / VERIFIED`로 표기할 수 있다. 이 표기는 구현 증거가 완결됐다는 뜻일 뿐 과학적 진실·안전·공정 승인·Release activation은 뜻하지 않는다. 환경상 실행할 수 없는 계약 테스트가 있으면 정확한 node ID allowlist와 사유를 보고서에 그대로 노출한다. PPT는 exact `FINAL` verification manifest, UI digest, 검증된 PDF render, tracked clean source를 읽지 못하면 생성하지 않는다. build scorecard의 사람 visual QA는 실제 검토 전까지 `PENDING`이다.
 
@@ -123,7 +123,7 @@ SCIENCE_RUNTIME_ROOT=/runtime/science
 - 수식형 Rule이면 active Release의 exact Equation ID·digest와 지원 evaluator binding이 일치함
 - 필수 적용 조건이 충족됨
 - 결정 Evidence가 active이고 원문 hash와 locator가 검증됨
-- 빨간 text span이 canonical document의 Claim 구간과 일치함
+- 빨간 text span이 원본 문서의 Claim 구간과 일치함
 
 하나라도 부족하면 `INSUFFICIENT_INFORMATION`, `OUTSIDE_VALIDITY_DOMAIN`, `EMPIRICAL_VERIFICATION_REQUIRED` 또는 verification unavailable로 보류한다. Ontology는 용어 해석과 지식 탐색을 도울 뿐 verdict를 만들지 않는다. AI가 작성한 설명도 승인된 Knowledge statement와 결정 Evidence 범위를 넘어서는 권고를 추가하지 않는다.
 
