@@ -19,6 +19,7 @@ from boi_api.app.okf import (
     validate_okf_core_metadata,
 )
 from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.equations import DimensionVector, ScienceEquationKnowledge
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
 from boi_api.app.science.models import (
     ClaimPacket,
@@ -59,6 +60,8 @@ from boi_api.app.science.source_identity import (
     _issue_catalog_reviewed_source_url_identity,
 )
 from boi_api.app.science.units import (
+    InvalidQuantityError,
+    expected_dimensionality,
     source_span_mentions_quantity,
     unmatched_reviewed_quantity_mentions,
 )
@@ -144,6 +147,16 @@ class QualificationCase(BaseModel):
     case_id: str = Field(min_length=1)
 
 
+class ResolvedEquationKnowledge(BaseModel):
+    """One closed Equation Knowledge package resolved from its Knowledge owner."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    knowledge_id: str
+    knowledge_digest: str
+    equation: ScienceEquationKnowledge
+
+
 def _normalized(value: Any) -> Any:
     """Convert YAML values to canonical JSON-compatible values without filesystem state."""
     if isinstance(value, datetime):
@@ -192,6 +205,7 @@ class ScienceCatalog:
         self._trusted_clock = trusted_clock
         self._clock_skew = clock_skew
         self._objects = self._load_objects()
+        self._equations = self._load_equations()
         self._validate_references()
         self._cases = self._load_cases()
 
@@ -284,6 +298,79 @@ class ScienceCatalog:
             )
             indexed_kinds[object_id] = kind
         return objects
+
+    @staticmethod
+    def _dimension_unit_expression(dimension: DimensionVector) -> str:
+        terms = [
+            ("kilogram", dimension.mass),
+            ("meter", dimension.length),
+            ("second", dimension.time),
+            ("ampere", dimension.electric_current),
+            ("kelvin", dimension.thermodynamic_temperature),
+            ("mole", dimension.amount_of_substance),
+            ("candela", dimension.luminous_intensity),
+        ]
+        factors = [
+            unit if exponent == 1 else f"{unit} ** {exponent}"
+            for unit, exponent in terms
+            if exponent
+        ]
+        return " * ".join(factors) if factors else "dimensionless"
+
+    def _validate_equation_variable_units(
+        self, equation: ScienceEquationKnowledge
+    ) -> None:
+        for variable in equation.variables:
+            try:
+                actual = expected_dimensionality(variable.unit)
+                declared = expected_dimensionality(
+                    self._dimension_unit_expression(variable.dimension)
+                )
+            except InvalidQuantityError as exc:
+                raise ScienceCatalogError(
+                    "Science Equation variable has an undefined unit: "
+                    f"{equation.equation_id}:{variable.variable_id}"
+                ) from exc
+            if actual != declared:
+                raise ScienceCatalogError(
+                    "Science Equation variable unit and dimension disagree: "
+                    f"{equation.equation_id}:{variable.variable_id}"
+                )
+
+    def _load_equations(self) -> dict[str, ResolvedEquationKnowledge]:
+        equations: dict[str, ResolvedEquationKnowledge] = {}
+        for knowledge in sorted(
+            self._objects["knowledge"].values(), key=lambda item: item.object_id
+        ):
+            raw_equations = getattr(knowledge, "equations", None)
+            if raw_equations is None:
+                continue
+            if not isinstance(raw_equations, list):
+                raise ScienceCatalogError(
+                    f"Science Knowledge has invalid equations: {knowledge.object_id}"
+                )
+            for raw_equation in raw_equations:
+                equation = validate_with_closed_error(
+                    lambda raw_equation=raw_equation: ScienceEquationKnowledge.model_validate(
+                        deepcopy(raw_equation)
+                    ),
+                    caught=(ValidationError, ValueError, TypeError),
+                    closed_error=ScienceCatalogError(
+                        "Science Knowledge has invalid Equation Knowledge: "
+                        f"{knowledge.object_id}"
+                    ),
+                )
+                if equation.equation_id in equations:
+                    raise ScienceCatalogError(
+                        "duplicate Science Equation ID: " f"{equation.equation_id}"
+                    )
+                self._validate_equation_variable_units(equation)
+                equations[equation.equation_id] = ResolvedEquationKnowledge(
+                    knowledge_id=knowledge.object_id,
+                    knowledge_digest=knowledge.digest,
+                    equation=equation,
+                )
+        return equations
 
     def _load_cases(self) -> dict[str, QualificationCase]:
         cases: dict[str, QualificationCase] = {}
@@ -409,7 +496,10 @@ class ScienceCatalog:
             self._require("source", self._string_field(evidence, "source_id"))
         for knowledge in self._objects["knowledge"].values():
             self._require("pack", self._string_field(knowledge, "pack_id"))
-            self._require_many("evidence", self._references(knowledge, "evidence_refs"))
+            evidence_refs = self._references(knowledge, "evidence_refs")
+            self._require_many("evidence", evidence_refs)
+            for resolved in self.equations_for_knowledge(knowledge.object_id):
+                self._validate_equation_evidence(resolved.equation, evidence_refs)
         for rule in self._objects["rule"].values():
             self._require("pack", self._string_field(rule, "pack_id"))
             self._require_many("knowledge", self._references(rule, "knowledge_refs"))
@@ -433,6 +523,53 @@ class ScienceCatalog:
                     raise ScienceCatalogError(
                         f"release cannot be its own component: {ref}"
                     )
+
+    def _validate_equation_evidence(
+        self,
+        equation: ScienceEquationKnowledge,
+        knowledge_evidence_refs: tuple[str, ...],
+    ) -> None:
+        for use in equation.evidence_uses:
+            if use.evidence_ref not in knowledge_evidence_refs:
+                raise ScienceCatalogError(
+                    "Science Equation Evidence is not owned by its Knowledge: "
+                    f"{equation.equation_id}:{use.evidence_ref}"
+                )
+            evidence = self._require("evidence", use.evidence_ref)
+            if getattr(evidence, "claim_scope_hash", None) != use.claim_scope_hash:
+                raise ScienceCatalogError(
+                    "Science Equation Evidence claim scope mismatch: "
+                    f"{equation.equation_id}:{use.evidence_ref}"
+                )
+            raw_locator = getattr(evidence, "locator", None)
+            if not isinstance(raw_locator, Mapping):
+                raise ScienceCatalogError(
+                    "Science Equation Evidence has no exact locator: "
+                    f"{equation.equation_id}:{use.evidence_ref}"
+                )
+            equation_locator = use.locator.model_dump(
+                mode="json", exclude={"equation_label"}, exclude_none=True
+            )
+            mismatches = [
+                key
+                for key, value in equation_locator.items()
+                if raw_locator.get(key) != value
+            ]
+            if mismatches:
+                raise ScienceCatalogError(
+                    "Science Equation Evidence locator mismatch: "
+                    f"{equation.equation_id}:{use.evidence_ref}:"
+                    + ",".join(sorted(mismatches))
+                )
+            source_equation = raw_locator.get("equation")
+            if (
+                source_equation is not None
+                and source_equation != use.transcription.original_notation
+            ):
+                raise ScienceCatalogError(
+                    "Science Equation transcription does not match the exact Evidence locator: "
+                    f"{equation.equation_id}:{use.evidence_ref}"
+                )
 
     @staticmethod
     def _string_field(obj: ScienceObject, name: str) -> str:
@@ -1432,6 +1569,28 @@ class ScienceCatalog:
 
     def knowledge(self, knowledge_id: str) -> ScienceObject:
         return self._copy_object(self._require("knowledge", knowledge_id))
+
+    def equation(self, equation_id: str) -> ResolvedEquationKnowledge:
+        resolved = self._equations.get(equation_id)
+        if resolved is None:
+            raise ScienceCatalogError(f"unknown Science Equation: {equation_id}")
+        return resolved.model_copy(deep=True)
+
+    def equations_for_knowledge(
+        self, knowledge_id: str
+    ) -> tuple[ResolvedEquationKnowledge, ...]:
+        self._require("knowledge", knowledge_id)
+        return tuple(
+            item.model_copy(deep=True)
+            for item in sorted(
+                (
+                    item
+                    for item in self._equations.values()
+                    if item.knowledge_id == knowledge_id
+                ),
+                key=lambda item: item.equation.equation_id,
+            )
+        )
 
     def rule(self, rule_id: str) -> ScienceObject:
         return self._copy_object(self._require("rule", rule_id))
