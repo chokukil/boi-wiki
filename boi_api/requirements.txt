@@ -4,6 +4,7 @@ jinja2==3.1.5
 python-multipart==0.0.20
 pydantic>=2.12.2,<3
 reportlab>=4.2,<5
+svglib>=2.2,<3
 pint>=0.25,<1
 PyYAML==6.0.2
 aiokafka==0.12.0
