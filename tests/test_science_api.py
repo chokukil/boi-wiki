@@ -385,15 +385,42 @@ def test_raw_claim_route_keeps_stable_document_identity_and_forwards_lineage() -
         original_text
     )
 
+    canonical_revision = client.post(
+        "/api/science/claims/submit",
+        json={
+            "document": f"Wiki 수정: {original_text}",
+            "client_kind": "user",
+            "candidate": _claim_candidate(),
+            "supersedes_claim_id": "sci-claim:wiki-prior",
+            "source_lineage": {
+                "document_ref": "boi:public:science:document:fixture",
+                "document_digest": sha256_digest(original_text),
+            },
+            "idempotency_key": "claim-submit-wiki-lineage-second",
+        },
+    )
+
+    assert canonical_revision.status_code == 200
+    _call, (_document, canonical_kwargs) = service.calls[-1]
+    assert canonical_kwargs["document_ref"] == (
+        "boi:submitted:"
+        "03907111e63f944210b94ae1898d02749291ad4b7e4a25aa548997551073fdf5"
+    )
+    assert canonical_kwargs["document_ref"] != canonical_kwargs["source_lineage_document_ref"]
+    assert (
+        canonical_kwargs["source_lineage_document_ref"]
+        == "boi:public:science:document:fixture"
+    )
+
 
 @pytest.mark.parametrize(
     "payload_update",
     [
         {"source_lineage": {"document_ref": "boi:submitted:x", "document_digest": "sha256:" + "1" * 64}},
-        {"supersedes_claim_id": "sci-claim:prior", "source_lineage": {"document_ref": "boi:public:science:document:fixture", "document_digest": "sha256:" + "1" * 64}},
+        {"supersedes_claim_id": "sci-claim:prior", "source_lineage": {"document_ref": "external:science:document:fixture", "document_digest": "sha256:" + "1" * 64}},
     ],
 )
-def test_raw_claim_route_rejects_unbound_or_non_submitted_lineage(
+def test_raw_claim_route_rejects_unbound_or_non_boi_lineage(
     payload_update: dict,
 ) -> None:
     client, service = _client()

@@ -61,6 +61,26 @@ class ScienceIdempotencyConflict(ScienceOperationalError):
 CLAIM_SUBMISSION_VERSION = "science-claim-submission/0.1.0"
 
 
+def submitted_revision_document_ref(
+    *,
+    actor_id: str,
+    source_document_ref: str,
+    source_document_digest: str,
+) -> str:
+    """Derive one actor-bound destination for a trusted document lineage."""
+
+    if source_document_ref.startswith("boi:submitted:"):
+        return source_document_ref
+    submitted_id = sha256_digest(
+        {
+            "actor_id": actor_id,
+            "source_document_ref": source_document_ref,
+            "source_document_digest": source_document_digest,
+        }
+    ).removeprefix("sha256:")
+    return f"boi:submitted:{submitted_id}"
+
+
 def _has_deterministic_alias_boundary(
     text: str,
     *,
@@ -634,10 +654,10 @@ class ScienceService:
             )
         if lineage_provided and (
             not document_ref.startswith("boi:submitted:")
-            or source_lineage_document_ref != document_ref
+            or not str(source_lineage_document_ref).startswith("boi:")
         ):
             raise ScienceConfirmationRequired(
-                "submitted lineage document does not match the current document"
+                "a document revision must be stored under a submitted document identity"
             )
         if supersedes_claim_id is not None:
             resolver = getattr(
@@ -689,6 +709,15 @@ class ScienceService:
                 ):
                     raise ScienceConfirmationRequired(
                         "submitted lineage digest does not match the predecessor Claim"
+                    )
+                expected_document_ref = submitted_revision_document_ref(
+                    actor_id=identity.employee_id,
+                    source_document_ref=str(source_lineage_document_ref),
+                    source_document_digest=str(source_lineage_document_digest),
+                )
+                if document_ref != expected_document_ref:
+                    raise ScienceConfirmationRequired(
+                        "submitted revision destination does not match trusted lineage"
                     )
             elif not any(
                 record.document_digest == document_digest

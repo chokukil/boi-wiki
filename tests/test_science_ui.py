@@ -234,25 +234,25 @@ def test_browser_contract_builds_exact_manual_candidate_and_gates_red_mark() -> 
     }
 
 
-def test_browser_contract_carries_only_server_returned_submitted_lineage() -> None:
+def test_browser_contract_carries_only_server_returned_document_lineage() -> None:
     module_url = (REPO_ROOT / "boi_api/app/static/science_verifier_core.mjs").as_uri()
     script = f"""
-      import {{ submittedDocumentLineage, submittedRevisionPayload }} from {json.dumps(module_url)};
-      const valid = submittedDocumentLineage({{
+      import {{ sourceDocumentLineage, revisionPayload }} from {json.dumps(module_url)};
+      const valid = sourceDocumentLineage({{
         document_digest: 'sha256:' + 'a'.repeat(64),
         candidate_claims: [{{ document_ref: 'boi:submitted:stable', claim_id: 'sci-claim:one' }}],
       }});
-      const canonical = submittedDocumentLineage({{
+      const canonical = sourceDocumentLineage({{
         document_digest: 'sha256:' + 'b'.repeat(64),
         candidate_claims: [{{ document_ref: 'boi:public:science:document:one', claim_id: 'sci-claim:two' }}],
       }});
-      const incomplete = submittedDocumentLineage({{
+      const incomplete = sourceDocumentLineage({{
         document_digest: 'sha256:forged',
         candidate_claims: [{{ document_ref: 'boi:submitted:stable', claim_id: 'sci-claim:three' }}],
       }});
-      const revision = submittedRevisionPayload('sci-claim:one', valid);
-      const unbound = submittedRevisionPayload(null, valid);
-      const canonicalRevision = submittedRevisionPayload('sci-claim:two', null);
+      const revision = revisionPayload('sci-claim:one', valid);
+      const unbound = revisionPayload(null, valid);
+      const canonicalRevision = revisionPayload('sci-claim:two', canonical);
       console.log(JSON.stringify({{ valid, canonical, incomplete, revision, unbound, canonicalRevision }}));
     """
 
@@ -270,7 +270,10 @@ def test_browser_contract_carries_only_server_returned_submitted_lineage() -> No
             "document_ref": "boi:submitted:stable",
             "document_digest": "sha256:" + "a" * 64,
         },
-        "canonical": None,
+        "canonical": {
+            "document_ref": "boi:public:science:document:one",
+            "document_digest": "sha256:" + "b" * 64,
+        },
         "incomplete": None,
         "revision": {
             "supersedes_claim_id": "sci-claim:one",
@@ -280,7 +283,13 @@ def test_browser_contract_carries_only_server_returned_submitted_lineage() -> No
             },
         },
         "unbound": {},
-        "canonicalRevision": {"supersedes_claim_id": "sci-claim:two"},
+        "canonicalRevision": {
+            "supersedes_claim_id": "sci-claim:two",
+            "source_lineage": {
+                "document_ref": "boi:public:science:document:one",
+                "document_digest": "sha256:" + "b" * 64,
+            },
+        },
     }
 
 

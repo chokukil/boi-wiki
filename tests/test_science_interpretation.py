@@ -1611,6 +1611,151 @@ def test_raw_submitted_document_revision_accepts_verified_server_lineage(
     assert store.interpretations[original.interpretation_id] == original
 
 
+def test_wiki_document_local_revision_transitions_to_verified_submitted_lineage(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, store, _llm = _service()
+    original_text = "RPM 증가 시 두께 변화"
+    source_ref = "boi:public:science:document:fixture"
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=source_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(_llm_content()).claims[0],
+        idempotency_key="science-request:wiki-lineage-original",
+    )
+    revised_text = f"검토: {original_text}"
+    revised_candidate = ScienceInterpretationPayload.model_validate(
+        _llm_content(
+            extra={
+                "source_span": {
+                    "start": len("검토: "),
+                    "end": len(revised_text),
+                    "exact": original_text,
+                    "prefix": "검토: ",
+                    "suffix": "",
+                }
+            }
+        )
+    ).claims[0]
+    submitted_ref = (
+        "boi:submitted:"
+        "feb519c18bd0f77b9e26c4bdb0cd85e18f53471f2bf80634c82b733d98fd3030"
+    )
+
+    revised = service.submit_claim_candidate(
+        revised_text,
+        document_ref=submitted_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=revised_candidate,
+        supersedes_claim_id=original.candidate_claims[0].claim_id,
+        source_lineage_document_ref=source_ref,
+        source_lineage_document_digest=original.document_digest,
+        idempotency_key="science-request:wiki-lineage-revised",
+    )
+
+    assert revised.supersedes_claim_id == original.candidate_claims[0].claim_id
+    assert revised.candidate_claims[0].claim_id != original.candidate_claims[0].claim_id
+    assert revised.candidate_claims[0].document_ref == submitted_ref
+    assert revised.candidate_claims[0].document_ref != source_ref
+    assert revised.document_digest == sha256_digest(revised_text)
+    assert store.interpretations[original.interpretation_id] == original
+
+
+def test_wiki_document_revision_rejects_actor_ref_and_digest_attacks(
+    science_identity: AuthIdentity,
+):
+    service, _catalog, _store, _llm = _service()
+    original_text = "RPM 증가 시 두께 변화"
+    source_ref = "boi:public:science:document:fixture"
+    original = service.submit_claim_candidate(
+        original_text,
+        document_ref=source_ref,
+        identity=science_identity,
+        client_kind="user",
+        candidate=ScienceInterpretationPayload.model_validate(_llm_content()).claims[0],
+        idempotency_key="science-request:wiki-lineage-attack-original",
+    )
+    claim_id = original.candidate_claims[0].claim_id
+    revised_text = f"검토: {original_text}"
+    revised_candidate = ScienceInterpretationPayload.model_validate(
+        _llm_content(
+            extra={
+                "source_span": {
+                    "start": len("검토: "),
+                    "end": len(revised_text),
+                    "exact": original_text,
+                    "prefix": "검토: ",
+                    "suffix": "",
+                }
+            }
+        )
+    ).claims[0]
+    submitted_ref = (
+        "boi:submitted:"
+        "feb519c18bd0f77b9e26c4bdb0cd85e18f53471f2bf80634c82b733d98fd3030"
+    )
+
+    other = AuthIdentity(
+        employee_id="100003",
+        display_name="Other Science User",
+        roles=["science.user", "boi.viewer"],
+    )
+    with pytest.raises(ScienceAuthorizationError, match="Claim owner"):
+        service.submit_claim_candidate(
+            revised_text,
+            document_ref=submitted_ref,
+            identity=other,
+            client_kind="user",
+            candidate=revised_candidate,
+            supersedes_claim_id=claim_id,
+            source_lineage_document_ref=source_ref,
+            source_lineage_document_digest=original.document_digest,
+            idempotency_key="science-request:wiki-lineage-user-attack",
+        )
+
+    with pytest.raises(ScienceConfirmationRequired, match="destination"):
+        service.submit_claim_candidate(
+            revised_text,
+            document_ref="boi:submitted:forged-destination",
+            identity=science_identity,
+            client_kind="user",
+            candidate=revised_candidate,
+            supersedes_claim_id=claim_id,
+            source_lineage_document_ref=source_ref,
+            source_lineage_document_digest=original.document_digest,
+            idempotency_key="science-request:wiki-lineage-ref-attack",
+        )
+
+    with pytest.raises(ScienceConfirmationRequired, match="lineage document"):
+        service.submit_claim_candidate(
+            revised_text,
+            document_ref=submitted_ref,
+            identity=science_identity,
+            client_kind="user",
+            candidate=revised_candidate,
+            supersedes_claim_id=claim_id,
+            source_lineage_document_ref="boi:public:science:document:other",
+            source_lineage_document_digest=original.document_digest,
+            idempotency_key="science-request:wiki-lineage-source-ref-attack",
+        )
+
+    with pytest.raises(ScienceConfirmationRequired, match="lineage digest"):
+        service.submit_claim_candidate(
+            revised_text,
+            document_ref=submitted_ref,
+            identity=science_identity,
+            client_kind="user",
+            candidate=revised_candidate,
+            supersedes_claim_id=claim_id,
+            source_lineage_document_ref=source_ref,
+            source_lineage_document_digest=sha256_digest("forged predecessor"),
+            idempotency_key="science-request:wiki-lineage-digest-attack",
+        )
+
+
 def test_raw_submitted_document_revision_rejects_ref_digest_and_document_attacks(
     science_identity: AuthIdentity,
 ):
@@ -1671,6 +1816,19 @@ def test_raw_submitted_document_revision_rejects_ref_digest_and_document_attacks
             source_lineage_document_ref="boi:submitted:other-logical-document",
             source_lineage_document_digest=original.document_digest,
             idempotency_key="science-request:raw-lineage-ref-attack",
+        )
+
+    with pytest.raises(ScienceConfirmationRequired, match="destination"):
+        service.submit_claim_candidate(
+            revised_text,
+            document_ref="boi:submitted:forged-destination",
+            identity=science_identity,
+            client_kind="user",
+            candidate=revised_candidate,
+            supersedes_claim_id=claim_id,
+            source_lineage_document_ref=document_ref,
+            source_lineage_document_digest=original.document_digest,
+            idempotency_key="science-request:raw-lineage-destination-attack",
         )
 
     with pytest.raises(ScienceConfirmationRequired, match="lineage digest"):

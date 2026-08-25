@@ -34,6 +34,7 @@ from boi_api.app.science.reports import render_report_markdown, render_report_pd
 from boi_api.app.science.service import (
     ScienceConfirmationRequired,
     ScienceIdempotencyConflict,
+    submitted_revision_document_ref,
 )
 from boi_api.app.science.storage import (
     ImmutableScienceRecordError,
@@ -97,7 +98,7 @@ class DetectAliasesRequest(_RequestModel):
 
 
 class SubmittedDocumentLineage(_RequestModel):
-    document_ref: str = Field(pattern=r"^boi:submitted:[A-Za-z0-9._:-]+$")
+    document_ref: str = Field(pattern=r"^boi:[A-Za-z0-9._:-]+$")
     document_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
 
@@ -397,7 +398,11 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
         else:
             document = request.document or ""
             if request.source_lineage is not None:
-                document_ref = request.source_lineage.document_ref
+                document_ref = submitted_revision_document_ref(
+                    actor_id=identity.employee_id,
+                    source_document_ref=request.source_lineage.document_ref,
+                    source_document_digest=request.source_lineage.document_digest,
+                )
             else:
                 submitted_id = sha256_digest(
                     {

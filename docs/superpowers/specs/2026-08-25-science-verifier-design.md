@@ -737,6 +737,7 @@ release:
 - Claim 제출, 사용자 확인, 단일 Claim 검증, 문서 보고서는 동일 actor에 묶인다. Wiki 문서는 확인·검증 시점의 read ACL을 다시 검사하고, 직접 제출 문서는 최초 제출자만 사용할 수 있다.
 - 수동 수정의 `supersedes_claim_id`는 실제로 존재하는 같은 actor·같은 문서의 선행 Claim만 가리킬 수 있다.
 - 직접 제출 문서의 본문 revision은 서버가 반환한 stable `boi:submitted:*` ref와 선행 document digest를 함께 검증한다. 이 lineage 계약이 없으면 기존 exact ref+digest 규칙을 완화하지 않는다.
+- Wiki 선택 원문의 로컬 revision은 원본 `boi:*` 문서를 덮어쓰지 않는다. 서버가 선행 Claim의 actor·원본 ref·원본 digest를 확인한 뒤 이 세 값에 고정된 새 `boi:submitted:*` 문서 계보로 전환한다.
 - Agent가 제출한 수량·조건·공정 단계·물질 상태는 Agent가 `changes_outcome`을 선언했더라도 Rule applicability에 사용하지 않는다. 사용자가 화면에서 직접 작성해 새 Claim으로 제출해야 적용 조건 후보가 된다.
 - 단독 Evidence 조회는 원문 검토 기능이며 운영 적격성을 주장하지 않는다. 빨간 표시는 immutable report의 active Release binding과 reviewed-source identity까지 확인해야 한다.
 - 구현 완료 보고서와 3장 Evidence Deck은 현재 HEAD에 hash-bound된 JUnit suite identity, 필수 브라우저 check 집합, 캡처, qualification, 독립 리뷰 manifest에서만 상태와 수치를 읽는다. 누락·불일치·Important finding이 있으면 보고서는 DRAFT이고 Deck 생성을 중단한다.

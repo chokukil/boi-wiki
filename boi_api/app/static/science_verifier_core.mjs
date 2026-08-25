@@ -158,20 +158,20 @@ export function trustedViolationState(verdict, annotations, operational) {
   ));
 }
 
-export function submittedDocumentLineage(record) {
+export function sourceDocumentLineage(record) {
   const claims = Array.isArray(record?.candidate_claims) ? record.candidate_claims : [];
   const documentRef = claims.length === 1 ? String(claims[0]?.document_ref || "") : "";
   const documentDigest = String(record?.document_digest || "");
-  if (!documentRef.startsWith("boi:submitted:") || !SHA256.test(documentDigest)) return null;
+  if (!documentRef.startsWith("boi:") || !SHA256.test(documentDigest)) return null;
   return { document_ref: documentRef, document_digest: documentDigest };
 }
 
-export function submittedRevisionPayload(supersedesClaimId, sourceLineage) {
+export function revisionPayload(supersedesClaimId, sourceLineage) {
   const claimId = String(supersedesClaimId || "");
   if (!claimId) return {};
   const documentRef = String(sourceLineage?.document_ref || "");
   const documentDigest = String(sourceLineage?.document_digest || "");
-  if (!documentRef.startsWith("boi:submitted:") || !SHA256.test(documentDigest)) {
+  if (!documentRef.startsWith("boi:") || !SHA256.test(documentDigest)) {
     return { supersedes_claim_id: claimId };
   }
   return {
