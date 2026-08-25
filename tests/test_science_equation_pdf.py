@@ -188,8 +188,26 @@ def test_svglib_conversion_failure_is_wrapped_and_safe_path_returns_none(
     svg, digest = _render(r"V=IR")
 
     monkeypatch.setattr(
-        "boi_api.app.science.equation_rendering.svg2rlg",
-        lambda *_args, **_kwargs: None,
+        "boi_api.app.science.equation_rendering._load_svg_converter",
+        lambda: (lambda *_args, **_kwargs: None),
+    )
+
+    with pytest.raises(EquationSVGConversionError):
+        equation_svg_to_drawing(svg, digest)
+    assert safe_equation_svg_to_drawing(svg, digest) is None
+
+
+def test_missing_optional_svglib_fails_only_the_safe_presentation_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    svg, digest = _render(r"V=IR")
+
+    def missing_converter():
+        raise ModuleNotFoundError("svglib is not installed")
+
+    monkeypatch.setattr(
+        "boi_api.app.science.equation_rendering._load_svg_converter",
+        missing_converter,
     )
 
     with pytest.raises(EquationSVGConversionError):

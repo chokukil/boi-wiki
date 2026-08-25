@@ -8,6 +8,7 @@ failure and must keep the already stored verdict and annotation state intact.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
 import hmac
@@ -92,6 +93,14 @@ class ValidatedEquationSVG:
     svg_bytes: bytes
     svg_digest: str
     accessibility_reading: str
+
+
+def _load_svg_converter() -> Callable[[BytesIO], Drawing | None]:
+    """Load the optional PDF converter only at the presentation boundary."""
+
+    from svglib.svglib import svg2rlg
+
+    return svg2rlg
 
 
 def _as_exact_bytes(svg: str | bytes) -> bytes:
@@ -238,9 +247,7 @@ def equation_svg_to_drawing(
         # Science profile, OKF linter, REST service, or deterministic verifier
         # must not require svglib. A missing converter therefore fails this
         # rendering call closed and leaves the stored verdict unchanged.
-        from svglib.svglib import svg2rlg
-
-        drawing = svg2rlg(BytesIO(validated.svg_bytes))
+        drawing = _load_svg_converter()(BytesIO(validated.svg_bytes))
     except Exception as error:  # svglib/lxml/reportlab failures are presentation-only
         raise EquationSVGConversionError("svglib could not convert the equation SVG") from error
     if not isinstance(drawing, Drawing):
