@@ -9,8 +9,8 @@
         "-k",
         "science and not mcp"
       ],
-      "collected": 1687,
-      "testcase_identity_digest": "sha256:1005fc1d1db19c9654a3007e7e33eff7ce05872c8394b95c220c96c8542d1937"
+      "collected": 1688,
+      "testcase_identity_digest": "sha256:a99621c9eb8bd47cf411a90a00c0852e1195d0c1e1ae916054ecb526f4865def"
     },
     "mcp_tests": {
       "suite_id": "science-mcp",
@@ -25,8 +25,8 @@
       "pytest_args": [
         "tests"
       ],
-      "collected": 2294,
-      "testcase_identity_digest": "sha256:c0d80ee762255bf6ea7467dd9a23ea8c8bd340c3c44991e567aff73f4550ee82"
+      "collected": 2295,
+      "testcase_identity_digest": "sha256:289c129f86336d94c45556e112f2d4c8956a540547ac7013ec0c503030263639"
     }
   }
 }

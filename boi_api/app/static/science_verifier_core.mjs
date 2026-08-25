@@ -1,5 +1,16 @@
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const IDENTIFIER = /^[a-z][a-z0-9_.:-]*$/;
+const EXPLANATION_LABELS = Object.freeze({
+  applied_principle: "적용한 과학 원리",
+  reviewed_equation: "검토된 수식",
+  variable_meaning: "변수 의미",
+  applicability: "적용 조건",
+  claim_mapping: "주장과 개념·변수 연결",
+  scientific_consequence: "과학적 귀결",
+  correction: "교정",
+  limitation: "적용 한계",
+  evidence: "근거 연결",
+});
 
 function codePoints(value) {
   return Array.from(String(value || ""));
@@ -182,4 +193,56 @@ export function revisionPayload(supersedesClaimId, sourceLineage) {
 
 export function codePointLength(value) {
   return codePoints(value).length;
+}
+
+export function groundedExplanationBlocks(report, claimId) {
+  const rows = [];
+  if (!report || typeof report !== "object" || !Array.isArray(report.explanations)) return rows;
+  for (const explanation of report.explanations) {
+    if (explanation?.claim_id !== claimId || !Array.isArray(explanation.blocks) || !explanation.blocks.length) continue;
+    const blocks = [...explanation.blocks].sort((left, right) => Number(left?.sequence) - Number(right?.sequence));
+    const exactSequence = blocks.every((block, index) => Number.isInteger(block?.sequence) && block.sequence === index + 1);
+    if (!exactSequence) continue;
+    for (const block of blocks) {
+      const text = typeof block?.text === "string" ? block.text.trim() : "";
+      const label = EXPLANATION_LABELS[block?.block_kind];
+      if (!text || !label) continue;
+      rows.push({
+        factId: String(explanation.fact_id || ""),
+        sequence: block.sequence,
+        blockKind: block.block_kind,
+        label,
+        text,
+      });
+    }
+  }
+  return rows;
+}
+
+export function appendGroundedExplanationBlocks(host, report, claimId, { excludedTexts = [] } = {}) {
+  const ownerDocument = host?.ownerDocument;
+  if (!ownerDocument || typeof host.appendChild !== "function") return [];
+  const excluded = new Set(Array.from(excludedTexts || [], (value) => String(value || "").trim()).filter(Boolean));
+  const seen = new Set();
+  const rows = groundedExplanationBlocks(report, claimId).filter((row) => {
+    const identity = `${row.blockKind}\u0000${row.text}`;
+    if (excluded.has(row.text) || seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+  if (!rows.length) return rows;
+  const list = ownerDocument.createElement("ol");
+  list.className = "science-grounded-explanation-list";
+  for (const row of rows) {
+    const item = ownerDocument.createElement("li");
+    item.dataset.scienceExplanationKind = row.blockKind;
+    const label = ownerDocument.createElement("strong");
+    label.textContent = row.label;
+    const text = ownerDocument.createElement("p");
+    text.textContent = row.text;
+    item.append(label, text);
+    list.appendChild(item);
+  }
+  host.appendChild(list);
+  return rows;
 }

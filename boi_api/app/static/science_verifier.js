@@ -180,12 +180,13 @@
   function renderEvidence(card, state, claimId) {
     const annotations = state?.annotations || [];
     const equations = equationView?.resolveEquationAssets?.(state?.report, claimId) || [];
+    const groundedBlocks = core.groundedExplanationBlocks(state?.report, claimId);
     const equationLinks = equationView?.equationEvidenceLinks?.(equations) || [];
     const links = [...new Map([
       ...annotations.flatMap((item) => item.evidence_links || []),
       ...equationLinks,
     ].map((link) => [link.evidence_id, link])).values()].slice(0, 2);
-    if (!links.length && !equations.length) return;
+    if (!links.length && !equations.length && !groundedBlocks.length) return;
     if (links.length) {
       const sourceLine = document.createElement("p");
       sourceLine.className = "science-source-line";
@@ -206,7 +207,19 @@
     const explanation = document.createElement("section");
     explanation.className = "science-explanation";
     appendText(explanation, "h3", "과학적 설명");
-    for (const annotation of annotations) appendText(explanation, "p", annotation.text);
+    if (groundedBlocks.length) {
+      appendText(
+        explanation,
+        "p",
+        "활성 Release의 검토된 Knowledge·Rule·Evidence에서 구성한 설명입니다. 이 표시 문구는 판정 입력을 바꾸지 않습니다.",
+        "science-explanation-origin",
+      );
+      core.appendGroundedExplanationBlocks(explanation, state?.report, claimId, {
+        excludedTexts: [state?.verdict?.corrected_claim, ...(state?.verdict?.limitations || [])],
+      });
+    } else {
+      for (const annotation of annotations) appendText(explanation, "p", annotation.text);
+    }
     if (equations.length) {
       const equationHost = document.createElement("div");
       equationHost.className = "science-equation-host";

@@ -35,6 +35,10 @@ def _equation_browser_result(tmp_path: Path) -> dict[str, object]:
             "export async function mountEquationAssets() { return []; }\n",
             encoding="utf-8",
         )
+    shutil.copyfile(
+        REPO_ROOT / "boi_api/app/static/science_verifier_core.mjs",
+        tmp_path / "science_verifier_core.mjs",
+    )
     shutil.copyfile(REPO_ROOT / "boi_api/app/static/style.css", tmp_path / "style.css")
 
     safe_svg = (
@@ -121,6 +125,7 @@ def _equation_browser_result(tmp_path: Path) -> dict[str, object]:
 <body><mark class="science-violation">원문 위반 표시</mark><article id="card" class="science-correction-card violation"></article><pre id="result"></pre>
 <script type="module">
 import {{ equationEvidenceLinks, mountEquationAssets }} from './science_equation_view.mjs';
+import {{ appendGroundedExplanationBlocks }} from './science_verifier_core.mjs';
 const fixture = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob('{encoded_payload}'), (character) => character.charCodeAt(0))));
 const report = (asset, refDigest = fixture.equation_digest) => ({{
   explanations: [{{ claim_id: 'claim-1', equation_refs: [{{ equation_id: asset.equation_id, equation_digest: refDigest }}] }}],
@@ -144,6 +149,17 @@ const orphan = document.createElement('section');
 await mountEquationAssets(orphan, report({{ ...fixture.asset_base, sanitized_svg: fixture.safe_svg, svg_digest: fixture.safe_digest }}, 'sha256:' + 'b'.repeat(64)), 'claim-1');
 const legacy = document.createElement('section');
 await mountEquationAssets(legacy, {{ verdict_packets: [] }}, 'claim-1');
+const grounded = document.createElement('section');
+appendGroundedExplanationBlocks(grounded, {{
+  explanations: [{{
+    claim_id: 'claim-1', fact_id: 'fact-1', blocks: [
+      {{ sequence: 1, block_kind: 'applied_principle', text: '이미 표시된 원리' }},
+      {{ sequence: 2, block_kind: 'claim_mapping', text: 'R은 Claim의 회전 속도에 대응합니다.' }},
+      {{ sequence: 3, block_kind: 'scientific_consequence', text: '회전 속도 증가 주장은 검토된 관계와 반대입니다.' }},
+      {{ sequence: 4, block_kind: 'evidence', text: '<img src=x onerror=document.body.dataset.pwned="yes">' }},
+    ],
+  }}],
+}}, 'claim-1', {{ excludedTexts: ['이미 표시된 원리'] }});
 const detail = safe.querySelector('.science-equation-detail-list');
 const scroll = safe.querySelector('.science-equation-scroll');
 document.querySelector('#result').textContent = JSON.stringify({{
@@ -160,6 +176,9 @@ document.querySelector('#result').textContent = JSON.stringify({{
   noCryptoFallback: noCrypto.querySelector('.science-equation-fallback')?.textContent || null,
   orphanChildren: orphan.childElementCount,
   legacyChildren: legacy.childElementCount,
+  groundedText: grounded.textContent,
+  groundedKinds: [...grounded.querySelectorAll('[data-science-explanation-kind]')].map((node) => node.dataset.scienceExplanationKind),
+  groundedImages: grounded.querySelectorAll('img').length,
   copied,
   buttonLabels: [...safe.querySelectorAll('button')].map((node) => node.textContent),
   live: safe.querySelector('[aria-live="polite"]')?.textContent || null,
@@ -282,6 +301,27 @@ def test_equation_view_copy_aria_and_mobile_contract(
     assert equation_browser_result["scrollOverflow"] == "auto"
 
 
+def test_web_grounded_explanation_shows_claim_mapping_and_scientific_consequence(
+    equation_browser_result: dict[str, object],
+) -> None:
+    """The Web details must preserve reviewed explanation text without HTML trust."""
+
+    assert "R은 Claim의 회전 속도에 대응합니다." in equation_browser_result[
+        "groundedText"
+    ]
+    assert "회전 속도 증가 주장은 검토된 관계와 반대입니다." in (
+        equation_browser_result["groundedText"]
+    )
+    assert "이미 표시된 원리" not in equation_browser_result["groundedText"]
+    assert equation_browser_result["groundedKinds"] == [
+        "claim_mapping",
+        "scientific_consequence",
+        "evidence",
+    ]
+    assert equation_browser_result["groundedImages"] == 0
+    assert equation_browser_result["pwned"] is None
+
+
 def test_science_verifier_loads_equation_view_as_optional_report_layer(
     boi_app_module,
 ) -> None:
@@ -296,6 +336,8 @@ def test_science_verifier_loads_equation_view_as_optional_report_layer(
     )
     assert "scienceEquationViewUrl" in script
     assert "mountResolvedEquationAssets" in script
+    assert "groundedExplanationBlocks" in script
+    assert "appendGroundedExplanationBlocks" in script
 
 
 def test_science_release_operational_ui_requires_authoritative_catalog_capability(

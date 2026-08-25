@@ -1087,6 +1087,11 @@ body:has(.ops-react-page) .boi-agent-panel { display:none !important; }
 .science-corrected-claim { padding:12px; border-left:3px solid #2563eb; border-radius:0 8px 8px 0; background:#eff6ff; color:#1e3a8a !important; font-weight:750; }
 .science-explanation { margin-top:13px; }
 .science-explanation h3 { font-size:15px; }
+.science-explanation-origin { color:#64748b; font-size:12px; }
+.science-grounded-explanation-list { display:grid; gap:10px; margin:0; padding-left:22px; }
+.science-grounded-explanation-list li::marker { color:#a4212a; font-weight:900; }
+.science-grounded-explanation-list strong { color:#334155; font-size:13px; }
+.science-grounded-explanation-list p { margin:3px 0 0; }
 .science-equation-host { display:grid; gap:12px; margin-top:14px; min-width:0; }
 .science-equation-view { min-width:0; padding:12px; border:1px solid #cbd5e1; border-radius:9px; background:#fff; }
 .science-equation-view h4 { margin:0 0 9px; color:#0f172a; font-size:14px; }
