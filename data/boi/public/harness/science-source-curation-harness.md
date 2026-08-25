@@ -32,12 +32,15 @@ review:
 
 Science Verifier가 인용할 Source와 Evidence span을 재현 가능하게 제안한다. AI는 출처 후보를 찾는 것과 초안을 만드는 데만 쓰며, 과학 판정이나 승인 주체가 아니다.
 
+수식을 포함한 Source/Evidence는 반드시 `science-equation-knowledge-harness.md`의 전사·변수 정의·표기 대응 계약도 적용한다.
+
 ## Inputs
 
 - 권위 있는 원본의 `original_url`, DOI, 저자·기관, 판본·개정일
 - 실제 요청 주소 `requested_url`과 redirect 후 `resolved_url`
 - 합법적으로 열람한 원문 bytes 또는 정확히 제한된 접근 실패 응답
 - Source/Evidence ID, 분류·ACL, 예상 claim family
+- 수식이면 exact equation locator, 원문 수식과 주변 variable/sign/unit 정의, OCR/visual transcription review
 - 제안자 identity와 별도의 `science.admin` reviewer identity
 
 ## Observation
@@ -47,6 +50,8 @@ HTTP 상태, content type, redirect chain, retrieval 시각, 원문 버전, 접�
 ## Context
 
 Evidence에는 `exact locator`를 둔다. PDF는 PDF page index와 printed page, section·equation·figure를 함께 기록하고, HTML은 heading·sentence ordinal·prefix·suffix를 기록한다. 원문 `original_text`, Admin 검토 전 한국어 `reviewed_translation`, `original_url`, locator, hash를 한 경로로 연결한다. 번역은 원문을 대체하지 않는다.
+
+수식은 원문 expression hash를 별도로 보존한다. 부호·등호/부등호·지수·첨자·분자/분모·미분 기호·단위·근사 조건·유효 범위와 원문 앞뒤의 기호 정의가 검토되지 않으면 판정 가능한 Equation Evidence가 아니다.
 
 `claim_scope.allowed_claims`는 해당 span이 직접 지지하는 최소 claim family와 `purpose`만 허용한다. 정의 한 문장으로 대조·인과·방향성을 확대하지 않는다. inactive Evidence는 Knowledge의 `excluded_evidence_refs`로만 설명할 수 있고 판정 근거가 될 수 없다.
 
@@ -79,6 +84,7 @@ Evidence에는 `exact locator`를 둔다. PDF는 PDF page index와 printed page,
 - URL을 다시 열어 version·locator·quote가 일치하는지 검사한다.
 - 모든 hash를 원래 hash scope로 재계산한다.
 - translation이 수식·부정·조건·단위를 바꾸지 않았는지 원문과 대조한다.
+- Equation 전사와 OCR review가 `science-equation-knowledge-harness.md`의 original notation/mapping 검사를 통과하는지 확인한다.
 - Rule의 각 `EvidenceUse.claim_family`와 `purpose`가 allowed scope와 exact match인지 검사한다.
 - 일반 User가 ACL 범위 안에서 원문, 번역, locator, URL, `original_text_hash`를 펼쳐 볼 수 있는지 확인한다.
 - AI가 만든 설명이 Source 문장보다 넓은 claim을 생성하면 release-blocking으로 분류한다.

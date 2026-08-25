@@ -10,12 +10,15 @@ status: draft
 
 Dictionary와 원본 Evidence 사이에 검토 가능한 과학 지식 단위를 제안한다. Knowledge는 답변 prose가 아니라 조건·한계가 붙은 atomic statement이며, AI가 판정을 만드는 우회 통로가 아니다.
 
+Knowledge가 수식을 포함하면 `science-equation-knowledge-harness.md`의 구조화된 Equation Knowledge 계약을 추가 적용한다. 수식 없는 Knowledge에는 Equation 객체를 강제하지 않는다.
+
 ## Inputs
 
 - Dictionary concept와 interpretation-only Ontology binding
 - approved 가능한 Source/Evidence span과 exact claim scope
 - 지식 수준(invariant, law, mechanism, model, qualified_rule, observation)
 - domain, definitions, assumptions, applicability, limitations, invalid_outside
+- 수식이 있으면 reviewed semantic expression, 표시/접근성 표현, 변수·차원·정의역, 원문 notation mapping
 - 제안자 identity와 별도의 `science.admin` reviewer
 
 ## Observation
@@ -27,6 +30,8 @@ Dictionary와 원본 Evidence 사이에 검토 가능한 과학 지식 단위를
 Knowledge 하나는 하나의 `atomic statement`만 가진다. `definitions`, `assumptions`, `applicability`, `limitations`, `invalid_outside`를 독립 필드로 둔다. 각 `EvidenceUse`는 Evidence의 `claim_family`와 `purpose`를 그대로 보존하고, 사용하지 못한 초록·범위 밖 자료는 `excluded_evidence_refs`와 exclusion reason으로 명시한다.
 
 수학적 귀결, 물리 법칙, derived model, empirical correlation, vendor rule, internal qualified rule을 섞지 않는다. maturity에는 review state와 provenance만 두며 수치 confidence score를 만들지 않는다.
+
+LaTeX는 표시 표현이다. 판정 가능한 수식은 `equation_id`와 digest를 가진 closed semantic expression, 모든 variable의 concept/quantity/dimension/domain, EvidenceUse, exact locator, 지원 evaluator binding을 갖춰야 한다. 미지원 수식은 `explanation_only`로 보존한다.
 
 ## Control
 
@@ -46,7 +51,8 @@ Knowledge 하나는 하나의 `atomic statement`만 가진다. `definitions`, `a
 5. EvidenceUse마다 allowed claim family와 exact purpose를 복사한다.
 6. inactive 또는 범위 부족 Evidence를 excluded list로 분리한다.
 7. related Knowledge는 governed_by/explained_by/formalized_by/validated_by 의미만 쓴다.
-8. 검증 후 별도 Admin review queue로 보내고 승인 전에는 전역 지식을 바꾸지 않는다.
+8. 수식이 있으면 `science-equation-knowledge-harness.md`로 변수 정의·차원·정의역·원문 대응·결정 용도를 검증한다.
+9. 검증 후 별도 Admin review queue로 보내고 승인 전에는 전역 지식을 바꾸지 않는다.
 
 ## State
 
@@ -60,6 +66,7 @@ Knowledge draft는 제안자에게 수정 가능하지만 approved/active object
 - assumptions 또는 invalid_outside를 지우면 더 넓은 주장이 되는지 adversarial review한다.
 - Ontology 직렬화에 expected predicate, outcome direction, verdict가 없는지 확인한다.
 - 지식 설명이 원문, 번역, locator, Source URL까지 추적되는지 확인한다.
+- Equation의 모든 변수, 근사/경험 범위, singularity, notation mapping, equation digest가 완결되고 Rule이 exact `equation_id`를 참조하는지 확인한다.
 
 ## Failure Artifacts
 

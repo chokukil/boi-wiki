@@ -13,6 +13,7 @@ Read these before acting:
 
 - `harness/science-source-curation-harness.md`
 - `harness/science-knowledge-authoring-harness.md`
+- `harness/science-equation-knowledge-harness.md`
 - `harness/science-rule-qualification-harness.md`
 - `harness/science-verification-harness.md`
 
@@ -20,18 +21,25 @@ Read these before acting:
 
 Build and review each layer separately:
 
-`Source → Evidence → Knowledge → Rule → Qualification → Release Candidate`
+`Source → Evidence → Knowledge → optional Equation Knowledge → Rule → Qualification → Release Candidate`
 
 1. **Source** records provenance, access/licence facts, authoritative URL, document version, and retrieval digest. It is not truth.
 2. **Evidence** is a short exact source span with locator, original text hash, reviewed translation, claim scope, and Source digest. Hash and locator must reproduce.
 3. **Knowledge** states one atomic principle, law, mechanism, model, qualified rule, or observation with assumptions, applicability, limitations, ontology links, and EvidenceUse scope.
-4. **Rule** encodes only a deterministic consequence licensed by Knowledge and Evidence. Do not turn missing information, association, or an Agent assertion into a contradiction.
-5. **Qualification** runs G0–G7 and the required positive, paraphrase, negation, unit, ambiguity, validity, empirical, false-red, and restart/parity cases. Keep case text and expected verdict real and independently reviewable. Do not emit an `aggregate score`.
-6. **Release Candidate** pins every exact digest. A passing candidate stays inactive until human review and activation.
+4. **Equation Knowledge** is required only when Knowledge contains a formula. Preserve `semantic_expression`, `display_latex`, `plain_text`, `accessibility_reading`, variables, conditions, `original notation`, `notation mapping`, exact `equation locator`, EvidenceUse, and `equation digest` as separate reviewed fields. LaTeX는 표시 표현이며 권위가 아니다.
+5. **Rule** encodes only a deterministic consequence licensed by Knowledge and Evidence. Do not turn missing information, association, or an Agent assertion into a contradiction.
+6. **Qualification** runs G0–G7 and the required positive, paraphrase, negation, unit, ambiguity, validity, empirical, false-red, equation-boundary, and restart/parity cases. Keep case text and expected verdict real and independently reviewable. Do not emit an `aggregate score`.
+7. **Release Candidate** pins every exact digest. A passing candidate stays inactive until human review and activation.
 
 Use `science_source_validate`, `science_evidence_validate`, `science_knowledge_validate`, `science_rule_qualify`, and `science_release_validate` at their respective layers before submitting `science_proposal_create` with `user_confirmed: true`. Source validation never validates all spans from that Source. **검증 통과가 승인이라는 뜻은 아니다.** Never cite **inactive Evidence** as decisive Evidence and never route a draft into the active Truth Path.
 
 New and changed objects start as `draft` and move to `pending_review`; tools do not mark them reviewed or active. **자동 활성화하지 않는다.**
+
+## Equation package gate
+
+Before proposing an Equation package, reproduce the original equation and surrounding variable definitions from its exact locator. Review OCR sign, equality/inequality, exponent, subscript, numerator/denominator, unit, approximation, and validity range. Define every symbol with concept, quantity kind, dimension, unit convention, domain/sign constraints, assumptions, applicability, boundary conditions, and EvidenceUse. Review original-to-standard notation mapping and recompute the equation digest.
+
+The versioned closed semantic expression—not display LaTeX—is the decision authority. Only an explicit reviewed `operator allowlist`, variable mapping, and evaluator binding can support `deterministic_rule`. Never use arbitrary Python, Agent/CAS/LLM equivalence, or unsupported expressions. Unsupported or complex formulas remain `explanation_only`; 수식이 있다는 이유만으로 Rule이나 red annotation을 만들지 않는다. An incomplete package stops at proposal validation and never enters approval or a Release Candidate.
 
 ## Role boundary
 

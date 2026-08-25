@@ -19,6 +19,10 @@ HARNESS_METADATA = {
         "Science Knowledge Authoring Harness",
         "Evidence 범위를 보존한 atomic Science Knowledge 작성 기준",
     ),
+    "science-equation-knowledge-harness.md": (
+        "Science Equation Knowledge Harness",
+        "검토된 수식 의미·변수·근거·판정 연결·채널 표시의 공통 계약",
+    ),
     "science-rule-qualification-harness.md": (
         "Science Rule Qualification Harness",
         "결정론적 Rule과 실제 과학 주장 qualification 기준",

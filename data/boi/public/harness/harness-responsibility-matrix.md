@@ -44,6 +44,7 @@ BoI Wiki는 core를 OKF Markdown/JSONL로 가볍게 유지하고, API/MCP/Action
 | Verification | public scenario마다 좁은 자동 테스트와 optional overlay 없이도 실행되는 smoke command를 둔다. | pytest, scripts, compose profiles, local workspace check | final acceptance suite and compose config smoke |
 | Science Source Curation | exact Source version, locator, quote hash, translation, claim scope, ACL, 별도 Admin review를 보존한다. | OKF Science Source/Evidence, Admin review UI/API | source reachability, digest, scope, self-approval tests |
 | Science Knowledge Authoring | Dictionary/Ontology 해석과 atomic Knowledge, locator-bound Evidence 역할을 분리한다. | sci-profile Knowledge, Ontology bindings, EvidenceUse | atomicity, overclaim, applicability, version tests |
+| Science Equation Knowledge | 검토된 semantic expression과 LaTeX를 분리하고 변수·원문 표기·evaluator·export를 한 Equation identity로 묶는다. | sci-profile Equation Knowledge, Rule evaluator binding, Web/Markdown/PDF | transcription, dimension/domain, qualification, safe-rendering, accessibility, parity tests |
 | Science Rule Qualification | deterministic Rule마다 실제 과학 주장 열 가지를 실행한 뒤 독립 sealed holdout을 수행한다. | candidate RuleSet, qualification matrices, release preflight | five-verdict, false-red, ambiguity, candidate-authority tests |
 | Science Verification | untrusted interpretation을 verdict authority 밖에 두고 Web/REST/MCP/export가 한 report를 공유한다. | Science Verifier canvas, REST/MCP, Markdown/PDF | anchor, confirmation, evidence visibility, parity, restart tests |
 

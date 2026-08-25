@@ -10,6 +10,8 @@ status: draft
 
 문서 중심 Science Verifier가 해석 오류를 판정으로 승격하지 않고, 결정론적 판정·과학적 설명·원문 근거를 동일한 보고서로 제공하는지 검증한다. BoI는 새 과학 Agent가 아니라 사용자 Agent가 호출하는 Scientific Integrity Layer다.
 
+수식 Claim·Equation 설명·채널 표시는 `science-equation-knowledge-harness.md`를 함께 적용한다. 별도 수식 판정 Agent를 만들지 않는다.
+
 ## Inputs
 
 - ACL 확인된 document bytes와 Unicode code point selection anchor
@@ -18,6 +20,7 @@ status: draft
 - 명시적으로 확인된 Claim Packet
 - exact Foundation/Domain/Application Release selection
 - stored Verification Report와 Web/REST/MCP/Markdown/PDF 표현
+- 수식 Claim이면 exact expression span, symbol concept/quantity 후보, unit/condition/sign/reference direction과 Equation identity
 
 ## Observation
 
@@ -43,12 +46,13 @@ AI 해석은 proposal이다. `POST /api/science/aliases/detect`는 등록 alias�
 1. 서버가 canonical document와 ACL을 다시 확인하고 anchor를 resolve한다. Wiki local revision은 submit·confirm·`verify_claim`·`verify_document`마다 exact source ACL과 canonical ref/digest를 재검사한다. 원본 `boi:*`는 덮어쓰지 않고 server-derived `boi:submitted:*` lineage로만 전환한다.
 2. 등록 alias를 결정론적으로 탐지하고 exact `binding_id`, `concept_id`, `surface_term`, start/end, binding digest를 반환한다. 이 단계는 verdict를 만들지 않는다.
 3. User·Codex·Claude·Qwen 후보를 closed schema로 검사하고 ontology refs, subject/relation/object 역할, 조건, alias, non-overlapping complete span을 pinned binding과 대조한다. client가 보낸 verdict·Evidence·Rule 필드는 거부한다.
+   - equation proposal은 exact source span, parsed expression candidate, symbol·quantity·unit·sign/reference-direction 후보만 받는다. 서버는 span 완결성/비중첩, 실제 symbol/context, concept/quantity/ontology, 발명된 변수, 미확인 unit/condition을 다시 검증한다.
 4. 결과에 영향 없는 용어 차이는 기록만 하고, 결과가 달라질 모호성만 사용자에게 확인한다. 수동 교정은 기존 record를 고치지 않고 `supersedes_claim_id`를 가진 새 제출로 저장한다.
 5. user confirmation event로 새 immutable interpretation version을 만든다.
 6. exact active Release와 `OperationalVerification`으로 Claim을 판정한다.
-7. Rule이 허용한 Knowledge statement와 decisive Evidence만으로 충분한 과학적 설명을 구성한다.
+7. Rule이 허용한 Knowledge statement와 decisive Evidence만으로 충분한 과학적 설명을 구성한다. 수식 설명은 원리/법칙/모델 → reviewed Equation → 변수 의미 → 적용 조건 → Claim mapping → 과학적 귀결 → 교정 → 한계 → exact Evidence 순서의 grounded block이다.
 8. 교정 카드 바로 아래에 결정 근거 1~2개를 항상 보이고, 펼쳐보기에서 `original_text`, `reviewed_translation`, `locator`, `original_url`, ontology_refs를 제공한다.
-9. 같은 stored report에서 Markdown/PDF를 만들고 동일 digest를 반환한다.
+9. 같은 stored report/Equation identity에서 Web/Markdown/PDF를 만들고 scientific `report_digest`와 rendering bytes의 `export_digest`를 구분한다.
 
 ## State
 
@@ -67,6 +71,8 @@ Interpretation, external Claim submission, correction resubmission, confirmation
 - inactive Release가 verdict에 사용되지 않고, 근거 없는 빨간 표시가 생성되지 않는지 확인한다.
 - red annotation은 `VIOLATION`에만, purple ambiguity는 outcome-changing proposal에만 나타나는지 확인한다.
 - 각 explanation sentence가 Knowledge digest, Evidence digest, Source digest, `original_text_hash`에 묶이는지 확인한다.
+- 수식 block이 Equation/Rule/Evidence/Source digest와 quote hash에 묶이고, 정의되지 않은 변수나 미확인 수치를 AI가 채우지 않는지 확인한다.
+- reviewed Equation이 Web의 accessible fallback·모바일 scroll, Markdown display math+plain fallback, PDF deterministic math renderer에서 같은 equation ID/digest로 표시되는지 확인한다.
 - 일반 User가 허용된 원문·번역·locator·URL을 볼 수 있고 source ACL denial은 우회되지 않는지 확인한다.
 - Web, REST, MCP, Markdown, PDF가 claim ID, verdict, Evidence ID, Release ID, `report_digest`에서 완전히 같은지 확인한다.
 - 과학적 설명이 충분하되 Rule/Evidence 범위를 넘는 권고나 종합 점수를 만들지 않는지 확인한다.

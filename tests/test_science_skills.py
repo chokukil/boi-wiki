@@ -82,6 +82,38 @@ def test_verifier_skill_preserves_boi_authority_and_the_confirmation_loop():
     assert "verification unavailable" in body
 
 
+def test_verifier_skill_pressure_contract_keeps_equation_candidates_untrusted_and_explainable():
+    _metadata, body = _skill(VERIFIER)
+
+    # Baseline pressure failure this catches: the former skill did not tell an Agent
+    # how to submit formula spans, surface symbol ambiguity, or preserve one reviewed
+    # Equation identity through accessible Web/Markdown/PDF output.
+    for required in (
+        "equation claim proposal",
+        "source span",
+        "parsed expression candidate",
+        "symbol",
+        "quantity kind",
+        "unit",
+        "sign",
+        "reference direction",
+        "ontology",
+        "purple dotted",
+        "reviewed Equation",
+        "semantic expression",
+        "display LaTeX",
+        "plain-text fallback",
+        "accessibility reading",
+        "report_digest",
+        "export_digest",
+    ):
+        assert required in body
+    assert "V" in body and "voltage" in body and "volume" in body
+    assert "Agent가 만든 변수" in body
+    assert "확인되지 않은 단위" in body
+    assert "판정에 사용하지 않는다" in body
+
+
 def test_curator_skill_is_proposal_only_and_matches_role_boundaries():
     metadata, body = _skill(CURATOR)
 
@@ -100,6 +132,7 @@ def test_curator_skill_is_proposal_only_and_matches_role_boundaries():
     for harness in (
         "science-source-curation-harness.md",
         "science-knowledge-authoring-harness.md",
+        "science-equation-knowledge-harness.md",
         "science-rule-qualification-harness.md",
         "science-verification-harness.md",
     ):
@@ -143,6 +176,36 @@ def test_curator_skill_requires_validation_before_mutation_and_never_auto_activa
     assert "Admin이 원문과 exact object digest를 직접 확인" in body
     assert "inactive Evidence" in body
     assert "aggregate score" in body
+
+
+def test_curator_skill_pressure_contract_requires_reviewed_equation_semantics():
+    _metadata, body = _skill(CURATOR)
+
+    # Baseline pressure failure this catches: OCR transcription, display notation,
+    # executable semantics, qualification, and safe rendering were previously folded
+    # into one generic "equation" word and could be treated as interchangeable.
+    for required in (
+        "Equation Knowledge",
+        "semantic_expression",
+        "display_latex",
+        "plain_text",
+        "accessibility_reading",
+        "operator allowlist",
+        "deterministic_rule",
+        "explanation_only",
+        "original notation",
+        "notation mapping",
+        "OCR",
+        "equation locator",
+        "equation digest",
+        "science.admin",
+        "Power User",
+    ):
+        assert required in body
+    assert "LaTeX" in body and "권위가 아니다" in body
+    assert "arbitrary Python" in body
+    assert "수식이 있다는 이유만으로" in body
+    assert "자동 활성화" in body
 
 
 def test_parent_boi_skill_routes_science_work_without_copying_the_full_contract():

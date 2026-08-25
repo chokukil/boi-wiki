@@ -10,11 +10,14 @@ status: draft
 
 조건이 명시된 Knowledge를 deterministic Rule로 만들고 실제 과학 주장으로 자격 검증한다. AI는 Rule이나 expected verdict를 실행 시 생성하지 않으며 과학 판정은 closed evaluator만 수행한다. candidate RuleSet은 운영 권한이 아니다.
 
+수식형 Rule은 `science-equation-knowledge-harness.md`를 적용해 exact `equation_id`, variable mapping, closed semantic expression, evaluator/allowed-transform binding을 먼저 고정한다.
+
 ## Inputs
 
 - approved 대상 Knowledge와 exact EvidenceUse
 - closed rule kind, subject/object/relation, expected/contradiction predicate
 - required/validity/empirical trigger conditions와 unit dimensions
+- 수식형이면 Equation digest, variable mapping, supported evaluator와 허용된 대수 변환
 - Rule마다 열 가지 공개 qualification case
 - 제안자와 독립 reviewer, candidate Release identity
 
@@ -49,6 +52,7 @@ Primary Verdict는 `VIOLATION`, `CONSISTENT`, `INSUFFICIENT_INFORMATION`, `OUTSI
 7. paraphrase·negation·unit variation이 같은 의미/단위와 다른 극성을 실제 evaluator 입력으로 전달하는지 확인한다.
 8. false-red는 unrelated subject로 NOT_APPLICABLE을 만드는 편법이 아니라 같은 claim family의 조건·범위·모델 차이로 red를 막는다.
 9. public suite를 통과한 뒤 Rule을 freeze하고 별도 holdout reviewer에게 넘긴다.
+10. 수식형 Rule은 unit conversion/rearrangement, wrong sign/exponent/operator, equality·approximation·inequality confusion, missing/ambiguous variable, dimension/domain/singularity, approximation/extrapolation/tolerance, notation false-red, unsupported expression, malicious LaTeX case를 추가 실행한다.
 
 ## State
 
@@ -63,6 +67,7 @@ Primary Verdict는 `VIOLATION`, `CONSISTENT`, `INSUFFICIENT_INFORMATION`, `OUTSI
 - false-red와 missing/outside가 임의 concept mismatch로 만들어지지 않았는지 확인한다.
 - application-independent cases가 다섯 verdict를 모두 보이고 Spin 전용 engine path가 없는지 확인한다.
 - candidate를 Engine에 전달하거나 active resolver에 넣으면 반드시 거부되는지 확인한다.
+- `science-equation-knowledge-harness.md`의 수식 qualification에서 unsupported expression이 explanation_only로 멈추고 arbitrary code/CAS/LLM fallback이 없는지 확인한다.
 
 ## Failure Artifacts
 

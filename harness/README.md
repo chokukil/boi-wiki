@@ -12,6 +12,7 @@ Use these documents before creating or changing curated BoI Wiki knowledge:
 - `data-lake-artifact-harness.md`: store file evidence as Data Lake artifacts and pass only URL/profile/sample metadata into BoI/LLM context.
 - `science-source-curation-harness.md`: curate locator-bound Source/Evidence proposals without granting AI scientific authority.
 - `science-knowledge-authoring-harness.md`: author atomic Science Knowledge with explicit assumptions, applicability, and Evidence scope.
+- `science-equation-knowledge-harness.md`: preserve reviewed equation semantics, variables, source transcription, evaluator binding, and safe channel parity.
 - `science-rule-qualification-harness.md`: qualify deterministic Rules with ten real-claim boundary cases and an independent holdout.
 - `science-verification-harness.md`: verify interpretation, verdict, visible Evidence, immutable reports, and cross-channel parity.
 

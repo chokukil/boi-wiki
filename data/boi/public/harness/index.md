@@ -12,5 +12,6 @@
 * [Local Private Agent Harness](local-private-agent-harness.md) - Local Private BoI workspace, validation, lifecycle, and promotion rules.
 * [Science Source Curation Harness](science-source-curation-harness.md) - Exact Source, locator, quote hash, translation, claim-scope, and Admin-review rules.
 * [Science Knowledge Authoring Harness](science-knowledge-authoring-harness.md) - Atomic Knowledge, assumptions, applicability, ontology, and EvidenceUse rules.
+* [Science Equation Knowledge Harness](science-equation-knowledge-harness.md) - Reviewed semantic equations, variables, source notation, evaluator binding, safe rendering, and export parity.
 * [Science Rule Qualification Harness](science-rule-qualification-harness.md) - Deterministic Rule, ten real-claim cases, false-red, and holdout rules.
 * [Science Verification Harness](science-verification-harness.md) - Interpretation confirmation, verdict, visible Evidence, immutable report, and channel-parity rules.

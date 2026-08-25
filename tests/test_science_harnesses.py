@@ -13,6 +13,7 @@ PUBLIC_HARNESS_ROOT = REPO_ROOT / "data" / "boi" / "public" / "harness"
 HARNESS_NAMES = (
     "science-source-curation-harness.md",
     "science-knowledge-authoring-harness.md",
+    "science-equation-knowledge-harness.md",
     "science-rule-qualification-harness.md",
     "science-verification-harness.md",
 )
@@ -134,6 +135,106 @@ def test_knowledge_harness_preserves_atomic_scientific_scope_between_dictionary_
     assert "수치 confidence" in body
 
 
+def test_equation_harness_closes_semantics_source_review_qualification_and_rendering():
+    _metadata, body = _frontmatter_and_body(
+        REPO_HARNESS_ROOT / "science-equation-knowledge-harness.md"
+    )
+
+    # Baseline pressure failure this catches: the pre-equation harness set said only
+    # "equation/unit constraints", so a rushed curator could promote OCR LaTeX or an
+    # Agent/CAS result without a reviewed semantic authority or safe channel parity.
+    for required in (
+        "equation_id",
+        "scientific_role",
+        "decision_use",
+        "semantic_expression",
+        "display_latex",
+        "plain_text",
+        "accessibility_reading",
+        "variable_id",
+        "quantity_kind",
+        "dimension",
+        "sign_constraints",
+        "boundary_conditions",
+        "invalid_outside",
+        "approximation",
+        "original_notation",
+        "notation_mapping",
+        "EvidenceUse",
+        "equation locator",
+        "equation_digest",
+        "operator allowlist",
+        "deterministic_rule",
+        "explanation_only",
+        "OCR",
+        "numerator",
+        "denominator",
+        "singular",
+        "tolerance",
+        "malicious",
+        "Web",
+        "Markdown",
+        "PDF",
+        "MathML",
+        "rendering fallback",
+        "report_digest",
+        "export_digest",
+    ):
+        assert required in body
+    for role in (
+        "definition",
+        "invariant",
+        "law",
+        "derived_model",
+        "approximation",
+        "empirical_fit",
+        "qualified_relation",
+    ):
+        assert role in body
+    for decision_use in (
+        "explanation_only",
+        "deterministic_rule",
+        "formal_reference",
+    ):
+        assert decision_use in body
+    assert "semantic_expression이 권위" in body
+    assert "LaTeX는 권위가 아닌" in body
+    assert "arbitrary Python" in body
+    assert "Admin" in body and "Power User" in body
+
+
+def test_all_science_harnesses_reference_equation_contract_without_changing_authority():
+    for name in (
+        "science-source-curation-harness.md",
+        "science-knowledge-authoring-harness.md",
+        "science-rule-qualification-harness.md",
+        "science-verification-harness.md",
+    ):
+        _metadata, body = _frontmatter_and_body(REPO_HARNESS_ROOT / name)
+        assert "science-equation-knowledge-harness.md" in body
+        assert "science.admin" in body
+        assert "self-approval" in body
+
+
+def test_equation_harness_grounds_each_explanation_block_to_exact_release_objects():
+    _metadata, body = _frontmatter_and_body(
+        REPO_HARNESS_ROOT / "science-equation-knowledge-harness.md"
+    )
+
+    # A prose-only explanation could look plausible while losing the exact equation,
+    # rule, quote, and source identities that constrain it.
+    for required in (
+        "fact_id",
+        "knowledge_ref",
+        "equation_ref",
+        "rule_ref",
+        "evidence_ref",
+        "source_ref",
+        "quote_hash",
+    ):
+        assert required in body
+
+
 def test_rule_harness_requires_real_claims_and_ten_decisive_case_kinds():
     _metadata, body = _frontmatter_and_body(
         REPO_HARNESS_ROOT / "science-rule-qualification-harness.md"
@@ -222,6 +323,7 @@ def test_science_harnesses_are_linked_from_repo_and_public_indexes():
     for label in (
         "Science Source Curation",
         "Science Knowledge Authoring",
+        "Science Equation Knowledge",
         "Science Rule Qualification",
         "Science Verification",
     ):
