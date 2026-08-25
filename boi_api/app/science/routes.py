@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import hashlib
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import ConfigDict, Field, model_validator
 
 from boi_api.app.auth import AuthIdentity
@@ -66,6 +67,7 @@ class ScienceRouteDependencies:
     release_manager: Any | None = None
     can_read_report: ReportAccessCheck | None = None
     can_export_report: ReportAccessCheck | None = None
+    can_issue_user_action_challenge: Callable[[AuthIdentity], bool] | None = None
 
 
 class _RequestModel(ScienceModel):
@@ -127,10 +129,47 @@ class SubmitClaimRequest(_RequestModel):
         return self
 
 
-class ConfirmInterpretationRequest(_RequestModel):
+class UserRevisionChallengeRequest(_RequestModel):
+    document: str | None = None
+    document_ref: str | None = None
+    selection: SourceSpan | None = None
+    candidate: LLMClaimCandidate
+    idempotency_key: str = Field(min_length=8, max_length=256)
+    supersedes_claim_id: str | None = Field(default=None, min_length=1)
+    source_lineage: SubmittedDocumentLineage | None = None
+
+    @model_validator(mode="after")
+    def exact_source(self) -> "UserRevisionChallengeRequest":
+        if bool(self.document) == bool(self.document_ref):
+            raise ValueError("exactly one document or document_ref is required")
+        if self.source_lineage is not None and (
+            not self.document or self.supersedes_claim_id is None
+        ):
+            raise ValueError(
+                "source_lineage requires a raw document and supersedes_claim_id"
+            )
+        return self
+
+
+class CommitUserRevisionRequest(UserRevisionChallengeRequest):
+    challenge_id: str = Field(
+        min_length=32,
+        max_length=256,
+        pattern=r"^sci-user-action:[A-Za-z0-9_-]+$",
+    )
+
+
+class ConfirmationChallengeRequest(_RequestModel):
     claim_ids: list[str] = Field(min_length=1)
     idempotency_key: str = Field(min_length=8, max_length=256)
-    user_confirmed: Literal[True]
+
+
+class ConfirmInterpretationRequest(ConfirmationChallengeRequest):
+    challenge_id: str = Field(
+        min_length=32,
+        max_length=256,
+        pattern=r"^sci-user-action:[A-Za-z0-9_-]+$",
+    )
 
 
 class VerifyClaimRequest(_RequestModel):
@@ -188,10 +227,18 @@ class ValidateReleaseRequest(_RequestModel):
     holdout_manifest_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
 
-class ReleaseMutationRequest(_RequestModel):
+class ReleaseMutationChallengeRequest(_RequestModel):
     release_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     request_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     idempotency_key: str = Field(min_length=8, max_length=256)
+
+
+class ReleaseMutationRequest(ReleaseMutationChallengeRequest):
+    challenge_id: str = Field(
+        min_length=32,
+        max_length=256,
+        pattern=r"^sci-user-action:[A-Za-z0-9_-]+$",
+    )
     user_confirmed: Literal[True]
 
 
@@ -308,6 +355,46 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
             _closed_http_error(error)
         return identity
 
+    def trusted_science_ui(
+        request: Request,
+        identity: AuthIdentity = Depends(science_identity),
+    ) -> AuthIdentity:
+        explicit_check = dependencies.can_issue_user_action_challenge
+        if explicit_check is not None:
+            allowed = bool(explicit_check(identity))
+        else:
+            has_bearer = bool(request.headers.get("authorization"))
+            if identity.auth_source == "dev":
+                allowed = not has_bearer
+            elif identity.auth_source in {"session", "keycloak"}:
+                allowed = not has_bearer and bool(request.cookies.get("boi_session"))
+            else:
+                allowed = False
+        fetch_site = request.headers.get("sec-fetch-site")
+        if fetch_site and fetch_site not in {"same-origin", "same-site", "none"}:
+            allowed = False
+        if not allowed:
+            _closed_http_error(
+                ScienceAuthorizationError(
+                    "trusted browser session required for Science user action"
+                )
+            )
+        return identity
+
+    def trusted_science_admin(
+        identity: AuthIdentity = Depends(trusted_science_ui),
+    ) -> AuthIdentity:
+        try:
+            dependencies.authorization.require_admin(
+                identity,
+                roles_for=lambda trusted_identity: dependencies.roles_for(
+                    trusted_identity.employee_id
+                ),
+            )
+        except Exception as error:
+            _closed_http_error(error)
+        return identity
+
     def require_read(identity: AuthIdentity, boi_ref: str) -> None:
         if not dependencies.can_read_boi(identity, boi_ref):
             _closed_http_error(ScienceAuthorizationError("read denied"))
@@ -392,6 +479,12 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
         request: SubmitClaimRequest,
         identity: AuthIdentity = Depends(science_identity),
     ) -> dict[str, Any]:
+        if request.client_kind == "user":
+            _closed_http_error(
+                ScienceConfirmationRequired(
+                    "generic Claim submission cannot create a trusted user revision"
+                )
+            )
         if request.document_ref:
             document = dependencies.load_document(identity, request.document_ref)
             if document is None:
@@ -434,17 +527,137 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
         )
         return _json_model(result)
 
+    @router.post("/api/science/user-revisions/challenge")
+    def issue_user_revision_challenge(
+        request: UserRevisionChallengeRequest,
+        identity: AuthIdentity = Depends(trusted_science_ui),
+    ) -> dict[str, Any]:
+        if request.document_ref:
+            document = dependencies.load_document(identity, request.document_ref)
+            if document is None:
+                _closed_http_error(ScienceAuthorizationError("document unavailable"))
+            document_ref = request.document_ref
+        else:
+            document = request.document or ""
+            if request.source_lineage is not None:
+                document_ref = submitted_revision_document_ref(
+                    actor_id=identity.employee_id,
+                    source_document_ref=request.source_lineage.document_ref,
+                    source_document_digest=request.source_lineage.document_digest,
+                )
+            else:
+                document_ref = submitted_root_document_ref(
+                    actor_id=identity.employee_id,
+                    initial_document_digest=sha256_digest(document),
+                )
+        result = _invoke(
+            lambda: service().issue_user_revision_challenge(
+                document,
+                document_ref=document_ref,
+                identity=identity,
+                candidate=request.candidate,
+                idempotency_key=request.idempotency_key,
+                selection_anchor=request.selection,
+                supersedes_claim_id=request.supersedes_claim_id,
+                source_lineage_document_ref=(
+                    request.source_lineage.document_ref
+                    if request.source_lineage is not None
+                    else None
+                ),
+                source_lineage_document_digest=(
+                    request.source_lineage.document_digest
+                    if request.source_lineage is not None
+                    else None
+                ),
+            )
+        )
+        if not isinstance(result, Mapping):
+            _closed_http_error(
+                ScienceOperationalError("Science service returned an invalid challenge")
+            )
+        return dict(result)
+
+    @router.post("/api/science/user-revisions/commit")
+    def commit_user_revision(
+        request: CommitUserRevisionRequest,
+        identity: AuthIdentity = Depends(trusted_science_ui),
+    ) -> dict[str, Any]:
+        if request.document_ref:
+            document = dependencies.load_document(identity, request.document_ref)
+            if document is None:
+                _closed_http_error(ScienceAuthorizationError("document unavailable"))
+            document_ref = request.document_ref
+        else:
+            document = request.document or ""
+            if request.source_lineage is not None:
+                document_ref = submitted_revision_document_ref(
+                    actor_id=identity.employee_id,
+                    source_document_ref=request.source_lineage.document_ref,
+                    source_document_digest=request.source_lineage.document_digest,
+                )
+            else:
+                document_ref = submitted_root_document_ref(
+                    actor_id=identity.employee_id,
+                    initial_document_digest=sha256_digest(document),
+                )
+        result = _invoke(
+            lambda: service().commit_user_revision(
+                request.challenge_id,
+                identity=identity,
+                document_text=document,
+                document_ref=document_ref,
+                candidate=request.candidate,
+                idempotency_key=request.idempotency_key,
+                selection_anchor=request.selection,
+                supersedes_claim_id=request.supersedes_claim_id,
+                source_lineage_document_ref=(
+                    request.source_lineage.document_ref
+                    if request.source_lineage is not None
+                    else None
+                ),
+                source_lineage_document_digest=(
+                    request.source_lineage.document_digest
+                    if request.source_lineage is not None
+                    else None
+                ),
+            )
+        )
+        return _json_model(result)
+
+    @router.post(
+        "/api/science/interpretations/{interpretation_id}/confirmation-challenge"
+    )
+    def issue_confirmation_challenge(
+        interpretation_id: str,
+        request: ConfirmationChallengeRequest,
+        identity: AuthIdentity = Depends(trusted_science_ui),
+    ) -> dict[str, Any]:
+        result = _invoke(
+            lambda: service().issue_confirmation_challenge(
+                interpretation_id,
+                claim_ids=request.claim_ids,
+                identity=identity,
+                idempotency_key=request.idempotency_key,
+            )
+        )
+        if not isinstance(result, Mapping):
+            _closed_http_error(
+                ScienceOperationalError("Science service returned an invalid challenge")
+            )
+        return dict(result)
+
     @router.post("/api/science/interpretations/{interpretation_id}/confirm")
     def confirm_interpretation(
         interpretation_id: str,
         request: ConfirmInterpretationRequest,
-        identity: AuthIdentity = Depends(science_identity),
+        identity: AuthIdentity = Depends(trusted_science_ui),
     ) -> dict[str, Any]:
         result = _invoke(
-            lambda: service().confirm_interpretation(
-                interpretation_id,
-                claim_ids=request.claim_ids,
+            lambda: service().commit_interpretation_confirmation(
+                request.challenge_id,
                 identity=identity,
+                source_interpretation_id=interpretation_id,
+                claim_ids=request.claim_ids,
                 idempotency_key=request.idempotency_key,
             )
         )
@@ -721,12 +934,11 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
             )
         return result.model_dump(mode="json")
 
-    def mutate_release(
+    def release_mutation_payload(
         operation: Literal["activate", "withdraw"],
         release_id: str,
-        request: ReleaseMutationRequest,
-        identity: AuthIdentity,
-    ) -> dict[str, Any]:
+        request: ReleaseMutationChallengeRequest,
+    ) -> dict[str, str]:
         expected_request_digest = sha256_digest(
             {
                 "operation": operation,
@@ -742,6 +954,68 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
                     "message": "Release mutation request is not exact.",
                 },
             )
+        return {
+            "operation": operation,
+            "release_id": release_id,
+            "release_digest": request.release_digest,
+            "request_digest": request.request_digest,
+            "idempotency_key": request.idempotency_key,
+        }
+
+    def issue_release_mutation_challenge(
+        operation: Literal["activate", "withdraw"],
+        release_id: str,
+        request: ReleaseMutationChallengeRequest,
+        identity: AuthIdentity,
+    ) -> dict[str, Any]:
+        payload = release_mutation_payload(operation, release_id, request)
+        trusted_digest = sha256_digest(
+            {
+                "operation": f"{operation}_release",
+                "actor_id": identity.employee_id,
+                "payload": payload,
+            }
+        )
+        now = datetime.now(timezone.utc)
+        challenge = _invoke(
+            lambda: dependencies.runtime_store.issue_user_action_challenge(
+                operation=f"{operation}_release",
+                actor_id=identity.employee_id,
+                request_digest=trusted_digest,
+                issued_at=now,
+                expires_at=now + timedelta(minutes=5),
+            )
+        )
+        return {
+            "challenge_id": challenge.challenge_id,
+            "operation": f"{operation}_release",
+            "request_digest": trusted_digest,
+            "expires_at": challenge.expires_at.isoformat().replace("+00:00", "Z"),
+        }
+
+    def mutate_release(
+        operation: Literal["activate", "withdraw"],
+        release_id: str,
+        request: ReleaseMutationRequest,
+        identity: AuthIdentity,
+    ) -> dict[str, Any]:
+        payload = release_mutation_payload(operation, release_id, request)
+        trusted_digest = sha256_digest(
+            {
+                "operation": f"{operation}_release",
+                "actor_id": identity.employee_id,
+                "payload": payload,
+            }
+        )
+        _invoke(
+            lambda: dependencies.runtime_store.consume_user_action_challenge(
+                request.challenge_id,
+                operation=f"{operation}_release",
+                actor_id=identity.employee_id,
+                request_digest=trusted_digest,
+                consumed_at=datetime.now(timezone.utc),
+            )
+        )
         if dependencies.release_manager is None:
             raise HTTPException(
                 status_code=503,
@@ -762,11 +1036,31 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
         )
         return _json_model(result) if hasattr(result, "model_dump") else dict(result)
 
+    @router.post("/api/science/admin/releases/{release_id}/activate-challenge")
+    def issue_activate_release_challenge(
+        release_id: str,
+        request: ReleaseMutationChallengeRequest,
+        identity: AuthIdentity = Depends(trusted_science_admin),
+    ) -> dict[str, Any]:
+        return issue_release_mutation_challenge(
+            "activate", release_id, request, identity
+        )
+
+    @router.post("/api/science/admin/releases/{release_id}/withdraw-challenge")
+    def issue_withdraw_release_challenge(
+        release_id: str,
+        request: ReleaseMutationChallengeRequest,
+        identity: AuthIdentity = Depends(trusted_science_admin),
+    ) -> dict[str, Any]:
+        return issue_release_mutation_challenge(
+            "withdraw", release_id, request, identity
+        )
+
     @router.post("/api/science/admin/releases/{release_id}/activate")
     def activate_release(
         release_id: str,
         request: ReleaseMutationRequest,
-        identity: AuthIdentity = Depends(science_admin),
+        identity: AuthIdentity = Depends(trusted_science_admin),
     ) -> dict[str, Any]:
         return mutate_release("activate", release_id, request, identity)
 
@@ -774,7 +1068,7 @@ def create_science_router(dependencies: ScienceRouteDependencies) -> APIRouter:
     def withdraw_release(
         release_id: str,
         request: ReleaseMutationRequest,
-        identity: AuthIdentity = Depends(science_admin),
+        identity: AuthIdentity = Depends(trusted_science_admin),
     ) -> dict[str, Any]:
         return mutate_release("withdraw", release_id, request, identity)
 

@@ -51,6 +51,115 @@ def proposal_request_digest(
     return sha256_digest({"domain": domain, "kind": kind, "payload": payload})
 
 
+def test_user_action_challenge_is_durable_exact_and_consumed_once(
+    tmp_path: Path,
+) -> None:
+    """Catches process-local, replayable, or payload-unbound challenges."""
+
+    authorization = ScienceAuthorization("admin_only")
+
+    def roles_for(_employee_id: str) -> list[str]:
+        return ["science.admin", "boi.viewer"]
+
+    issued_at = datetime(2026, 8, 25, 4, 0, tzinfo=timezone.utc)
+    expires_at = datetime(2026, 8, 25, 4, 5, tzinfo=timezone.utc)
+    request_digest = digest("trusted-user-action")
+    store = ScienceRuntimeStore(
+        tmp_path / "runtime",
+        authorization=authorization,
+        roles_for=roles_for,
+    )
+
+    challenge = store.issue_user_action_challenge(
+        operation="submit_user_revision",
+        actor_id="100001",
+        request_digest=request_digest,
+        issued_at=issued_at,
+        expires_at=expires_at,
+    )
+    store.close()
+
+    reopened = ScienceRuntimeStore(
+        tmp_path / "runtime",
+        authorization=authorization,
+        roles_for=roles_for,
+    )
+    with pytest.raises(ValueError, match="does not match"):
+        reopened.consume_user_action_challenge(
+            challenge.challenge_id,
+            operation="submit_user_revision",
+            actor_id="100002",
+            request_digest=request_digest,
+            consumed_at=datetime(2026, 8, 25, 4, 1, tzinfo=timezone.utc),
+        )
+
+    consumed = reopened.consume_user_action_challenge(
+        challenge.challenge_id,
+        operation="submit_user_revision",
+        actor_id="100001",
+        request_digest=request_digest,
+        consumed_at=datetime(2026, 8, 25, 4, 1, tzinfo=timezone.utc),
+    )
+    assert consumed == challenge
+    with pytest.raises(KeyError, match="missing or already used"):
+        reopened.consume_user_action_challenge(
+            challenge.challenge_id,
+            operation="submit_user_revision",
+            actor_id="100001",
+            request_digest=request_digest,
+            consumed_at=datetime(2026, 8, 25, 4, 1, tzinfo=timezone.utc),
+        )
+
+
+def test_user_action_challenge_consumption_is_atomic_across_store_instances(
+    tmp_path: Path,
+) -> None:
+    """Catches two workers both accepting one human-action challenge."""
+
+    authorization = ScienceAuthorization("admin_only")
+
+    def roles_for(_employee_id: str) -> list[str]:
+        return ["science.admin", "boi.viewer"]
+
+    root = tmp_path / "runtime"
+    first = ScienceRuntimeStore(
+        root,
+        authorization=authorization,
+        roles_for=roles_for,
+    )
+    second = ScienceRuntimeStore(
+        root,
+        authorization=authorization,
+        roles_for=roles_for,
+    )
+    request_digest = digest("atomic-user-action")
+    challenge = first.issue_user_action_challenge(
+        operation="confirm_interpretation",
+        actor_id="100001",
+        request_digest=request_digest,
+        issued_at=datetime(2026, 8, 25, 4, 0, tzinfo=timezone.utc),
+        expires_at=datetime(2026, 8, 25, 4, 5, tzinfo=timezone.utc),
+    )
+
+    def consume(store: ScienceRuntimeStore) -> str:
+        try:
+            store.consume_user_action_challenge(
+                challenge.challenge_id,
+                operation="confirm_interpretation",
+                actor_id="100001",
+                request_digest=request_digest,
+                consumed_at=datetime(2026, 8, 25, 4, 1, tzinfo=timezone.utc),
+            )
+        except KeyError:
+            return "rejected"
+        return "consumed"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        outcomes = list(executor.map(consume, (first, second)))
+
+    assert sorted(outcomes) == ["consumed", "rejected"]
+
+
 def save_proposal_fixture(
     store: ScienceRuntimeStore,
     *,

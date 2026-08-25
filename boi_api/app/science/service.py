@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Literal
 
 from pydantic import ValidationError
@@ -69,6 +69,7 @@ class ScienceIdempotencyConflict(ScienceOperationalError):
 
 
 CLAIM_SUBMISSION_VERSION = "science-claim-submission/0.1.0"
+USER_ACTION_CHALLENGE_TTL = timedelta(minutes=5)
 
 
 def submitted_root_document_ref(
@@ -155,6 +156,80 @@ class ScienceService:
         self.ontology_binding_ids = tuple(ontology_binding_ids)
         self._document_access_check = document_access_check
         self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def _trusted_now(self) -> datetime:
+        now = self._clock()
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ScienceOperationalError(
+                "Science trusted user action clock must be timezone-aware"
+            )
+        return now
+
+    def _issue_trusted_user_action_challenge(
+        self,
+        *,
+        operation: Literal["submit_user_revision", "confirm_interpretation"],
+        identity: AuthIdentity,
+        payload: Mapping[str, Any],
+    ) -> dict[str, str]:
+        now = self._trusted_now()
+        request_digest = sha256_digest(
+            {
+                "operation": operation,
+                "actor_id": identity.employee_id,
+                "payload": payload,
+            }
+        )
+        issue = getattr(self.runtime_store, "issue_user_action_challenge", None)
+        if not callable(issue):
+            raise ScienceConfirmationRequired(
+                "durable trusted user action storage is unavailable"
+            )
+        challenge = issue(
+            operation=operation,
+            actor_id=identity.employee_id,
+            request_digest=request_digest,
+            issued_at=now,
+            expires_at=now + USER_ACTION_CHALLENGE_TTL,
+        )
+        return {
+            "challenge_id": challenge.challenge_id,
+            "operation": operation,
+            "request_digest": request_digest,
+            "expires_at": challenge.expires_at.isoformat().replace("+00:00", "Z"),
+        }
+
+    def _consume_trusted_user_action_challenge(
+        self,
+        challenge_id: str,
+        *,
+        operation: Literal["submit_user_revision", "confirm_interpretation"],
+        identity: AuthIdentity,
+        request_digest: str,
+    ) -> None:
+        if not isinstance(challenge_id, str) or not challenge_id.startswith(
+            "sci-user-action:"
+        ):
+            raise ScienceConfirmationRequired(
+                "a server-issued trusted user action challenge is required"
+            )
+        consume = getattr(self.runtime_store, "consume_user_action_challenge", None)
+        if not callable(consume):
+            raise ScienceConfirmationRequired(
+                "durable trusted user action storage is unavailable"
+            )
+        try:
+            consume(
+                challenge_id,
+                operation=operation,
+                actor_id=identity.employee_id,
+                request_digest=request_digest,
+                consumed_at=self._trusted_now(),
+            )
+        except (KeyError, ValueError) as exc:
+            raise ScienceConfirmationRequired(
+                "trusted user action challenge is missing, expired, used, or mismatched"
+            ) from exc
 
     def _require_interpretation_access(
         self,
@@ -1058,7 +1133,167 @@ class ScienceService:
             }
         )
 
+    def issue_user_revision_challenge(
+        self,
+        document_text: str,
+        *,
+        document_ref: str,
+        identity: AuthIdentity,
+        candidate: LLMClaimCandidate,
+        idempotency_key: str,
+        selection_anchor: SourceSpan | None = None,
+        supersedes_claim_id: str | None = None,
+        source_lineage_document_ref: str | None = None,
+        source_lineage_document_digest: str | None = None,
+    ) -> dict[str, str]:
+        """Bind one explicit web user edit to exact server-side inputs."""
+
+        if not document_text:
+            raise ScienceInterpretationUnavailable("document text must be nonempty")
+        candidate = validate_with_closed_error(
+            lambda: LLMClaimCandidate.model_validate(
+                candidate.model_dump(mode="json", exclude_none=False)
+            ),
+            caught=(ValidationError, ValueError, AttributeError),
+            closed_error=ScienceInterpretationUnavailable(
+                "Claim candidate failed closed schema validation"
+            ),
+        )
+        self._idempotency_digest(idempotency_key)
+        payload = self._user_revision_challenge_payload(
+            document_text=document_text,
+            document_ref=document_ref,
+            candidate=candidate,
+            idempotency_key=idempotency_key,
+            selection_anchor=selection_anchor,
+            supersedes_claim_id=supersedes_claim_id,
+            source_lineage_document_ref=source_lineage_document_ref,
+            source_lineage_document_digest=source_lineage_document_digest,
+        )
+        return self._issue_trusted_user_action_challenge(
+            operation="submit_user_revision",
+            identity=identity,
+            payload=payload,
+        )
+
+    @staticmethod
+    def _user_revision_challenge_payload(
+        *,
+        document_text: str,
+        document_ref: str,
+        candidate: LLMClaimCandidate,
+        idempotency_key: str,
+        selection_anchor: SourceSpan | None,
+        supersedes_claim_id: str | None,
+        source_lineage_document_ref: str | None,
+        source_lineage_document_digest: str | None,
+    ) -> dict[str, Any]:
+        return {
+            "document_text": document_text,
+            "document_ref": document_ref,
+            "candidate": candidate,
+            "idempotency_key": idempotency_key,
+            "selection_anchor": selection_anchor,
+            "supersedes_claim_id": supersedes_claim_id,
+            "source_lineage_document_ref": source_lineage_document_ref,
+            "source_lineage_document_digest": source_lineage_document_digest,
+        }
+
+    def commit_user_revision(
+        self,
+        challenge_id: str,
+        *,
+        identity: AuthIdentity,
+        document_text: str,
+        document_ref: str,
+        candidate: LLMClaimCandidate,
+        idempotency_key: str,
+        selection_anchor: SourceSpan | None = None,
+        supersedes_claim_id: str | None = None,
+        source_lineage_document_ref: str | None = None,
+        source_lineage_document_digest: str | None = None,
+    ) -> InterpretationRecord:
+        """Consume one exact user-edit challenge; it cannot be replayed."""
+
+        candidate = validate_with_closed_error(
+            lambda: LLMClaimCandidate.model_validate(
+                candidate.model_dump(mode="json", exclude_none=False)
+            ),
+            caught=(ValidationError, ValueError, AttributeError),
+            closed_error=ScienceInterpretationUnavailable(
+                "Claim candidate failed closed schema validation"
+            ),
+        )
+        payload = self._user_revision_challenge_payload(
+            document_text=document_text,
+            document_ref=document_ref,
+            candidate=candidate,
+            idempotency_key=idempotency_key,
+            selection_anchor=selection_anchor,
+            supersedes_claim_id=supersedes_claim_id,
+            source_lineage_document_ref=source_lineage_document_ref,
+            source_lineage_document_digest=source_lineage_document_digest,
+        )
+        request_digest = sha256_digest(
+            {
+                "operation": "submit_user_revision",
+                "actor_id": identity.employee_id,
+                "payload": payload,
+            }
+        )
+        self._consume_trusted_user_action_challenge(
+            challenge_id,
+            operation="submit_user_revision",
+            identity=identity,
+            request_digest=request_digest,
+        )
+        return self._submit_claim_candidate(
+            document_text,
+            document_ref=document_ref,
+            identity=identity,
+            client_kind="user",
+            candidate=candidate,
+            idempotency_key=idempotency_key,
+            selection_anchor=selection_anchor,
+            supersedes_claim_id=supersedes_claim_id,
+            source_lineage_document_ref=source_lineage_document_ref,
+            source_lineage_document_digest=source_lineage_document_digest,
+        )
+
     def submit_claim_candidate(
+        self,
+        document_text: str,
+        *,
+        document_ref: str,
+        identity: AuthIdentity,
+        client_kind: ClaimSubmissionClientKind,
+        candidate: LLMClaimCandidate,
+        idempotency_key: str,
+        selection_anchor: SourceSpan | None = None,
+        supersedes_claim_id: str | None = None,
+        source_lineage_document_ref: str | None = None,
+        source_lineage_document_digest: str | None = None,
+    ) -> InterpretationRecord:
+        """Revalidate an untrusted external Claim proposal."""
+
+        if client_kind == "user":
+            raise ScienceConfirmationRequired(
+                "a server-issued user revision challenge is required"
+            )
+        return self._submit_claim_candidate(
+            document_text,
+            document_ref=document_ref,
+            identity=identity,
+            client_kind=client_kind,
+            candidate=candidate,
+            idempotency_key=idempotency_key,
+            selection_anchor=selection_anchor,
+            supersedes_claim_id=supersedes_claim_id,
+            source_lineage_document_ref=source_lineage_document_ref,
+            source_lineage_document_digest=source_lineage_document_digest,
+        )
+
+    def _submit_claim_candidate(
         self,
         document_text: str,
         *,
@@ -1479,7 +1714,118 @@ class ScienceService:
             return sha256_digest(claims[0])
         return sha256_digest({"claim_packets": list(claims)})
 
+    def issue_confirmation_challenge(
+        self,
+        source_interpretation_id: str,
+        *,
+        claim_ids: Sequence[str],
+        identity: AuthIdentity,
+        idempotency_key: str,
+    ) -> dict[str, str]:
+        """Bind a human confirmation click to one immutable interpretation revision."""
+
+        source = self.runtime_store.load_interpretation(source_interpretation_id)
+        if source.interpretation_id != source_interpretation_id:
+            raise ScienceOperationalError(
+                "stored interpretation identity does not match the requested record"
+            )
+        self._require_interpretation_access(source, identity=identity)
+        selected_ids = sorted(claim_ids)
+        if not selected_ids or len(selected_ids) != len(set(selected_ids)):
+            raise ScienceConfirmationRequired(
+                "confirmation requires unique stored claim identities"
+            )
+        if set(selected_ids) - {
+            claim.claim_id for claim in source.candidate_claims
+        }:
+            raise ScienceConfirmationRequired(
+                "confirmation references an unknown claim candidate"
+            )
+        self._idempotency_digest(idempotency_key)
+        payload = self._confirmation_challenge_payload(
+            source=source,
+            source_interpretation_id=source_interpretation_id,
+            claim_ids=selected_ids,
+            idempotency_key=idempotency_key,
+        )
+        return self._issue_trusted_user_action_challenge(
+            operation="confirm_interpretation",
+            identity=identity,
+            payload=payload,
+        )
+
+    @staticmethod
+    def _confirmation_challenge_payload(
+        *,
+        source: InterpretationRecord,
+        source_interpretation_id: str,
+        claim_ids: Sequence[str],
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        return {
+            "source_interpretation_id": source_interpretation_id,
+            "source_response_digest": source.response_digest,
+            "source_operation_request_digest": (
+                source.operation_binding.request_digest
+            ),
+            "claim_ids": sorted(claim_ids),
+            "idempotency_key": idempotency_key,
+        }
+
+    def commit_interpretation_confirmation(
+        self,
+        challenge_id: str,
+        *,
+        identity: AuthIdentity,
+        source_interpretation_id: str,
+        claim_ids: Sequence[str],
+        idempotency_key: str,
+    ) -> InterpretationRecord:
+        """Consume one exact confirmation challenge; it cannot be replayed."""
+
+        source = self.runtime_store.load_interpretation(source_interpretation_id)
+        self._require_interpretation_access(source, identity=identity)
+        payload = self._confirmation_challenge_payload(
+            source=source,
+            source_interpretation_id=source_interpretation_id,
+            claim_ids=claim_ids,
+            idempotency_key=idempotency_key,
+        )
+        request_digest = sha256_digest(
+            {
+                "operation": "confirm_interpretation",
+                "actor_id": identity.employee_id,
+                "payload": payload,
+            }
+        )
+        self._consume_trusted_user_action_challenge(
+            challenge_id,
+            operation="confirm_interpretation",
+            identity=identity,
+            request_digest=request_digest,
+        )
+        return self._confirm_interpretation(
+            source_interpretation_id,
+            claim_ids=sorted(claim_ids),
+            identity=identity,
+            idempotency_key=idempotency_key,
+        )
+
     def confirm_interpretation(
+        self,
+        source_interpretation_id: str,
+        *,
+        claim_ids: Sequence[str],
+        identity: AuthIdentity,
+        idempotency_key: str,
+    ) -> InterpretationRecord:
+        """Reject direct confirmation without the trusted user ceremony."""
+
+        raise ScienceConfirmationRequired(
+            "a server-issued interpretation confirmation challenge is required"
+        )
+
+    def _confirm_interpretation(
         self,
         source_interpretation_id: str,
         *,

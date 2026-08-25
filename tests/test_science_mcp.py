@@ -97,9 +97,6 @@ async def test_verification_tools_forward_stored_identity_contract_unchanged(
     await mcp_module.science_interpret(
         "원문", request_id="r-1", idempotency_key="idem-1"
     )
-    await mcp_module.science_interpretation_confirm(
-        "i-1", ["c-1"], user_confirmed=True, idempotency_key="idem-2"
-    )
     await mcp_module.science_verify_claim("i-2", "c-1", release_selection)
     await mcp_module.science_verify_document(
         "i-2", release_selection, idempotency_key="idem-3"
@@ -111,7 +108,6 @@ async def test_verification_tools_forward_stored_identity_contract_unchanged(
         ("POST", "/api/science/aliases/detect"),
         ("POST", "/api/science/claims/submit"),
         ("POST", "/api/science/interpret"),
-        ("POST", "/api/science/interpretations/i-1/confirm"),
         ("POST", "/api/science/claims/c-1/verify"),
         ("POST", "/api/science/verify-document"),
         ("GET", "/api/science/evidence/e-1"),
@@ -130,11 +126,11 @@ async def test_verification_tools_forward_stored_identity_contract_unchanged(
         "candidate": {"normalized_claim": {"predicate": "increases"}},
         "idempotency_key": "claim-submit-1",
     }
-    assert calls[4][2]["payload"] == {
+    assert calls[3][2]["payload"] == {
         "interpretation_id": "i-2",
         "release_selection": release_selection,
     }
-    assert calls[5][2]["payload"] == {
+    assert calls[4][2]["payload"] == {
         "interpretation_id": "i-2",
         "release_selection": release_selection,
         "idempotency_key": "idem-3",
@@ -194,6 +190,31 @@ async def test_equation_claim_candidate_crosses_mcp_without_authority_rewriting(
 
     assert captured["path"] == "/api/science/claims/submit"
     assert captured["payload"]["candidate"] == candidate
+
+
+@pytest.mark.asyncio
+async def test_mcp_cannot_self_declare_a_trusted_user_revision(
+    mcp_module, monkeypatch, authenticated_science_user
+):
+    """Catches allowing an agent tool argument to impersonate a user edit."""
+
+    calls: list[dict] = []
+
+    async def fake_post(path, **kwargs):
+        calls.append({"path": path, **kwargs})
+        return {"interpretation_id": "should-not-exist"}
+
+    monkeypatch.setattr(mcp_module, "api_post", fake_post)
+
+    with pytest.raises(ValueError, match="external Claim proposer"):
+        await mcp_module.science_claim_submit(
+            candidate={"normalized_claim": {"predicate": "increases"}},
+            client_kind="user",
+            idempotency_key="mcp-forged-user-revision",
+            document="원문",
+        )
+
+    assert calls == []
 
 
 def test_authenticated_bridge_forwards_external_claim_submission(
@@ -358,21 +379,6 @@ async def test_governance_tools_preserve_exact_requests_and_user_identity(
         idempotency_key="idem-p",
         user_confirmed=True,
     )
-    await mcp_module.science_release_activate(
-        "rel-1",
-        "sha256:" + "3" * 64,
-        request_digest="sha256:" + "6" * 64,
-        idempotency_key="idem-a",
-        user_confirmed=True,
-    )
-    await mcp_module.science_release_withdraw(
-        "rel-1",
-        "sha256:" + "3" * 64,
-        request_digest="sha256:" + "7" * 64,
-        idempotency_key="idem-w",
-        user_confirmed=True,
-    )
-
     assert [path for path, _ in calls] == [
         "/api/science/admin/sources/validate",
         "/api/science/admin/evidence/validate",
@@ -380,8 +386,6 @@ async def test_governance_tools_preserve_exact_requests_and_user_identity(
         "/api/science/admin/rules/r-1/qualify",
         "/api/science/admin/releases/validate",
         "/api/science/proposals",
-        "/api/science/admin/releases/rel-1/activate",
-        "/api/science/admin/releases/rel-1/withdraw",
     ]
     assert calls[3][1]["payload"] == qualification
     assert calls[4][1]["payload"] == {
@@ -392,23 +396,36 @@ async def test_governance_tools_preserve_exact_requests_and_user_identity(
     for path, kwargs in calls:
         assert kwargs["bearer_token"] == "test-user-bearer", path
         assert kwargs.get("employee_id") is None, path
-    for path, kwargs in calls[-3:]:
+    for path, kwargs in calls[-1:]:
         assert kwargs["payload"]["user_confirmed"] is True, path
         assert kwargs["payload"]["request_digest"].startswith("sha256:"), path
         assert kwargs["payload"]["idempotency_key"], path
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "tool_name",
+    ["science_release_activate", "science_release_withdraw"],
+)
+async def test_mcp_cannot_mutate_science_releases(
+    mcp_module, authenticated_science_user, tool_name
+) -> None:
+    """Catches an Admin bearer agent standing in for the human release ceremony."""
+
+    tool = getattr(mcp_module, tool_name)
+    with pytest.raises(PermissionError, match="trusted_browser_admin_action_required"):
+        await tool(
+            "rel-1",
+            "sha256:" + "3" * 64,
+            request_digest="sha256:" + "6" * 64,
+            idempotency_key="mcp-release-mutation",
+            user_confirmed=True,
+        )
+
+
 @pytest.mark.parametrize(
     "tool,args",
     [
-        (
-            "science_interpretation_confirm",
-            {
-                "interpretation_id": "i-1",
-                "claim_ids": ["c-1"],
-                "idempotency_key": "idem-c",
-            },
-        ),
         (
             "science_proposal_create",
             {
@@ -433,6 +450,61 @@ def test_authenticated_bridge_requires_explicit_confirmation(
 
     assert response.status_code == 400
     assert "user_confirmed=true" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_confirmation_is_rejected_even_with_a_caller_supplied_challenge(
+    mcp_module, authenticated_science_user
+) -> None:
+    """Catches MCP consuming or minting the trusted browser confirmation."""
+
+    with pytest.raises(PermissionError, match="MCP can submit proposals only"):
+        await mcp_module.science_interpretation_confirm(
+            "sci-interpretation:proposal",
+            "sci-user-action:00000000-0000-4000-8000-000000000000",
+        )
+
+
+@pytest.mark.parametrize(
+    "tool,args,detail",
+    [
+        (
+            "science_interpretation_confirm",
+            {
+                "interpretation_id": "i-1",
+                "confirmation_challenge": (
+                    "sci-user-action:00000000-0000-4000-8000-000000000000"
+                ),
+            },
+            "trusted_browser_confirmation_required",
+        ),
+        (
+            "science_release_activate",
+            {
+                "release_id": "rel-1",
+                "release_digest": "sha256:" + "3" * 64,
+                "request_digest": "sha256:" + "6" * 64,
+                "idempotency_key": "bridge-release-mutation",
+                "user_confirmed": True,
+            },
+            "trusted_browser_admin_action_required",
+        ),
+    ],
+)
+def test_authenticated_bridge_cannot_cross_trusted_browser_action_boundary(
+    mcp_module, tool, args, detail
+) -> None:
+    response = TestClient(mcp_module.app).post(
+        "/api/mcp/call",
+        headers={
+            "x-service-token": "test-service-token",
+            "authorization": "Bearer test-user-bearer",
+        },
+        json={"tool": tool, "arguments": args},
+    )
+
+    assert response.status_code == 403
+    assert detail in response.json()["detail"]
 
 
 @pytest.mark.parametrize(

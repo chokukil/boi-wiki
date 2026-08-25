@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+import uuid
 
 import httpx
 import pytest
@@ -628,6 +629,7 @@ class _RecordingStore:
         self.reports = {}
         self.interpretation_identity = None
         self.report_identity = None
+        self.user_action_challenges = {}
 
     def save_interpretation(self, record, *, identity):
         self.interpretations[record.interpretation_id] = record
@@ -644,6 +646,27 @@ class _RecordingStore:
 
     def load_report(self, report_id):
         return self.reports[report_id]
+
+    def issue_user_action_challenge(self, **kwargs):
+        challenge_id = f"sci-user-action:{uuid.uuid4()}"
+        challenge = SimpleNamespace(challenge_id=challenge_id, **kwargs)
+        self.user_action_challenges[challenge_id] = challenge
+        return challenge
+
+    def consume_user_action_challenge(self, challenge_id, **kwargs):
+        challenge = self.user_action_challenges.get(challenge_id)
+        if challenge is None:
+            raise KeyError("Science user action challenge is missing or already used")
+        if any(
+            getattr(challenge, field) != kwargs[field]
+            for field in ("operation", "actor_id", "request_digest")
+        ):
+            raise ValueError("Science user action challenge does not match exact inputs")
+        if challenge.expires_at <= kwargs["consumed_at"]:
+            self.user_action_challenges.pop(challenge_id, None)
+            raise ValueError("Science user action challenge has expired")
+        self.user_action_challenges.pop(challenge_id)
+        return challenge
 
 
 def _release_and_rules(*, release_id: str = "sci-release:foundation-0.1"):
@@ -918,11 +941,49 @@ def science_identity() -> AuthIdentity:
     )
 
 
+class _UserCeremonyScienceService(ScienceService):
+    """Drive the real two-step human ceremony in service-level tests."""
+
+    def submit_claim_candidate(self, document_text, **kwargs):
+        if kwargs.get("client_kind") != "user":
+            return super().submit_claim_candidate(document_text, **kwargs)
+        trusted = dict(kwargs)
+        trusted.pop("client_kind")
+        challenge = self.issue_user_revision_challenge(document_text, **trusted)
+        return self.commit_user_revision(
+            challenge["challenge_id"],
+            document_text=document_text,
+            **trusted,
+        )
+
+    def confirm_interpretation(
+        self,
+        source_interpretation_id,
+        *,
+        claim_ids,
+        identity,
+        idempotency_key,
+    ):
+        challenge = self.issue_confirmation_challenge(
+            source_interpretation_id,
+            claim_ids=claim_ids,
+            identity=identity,
+            idempotency_key=idempotency_key,
+        )
+        return self.commit_interpretation_confirmation(
+            challenge["challenge_id"],
+            source_interpretation_id=source_interpretation_id,
+            claim_ids=claim_ids,
+            identity=identity,
+            idempotency_key=idempotency_key,
+        )
+
+
 def _service(content: dict[str, object] | None = None):
     catalog = _Catalog()
     store = _RecordingStore()
     llm = _StaticLLM(content or _llm_content())
-    service = ScienceService(
+    service = _UserCeremonyScienceService(
         catalog=catalog,
         runtime_store=store,
         llm_client=llm,
@@ -948,7 +1009,7 @@ def _real_service(tmp_path: Path, content: dict[str, object] | None = None):
         report_authority_validator=catalog.validate_verification_report_authority,
     )
     llm = _StaticLLM(content or _llm_content())
-    service = ScienceService(
+    service = _UserCeremonyScienceService(
         catalog=catalog,
         runtime_store=store,
         llm_client=llm,
@@ -1006,6 +1067,90 @@ def _confirmed_interpretation(
         identity=identity,
         idempotency_key=CONFIRM_KEY,
     )
+
+
+def test_caller_controlled_user_label_cannot_mint_a_trusted_revision(
+    science_identity: AuthIdentity,
+) -> None:
+    """Catches restoring client_kind=user as a semantic trust decision."""
+
+    service, _catalog, _store, _llm = _service()
+
+    with pytest.raises(
+        ScienceConfirmationRequired,
+        match="server-issued user revision challenge",
+    ):
+        ScienceService.submit_claim_candidate(
+            service,
+            "RPM 증가 시 두께 변화",
+            document_ref="boi:public:science:document:fixture",
+            identity=science_identity,
+            client_kind="user",
+            candidate=_user_candidate_with_applicability(),
+            idempotency_key="science-request:forged-user-label",
+        )
+
+
+def test_user_revision_challenge_survives_service_recreation_and_is_exact_once(
+    tmp_path: Path,
+    science_identity: AuthIdentity,
+) -> None:
+    """Catches process-local challenges, payload substitution, and replay."""
+
+    issuer, catalog, store, _llm = _real_service(tmp_path)
+    document = "RPM 증가 시 두께 변화"
+    candidate = _user_candidate_with_applicability()
+    challenge = issuer.issue_user_revision_challenge(
+        document,
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        candidate=candidate,
+        idempotency_key="science-request:durable-user-revision",
+    )
+    consumer = ScienceService(
+        catalog=catalog,
+        runtime_store=store,
+        llm_client=None,
+        dictionary_release_id="sci:dictionary:0.1",
+        ontology_release_id="sci:ontology:0.1",
+        ontology_binding_ids=[
+            "sci:binding:rpm",
+            "sci:binding:increases",
+            "sci:binding:film-thickness",
+        ],
+        document_access_check=lambda _identity, _document_ref: True,
+        clock=lambda: datetime(2026, 8, 25, 4, 0, tzinfo=timezone.utc),
+    )
+
+    with pytest.raises(ScienceConfirmationRequired, match="mismatched"):
+        consumer.commit_user_revision(
+            challenge["challenge_id"],
+            document_text=document,
+            document_ref="boi:public:science:document:fixture",
+            identity=science_identity,
+            candidate=candidate,
+            idempotency_key="science-request:tampered-user-revision",
+        )
+
+    record = consumer.commit_user_revision(
+        challenge["challenge_id"],
+        document_text=document,
+        document_ref="boi:public:science:document:fixture",
+        identity=science_identity,
+        candidate=candidate,
+        idempotency_key="science-request:durable-user-revision",
+    )
+    assert record.submission_client_kind == "user"
+    assert record.candidate_claims[0].interpretation.user_confirmed is False
+    with pytest.raises(ScienceConfirmationRequired, match="used"):
+        consumer.commit_user_revision(
+            challenge["challenge_id"],
+            document_text=document,
+            document_ref="boi:public:science:document:fixture",
+            identity=science_identity,
+            candidate=candidate,
+            idempotency_key="science-request:durable-user-revision",
+        )
 
 
 def test_interpret_document_persists_identity_bound_safe_metadata_and_catalog_meanings(
@@ -2053,7 +2198,7 @@ def test_wiki_revision_with_all_lineage_fields_stripped_fails_after_store_reopen
         roles_for=lambda _identity: ["science.admin"],
         report_authority_validator=catalog.validate_verification_report_authority,
     )
-    reopened_service = ScienceService(
+    reopened_service = _UserCeremonyScienceService(
         catalog=catalog,
         runtime_store=reopened_store,
         llm_client=None,

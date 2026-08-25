@@ -241,8 +241,8 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "action_skills_list", "description": "List Action Skill registry entries used by BoI Agent and WorkflowDefinition registration."},
     {"name": "science_interpret", "description": "Interpret document claims against the active Science ontology without deciding a verdict."},
     {"name": "science_aliases_detect", "description": "Find exact registered Science aliases in document text without creating a claim or verdict."},
-    {"name": "science_claim_submit", "description": "Submit one user/Codex/Claude/Qwen claim candidate for server-side ontology and span revalidation; never accepts verdict authority."},
-    {"name": "science_interpretation_confirm", "description": "Record an explicit user-confirmed interpretation binding before resuming affected claim verification."},
+    {"name": "science_claim_submit", "description": "Submit one Codex/Claude/Qwen/other-agent claim candidate for server-side ontology and span revalidation; never accepts user, verdict, Rule, or Evidence authority."},
+    {"name": "science_interpretation_confirm", "description": "Report that interpretation confirmation requires the trusted browser ceremony; MCP cannot perform the human action."},
     {"name": "science_verify_claim", "description": "Verify one interpreted claim through the deterministic Science rule engine."},
     {"name": "science_verify_document", "description": "Verify a document and return source-anchored annotations plus the immutable report reference."},
     {"name": "science_evidence_get", "description": "Return public Science Evidence text, translation, locator, source URL, scope, and integrity metadata."},
@@ -254,8 +254,8 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "science_knowledge_validate", "description": "Validate a proposed Science Knowledge object without approving it."},
     {"name": "science_rule_qualify", "description": "Run deterministic qualification cases for a Science Rule without approving or activating it."},
     {"name": "science_release_validate", "description": "Validate a Science Release Candidate and its exact object digests without activating it."},
-    {"name": "science_release_activate", "description": "Activate an Admin-reviewed Science Release after explicit confirmation and authenticated role enforcement."},
-    {"name": "science_release_withdraw", "description": "Withdraw an active Science Release after explicit confirmation and authenticated role enforcement."},
+    {"name": "science_release_activate", "description": "Report that Science Release activation requires the trusted Admin browser ceremony; MCP cannot perform the human action."},
+    {"name": "science_release_withdraw", "description": "Report that Science Release withdrawal requires the trusted Admin browser ceremony; MCP cannot perform the human action."},
 ]
 MCP_RESOURCE_TEMPLATE_CAPABILITIES = [
     {"uri": "boi://docs/{boi_id}", "description": "Public BoI document as JSON text. Use employee-scoped templates for private/team content."},
@@ -882,7 +882,7 @@ async def science_aliases_detect(
 @mcp.tool(name="science_claim_submit")
 async def science_claim_submit(
     candidate: dict[str, Any],
-    client_kind: Literal["user", "codex", "claude", "qwen", "other"],
+    client_kind: Literal["codex", "claude", "qwen", "other"],
     idempotency_key: str,
     document: str = "",
     document_ref: str = "",
@@ -890,6 +890,11 @@ async def science_claim_submit(
     supersedes_claim_id: str = "",
 ) -> dict[str, Any]:
     """Submit an untrusted Claim candidate for deterministic server revalidation."""
+    if client_kind == "user":
+        raise ValueError(
+            "science_claim_submit is an external Claim proposer and cannot mint "
+            "a trusted user revision"
+        )
     payload: dict[str, Any] = {
         "client_kind": client_kind,
         "candidate": candidate,
@@ -914,21 +919,12 @@ async def science_claim_submit(
 @mcp.tool(name="science_interpretation_confirm")
 async def science_interpretation_confirm(
     interpretation_id: str,
-    claim_ids: list[str],
-    user_confirmed: bool,
-    idempotency_key: str,
+    confirmation_challenge: str,
 ) -> dict[str, Any]:
-    """Confirm one outcome-changing interpretation binding and resume only its claim."""
-    require_science_confirmation(user_confirmed, "science_interpretation_confirm")
-    return await api_post(
-        f"/api/science/interpretations/{interpretation_id}/confirm",
-        employee_id=None,
-        bearer_token=require_science_bearer(),
-        payload={
-            "claim_ids": claim_ids,
-            "user_confirmed": True,
-            "idempotency_key": idempotency_key,
-        },
+    """Reject agent-side confirmation; the trusted browser ceremony owns it."""
+    del interpretation_id, confirmation_challenge
+    raise PermissionError(
+        "trusted_browser_confirmation_required; MCP can submit proposals only"
     )
 
 
@@ -1109,18 +1105,10 @@ async def science_release_activate(
     idempotency_key: str,
     user_confirmed: bool,
 ) -> dict[str, Any]:
-    """Activate only after API-side authenticated science.admin enforcement."""
-    require_science_confirmation(user_confirmed, "science_release_activate")
-    return await api_post(
-        f"/api/science/admin/releases/{release_id}/activate",
-        employee_id=None,
-        bearer_token=require_science_bearer(),
-        payload={
-            "release_digest": release_digest,
-            "request_digest": request_digest,
-            "idempotency_key": idempotency_key,
-            "user_confirmed": True,
-        },
+    """Reject agent-side activation; a trusted Admin browser owns it."""
+    del release_id, release_digest, request_digest, idempotency_key, user_confirmed
+    raise PermissionError(
+        "trusted_browser_admin_action_required; MCP cannot activate releases"
     )
 
 
@@ -1132,18 +1120,10 @@ async def science_release_withdraw(
     idempotency_key: str,
     user_confirmed: bool,
 ) -> dict[str, Any]:
-    """Withdraw only after API-side authenticated science.admin enforcement."""
-    require_science_confirmation(user_confirmed, "science_release_withdraw")
-    return await api_post(
-        f"/api/science/admin/releases/{release_id}/withdraw",
-        employee_id=None,
-        bearer_token=require_science_bearer(),
-        payload={
-            "release_digest": release_digest,
-            "request_digest": request_digest,
-            "idempotency_key": idempotency_key,
-            "user_confirmed": True,
-        },
+    """Reject agent-side withdrawal; a trusted Admin browser owns it."""
+    del release_id, release_digest, request_digest, idempotency_key, user_confirmed
+    raise PermissionError(
+        "trusted_browser_admin_action_required; MCP cannot withdraw releases"
     )
 
 
@@ -4023,18 +4003,14 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             payload=payload,
         )
     elif tool_name == "science_interpretation_confirm":
-        if not bridge_bool(args.get("user_confirmed")):
-            return bridge_confirmation_error(req.tool)
-        interpretation_id = str(args.get("interpretation_id") or "")
-        result = await api_post(
-            f"/api/science/interpretations/{interpretation_id}/confirm",
-            employee_id=None,
-            bearer_token=science_bearer,
-            payload={
-                "claim_ids": bridge_list(args.get("claim_ids")),
-                "user_confirmed": True,
-                "idempotency_key": str(args.get("idempotency_key") or ""),
+        return JSONResponse(
+            {
+                "detail": (
+                    "trusted_browser_confirmation_required; "
+                    "MCP can submit proposals only"
+                )
             },
+            status_code=403,
         )
     elif tool_name == "science_verify_claim":
         claim_id = str(args.get("claim_id") or "")
@@ -4133,20 +4109,14 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             },
         )
     elif tool_name in {"science_release_activate", "science_release_withdraw"}:
-        if not bridge_bool(args.get("user_confirmed")):
-            return bridge_confirmation_error(req.tool)
-        release_id = str(args.get("release_id") or "")
-        action = "activate" if tool_name.endswith("activate") else "withdraw"
-        result = await api_post(
-            f"/api/science/admin/releases/{release_id}/{action}",
-            employee_id=None,
-            bearer_token=science_bearer,
-            payload={
-                "release_digest": str(args.get("release_digest") or ""),
-                "request_digest": str(args.get("request_digest") or ""),
-                "idempotency_key": str(args.get("idempotency_key") or ""),
-                "user_confirmed": True,
+        return JSONResponse(
+            {
+                "detail": (
+                    "trusted_browser_admin_action_required; "
+                    "MCP cannot mutate Science Releases"
+                )
             },
+            status_code=403,
         )
     elif tool_name in {"boi_search", "search_boi", "boi_search_sample"}:
         result = await boi_search_impl(query=str(args.get("query") or ""), employee_id=employee_id, service_token=True)

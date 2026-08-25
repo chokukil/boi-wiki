@@ -327,7 +327,9 @@
   async function confirmAndVerify(record, claim) {
     const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setStatus("사용자가 확인한 해석을 불변 기록으로 고정하고 있습니다.", "working");
-    const confirmed = await requestJson(`/api/science/interpretations/${encodeURIComponent(record.interpretation_id)}/confirm`, { method: "POST", body: JSON.stringify({ claim_ids: [claim.claim_id], idempotency_key: `science-confirm-${nonce}`, user_confirmed: true }) });
+    const confirmationRequest = { claim_ids: [claim.claim_id], idempotency_key: `science-confirm-${nonce}` };
+    const confirmationChallenge = await requestJson(`/api/science/interpretations/${encodeURIComponent(record.interpretation_id)}/confirmation-challenge`, { method: "POST", body: JSON.stringify(confirmationRequest) });
+    const confirmed = await requestJson(`/api/science/interpretations/${encodeURIComponent(record.interpretation_id)}/confirm`, { method: "POST", body: JSON.stringify({ ...confirmationRequest, challenge_id: confirmationChallenge.challenge_id }) });
     latestInterpretation = confirmed;
     if (!bootstrap.operational) {
       renderInterpretation(confirmed);
@@ -353,7 +355,9 @@
     setStatus("확정한 Claim 후보의 원문 구간·별칭·ontology_ref·개념 역할을 서버가 다시 검증하고 있습니다.", "working");
     reportsByClaim.clear();
     const revision = core.revisionPayload(supersedesClaimId, sourceLineage);
-    const record = await requestJson("/api/science/claims/submit", { method: "POST", body: JSON.stringify({ ...sourcePayload(text), client_kind: "user", candidate, ...revision, idempotency_key: `science-user-claim-${nonce}` }) });
+    const userRevisionRequest = { ...sourcePayload(text), candidate, ...revision, idempotency_key: `science-user-claim-${nonce}` };
+    const userRevisionChallenge = await requestJson("/api/science/user-revisions/challenge", { method: "POST", body: JSON.stringify(userRevisionRequest) });
+    const record = await requestJson("/api/science/user-revisions/commit", { method: "POST", body: JSON.stringify({ ...userRevisionRequest, challenge_id: userRevisionChallenge.challenge_id }) });
     renderInterpretation(record);
     const claim = record.candidate_claims?.[0];
     const impact = record.decision_impact?.find((item) => item.claim_id === claim?.claim_id);

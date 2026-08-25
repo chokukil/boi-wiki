@@ -67,6 +67,7 @@ _COLLECTIONS: tuple[str, ...] = (
     "reports",
     "proposals",
     "proposal-approvals",
+    "user-action-challenges",
     "transactions",
 )
 _DOMAIN_PATTERN = r"^[a-z0-9][a-z0-9-]*$"
@@ -171,6 +172,34 @@ class ScienceProposalApproval(ScienceModel):
     proposal_kind: ProposalKind
     authority_snapshot: ScienceApprovalAuthoritySnapshot
     status: Literal["release_candidate"] = "release_candidate"
+
+
+class ScienceUserActionChallenge(ScienceModel):
+    challenge_id: str = Field(pattern=rf"^sci-user-action:{_UUID_PATTERN}$")
+    operation: Literal[
+        "submit_user_revision",
+        "confirm_interpretation",
+        "activate_release",
+        "withdraw_release",
+    ]
+    actor_id: str = Field(min_length=1, pattern=_RUNTIME_ID_PATTERN)
+    request_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    issued_at: datetime
+    expires_at: datetime
+
+    @model_validator(mode="after")
+    def exact_trusted_identity_and_lifetime(self) -> "ScienceUserActionChallenge":
+        if not _TRUSTED_ACTOR_RE.fullmatch(self.actor_id):
+            raise ValueError("Science user action actor is not a trusted identity")
+        if (
+            self.issued_at.tzinfo is None
+            or self.issued_at.utcoffset() is None
+            or self.expires_at.tzinfo is None
+            or self.expires_at.utcoffset() is None
+            or self.expires_at <= self.issued_at
+        ):
+            raise ValueError("Science user action challenge lifetime is invalid")
+        return self
 
 
 class InterpretationSavedAuditDetails(ScienceModel):
@@ -637,6 +666,7 @@ class ScienceRuntimeStore:
             "reports": "report_id",
             "proposals": "proposal_id",
             "proposal-approvals": "approval_id",
+            "user-action-challenges": "challenge_id",
             "transactions": "transaction_id",
         }[collection]
         identifier = getattr(record, identifier_field)
@@ -1441,6 +1471,94 @@ class ScienceRuntimeStore:
                 audit_pending=False,
                 cause=exc,
             ) from exc
+
+    def issue_user_action_challenge(
+        self,
+        *,
+        operation: Literal[
+            "submit_user_revision",
+            "confirm_interpretation",
+            "activate_release",
+            "withdraw_release",
+        ],
+        actor_id: str,
+        request_digest: str,
+        issued_at: datetime,
+        expires_at: datetime,
+    ) -> ScienceUserActionChallenge:
+        """Durably publish an opaque, exact user-action challenge."""
+
+        challenge = validate_with_closed_error(
+            lambda: ScienceUserActionChallenge(
+                challenge_id=f"sci-user-action:{uuid.uuid4()}",
+                operation=operation,
+                actor_id=actor_id,
+                request_digest=request_digest,
+                issued_at=issued_at,
+                expires_at=expires_at,
+            ),
+            caught=(ValidationError, ValueError),
+            closed_error=ImmutableScienceRecordError(
+                "Science user action challenge failed closed validation"
+            ),
+        )
+        with self._exclusive():
+            try:
+                self._publish_bytes_locked(
+                    "user-action-challenges",
+                    challenge.challenge_id,
+                    canonical_json_bytes(challenge),
+                )
+            except _RecordPublicationError as exc:
+                raise exc.cause from exc
+        return challenge
+
+    def consume_user_action_challenge(
+        self,
+        challenge_id: str,
+        *,
+        operation: Literal[
+            "submit_user_revision",
+            "confirm_interpretation",
+            "activate_release",
+            "withdraw_release",
+        ],
+        actor_id: str,
+        request_digest: str,
+        consumed_at: datetime,
+    ) -> ScienceUserActionChallenge:
+        """Atomically validate and delete one exact challenge."""
+
+        if consumed_at.tzinfo is None or consumed_at.utcoffset() is None:
+            raise ValueError("Science user action consumption time is invalid")
+        with self._exclusive():
+            try:
+                challenge = self._load_locked(
+                    "user-action-challenges",
+                    challenge_id,
+                    ScienceUserActionChallenge,
+                )
+            except KeyError:
+                raise KeyError(
+                    "Science user action challenge is missing or already used"
+                ) from None
+            if (
+                challenge.operation != operation
+                or challenge.actor_id != actor_id
+                or challenge.request_digest != request_digest
+            ):
+                raise ValueError(
+                    "Science user action challenge does not match exact inputs"
+                )
+            if challenge.expires_at <= consumed_at:
+                self._remove_record_locked(
+                    "user-action-challenges", challenge.challenge_id
+                )
+                raise ValueError("Science user action challenge has expired")
+            self._remove_record_locked(
+                "user-action-challenges", challenge.challenge_id
+            )
+        return challenge
 
     def save_interpretation(
         self,

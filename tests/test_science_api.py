@@ -44,6 +44,48 @@ class FakeService:
             }
         )
 
+    def issue_user_revision_challenge(self, document: str, **kwargs):
+        self.calls.append(("issue_user_revision_challenge", (document, kwargs)))
+        return {
+            "challenge_id": "sci-user-action:user-revision-test-token-0001",
+            "operation": "submit_user_revision",
+            "request_digest": "sha256:" + "a" * 64,
+            "expires_at": "2026-08-25T04:05:00Z",
+        }
+
+    def commit_user_revision(self, challenge_id: str, **kwargs):
+        self.calls.append(("commit_user_revision", (challenge_id, kwargs)))
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "interpretation_id": "sci-interpretation:user-revision",
+                "candidate_claims": [],
+                "decision_impact": [],
+                "submission_client_kind": "user",
+            }
+        )
+
+    def issue_confirmation_challenge(self, interpretation_id: str, **kwargs):
+        self.calls.append(
+            ("issue_confirmation_challenge", (interpretation_id, kwargs))
+        )
+        return {
+            "challenge_id": "sci-user-action:confirmation-test-token-0001",
+            "operation": "confirm_interpretation",
+            "request_digest": "sha256:" + "b" * 64,
+            "expires_at": "2026-08-25T04:05:00Z",
+        }
+
+    def commit_interpretation_confirmation(self, challenge_id: str, **kwargs):
+        self.calls.append(
+            ("commit_interpretation_confirmation", (challenge_id, kwargs))
+        )
+        return SimpleNamespace(
+            model_dump=lambda **_kwargs: {
+                "interpretation_id": "sci-interpretation:confirmed",
+                "candidate_claims": [],
+            }
+        )
+
     def verify_claim(
         self,
         interpretation_id: str,
@@ -88,10 +130,28 @@ class FakeService:
 class FakeStore:
     def __init__(self, report: VerificationReport) -> None:
         self.report = report
+        self.user_action_challenges: dict[str, SimpleNamespace] = {}
 
     def load_report(self, report_id: str) -> VerificationReport:
         assert report_id == self.report.report_id
         return self.report
+
+    def issue_user_action_challenge(self, **kwargs):
+        challenge = SimpleNamespace(
+            challenge_id=(
+                "sci-user-action:00000000-0000-4000-8000-000000000001"
+            ),
+            **kwargs,
+        )
+        self.user_action_challenges[challenge.challenge_id] = challenge
+        return challenge
+
+    def consume_user_action_challenge(self, challenge_id: str, **kwargs):
+        challenge = self.user_action_challenges.pop(challenge_id)
+        assert challenge.operation == kwargs["operation"]
+        assert challenge.actor_id == kwargs["actor_id"]
+        assert challenge.request_digest == kwargs["request_digest"]
+        return challenge
 
 
 class FakeCatalog:
@@ -346,15 +406,157 @@ def test_claim_submission_route_creates_only_a_paused_interpretation() -> None:
     assert kwargs["candidate"].normalized_claim.predicate == "increases"
 
 
+def test_generic_claim_submission_cannot_forge_a_trusted_user_revision() -> None:
+    """Catches reintroducing caller-controlled client_kind=user as trust."""
+
+    client, service = _client()
+
+    response = client.post(
+        "/api/science/claims/submit",
+        json={
+            "document": "RPM 증가 시 두께 변화",
+            "client_kind": "user",
+            "candidate": _claim_candidate(),
+            "idempotency_key": "forged-user-revision",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == (
+        "science_confirmation_or_identity_conflict"
+    )
+    assert service.calls == []
+
+
+def test_web_user_revision_uses_an_actor_bound_one_time_challenge() -> None:
+    """Catches bypassing the server-issued UI revision ceremony."""
+
+    client, service = _client()
+    challenge = client.post(
+        "/api/science/user-revisions/challenge",
+        json={
+            "document": "RPM 증가 시 두께 변화",
+            "candidate": _claim_candidate(),
+            "idempotency_key": "trusted-user-revision",
+        },
+    )
+
+    assert challenge.status_code == 200
+    challenge_id = challenge.json()["challenge_id"]
+    committed = client.post(
+        "/api/science/user-revisions/commit",
+        json={
+            "challenge_id": challenge_id,
+            "document": "RPM 증가 시 두께 변화",
+            "candidate": _claim_candidate(),
+            "idempotency_key": "trusted-user-revision",
+        },
+    )
+
+    assert committed.status_code == 200
+    assert committed.json()["submission_client_kind"] == "user"
+    assert [call[0] for call in service.calls] == [
+        "issue_user_revision_challenge",
+        "commit_user_revision",
+    ]
+    _name, (_document, issue_kwargs) = service.calls[0]
+    assert issue_kwargs["identity"].employee_id == "100001"
+    assert issue_kwargs["candidate"].normalized_claim.predicate == "increases"
+    _name, (committed_challenge_id, commit_kwargs) = service.calls[1]
+    assert committed_challenge_id == challenge_id
+    assert commit_kwargs["identity"].employee_id == "100001"
+
+
+def test_bearer_identity_cannot_issue_or_commit_a_trusted_ui_challenge() -> None:
+    """Catches an agent bearer replaying the browser-only human-action route."""
+
+    client, service = _client(auth_source="dev_bearer")
+    payload = {
+        "document": "RPM 증가 시 두께 변화",
+        "candidate": _claim_candidate(),
+        "idempotency_key": "bearer-user-revision",
+    }
+
+    issued = client.post(
+        "/api/science/user-revisions/challenge",
+        headers={"authorization": "Bearer agent-token"},
+        json=payload,
+    )
+    committed = client.post(
+        "/api/science/user-revisions/commit",
+        headers={"authorization": "Bearer agent-token"},
+        json={
+            **payload,
+            "challenge_id": "sci-user-action:00000000-0000-4000-8000-000000000000",
+        },
+    )
+
+    assert issued.status_code == 403
+    assert committed.status_code == 403
+    assert service.calls == []
+
+
+def test_confirmation_requires_a_server_issued_one_time_challenge() -> None:
+    """Catches treating user_confirmed=true as proof of human confirmation."""
+
+    client, service = _client()
+    forged = client.post(
+        "/api/science/interpretations/sci-interpretation:proposal/confirm",
+        json={
+            "claim_ids": ["sci-claim:one"],
+            "idempotency_key": "forged-confirmation",
+            "user_confirmed": True,
+        },
+    )
+
+    assert forged.status_code == 422
+    assert service.calls == []
+
+    challenge = client.post(
+        "/api/science/interpretations/sci-interpretation:proposal/confirmation-challenge",
+        json={
+            "claim_ids": ["sci-claim:one"],
+            "idempotency_key": "trusted-confirmation",
+        },
+    )
+    assert challenge.status_code == 200
+    challenge_id = challenge.json()["challenge_id"]
+
+    confirmed = client.post(
+        "/api/science/interpretations/sci-interpretation:proposal/confirm",
+        json={
+            "challenge_id": challenge_id,
+            "claim_ids": ["sci-claim:one"],
+            "idempotency_key": "trusted-confirmation",
+        },
+    )
+
+    assert confirmed.status_code == 200
+    assert confirmed.json()["interpretation_id"] == "sci-interpretation:confirmed"
+    assert [call[0] for call in service.calls] == [
+        "issue_confirmation_challenge",
+        "commit_interpretation_confirmation",
+    ]
+
+
 def test_raw_claim_route_keeps_stable_document_identity_and_forwards_lineage() -> None:
     client, service = _client()
     original_text = "RPM 증가 시 두께 변화"
 
-    first = client.post(
-        "/api/science/claims/submit",
-        json={
+    def trusted_user_revision(payload: dict) -> object:
+        challenge = client.post(
+            "/api/science/user-revisions/challenge",
+            json=payload,
+        )
+        assert challenge.status_code == 200
+        return client.post(
+            "/api/science/user-revisions/commit",
+            json={**payload, "challenge_id": challenge.json()["challenge_id"]},
+        )
+
+    first = trusted_user_revision(
+        {
             "document": original_text,
-            "client_kind": "user",
             "candidate": _claim_candidate(),
             "idempotency_key": "claim-submit-lineage-first",
         },
@@ -364,11 +566,9 @@ def test_raw_claim_route_keeps_stable_document_identity_and_forwards_lineage() -
     logical_ref = first_kwargs["document_ref"]
     assert logical_ref.startswith("boi:submitted:")
 
-    same_document_retry = client.post(
-        "/api/science/claims/submit",
-        json={
+    same_document_retry = trusted_user_revision(
+        {
             "document": original_text,
-            "client_kind": "user",
             "candidate": _claim_candidate(),
             "idempotency_key": "claim-submit-lineage-same-document",
         },
@@ -377,11 +577,9 @@ def test_raw_claim_route_keeps_stable_document_identity_and_forwards_lineage() -
     _call, (_document, retry_kwargs) = service.calls[-1]
     assert retry_kwargs["document_ref"] == logical_ref
 
-    second = client.post(
-        "/api/science/claims/submit",
-        json={
+    second = trusted_user_revision(
+        {
             "document": f"검토: {original_text}",
-            "client_kind": "user",
             "candidate": _claim_candidate(),
             "supersedes_claim_id": "sci-claim:prior",
             "source_lineage": {
@@ -400,11 +598,9 @@ def test_raw_claim_route_keeps_stable_document_identity_and_forwards_lineage() -
         original_text
     )
 
-    canonical_revision = client.post(
-        "/api/science/claims/submit",
-        json={
+    canonical_revision = trusted_user_revision(
+        {
             "document": f"Wiki 수정: {original_text}",
-            "client_kind": "user",
             "candidate": _claim_candidate(),
             "supersedes_claim_id": "sci-claim:wiki-prior",
             "source_lineage": {
@@ -696,12 +892,26 @@ def test_release_mutation_cannot_be_implied_without_authoritative_manager() -> N
         }
     )
 
+    mutation = {
+        "release_digest": release_digest,
+        "request_digest": request_digest,
+        "idempotency_key": "activate-001",
+    }
+    forged = client.post(
+        f"/api/science/admin/releases/{release_id}/activate",
+        json={**mutation, "user_confirmed": True},
+    )
+    assert forged.status_code == 422
+    challenge = client.post(
+        f"/api/science/admin/releases/{release_id}/activate-challenge",
+        json=mutation,
+    )
+    assert challenge.status_code == 200
     response = client.post(
         f"/api/science/admin/releases/{release_id}/activate",
         json={
-            "release_digest": release_digest,
-            "request_digest": request_digest,
-            "idempotency_key": "activate-001",
+            **mutation,
+            "challenge_id": challenge.json()["challenge_id"],
             "user_confirmed": True,
         },
     )
@@ -709,3 +919,32 @@ def test_release_mutation_cannot_be_implied_without_authoritative_manager() -> N
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "science_release_manager_unavailable"
     assert "activated" not in response.text.lower()
+
+
+def test_release_mutation_rejects_admin_bearer_without_trusted_browser_session() -> None:
+    """Catches user_confirmed=true being treated as human Admin activation."""
+
+    client, _service = _client(auth_source="dev_bearer")
+    release_id = "sci-release:0.1.0"
+    release_digest = "sha256:" + "7" * 64
+    request_digest = sha256_digest(
+        {
+            "operation": "activate",
+            "release_id": release_id,
+            "release_digest": release_digest,
+        }
+    )
+
+    response = client.post(
+        f"/api/science/admin/releases/{release_id}/activate",
+        headers={"authorization": "Bearer admin-agent"},
+        json={
+            "release_digest": release_digest,
+            "request_digest": request_digest,
+            "idempotency_key": "bearer-activate-001",
+            "user_confirmed": True,
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "science_access_denied"
