@@ -3,14 +3,16 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const nodeModules = process.env.CODEX_NODE_MODULES || "/mnt/c/Users/choku/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules";
 const pptxgen = require(join(nodeModules, "pptxgenjs"));
 const sharp = require(join(nodeModules, "sharp"));
 
-const root = resolve(process.argv[2] || dirname(dirname(new URL(import.meta.url).pathname)));
+const scriptRoot = dirname(fileURLToPath(import.meta.url));
+const root = resolve(process.argv[2] || dirname(scriptRoot));
 const artifactRoot = join(root, "artifacts/science-verifier");
 const deckRoot = join(artifactRoot, "deck");
 const assets = join(deckRoot, "assets");
@@ -24,6 +26,14 @@ function fileDigest(path) {
 const verificationPath = join(artifactRoot, "verification-manifest.json");
 const verification = JSON.parse(readFileSync(verificationPath, "utf8"));
 const currentCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const trackedStatus = execFileSync(
+  "git",
+  ["status", "--porcelain=v1", "--untracked-files=no"],
+  { cwd: root, encoding: "utf8" },
+).trim();
+if (trackedStatus) {
+  throw new Error("refusing to build evidence deck because tracked files differ from HEAD");
+}
 const browserEvidence = verification.evidence?.browser;
 const qualificationEvidence = verification.evidence?.qualification;
 const reviewEvidence = verification.evidence?.independent_review;
@@ -67,10 +77,44 @@ const paths = {
   pptx: join(deckRoot, "science-verifier-evidence.pptx"),
 };
 for (const [name, path] of Object.entries(paths)) {
-  if (name !== "pptx" && !statSync(path).isFile()) throw new Error(`missing deck input: ${path}`);
+  if (name !== "pptx" && name !== "report" && !statSync(path).isFile()) throw new Error(`missing deck input: ${path}`);
 }
-if (fileDigest(join(artifactRoot, "qualification-report.pdf")) !== verification.pdf?.sha256) {
+const desktopCaptures = browserEvidence?.capture_files?.filter(
+  (capture) => basename(capture?.path || "") === "review-canvas-desktop.png",
+);
+const uiDigest = fileDigest(paths.ui);
+if (
+  !Array.isArray(desktopCaptures)
+  || desktopCaptures.length !== 1
+  || desktopCaptures[0]?.sha256 !== uiDigest
+  || desktopCaptures[0]?.actual_sha256 !== uiDigest
+) {
+  throw new Error("desktop UI capture does not match browser evidence expected/actual digests");
+}
+const reportPdf = join(artifactRoot, "qualification-report.pdf");
+if (fileDigest(reportPdf) !== verification.pdf?.sha256) {
   throw new Error("qualification report PDF does not match verification manifest");
+}
+const python = process.env.BOI_PYTHON || process.env.PYTHON || "python3";
+try {
+  execFileSync(
+    python,
+    [
+      join(scriptRoot, "render_verified_pdf_page.py"),
+      reportPdf,
+      paths.report,
+      verification.pdf.sha256,
+    ],
+    { cwd: root, encoding: "utf8", stdio: "pipe" },
+  );
+} catch (error) {
+  throw new Error(
+    "failed to render verified qualification report PDF; set BOI_PYTHON or PYTHON to an interpreter with pypdfium2",
+    { cause: error },
+  );
+}
+if (!statSync(paths.report).isFile()) {
+  throw new Error("verified qualification report render did not produce a PNG");
 }
 
 const C = {
