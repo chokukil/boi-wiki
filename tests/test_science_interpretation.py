@@ -460,9 +460,7 @@ def test_llm_client_rejects_fenced_json_with_surrounding_prose():
     )
     client = ScienceLLMClient(
         config,
-        transport=httpx.MockTransport(
-            lambda _request: _openai_response(content)
-        ),
+        transport=httpx.MockTransport(lambda _request: _openai_response(content)),
     )
 
     with pytest.raises(ScienceInterpretationUnavailable) as captured:
@@ -834,6 +832,15 @@ class _Catalog:
             digest=KNOWLEDGE_DIGEST,
             statement=self.knowledge_statement,
             evidence_refs=["sci:evidence:spin-direction"],
+        )
+
+    def rule(self, rule_id):
+        assert rule_id == "sci:rule:spin-direction"
+        payload = self.rule_set.rules[0].rule.model_dump(mode="python")
+        return SimpleNamespace(
+            object_id=rule_id,
+            digest=RULE_DIGEST,
+            **payload,
         )
 
     def evidence(self, evidence_id):
@@ -1230,9 +1237,9 @@ def test_detect_aliases_requires_ascii_token_boundaries_but_keeps_standalone_r(
         for match in result.matches
         if match.ontology_ref == "sci:binding:resistance"
     ]
-    assert [(match.surface_term, match.start, match.end) for match in resistance_matches] == [
-        ("R", document.index(", R") + 2, document.index(", R") + 3)
-    ]
+    assert [
+        (match.surface_term, match.start, match.end) for match in resistance_matches
+    ] == [("R", document.index(", R") + 2, document.index(", R") + 3)]
 
 
 def test_external_claim_submission_reuses_server_validation_and_never_calls_llm(
@@ -1461,9 +1468,7 @@ def test_external_claim_submission_rejects_overlapping_role_spans(
     )
 
     assert record.decision_impact[0].status == "blocked_semantic_mismatch"
-    assert "COMPLETE_RELATION_SPAN_REQUIRED" in (
-        record.decision_impact[0].issue_codes
-    )
+    assert "COMPLETE_RELATION_SPAN_REQUIRED" in (record.decision_impact[0].issue_codes)
 
 
 def test_external_claim_submission_allows_non_overlapping_roles_in_natural_text_order(
@@ -1676,8 +1681,7 @@ def test_wiki_document_local_revision_transitions_to_verified_submitted_lineage(
         )
     ).claims[0]
     submitted_ref = (
-        "boi:submitted:"
-        "feb519c18bd0f77b9e26c4bdb0cd85e18f53471f2bf80634c82b733d98fd3030"
+        "boi:submitted:feb519c18bd0f77b9e26c4bdb0cd85e18f53471f2bf80634c82b733d98fd3030"
     )
 
     revised = service.submit_claim_candidate(
@@ -1730,7 +1734,9 @@ def test_wiki_revision_rechecks_canonical_acl_before_accepting_revision(
             client_kind="user",
             candidate=ScienceInterpretationPayload.model_validate(
                 _llm_content(
-                    extra={"source_span": _span(revised_text, original_text).model_dump()}
+                    extra={
+                        "source_span": _span(revised_text, original_text).model_dump()
+                    }
                 )
             ).claims[0],
             supersedes_claim_id=original.candidate_claims[0].claim_id,
@@ -1766,7 +1772,9 @@ def test_wiki_revision_persists_and_propagates_canonical_acl_lineage(
         identity=science_identity,
         client_kind="user",
         candidate=ScienceInterpretationPayload.model_validate(
-            _llm_content(extra={"source_span": _span(first_text, original_text).model_dump()})
+            _llm_content(
+                extra={"source_span": _span(first_text, original_text).model_dump()}
+            )
         ).claims[0],
         supersedes_claim_id=original.candidate_claims[0].claim_id,
         source_lineage_document_ref=source_ref,
@@ -2151,8 +2159,7 @@ def test_wiki_document_revision_rejects_actor_ref_and_digest_attacks(
         )
     ).claims[0]
     submitted_ref = (
-        "boi:submitted:"
-        "feb519c18bd0f77b9e26c4bdb0cd85e18f53471f2bf80634c82b733d98fd3030"
+        "boi:submitted:feb519c18bd0f77b9e26c4bdb0cd85e18f53471f2bf80634c82b733d98fd3030"
     )
 
     other = AuthIdentity(
@@ -2456,12 +2463,15 @@ def test_real_store_preserves_external_submission_confirmation_dependency(
 
     assert store.load_interpretation(submitted.interpretation_id) == submitted
     assert store.load_interpretation(confirmed.interpretation_id) == confirmed
-    assert service.verify_claim(
-        confirmed.interpretation_id,
-        claim_id,
-        ReleaseSelection(foundation="sci-release:foundation-0.1"),
-        identity=science_identity,
-    ).verdict == PrimaryVerdict.VIOLATION
+    assert (
+        service.verify_claim(
+            confirmed.interpretation_id,
+            claim_id,
+            ReleaseSelection(foundation="sci-release:foundation-0.1"),
+            identity=science_identity,
+        ).verdict
+        == PrimaryVerdict.VIOLATION
+    )
     correction = service.submit_claim_candidate(
         "RPM 증가 시 두께 변화",
         document_ref="boi:public:science:document:fixture",
@@ -2494,9 +2504,7 @@ def test_external_claim_submission_cannot_use_an_inactive_release_for_verdict(
         identity=science_identity,
         idempotency_key="science-request:inactive-release-confirm",
     )
-    catalog.release = catalog.release.model_copy(
-        update={"status": "release_candidate"}
-    )
+    catalog.release = catalog.release.model_copy(update={"status": "release_candidate"})
     catalog.release_set = ResolvedReleaseSet.from_single_foundation(catalog.release)
     catalog.rule_set = catalog.rule_set.model_copy(
         update={"release_set_digest": catalog.release_set.combined_digest}
@@ -3028,6 +3036,26 @@ def test_verify_document_uses_only_grounded_knowledge_and_server_evidence_links(
     }
     assert link.source_lookup.versioned_path == ("public/science/sources/spin-paper.md")
     assert link.source_lookup.acl_policy == "acl:public"
+    explanation = report.explanations[0]
+    assert (explanation.claim_id, explanation.fact_id) == (
+        annotation.claim_id,
+        annotation.fact_id,
+    )
+    assert explanation.equation_refs == []
+    assert [item.object_id for item in explanation.knowledge_refs] == [
+        "sci:knowledge:spin-direction"
+    ]
+    assert [item.object_id for item in explanation.rule_refs] == [
+        "sci:rule:spin-direction"
+    ]
+    assert [item.block_kind for item in explanation.blocks] == [
+        "applied_principle",
+        "scientific_consequence",
+        "correction",
+        "limitation",
+        "evidence",
+    ]
+    assert report.equation_assets == []
     assert report.report_digest == sha256_digest(
         report.model_dump(mode="json", exclude={"report_digest"})
     )
@@ -3507,6 +3535,28 @@ def _report_with_coordinated_unreleased_provenance(
                     if key != "profile_digest"
                 }
             )
+    authoritative_link = payload["annotations"][0]["evidence_links"][0]
+    for explanation in payload["explanations"]:
+        explanation["knowledge_refs"] = [
+            {
+                "object_id": forged_knowledge_id,
+                "object_digest": forged_knowledge_digest,
+            }
+        ]
+        explanation["evidence_links"] = [json.loads(json.dumps(authoritative_link))]
+        for block in explanation["blocks"]:
+            block["knowledge_refs"] = [
+                {
+                    "object_id": forged_knowledge_id,
+                    "object_digest": forged_knowledge_digest,
+                }
+            ]
+            block["evidence_refs"] = [
+                {
+                    "object_id": forged_evidence_id,
+                    "object_digest": forged_evidence_digest,
+                }
+            ]
     payload["report_digest"] = sha256_digest(
         {key: value for key, value in payload.items() if key != "report_digest"}
     )

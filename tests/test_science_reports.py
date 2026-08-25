@@ -383,3 +383,39 @@ def test_report_renderers_reject_unvalidated_mappings() -> None:
         render_report_markdown({"report_id": "forged"})  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="stored VerificationReport"):
         render_report_pdf({"report_id": "forged"})  # type: ignore[arg-type]
+
+
+def test_report_scientific_digest_excludes_only_renderer_artifacts() -> None:
+    from boi_api.app.science.equation_assets import EquationRendererIdentity
+    from boi_api.app.science.models import verification_report_scientific_payload
+
+    report = _stored_report()
+    original = report.equation_assets[0]
+    changed_presentation = original.model_copy(
+        update={
+            "sanitized_svg": "<presentation-version-changed/>",
+            "svg_digest": "sha256:" + "0" * 64,
+            "renderer": EquationRendererIdentity(
+                engine="future-local-renderer",
+                version="99.0",
+                output="svg-paths",
+                font="future-font",
+            ),
+            "asset_digest": "sha256:" + "1" * 64,
+        }
+    )
+    presentation_changed_report = report.model_copy(
+        update={"equation_assets": [changed_presentation]}
+    )
+
+    assert verification_report_scientific_payload(
+        presentation_changed_report
+    ) == verification_report_scientific_payload(report)
+
+    changed_science = original.model_copy(update={"plain_text": "forged equation"})
+    science_changed_report = report.model_copy(
+        update={"equation_assets": [changed_science]}
+    )
+    assert verification_report_scientific_payload(
+        science_changed_report
+    ) != verification_report_scientific_payload(report)

@@ -364,7 +364,7 @@ class ScienceCatalog:
                 )
                 if equation.equation_id in equations:
                     raise ScienceCatalogError(
-                        "duplicate Science Equation ID: " f"{equation.equation_id}"
+                        f"duplicate Science Equation ID: {equation.equation_id}"
                     )
                 self._validate_equation_variable_units(equation)
                 equations[equation.equation_id] = ResolvedEquationKnowledge(
@@ -789,8 +789,7 @@ class ScienceCatalog:
         if (
             knowledge_component is None
             or knowledge_component.kind != "knowledge"
-            or knowledge_component.declared_digest
-            != knowledge_component.actual_digest
+            or knowledge_component.declared_digest != knowledge_component.actual_digest
             or knowledge_component.actual_digest != resolved_equation.knowledge_digest
         ):
             raise error_type(
@@ -1064,6 +1063,7 @@ class ScienceCatalog:
         component_by_ref = {
             component.ref: component for component in resolved.components
         }
+        authoritative_links: dict[str, Any] = {}
         for annotation in report.annotations:
             knowledge_component = component_by_ref.get(annotation.knowledge_id)
             knowledge = self._require("knowledge", annotation.knowledge_id)
@@ -1129,6 +1129,139 @@ class ScienceCatalog:
                 ):
                     raise ScienceOperationalError(
                         "report Source lookup identity is not Catalog-authoritative"
+                    )
+                previous = authoritative_links.setdefault(link.evidence_id, link)
+                if previous != link:
+                    raise ScienceOperationalError(
+                        "report has inconsistent copies of one Evidence identity"
+                    )
+
+        verdict_by_claim = {
+            verdict.claim_id: verdict for verdict in report.verdict_packets
+        }
+        for explanation in report.explanations:
+            verdict = verdict_by_claim[explanation.claim_id]
+            matching_rules = [
+                rule_id
+                for rule_id in verdict.decisive_rule_ids
+                if explanation.fact_id.startswith(f"fact:{rule_id}:")
+            ]
+            if len(matching_rules) != 1:
+                raise ScienceOperationalError(
+                    "report explanation has no exact decisive Rule"
+                )
+            expected_rule_id = matching_rules[0]
+            if {item.object_id for item in explanation.rule_refs} != {expected_rule_id}:
+                raise ScienceOperationalError(
+                    "report explanation Rule identity is not decisive"
+                )
+            for reference in explanation.knowledge_refs:
+                component = component_by_ref.get(reference.object_id)
+                knowledge = self._require("knowledge", reference.object_id)
+                if (
+                    component is None
+                    or component.kind != "knowledge"
+                    or component.actual_digest != knowledge.digest
+                    or reference.object_digest != knowledge.digest
+                ):
+                    raise ScienceOperationalError(
+                        "report explanation Knowledge identity is not release-resolved"
+                    )
+            rule_component = component_by_ref.get(expected_rule_id)
+            stored_rule = self._require("rule", expected_rule_id)
+            rule = self._verification_rule(stored_rule)
+            rule_reference = explanation.rule_refs[0]
+            if (
+                rule_component is None
+                or rule_component.kind != "rule"
+                or rule_component.actual_digest != stored_rule.digest
+                or rule_reference.object_digest != stored_rule.digest
+            ):
+                raise ScienceOperationalError(
+                    "report explanation Rule digest is not release-resolved"
+                )
+            for link in explanation.evidence_links:
+                if authoritative_links.get(link.evidence_id) != link:
+                    raise ScienceOperationalError(
+                        "report explanation Evidence is not authoritative"
+                    )
+            if rule.equation_binding is None and explanation.equation_refs:
+                raise ScienceOperationalError(
+                    "report explanation invents an Equation binding"
+                )
+            if rule.equation_binding is not None:
+                if len(explanation.equation_refs) != 1:
+                    raise ScienceOperationalError(
+                        "report explanation omits its decisive Equation binding"
+                    )
+                reference = explanation.equation_refs[0]
+                binding = rule.equation_binding
+                resolved_equation = self.equation(reference.equation_id)
+                expected_mapping = [
+                    item.model_dump(mode="json") for item in binding.variable_mappings
+                ]
+                if (
+                    reference.equation_id != binding.equation_id
+                    or reference.equation_digest != binding.equation_digest
+                    or reference.knowledge_id != resolved_equation.knowledge_id
+                    or reference.knowledge_digest != resolved_equation.knowledge_digest
+                    or reference.rule_id != expected_rule_id
+                    or reference.rule_digest != stored_rule.digest
+                    or reference.evaluator_id != binding.evaluator_id
+                    or reference.evaluator_version != binding.evaluator_version
+                    or reference.evaluator_digest != binding.evaluator_digest
+                    or reference.binding_digest != binding.binding_digest
+                    or [
+                        item.model_dump(mode="json")
+                        for item in reference.variable_mappings
+                    ]
+                    != expected_mapping
+                ):
+                    raise ScienceOperationalError(
+                        "report Equation reference is not Rule-authoritative"
+                    )
+
+        for asset in report.equation_assets:
+            resolved_equation = self.equation(asset.equation_id)
+            equation = resolved_equation.equation
+            expected_scientific = {
+                "equation_id": equation.equation_id,
+                "equation_digest": equation.equation_digest,
+                "knowledge_id": resolved_equation.knowledge_id,
+                "knowledge_digest": resolved_equation.knowledge_digest,
+                "scientific_role": equation.scientific_role,
+                "decision_use": equation.decision_use,
+                "display_latex": equation.display_latex,
+                "plain_text": equation.plain_text,
+                "accessibility_reading": equation.accessibility_reading,
+                "variables": [
+                    item.model_dump(mode="json") for item in equation.variables
+                ],
+                "assumptions": equation.assumptions,
+                "applicability": equation.applicability,
+                "invalid_outside": equation.invalid_outside,
+                "boundary_conditions": [
+                    item.model_dump(mode="json")
+                    for item in equation.boundary_conditions
+                ],
+            }
+            actual_scientific = asset.model_dump(
+                mode="json",
+                include=set(expected_scientific),
+            )
+            if actual_scientific != expected_scientific:
+                raise ScienceOperationalError(
+                    "report Equation snapshot is not Catalog-authoritative"
+                )
+            expected_evidence = {item.evidence_ref for item in equation.evidence_uses}
+            if {link.evidence_id for link in asset.evidence_links} != expected_evidence:
+                raise ScienceOperationalError(
+                    "report Equation Evidence set is not exact"
+                )
+            for link in asset.evidence_links:
+                if authoritative_links.get(link.evidence_id) != link:
+                    raise ScienceOperationalError(
+                        "report Equation Evidence is not authoritative"
                     )
 
     @staticmethod

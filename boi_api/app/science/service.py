@@ -11,8 +11,9 @@ from pydantic import ValidationError
 from boi_api.app.auth import AuthIdentity
 from boi_api.app.science.anchors import resolve_anchor
 from boi_api.app.science.authorization import ScienceAuthorizationError
-from boi_api.app.science.digests import sha256_digest
+from boi_api.app.science.digests import canonical_json_bytes, sha256_digest
 from boi_api.app.science.engine import verify_claim as verify_scientific_claim
+from boi_api.app.science.equation_assets import equation_asset_index
 from boi_api.app.science.exceptions import ScienceCatalogError, ScienceOperationalError
 from boi_api.app.science.llm import (
     PROMPT_VERSION,
@@ -31,17 +32,23 @@ from boi_api.app.science.models import (
     FormulaInterpretationRecord,
     FormulaSymbolInterpretationRecord,
     GroundedAnnotation,
+    GroundedEquationRef,
+    GroundedExplanation,
+    GroundedExplanationBlock,
+    GroundedObjectRef,
     InterpretationDecisionImpact,
     InterpretationRecord,
     InterpretationRevisionEvent,
     LLMModelSettings,
     ReleaseSelection,
+    ReportEquationAsset,
     ResolvedReleaseSet,
     ScienceOperationBinding,
     SourceLookupIdentity,
     SourceSpan,
     VerdictPacket,
     VerificationReport,
+    verification_report_scientific_payload,
 )
 from boi_api.app.science.operational import OperationalVerification
 from boi_api.app.science.safety import validate_with_closed_error
@@ -50,6 +57,7 @@ from boi_api.app.science.source_identity import (
     _open_reviewed_source_url_identity,
 )
 from boi_api.app.science.storage import ImmutableScienceRecordError
+from boi_api.app.science.rules import VerificationRule
 
 
 class ScienceConfirmationRequired(ScienceOperationalError):
@@ -113,11 +121,12 @@ def _has_deterministic_alias_boundary(
     if not ascii_token:
         return True
     end = start + len(alias)
+
     def is_ascii_identifier(value: str) -> bool:
         return value.isascii() and (value.isalnum() or value == "_")
-    return (
-        (start == 0 or not is_ascii_identifier(text[start - 1]))
-        and (end == len(text) or not is_ascii_identifier(text[end]))
+
+    return (start == 0 or not is_ascii_identifier(text[start - 1])) and (
+        end == len(text) or not is_ascii_identifier(text[end])
     )
 
 
@@ -880,8 +889,7 @@ class ScienceService:
                         and catalog_variable.concept_ref == symbol.concept_ref
                         and catalog_variable.quantity_kind == symbol.quantity_kind
                         and (
-                            symbol.unit is None
-                            or catalog_variable.unit == symbol.unit
+                            symbol.unit is None or catalog_variable.unit == symbol.unit
                         )
                     )
                     if not catalog_variable_match:
@@ -918,10 +926,7 @@ class ScienceService:
             ):
                 issues.add("FORMULA_CONTEXT_REQUIRES_USER_REVISION")
 
-            if (
-                proposed_equation is not None
-                and issues & equation_issue_codes
-            ):
+            if proposed_equation is not None and issues & equation_issue_codes:
                 catalog_match_status = "mismatch"
             ordered_formula_issues = [
                 issue for issue in formula_issue_order if issue in issues
@@ -1085,9 +1090,7 @@ class ScienceService:
             source_lineage_document_ref is not None
             or source_lineage_document_digest is not None
         )
-        if bool(source_lineage_document_ref) != bool(
-            source_lineage_document_digest
-        ):
+        if bool(source_lineage_document_ref) != bool(source_lineage_document_digest):
             raise ScienceConfirmationRequired(
                 "submitted document lineage is incomplete"
             )
@@ -1116,9 +1119,7 @@ class ScienceService:
             )
         canonical_source_lineage: tuple[str, str] | None = None
         if supersedes_claim_id is not None:
-            predecessors = list(
-                self._proposal_records_for_claim(supersedes_claim_id)
-            )
+            predecessors = list(self._proposal_records_for_claim(supersedes_claim_id))
             if not predecessors:
                 raise ScienceConfirmationRequired(
                     "superseded Claim provenance is unavailable"
@@ -1174,8 +1175,11 @@ class ScienceService:
                         "submitted document lineage is ambiguous"
                     )
                 canonical_source_lineage = next(iter(canonical_sources))
-                if canonical_source_lineage is not None and not self._document_access_check(
-                    identity, canonical_source_lineage[0]
+                if (
+                    canonical_source_lineage is not None
+                    and not self._document_access_check(
+                        identity, canonical_source_lineage[0]
+                    )
                 ):
                     raise ScienceAuthorizationError(
                         "Science interpretation document access is not authorized"
@@ -1372,10 +1376,7 @@ class ScienceService:
         ontology_index = {
             binding_id: candidate
             for binding_id, candidate in self._ontology_index().items()
-            if any(
-                alias in interpreted_text
-                for alias in candidate["aliases"]
-            )
+            if any(alias in interpreted_text for alias in candidate["aliases"])
         }
         result = llm_client.interpret(
             interpreted_text,
@@ -1857,6 +1858,269 @@ class ScienceService:
                 )
         return annotations
 
+    @staticmethod
+    def _fact_rule_id(fact_id: str, verdict: VerdictPacket) -> str:
+        matches = [
+            rule_id
+            for rule_id in verdict.decisive_rule_ids
+            if fact_id.startswith(f"fact:{rule_id}:")
+        ]
+        if len(matches) != 1:
+            raise ScienceOperationalError(
+                f"Explanation Fact has no exact decisive Rule: {fact_id}"
+            )
+        return matches[0]
+
+    def _released_rule(
+        self,
+        release_set: ResolvedReleaseSet,
+        rule_id: str,
+    ) -> tuple[VerificationRule, str]:
+        component = self._pinned_component(release_set, ref=rule_id, kind="rule")
+        loader = getattr(self.catalog, "rule", None)
+        if not callable(loader):
+            raise ScienceOperationalError(
+                f"grounded Rule loader is unavailable: {rule_id}"
+            )
+        stored = loader(rule_id)
+        if (
+            getattr(stored, "object_id", None) != rule_id
+            or getattr(stored, "digest", None) != component.actual_digest
+        ):
+            raise ScienceOperationalError(
+                f"grounded Rule does not match its release digest: {rule_id}"
+            )
+        payload = {
+            field_name: getattr(stored, field_name)
+            for field_name in VerificationRule.model_fields
+            if hasattr(stored, field_name)
+        }
+        try:
+            return VerificationRule.model_validate(payload), component.actual_digest
+        except (ValidationError, ValueError, TypeError):
+            raise ScienceOperationalError(
+                f"grounded Rule payload is invalid: {rule_id}"
+            ) from None
+
+    @staticmethod
+    def _object_refs(
+        pairs: Sequence[tuple[str, str]],
+    ) -> list[GroundedObjectRef]:
+        return [
+            GroundedObjectRef(object_id=object_id, object_digest=digest)
+            for object_id, digest in pairs
+        ]
+
+    def _equation_grounding(
+        self,
+        *,
+        rule: VerificationRule,
+        rule_digest: str,
+        release_set: ResolvedReleaseSet,
+        evidence_links: Sequence[EvidenceLink],
+    ) -> tuple[list[GroundedEquationRef], list[ReportEquationAsset]]:
+        binding = rule.equation_binding
+        if binding is None:
+            return [], []
+        equation_loader = getattr(self.catalog, "equation", None)
+        if not callable(equation_loader):
+            raise ScienceOperationalError(
+                f"grounded Equation loader is unavailable: {binding.equation_id}"
+            )
+        try:
+            resolved = equation_loader(binding.equation_id)
+            equation = resolved.equation
+        except (ScienceCatalogError, AttributeError, ValueError, TypeError):
+            raise ScienceOperationalError(
+                f"grounded Equation is unavailable: {binding.equation_id}"
+            ) from None
+        if (
+            equation.equation_digest != binding.equation_digest
+            or equation.decision_use != "deterministic_rule"
+            or resolved.knowledge_id not in rule.knowledge_refs
+        ):
+            raise ScienceOperationalError(
+                f"grounded Equation does not match its decisive Rule: {rule.rule_id}"
+            )
+        knowledge_component = self._pinned_component(
+            release_set,
+            ref=resolved.knowledge_id,
+            kind="knowledge",
+        )
+        if knowledge_component.actual_digest != resolved.knowledge_digest:
+            raise ScienceOperationalError(
+                f"grounded Equation Knowledge digest is not pinned: {binding.equation_id}"
+            )
+        equation_evidence_ids = [use.evidence_ref for use in equation.evidence_uses]
+        links_by_id = {link.evidence_id: link for link in evidence_links}
+        if not set(equation_evidence_ids) <= set(links_by_id):
+            raise ScienceOperationalError(
+                f"grounded Equation Evidence is incomplete: {binding.equation_id}"
+            )
+        equation_links = [links_by_id[item] for item in equation_evidence_ids]
+        equation_ref = GroundedEquationRef(
+            equation_id=equation.equation_id,
+            equation_digest=equation.equation_digest,
+            knowledge_id=resolved.knowledge_id,
+            knowledge_digest=resolved.knowledge_digest,
+            rule_id=rule.rule_id,
+            rule_digest=rule_digest,
+            decision_use="deterministic_rule",
+            evaluator_id=binding.evaluator_id,
+            evaluator_version=binding.evaluator_version,
+            evaluator_digest=binding.evaluator_digest,
+            binding_digest=binding.binding_digest,
+            variable_mappings=[
+                item.model_dump(mode="json") for item in binding.variable_mappings
+            ],
+        )
+        presentation = None
+        try:
+            presentation = equation_asset_index().get(
+                (equation.equation_id, equation.equation_digest)
+            )
+        except ValueError:
+            # Rendering is presentation-only.  The stored plain-text and LaTeX
+            # fallbacks remain available and the verdict is unchanged.
+            presentation = None
+        asset_payload: dict[str, Any] = {
+            "equation_id": equation.equation_id,
+            "equation_digest": equation.equation_digest,
+            "knowledge_id": resolved.knowledge_id,
+            "knowledge_digest": resolved.knowledge_digest,
+            "scientific_role": equation.scientific_role,
+            "decision_use": equation.decision_use,
+            "display_latex": equation.display_latex,
+            "plain_text": equation.plain_text,
+            "accessibility_reading": equation.accessibility_reading,
+            "variables": equation.variables,
+            "assumptions": equation.assumptions,
+            "applicability": equation.applicability,
+            "invalid_outside": equation.invalid_outside,
+            "boundary_conditions": equation.boundary_conditions,
+            "evidence_links": equation_links,
+        }
+        if presentation is not None:
+            asset_payload.update(
+                {
+                    "sanitized_svg": presentation.sanitized_svg,
+                    "svg_digest": presentation.svg_digest,
+                    "renderer": presentation.renderer,
+                    "asset_digest": presentation.asset_digest,
+                }
+            )
+        return [equation_ref], [ReportEquationAsset(**asset_payload)]
+
+    def _grounded_explanation(
+        self,
+        *,
+        verdict: VerdictPacket,
+        fact_id: str,
+        annotations: Sequence[GroundedAnnotation],
+        release_set: ResolvedReleaseSet,
+    ) -> tuple[GroundedExplanation, list[ReportEquationAsset]]:
+        rule_id = self._fact_rule_id(fact_id, verdict)
+        rule, rule_digest = self._released_rule(release_set, rule_id)
+        if {item.knowledge_id for item in annotations} != set(rule.knowledge_refs):
+            raise ScienceOperationalError(
+                f"structured explanation Knowledge is incomplete: {fact_id}"
+            )
+        evidence_links_by_id = {
+            link.evidence_id: link
+            for annotation in annotations
+            for link in annotation.evidence_links
+        }
+        if set(evidence_links_by_id) != set(rule.evidence_refs):
+            raise ScienceOperationalError(
+                f"structured explanation Evidence is incomplete: {fact_id}"
+            )
+        evidence_links = [
+            evidence_links_by_id[item] for item in sorted(evidence_links_by_id)
+        ]
+        knowledge_refs = self._object_refs(
+            sorted((item.knowledge_id, item.knowledge_digest) for item in annotations)
+        )
+        rule_refs = self._object_refs([(rule.rule_id, rule_digest)])
+        evidence_refs = self._object_refs(
+            [(item.evidence_id, item.evidence_digest) for item in evidence_links]
+        )
+        equation_refs, equation_assets = self._equation_grounding(
+            rule=rule,
+            rule_digest=rule_digest,
+            release_set=release_set,
+            evidence_links=evidence_links,
+        )
+
+        blocks: list[GroundedExplanationBlock] = []
+
+        def add(kind: str, text: str) -> None:
+            if not text.strip():
+                return
+            blocks.append(
+                GroundedExplanationBlock(
+                    sequence=len(blocks) + 1,
+                    block_kind=kind,
+                    text=text,
+                    knowledge_refs=knowledge_refs,
+                    equation_refs=equation_refs,
+                    rule_refs=rule_refs,
+                    evidence_refs=evidence_refs,
+                )
+            )
+
+        for annotation in sorted(annotations, key=lambda item: item.knowledge_id):
+            add("applied_principle", annotation.text)
+        for asset in equation_assets:
+            add("reviewed_equation", asset.plain_text)
+            for variable in asset.variables:
+                add(
+                    "variable_meaning",
+                    (
+                        f"{variable.symbol}: {variable.definition}; unit={variable.unit}; "
+                        f"domain={variable.domain}; sign={variable.sign_constraint}"
+                    ),
+                )
+            for statement in (*asset.assumptions, *asset.applicability):
+                add("applicability", statement)
+        for equation_ref in equation_refs:
+            for mapping in equation_ref.variable_mappings:
+                add(
+                    "claim_mapping",
+                    (
+                        f"{mapping.equation_variable_id} -> "
+                        f"Claim quantity {mapping.claim_quantity_kind} "
+                        f"({mapping.constraint_operand})"
+                    ),
+                )
+        add(
+            "scientific_consequence",
+            f"{verdict.verdict.value}: {', '.join(verdict.reason_codes)}",
+        )
+        if verdict.corrected_claim is not None:
+            add("correction", verdict.corrected_claim)
+        for limitation in verdict.limitations:
+            add("limitation", limitation)
+        for asset in equation_assets:
+            for boundary in asset.invalid_outside:
+                add("limitation", boundary)
+        for link in evidence_links:
+            locator = canonical_json_bytes(
+                link.locator.model_dump(mode="json", exclude_none=True)
+            ).decode("utf-8")
+            add("evidence", f"{link.evidence_id}; locator={locator}")
+        return (
+            GroundedExplanation(
+                claim_id=verdict.claim_id,
+                fact_id=fact_id,
+                knowledge_refs=knowledge_refs,
+                equation_refs=equation_refs,
+                rule_refs=rule_refs,
+                evidence_links=evidence_links,
+                blocks=blocks,
+            ),
+            equation_assets,
+        )
+
     def _authoritative_confirmation(
         self, interpretation_id: str, *, identity: AuthIdentity
     ) -> InterpretationRecord:
@@ -2078,13 +2342,36 @@ class ScienceService:
         release_set, operational = self._operational_verification(selection)
         verdicts: list[VerdictPacket] = []
         annotations: list[GroundedAnnotation] = []
+        explanations: list[GroundedExplanation] = []
+        equation_assets_by_identity: dict[tuple[str, str], ReportEquationAsset] = {}
         for claim in confirmed_claims:
             verdict = verify_scientific_claim(claim, operational)
             self._assert_verdict_release_binding(verdict, release_set)
             verdicts.append(verdict)
-            annotations.extend(
-                self._grounded_annotations(claim.claim_id, verdict, release_set)
+            claim_annotations = self._grounded_annotations(
+                claim.claim_id, verdict, release_set
             )
+            annotations.extend(claim_annotations)
+            by_fact: dict[str, list[GroundedAnnotation]] = {}
+            for annotation in claim_annotations:
+                by_fact.setdefault(annotation.fact_id, []).append(annotation)
+            for fact in verdict.explanation_facts:
+                explanation, assets = self._grounded_explanation(
+                    verdict=verdict,
+                    fact_id=fact.fact_id,
+                    annotations=by_fact.get(fact.fact_id, []),
+                    release_set=release_set,
+                )
+                explanations.append(explanation)
+                for asset in assets:
+                    identity_key = (asset.equation_id, asset.equation_digest)
+                    existing_asset = equation_assets_by_identity.setdefault(
+                        identity_key, asset
+                    )
+                    if existing_asset != asset:
+                        raise ScienceOperationalError(
+                            "one Equation identity resolved to different report assets"
+                        )
 
         created_at = self._clock()
         if created_at.tzinfo is None or created_at.utcoffset() is None:
@@ -2100,17 +2387,24 @@ class ScienceService:
             "verdict_packets": verdicts,
             "unresolved_ambiguities": [],
             "annotations": annotations,
+            "explanations": explanations,
+            "equation_assets": [
+                equation_assets_by_identity[key]
+                for key in sorted(equation_assets_by_identity)
+            ],
             "created_at": created_at,
             "created_by": identity.employee_id,
             "operation_binding": binding,
         }
-        canonical_payload = VerificationReport.model_construct(
+        provisional = VerificationReport.model_construct(
             **payload,
             report_digest="sha256:pending",
-        ).model_dump(mode="json", exclude={"report_digest"})
+        )
         report = VerificationReport(
             **payload,
-            report_digest=sha256_digest(canonical_payload),
+            report_digest=sha256_digest(
+                verification_report_scientific_payload(provisional)
+            ),
         )
         try:
             return self.runtime_store.save_report(report, identity=identity)

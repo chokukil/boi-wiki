@@ -10,7 +10,13 @@ from typing import Literal, TypeAlias
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from boi_api.app.science.digests import sha256_digest
-from boi_api.app.science.equations import SemanticExpression
+from boi_api.app.science.equation_assets import EquationRendererIdentity
+from boi_api.app.science.equation_rendering import validate_equation_svg
+from boi_api.app.science.equations import (
+    BoundaryCondition,
+    EquationVariable,
+    SemanticExpression,
+)
 from boi_api.app.science.safety import (
     reject_sensitive_persistence,
     validate_credential_free_https_url,
@@ -674,8 +680,7 @@ class FormulaInterpretationRecord(ScienceModel):
         ):
             raise ValueError("not_proposed cannot contain an Equation identity")
         if self.catalog_match_status != "not_proposed" and (
-            self.proposed_equation_id is None
-            or self.proposed_equation_digest is None
+            self.proposed_equation_id is None or self.proposed_equation_digest is None
         ):
             raise ValueError("Equation match status requires a proposed identity")
         if len(self.ontology_refs) != len(set(self.ontology_refs)):
@@ -857,12 +862,16 @@ class InterpretationRecord(ScienceModel):
         canonical_ref = self.canonical_source_document_ref
         canonical_digest = self.canonical_source_document_digest
         if (canonical_ref is None) != (canonical_digest is None):
-            raise ValueError("canonical source lineage must be an exact ref/digest pair")
+            raise ValueError(
+                "canonical source lineage must be an exact ref/digest pair"
+            )
         if canonical_ref is not None:
             if not canonical_ref.startswith("boi:") or canonical_ref.startswith(
                 "boi:submitted:"
             ):
-                raise ValueError("canonical source lineage must reference a Wiki document")
+                raise ValueError(
+                    "canonical source lineage must reference a Wiki document"
+                )
             if self.supersedes_claim_id is None or any(
                 not claim.document_ref.startswith("boi:submitted:")
                 for claim in self.candidate_claims
@@ -1093,6 +1102,243 @@ class GroundedAnnotation(ScienceModel):
     evidence_links: list[EvidenceLink] = Field(min_length=1)
 
 
+class GroundedObjectRef(ScienceModel):
+    """One exact released object identity used by an explanation block."""
+
+    object_id: str = Field(min_length=1)
+    object_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class GroundedEquationVariableMapping(ScienceModel):
+    equation_variable_id: str = Field(min_length=1, max_length=64)
+    claim_quantity_kind: str = Field(min_length=1, max_length=128)
+    constraint_operand: Literal["left", "right_1", "right_2"]
+
+
+class GroundedEquationRef(ScienceModel):
+    """A decisive Rule's exact Equation and evaluator binding identity."""
+
+    equation_id: str = Field(pattern=r"^sci:equation:[A-Za-z0-9._:-]+$")
+    equation_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    knowledge_id: str = Field(min_length=1)
+    knowledge_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    rule_id: str = Field(min_length=1)
+    rule_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    decision_use: Literal["deterministic_rule"]
+    evaluator_id: str = Field(min_length=1)
+    evaluator_version: str = Field(min_length=1)
+    evaluator_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    binding_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    variable_mappings: list[GroundedEquationVariableMapping] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def exact_unique_mapping(self) -> "GroundedEquationRef":
+        variables = [item.equation_variable_id for item in self.variable_mappings]
+        quantities = [item.claim_quantity_kind for item in self.variable_mappings]
+        operands = [item.constraint_operand for item in self.variable_mappings]
+        if (
+            len(variables) != len(set(variables))
+            or len(quantities) != len(set(quantities))
+            or len(operands) != len(set(operands))
+        ):
+            raise ValueError("grounded Equation mapping must be exact and unique")
+        return self
+
+
+ExplanationBlockKind = Literal[
+    "applied_principle",
+    "reviewed_equation",
+    "variable_meaning",
+    "applicability",
+    "claim_mapping",
+    "scientific_consequence",
+    "correction",
+    "limitation",
+    "evidence",
+]
+
+
+class GroundedExplanationBlock(ScienceModel):
+    """One reviewed explanation sentence with explicit provenance identities."""
+
+    sequence: int = Field(ge=1)
+    block_kind: ExplanationBlockKind
+    text: str = Field(min_length=1)
+    knowledge_refs: list[GroundedObjectRef]
+    equation_refs: list[GroundedEquationRef]
+    rule_refs: list[GroundedObjectRef]
+    evidence_refs: list[GroundedObjectRef]
+
+    @model_validator(mode="after")
+    def has_grounded_provenance(self) -> "GroundedExplanationBlock":
+        if not (self.knowledge_refs or self.rule_refs or self.evidence_refs):
+            raise ValueError("explanation block requires released provenance")
+        return self
+
+
+class GroundedExplanation(ScienceModel):
+    """A deterministic, ordered explanation for one decisive Explanation Fact."""
+
+    claim_id: str = Field(min_length=1)
+    fact_id: str = Field(min_length=1)
+    knowledge_refs: list[GroundedObjectRef] = Field(min_length=1)
+    equation_refs: list[GroundedEquationRef]
+    rule_refs: list[GroundedObjectRef] = Field(min_length=1)
+    evidence_links: list[EvidenceLink] = Field(min_length=1)
+    blocks: list[GroundedExplanationBlock] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def exact_ordered_grounding(self) -> "GroundedExplanation":
+        if [block.sequence for block in self.blocks] != list(
+            range(1, len(self.blocks) + 1)
+        ):
+            raise ValueError("explanation blocks must have a contiguous exact order")
+        knowledge = {
+            (item.object_id, item.object_digest) for item in self.knowledge_refs
+        }
+        rules = {(item.object_id, item.object_digest) for item in self.rule_refs}
+        equations = {
+            (item.equation_id, item.equation_digest) for item in self.equation_refs
+        }
+        equations_by_identity = {
+            (item.equation_id, item.equation_digest): item
+            for item in self.equation_refs
+        }
+        evidence = {
+            (item.evidence_id, item.evidence_digest) for item in self.evidence_links
+        }
+        for name, identities in (
+            ("Knowledge", knowledge),
+            ("Rule", rules),
+            ("Equation", equations),
+            ("Evidence", evidence),
+        ):
+            if len(identities) != len(
+                self.knowledge_refs
+                if name == "Knowledge"
+                else self.rule_refs
+                if name == "Rule"
+                else self.equation_refs
+                if name == "Equation"
+                else self.evidence_links
+            ):
+                raise ValueError(f"explanation contains duplicate {name} identities")
+        for block in self.blocks:
+            if (
+                not {
+                    (item.object_id, item.object_digest)
+                    for item in block.knowledge_refs
+                }
+                <= knowledge
+            ):
+                raise ValueError("explanation block escapes its Knowledge grounding")
+            if (
+                not {(item.object_id, item.object_digest) for item in block.rule_refs}
+                <= rules
+            ):
+                raise ValueError("explanation block escapes its Rule grounding")
+            for item in block.equation_refs:
+                identity = (item.equation_id, item.equation_digest)
+                if equations_by_identity.get(identity) != item:
+                    raise ValueError(
+                        "explanation block escapes its exact Equation grounding"
+                    )
+            if (
+                not {
+                    (item.object_id, item.object_digest) for item in block.evidence_refs
+                }
+                <= evidence
+            ):
+                raise ValueError("explanation block escapes its Evidence grounding")
+        return self
+
+
+class ReportEquationAsset(ScienceModel):
+    """Stored scientific Equation snapshot plus optional non-authoritative SVG."""
+
+    equation_id: str = Field(pattern=r"^sci:equation:[A-Za-z0-9._:-]+$")
+    equation_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    knowledge_id: str = Field(min_length=1)
+    knowledge_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    scientific_role: Literal[
+        "definition",
+        "invariant",
+        "law",
+        "derived_model",
+        "approximation",
+        "empirical_fit",
+        "qualified_relation",
+    ]
+    decision_use: Literal["deterministic_rule"]
+    display_latex: str = Field(min_length=1, max_length=4096)
+    plain_text: str = Field(min_length=1, max_length=4096)
+    accessibility_reading: str = Field(min_length=1, max_length=1000)
+    variables: list[EquationVariable]
+    assumptions: list[str]
+    applicability: list[str] = Field(min_length=1)
+    invalid_outside: list[str] = Field(min_length=1)
+    boundary_conditions: list[BoundaryCondition]
+    evidence_links: list[EvidenceLink] = Field(min_length=1)
+    sanitized_svg: str | None = Field(default=None, max_length=524_288)
+    svg_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    renderer: EquationRendererIdentity | None = None
+    asset_digest: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def exact_optional_presentation(self) -> "ReportEquationAsset":
+        presentation = (
+            self.sanitized_svg,
+            self.svg_digest,
+            self.renderer,
+            self.asset_digest,
+        )
+        if any(item is not None for item in presentation) and not all(
+            item is not None for item in presentation
+        ):
+            raise ValueError(
+                "Equation presentation fields must be all present or absent"
+            )
+        if self.sanitized_svg is not None:
+            assert self.svg_digest is not None
+            validated = validate_equation_svg(self.sanitized_svg, self.svg_digest)
+            if validated.accessibility_reading != self.accessibility_reading:
+                raise ValueError("Equation SVG accessibility reading does not match")
+            presentation_payload = {
+                "equation_id": self.equation_id,
+                "equation_digest": self.equation_digest,
+                "display_latex": self.display_latex,
+                "plain_text": self.plain_text,
+                "accessibility_reading": self.accessibility_reading,
+                "sanitized_svg": self.sanitized_svg,
+                "svg_digest": self.svg_digest,
+                "renderer": self.renderer,
+            }
+            if self.asset_digest != sha256_digest(presentation_payload):
+                raise ValueError("Equation presentation asset digest does not match")
+        evidence_ids = [item.evidence_id for item in self.evidence_links]
+        if len(evidence_ids) != len(set(evidence_ids)):
+            raise ValueError("Equation asset duplicates Evidence")
+        return self
+
+
+def verification_report_scientific_payload(
+    report: "VerificationReport",
+) -> dict[str, object]:
+    """Return the renderer-independent scientific identity of a report."""
+
+    payload = report.model_dump(mode="json", exclude={"report_digest"})
+    for asset in payload.get("equation_assets", []):
+        if isinstance(asset, dict):
+            for field_name in (
+                "sanitized_svg",
+                "svg_digest",
+                "renderer",
+                "asset_digest",
+            ):
+                asset.pop(field_name, None)
+    return payload
+
+
 class VerificationReport(ScienceModel):
     report_id: str
     document_ref: str | None
@@ -1104,6 +1350,8 @@ class VerificationReport(ScienceModel):
     verdict_packets: list[VerdictPacket] = Field(min_length=1)
     unresolved_ambiguities: list[InterpretationDecisionImpact]
     annotations: list[GroundedAnnotation]
+    explanations: list[GroundedExplanation] = Field(default_factory=list)
+    equation_assets: list[ReportEquationAsset] = Field(default_factory=list)
     created_at: datetime
     created_by: str
     report_digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
@@ -1112,6 +1360,25 @@ class VerificationReport(ScienceModel):
     @model_validator(mode="after")
     def safe_non_source_provenance(self) -> "VerificationReport":
         payload = self.model_dump(mode="json", exclude_none=False)
+
+        def strip_source_urls(link: dict[str, object]) -> None:
+            link.pop("url", None)
+            locator_payloads = [link.get("locator")]
+            reviewed = link.get("reviewed_source")
+            if isinstance(reviewed, dict):
+                locator_payloads.append(reviewed.get("locator"))
+                reviewed.pop("canonical_source_url", None)
+                reviewed.pop("locator_url_digests", None)
+            for locator in locator_payloads:
+                if not isinstance(locator, dict):
+                    continue
+                for field_name in (
+                    "resource_url",
+                    "requested_url",
+                    "resolved_url",
+                ):
+                    locator.pop(field_name, None)
+
         for claim in payload["confirmed_claims"]:
             claim.pop("source_span", None)
         for verdict in payload["verdict_packets"]:
@@ -1120,19 +1387,16 @@ class VerificationReport(ScienceModel):
         for annotation in payload["annotations"]:
             annotation.pop("text", None)
             for link in annotation["evidence_links"]:
-                link.pop("url", None)
-                for locator in (
-                    link["locator"],
-                    link["reviewed_source"]["locator"],
-                ):
-                    for field_name in (
-                        "resource_url",
-                        "requested_url",
-                        "resolved_url",
-                    ):
-                        locator.pop(field_name, None)
-                link["reviewed_source"].pop("canonical_source_url", None)
-                link["reviewed_source"].pop("locator_url_digests", None)
+                strip_source_urls(link)
+        for explanation in payload["explanations"]:
+            for block in explanation["blocks"]:
+                block.pop("text", None)
+            for link in explanation["evidence_links"]:
+                strip_source_urls(link)
+        for asset in payload["equation_assets"]:
+            asset.pop("sanitized_svg", None)
+            for link in asset["evidence_links"]:
+                strip_source_urls(link)
         reject_sensitive_persistence(payload, path="report")
         binding = self.operation_binding
         if binding.operation != "verify_document":
@@ -1267,8 +1531,58 @@ class VerificationReport(ScienceModel):
             for link in annotation.evidence_links
         ):
             raise ValueError("report Evidence profile does not match its release set")
+        explanation_by_fact = {
+            (item.claim_id, item.fact_id): item for item in self.explanations
+        }
+        if len(explanation_by_fact) != len(self.explanations):
+            raise ValueError("report duplicates a grounded structured explanation")
+        if set(explanation_by_fact) != set(expected_facts):
+            raise ValueError(
+                "report explanations do not exactly cover verdict explanation facts"
+            )
+        referenced_equations: dict[tuple[str, str], GroundedEquationRef] = {}
+        for key, explanation in explanation_by_fact.items():
+            fact = expected_facts[key]
+            if {item.object_id for item in explanation.knowledge_refs} != set(
+                fact.knowledge_refs
+            ) or {item.evidence_id for item in explanation.evidence_links} != set(
+                fact.evidence_refs
+            ):
+                raise ValueError(
+                    "report structured explanation does not match its verdict fact"
+                )
+            for item in explanation.equation_refs:
+                identity = (item.equation_id, item.equation_digest)
+                existing = referenced_equations.setdefault(identity, item)
+                if existing != item:
+                    raise ValueError(
+                        "report has inconsistent bindings for one Equation identity"
+                    )
+        asset_identities = [
+            (item.equation_id, item.equation_digest) for item in self.equation_assets
+        ]
+        if len(asset_identities) != len(set(asset_identities)):
+            raise ValueError("report duplicates an Equation presentation identity")
+        if set(asset_identities) != set(referenced_equations):
+            raise ValueError(
+                "report Equation assets do not exactly cover explanation references"
+            )
+        assets_by_identity = {
+            (item.equation_id, item.equation_digest): item
+            for item in self.equation_assets
+        }
+        for identity, reference in referenced_equations.items():
+            asset = assets_by_identity[identity]
+            if (
+                asset.knowledge_id != reference.knowledge_id
+                or asset.knowledge_digest != reference.knowledge_digest
+                or asset.decision_use != reference.decision_use
+            ):
+                raise ValueError(
+                    "report Equation asset does not match its scientific reference"
+                )
         expected_report_digest = sha256_digest(
-            self.model_dump(mode="json", exclude={"report_digest"})
+            verification_report_scientific_payload(self)
         )
         if self.report_digest != expected_report_digest:
             raise ValueError("report digest does not match immutable report bytes")
