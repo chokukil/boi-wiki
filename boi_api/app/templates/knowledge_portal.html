@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>지식 자산 · BoI Wiki</title><link rel="stylesheet" href="{{ asset_url('style.css') }}">
+{% include 'knowledge_portal_styles.html' %}</head><body>
+{% include '_app_shell.html' %}
+{% from 'knowledge_portal_controls.html' import supervision_form %}
+<main class="knowledge-portal" data-knowledge-portal>
+  <div class="knowledge-intro"><span class="knowledge-eyebrow">KNOWLEDGE</span><h1>업무에 다시 쓰는 지식</h1><p>개념과 원문을 살펴보고, 자료를 지식으로 정리하는 작업을 이어갑니다.</p></div>
+  <nav class="knowledge-navigation" aria-label="기존 Wiki 탐색"><a href="/?view=explorer">폴더와 문서</a><a href="/data-library">자료 보관함</a><a href="/integrations">외부 도구 연결</a></nav>
+  <nav class="knowledge-tabs" aria-label="지식 자산 보기">{% for tab in portal.tabs %}<a href="{{ tab.url }}"{% if tab.active %} aria-current="page"{% endif %}>{{ tab.label }}</a>{% endfor %}</nav>
+  {% if portal.active_tab == 'knowledge' %}
+  <nav class="knowledge-navigation" aria-label="지식 공간">{% for item in portal.scope_options %}<a href="{{ item.url }}"{% if item.active %} aria-current="page"{% endif %}>{{ item.label }}</a>{% endfor %}</nav>
+  <form class="knowledge-filter" method="get" action="{{ portal.portal_url }}"><input type="hidden" name="tab" value="knowledge"><input type="hidden" name="scope" value="{{ portal.scope }}">{% if portal.team %}<input type="hidden" name="team" value="{{ portal.team }}">{% endif %}<label>{{ '이전 지식 찾기' if portal.scope == 'legacy' else '이 공간에서 지식 찾기' }}<input name="q" value="{{ portal.query }}" placeholder="제목이나 본문에 나오는 표현"></label><button type="submit">찾기</button></form>
+  {% if portal.text_search %}<aside aria-label="본문 검색 범위"><p>검색 결과 {{ portal.text_search.matching_documents }}건 · 이 공간에서 읽을 수 있는 지식 {{ portal.text_search.visible_documents }}건</p>{% if portal.text_search.unprepared_documents %}<p>검색 준비가 필요한 지식 {{ portal.text_search.unprepared_documents }}건은 이번 검색에 포함되지 않았습니다.</p>{% endif %}<p>제목·설명·본문에서 입력한 표현을 찾았습니다. 첨부 원천 파일과 다른 공간은 포함하지 않습니다. 적용 조건과 출처는 문서를 열어 확인하세요.</p></aside>{% endif %}
+  {% elif portal.active_tab == 'packages' %}<p>외부 에이전트가 사용할 의미 규격과 작업 절차입니다. 작업을 시작할 때 사용한 버전은 해당 기록에 보존됩니다.</p>
+  {% elif portal.active_tab == 'work' %}<p>원문 보존, 해석, 검토와 실제 사용 범위를 구분해서 확인합니다. 외부 에이전트에서 같은 작업을 이어갈 수 있습니다.</p>{% endif %}
+  {% if portal.active_tab == 'packages' and portal.package_capabilities %}<aside class="knowledge-exceptions"><strong>팀 도구 개정 검사</strong><p>{{ '설정된 검사를 사용할 수 있습니다. 의미 품질은 별도 검토가 필요합니다.' if portal.package_capabilities.available else '검사 설정이 준비되지 않았습니다. 기존 도구와 작업 기록은 아래에서 확인할 수 있습니다.' }}</p>{% if portal.package_capabilities.scope == 'reference_checks' %}<p>현재 검사 범위 · 원문과 개정 참조</p>{% endif %}{% if portal.package_capabilities.reason_code %}<details><summary>설정 상태</summary><code>{{ portal.package_capabilities.reason_code }}</code></details>{% endif %}</aside>{% endif %}
+  {% if portal.coverage %}<dl class="knowledge-coverage">{% for item in portal.coverage %}<div><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>{% endfor %}</dl>{% endif %}
+  {% if portal.active_tab == 'inbox' %}{{ portal.feedback_html|safe }}{% if portal.feedback_next_url %}<a rel="next" href="{{ portal.feedback_next_url }}">다음 의견 보기</a>{% endif %}{% else %}
+  <section class="knowledge-grid" aria-label="{{ '지식 목록' if portal.active_tab == 'knowledge' else '도메인 도구 목록' if portal.active_tab == 'packages' else '작업 목록' }}">
+  {% for card in portal.cards %}<article class="knowledge-card">
+    <div class="knowledge-card-meta">{% if card.kind %}<span>{{ card.kind }}</span>{% endif %}{% if card.domain %}<span class="knowledge-badge">{{ card.domain }}</span>{% endif %}{% if card.version %}<span>{{ card.version }}</span>{% endif %}</div>
+    <h2>{% if card.url %}<a href="{{ card.url }}">{{ card.title }}</a>{% else %}{{ card.title }}{% endif %}</h2>
+    {% if card.description %}<p>{{ card.description }}</p>{% endif %}
+    {% if card.snippet %}<p class="knowledge-snippet" data-search-snippet>{{ card.snippet }}</p>{% endif %}
+    {% if card.source_name %}<p>원문 · {{ card.source_name }}</p>{% endif %}
+    {% if card.status %}<p class="knowledge-status" data-record-status>{{ card.status }}</p>{% endif %}
+    {% if card.operations %}<p><strong>지원 작업</strong> · {{ card.operations|join(' · ') }}</p>{% endif %}
+    {% if card.coverage %}<dl class="knowledge-coverage">{% for item in card.coverage %}<div><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>{% endfor %}</dl>{% endif %}
+    {% if card.next_action %}<p><strong>다음 작업</strong> · {{ card.next_action }}</p>{% endif %}
+    {% if card.results %}<details open><summary>저장된 결과 · {{ card.results|length }}건</summary><ul>{% for result in card.results %}<li>{% if result.url %}<a href="{{ result.url }}">{{ result.label }}</a>{% else %}{{ result.label }}{% endif %}{% if result.reason %}<p>{{ result.reason }}</p>{% endif %}{% if portal.supervision_enabled %}{{ supervision_form(result.control, 'correct', '이 지식 개정에 정정 요청') }}{% endif %}</li>{% endfor %}</ul></details>{% endif %}
+    {% if card.limitations %}<details><summary>적용 범위와 확인할 내용</summary><ul>{% for value in card.limitations %}<li>{{ value }}</li>{% endfor %}</ul></details>{% endif %}
+    {% if card.revision or card.run_id %}<details><summary>기록 참조</summary><code>{{ card.run_id or card.revision }}</code></details>{% endif %}
+    {% if portal.supervision_enabled %}{{ supervision_form(card.control, 'correct', '이 작업에 정정 요청') }}{% if card.control and card.control.can_stop %}{{ supervision_form(card.control, 'stop', '작업 중단') }}{% endif %}{% endif %}
+  </article>{% else %}<div class="knowledge-empty"><h2>{{ '표시할 지식이 없습니다' if portal.active_tab == 'knowledge' else '표시할 도메인 도구가 없습니다' if portal.active_tab == 'packages' else '표시할 자산화 작업이 없습니다' }}</h2><p>{{ '현재 조회 범위의 결과입니다. 다른 표현으로 찾거나 폴더와 원문을 확인할 수 있습니다.' if portal.active_tab == 'knowledge' else '현재 권한으로 조회한 항목이 이곳에 표시됩니다.' }}</p></div>{% endfor %}
+  </section>{% endif %}
+  {% if portal.next_url %}<a class="knowledge-next" rel="next" href="{{ portal.next_url }}">다음 항목 보기</a>{% endif %}
+  {% if portal.bundle_next_url %}<a class="knowledge-next" rel="next" href="{{ portal.bundle_next_url }}">다음 로컬 자료 보기</a>{% endif %}
+  {% if portal.active_tab == 'work' and portal.exceptions %}<section class="knowledge-exceptions" aria-label="확인이 필요한 항목"><h2>함께 확인할 항목</h2><p>같은 단계와 원인에 해당하는 항목을 모았습니다. 완료된 결과와 원문은 유지됩니다.</p>{% for group in portal.exceptions %}<details><summary>{{ group.title }} · {{ group['items']|length }}건{% if group.phase %} · {{ group.phase }}{% endif %}</summary><ul>{% for item in group['items'] %}<li>{% if item.url %}<a href="{{ item.url }}">{{ item.run_title or '작업 보기' }}</a>{% else %}{{ item.run_title }}{% endif %}<p>{{ item.message }}</p>{% if item.source %}<small>{{ item.source }}</small>{% endif %}{% if item.next_action %}<p>다음 작업 · {{ item.next_action }}</p>{% endif %}{% if portal.supervision_enabled %}{{ supervision_form(item.control, 'correct', '이 원문 묶음에 정정 요청') }}{% endif %}</li>{% endfor %}</ul>{% if group.code %}<code>{{ group.code }}</code>{% endif %}</details>{% endfor %}</section>{% endif %}
+  {% if portal.active_tab == 'work' and portal.supervision_groups %}<section class="knowledge-exceptions" aria-label="남아 있는 정정 요청"><h2>남아 있는 정정 요청</h2><p>원인과 영향을 받는 범위별로 모았습니다. 요청을 읽는 것만으로 처리 완료되지 않습니다.</p>{% for group in portal.supervision_groups %}<details open><summary>{{ group.cause }} · {{ group.scope }} · {{ group['items']|length }}건</summary>{% for item in group['items'] %}<article><p>{{ item.reason }}</p><p>{% if item.unit_count is not none %}원문 묶음 {{ item.unit_count }}개{% endif %}{% if item.asset_count is not none %} · 지식 개정 {{ item.asset_count }}개{% endif %}</p><details><summary>정확한 요청 참조</summary><code>{{ item.event_ref }}</code></details>{% if portal.supervision_enabled %}{{ supervision_form(item.control, 'resolve', '처리 내용 기록') }}{% endif %}</article>{% endfor %}</details>{% endfor %}</section>{% endif %}
+</main>{{ supervision_script|safe }}</body></html>

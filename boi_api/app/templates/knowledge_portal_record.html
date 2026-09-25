@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ record_title }} · BoI Wiki</title><link rel="stylesheet" href="{{ asset_url('style.css') }}">
+{% include 'knowledge_portal_styles.html' %}</head><body>
+{% include '_app_shell.html' %}
+<div class="knowledge-portal knowledge-record-view" data-knowledge-record>
+<nav class="knowledge-navigation" aria-label="지식 탐색"><a href="/knowledge">지식 자산</a><a href="/?view=explorer">폴더와 문서</a>{% if return_url %}<a href="{{ return_url }}">답변으로 돌아가기</a>{% endif %}<span>{{ record_kind }}</span></nav>
+{{ record_fragment|safe }}
+</div></body></html>

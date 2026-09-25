@@ -1,0 +1,1356 @@
+{
+  "$defs": {
+    "AssetStateCitation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "asset_state",
+          "default": "asset_state",
+          "title": "Kind",
+          "type": "string"
+        },
+        "asset_revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "field": {
+          "const": "authority",
+          "title": "Field",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_revision",
+        "field"
+      ],
+      "title": "AssetStateCitation",
+      "type": "object"
+    },
+    "BulletList": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "list",
+          "default": "list",
+          "title": "Kind",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "pattern": "^/(sentences|limitations)/(0|[1-9][0-9]*)$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "BulletList",
+      "type": "object"
+    },
+    "ComparisonTable": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "table",
+          "default": "table",
+          "title": "Kind",
+          "type": "string"
+        },
+        "headers": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "maxItems": 6,
+          "minItems": 2,
+          "title": "Headers",
+          "type": "array"
+        },
+        "row_labels": {
+          "anyOf": [
+            {
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional row headings such as the compared aspect. One per row. These headings are visible and reviewed contextual text, not evidence or substitutes for cited content cells. Do not include a row-label column in headers or rows.",
+          "title": "Row Labels"
+        },
+        "rows": {
+          "description": "Each cell points to ONE entire cited text entry, not a substring extracted from a longer sentence. Short labels or phrases are welcome; do not force full sentences into row labels. Write separate entries for separate cells. Never repeat a pointer in another cell or paragraph. Each row has exactly len(headers) cells.",
+          "items": {
+            "items": {
+              "pattern": "^/(sentences|limitations)/(0|[1-9][0-9]*)$",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "minItems": 1,
+          "title": "Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "headers",
+        "rows"
+      ],
+      "title": "ComparisonTable",
+      "type": "object"
+    },
+    "ExecutionResultCitation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "execution_result",
+          "default": "execution_result",
+          "title": "Kind",
+          "type": "string"
+        },
+        "result_digest": {
+          "description": "Exact digest of a result supplied by the host execution context, not a model-authored result. It supports only statements about that execution, not source facts or equipment behavior.",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Result Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result_digest"
+      ],
+      "title": "ExecutionResultCitation",
+      "type": "object"
+    },
+    "GapStatement": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Text",
+          "type": "string"
+        },
+        "kind": {
+          "const": "evidence_gap",
+          "title": "Kind",
+          "type": "string"
+        },
+        "citations": {
+          "description": "A complete source scope is required. Include positive citations too when the gap explanation also states source facts; neither kind substitutes for the other.",
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "meaning": "#/$defs/MeaningCitation",
+                "source_quote": "#/$defs/SourceCitation",
+                "source_scope": "#/$defs/SourceScopeCitation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SourceScopeCitation"
+              },
+              {
+                "$ref": "#/$defs/MeaningCitation"
+              },
+              {
+                "$ref": "#/$defs/SourceCitation"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Citations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text",
+        "kind",
+        "citations"
+      ],
+      "title": "GapStatement",
+      "type": "object"
+    },
+    "MeaningCitation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "meaning",
+          "default": "meaning",
+          "title": "Kind",
+          "type": "string"
+        },
+        "asset_revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "target_pointer": {
+          "description": "Exact target_pointer returned by meaning_citation_targets for this revision. The empty JSON pointer selects the root object when it has declared evidence. Process assertions/terms and source-backed native definition objects use the same resolver. Do not invent a target from a name; identity and declared evidence are resolved by the host.",
+          "maxLength": 4096,
+          "title": "Target Pointer",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_revision",
+        "target_pointer"
+      ],
+      "title": "MeaningCitation",
+      "type": "object"
+    },
+    "NativeAnswerComposition": {
+      "additionalProperties": false,
+      "properties": {
+        "published_meaning_uses": {
+          "default": [],
+          "description": "Exact current Published explain qualification references. Never filter qualifications. Each selected meaning retains its complete conditions and declared dependency closure.",
+          "items": {
+            "$ref": "#/$defs/PublishedMeaningSelection"
+          },
+          "maxItems": 32,
+          "title": "Published Meaning Uses",
+          "type": "array"
+        },
+        "definition_review_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RevisionRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source_definition_revisions": {
+          "default": [],
+          "description": "Exact discovered definitions used only to locate their original records when no usable meaning review is available. Used alone or as original-evidence supplements to separately reviewed definitions. These records bind original quotations, reading scopes and actual execution results; it never admits candidate meanings as reviewed evidence.",
+          "items": {
+            "$ref": "#/$defs/RevisionRef"
+          },
+          "maxItems": 32,
+          "title": "Source Definition Revisions",
+          "type": "array"
+        },
+        "additional_definition_review_revisions": {
+          "default": [],
+          "description": "Additional exact selected-node reviews for other definitions used in this answer. Each review retains its own candidate revision, conditions and quarantine scope.",
+          "items": {
+            "$ref": "#/$defs/RevisionRef"
+          },
+          "maxItems": 31,
+          "title": "Additional Definition Review Revisions",
+          "type": "array"
+        },
+        "question": {
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "execution_ref": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Ref"
+        },
+        "draft": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessAnswerDraftV2"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "meaning_selection": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MeaningCitation"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional exact existing meaning references for preparation. The product returns candidate meanings when absent; an explicit selection reads only those targets and their required closures. This is not complete search, source entailment or approval. Preparation and binding use the same selected original fields; additional source evidence requires a corresponding read scope.",
+          "title": "Meaning Selection"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "NativeAnswerComposition",
+      "type": "object"
+    },
+    "NativeAuthoringComposition": {
+      "additionalProperties": false,
+      "description": "Transport form; short references are validated against a protected preparation.",
+      "properties": {
+        "published_meaning_uses": {
+          "default": [],
+          "description": "Exact current Published explain qualification references. Never filter qualifications. Each selected meaning retains its complete conditions and declared dependency closure.",
+          "items": {
+            "$ref": "#/$defs/PublishedMeaningSelection"
+          },
+          "maxItems": 32,
+          "title": "Published Meaning Uses",
+          "type": "array"
+        },
+        "definition_review_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RevisionRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source_definition_revisions": {
+          "default": [],
+          "description": "Exact discovered definitions used only to locate their original records when no usable meaning review is available. Used alone or as original-evidence supplements to separately reviewed definitions. These records bind original quotations, reading scopes and actual execution results; it never admits candidate meanings as reviewed evidence.",
+          "items": {
+            "$ref": "#/$defs/RevisionRef"
+          },
+          "maxItems": 32,
+          "title": "Source Definition Revisions",
+          "type": "array"
+        },
+        "additional_definition_review_revisions": {
+          "default": [],
+          "description": "Additional exact selected-node reviews for other definitions used in this answer. Each review retains its own candidate revision, conditions and quarantine scope.",
+          "items": {
+            "$ref": "#/$defs/RevisionRef"
+          },
+          "maxItems": 31,
+          "title": "Additional Definition Review Revisions",
+          "type": "array"
+        },
+        "question": {
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "execution_ref": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Ref"
+        },
+        "draft": {
+          "additionalProperties": true,
+          "title": "Draft",
+          "type": "object"
+        },
+        "meaning_selection": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MeaningCitation"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional exact existing meaning references for preparation. The product returns candidate meanings when absent; an explicit selection reads only those targets and their required closures. This is not complete search, source entailment or approval. Preparation and binding use the same selected original fields; additional source evidence requires a corresponding read scope.",
+          "title": "Meaning Selection"
+        }
+      },
+      "required": [
+        "question",
+        "draft"
+      ],
+      "title": "NativeAuthoringComposition",
+      "type": "object"
+    },
+    "NativePreparedComposition": {
+      "additionalProperties": false,
+      "description": "Continue a protected preparation with its returned selection/draft schema.\n\nThe draft's request-local citation aliases are checked against that exact\npreparation before the full answer, source, review and ACL checks run.",
+      "properties": {
+        "preparation_ref": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Preparation Ref",
+          "type": "string"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question"
+        },
+        "meaning_selection": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MeaningCitation"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Meaning Selection"
+        },
+        "execution_ref": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Execution Ref"
+        },
+        "draft": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Draft"
+        }
+      },
+      "required": [
+        "preparation_ref"
+      ],
+      "title": "NativePreparedComposition",
+      "type": "object"
+    },
+    "Paragraph": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "paragraph",
+          "default": "paragraph",
+          "title": "Kind",
+          "type": "string"
+        },
+        "statements": {
+          "items": {
+            "pattern": "^/(sentences|limitations)/(0|[1-9][0-9]*)$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Statements",
+          "type": "array"
+        }
+      },
+      "required": [
+        "statements"
+      ],
+      "title": "Paragraph",
+      "type": "object"
+    },
+    "ProcessAnswerDraftV2": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "boi/process-answer-draft@2",
+          "default": "boi/process-answer-draft@2",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "context_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Context Digest",
+          "type": "string"
+        },
+        "answers": {
+          "items": {
+            "$ref": "#/$defs/QuestionAnswer"
+          },
+          "minItems": 1,
+          "title": "Answers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "context_digest",
+        "answers"
+      ],
+      "title": "ProcessAnswerDraftV2",
+      "type": "object"
+    },
+    "ProcessQuotation": {
+      "additionalProperties": false,
+      "properties": {
+        "field_locator": {
+          "description": "Exact field_locator from the source projection, not a term or assertion ID.",
+          "title": "Field Locator",
+          "type": "string"
+        },
+        "quote": {
+          "description": "Exact unchanged nonempty substring of this source field, including punctuation and whitespace. A formatting span may consist only of whitespace; never append an explanation to the quoted text.",
+          "minLength": 1,
+          "title": "Quote",
+          "type": "string"
+        },
+        "occurrence": {
+          "default": 0,
+          "description": "Zero-based matching occurrence of quote within that field: 0 is the first occurrence, 1 the second. Use 0 when the quote appears only once.",
+          "minimum": 0,
+          "title": "Occurrence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "field_locator",
+        "quote"
+      ],
+      "title": "ProcessQuotation",
+      "type": "object"
+    },
+    "PublishedMeaningSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "$ref": "#/$defs/RevisionRef"
+        },
+        "qualification_ref": {
+          "$ref": "#/$defs/RevisionRef"
+        }
+      },
+      "required": [
+        "revision",
+        "qualification_ref"
+      ],
+      "title": "PublishedMeaningSelection",
+      "type": "object"
+    },
+    "QuestionAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "question_id": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Question Id",
+          "type": "string"
+        },
+        "sentences": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "evidence_gap": "#/$defs/GapStatement",
+                "interpretation": "#/$defs/SourceStatement",
+                "recommendation": "#/$defs/RecommendationStatement",
+                "runtime_state": "#/$defs/RuntimeStatement",
+                "source_reported_fact": "#/$defs/SourceStatement"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SourceStatement"
+              },
+              {
+                "$ref": "#/$defs/GapStatement"
+              },
+              {
+                "$ref": "#/$defs/RuntimeStatement"
+              },
+              {
+                "$ref": "#/$defs/RecommendationStatement"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Sentences",
+          "type": "array"
+        },
+        "limitations": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "evidence_gap": "#/$defs/GapStatement",
+                "interpretation": "#/$defs/SourceStatement",
+                "recommendation": "#/$defs/RecommendationStatement",
+                "runtime_state": "#/$defs/RuntimeStatement",
+                "source_reported_fact": "#/$defs/SourceStatement"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SourceStatement"
+              },
+              {
+                "$ref": "#/$defs/GapStatement"
+              },
+              {
+                "$ref": "#/$defs/RuntimeStatement"
+              },
+              {
+                "$ref": "#/$defs/RecommendationStatement"
+              }
+            ]
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "layout": {
+          "anyOf": [
+            {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "list": "#/$defs/BulletList",
+                    "paragraph": "#/$defs/Paragraph",
+                    "table": "#/$defs/ComparisonTable"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/Paragraph"
+                  },
+                  {
+                    "$ref": "#/$defs/BulletList"
+                  },
+                  {
+                    "$ref": "#/$defs/ComparisonTable"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layout"
+        },
+        "request_plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RequestPlan"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "question_id",
+        "sentences"
+      ],
+      "title": "QuestionAnswer",
+      "type": "object"
+    },
+    "RecommendationStatement": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "description": "An explicitly proposed next step, not a source-reported obligation or a guarantee. State it naturally as a proposal. Factual premises remain in separate bound statements.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Text",
+          "type": "string"
+        },
+        "kind": {
+          "const": "recommendation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "citations": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "meaning": "#/$defs/MeaningCitation",
+                "source_quote": "#/$defs/SourceCitation",
+                "source_scope": "#/$defs/SourceScopeCitation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/MeaningCitation"
+              },
+              {
+                "$ref": "#/$defs/SourceCitation"
+              },
+              {
+                "$ref": "#/$defs/SourceScopeCitation"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Citations",
+          "type": "array"
+        },
+        "basis_statement_pointers": {
+          "description": "Existing factual, interpretive or evidence-gap statements motivating this proposal; /sentences/i or /limitations/i. References do not prove suitability or necessity.",
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Basis Statement Pointers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text",
+        "kind",
+        "citations",
+        "basis_statement_pointers"
+      ],
+      "title": "RecommendationStatement",
+      "type": "object"
+    },
+    "RequestFacet": {
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "aspect": {
+              "const": "presentation",
+              "type": "string"
+            },
+            "request_quote": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Request Quote",
+              "type": "string"
+            },
+            "interpretation": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Interpretation",
+              "type": "string"
+            },
+            "citations": {
+              "default": [],
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "execution_result": "#/$defs/ExecutionResultCitation",
+                    "meaning": "#/$defs/MeaningCitation",
+                    "source_quote": "#/$defs/SourceCitation",
+                    "source_scope": "#/$defs/SourceScopeCitation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/MeaningCitation"
+                  },
+                  {
+                    "$ref": "#/$defs/SourceCitation"
+                  },
+                  {
+                    "$ref": "#/$defs/SourceScopeCitation"
+                  },
+                  {
+                    "$ref": "#/$defs/ExecutionResultCitation"
+                  }
+                ]
+              },
+              "title": "Citations",
+              "type": "array"
+            },
+            "statement_pointers": {
+              "default": [],
+              "description": "Statement paths in this answer, /sentences/i or /limitations/i.",
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "title": "Statement Pointers",
+              "type": "array"
+            },
+            "unresolved_reason": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Unresolved Reason"
+            }
+          },
+          "required": [
+            "aspect",
+            "request_quote",
+            "interpretation"
+          ],
+          "title": "RequestFacet",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "aspect": {
+              "description": "Presentation describes requested answer format or length, grounded in request_quote; result_unit describes domain result units and requires domain evidence or an unresolved reason. Classification remains subject to semantic review.",
+              "enum": [
+                "target",
+                "scope",
+                "time",
+                "condition",
+                "comparison",
+                "result_unit",
+                "explanation",
+                "presentation"
+              ],
+              "title": "Aspect",
+              "type": "string"
+            },
+            "request_quote": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Request Quote",
+              "type": "string"
+            },
+            "interpretation": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Interpretation",
+              "type": "string"
+            },
+            "citations": {
+              "default": [],
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "execution_result": "#/$defs/ExecutionResultCitation",
+                    "meaning": "#/$defs/MeaningCitation",
+                    "source_quote": "#/$defs/SourceCitation",
+                    "source_scope": "#/$defs/SourceScopeCitation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/MeaningCitation"
+                  },
+                  {
+                    "$ref": "#/$defs/SourceCitation"
+                  },
+                  {
+                    "$ref": "#/$defs/SourceScopeCitation"
+                  },
+                  {
+                    "$ref": "#/$defs/ExecutionResultCitation"
+                  }
+                ]
+              },
+              "minItems": 1,
+              "title": "Citations",
+              "type": "array"
+            },
+            "statement_pointers": {
+              "default": [],
+              "description": "Statement paths in this answer, /sentences/i or /limitations/i.",
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "title": "Statement Pointers",
+              "type": "array"
+            },
+            "unresolved_reason": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Unresolved Reason"
+            }
+          },
+          "required": [
+            "aspect",
+            "request_quote",
+            "interpretation",
+            "citations"
+          ],
+          "title": "RequestFacet",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "aspect": {
+              "description": "Presentation describes requested answer format or length, grounded in request_quote; result_unit describes domain result units and requires domain evidence or an unresolved reason. Classification remains subject to semantic review.",
+              "enum": [
+                "target",
+                "scope",
+                "time",
+                "condition",
+                "comparison",
+                "result_unit",
+                "explanation",
+                "presentation"
+              ],
+              "title": "Aspect",
+              "type": "string"
+            },
+            "request_quote": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Request Quote",
+              "type": "string"
+            },
+            "interpretation": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Interpretation",
+              "type": "string"
+            },
+            "citations": {
+              "default": [],
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "execution_result": "#/$defs/ExecutionResultCitation",
+                    "meaning": "#/$defs/MeaningCitation",
+                    "source_quote": "#/$defs/SourceCitation",
+                    "source_scope": "#/$defs/SourceScopeCitation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/MeaningCitation"
+                  },
+                  {
+                    "$ref": "#/$defs/SourceCitation"
+                  },
+                  {
+                    "$ref": "#/$defs/SourceScopeCitation"
+                  },
+                  {
+                    "$ref": "#/$defs/ExecutionResultCitation"
+                  }
+                ]
+              },
+              "title": "Citations",
+              "type": "array"
+            },
+            "statement_pointers": {
+              "default": [],
+              "description": "Statement paths in this answer, /sentences/i or /limitations/i.",
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "title": "Statement Pointers",
+              "type": "array"
+            },
+            "unresolved_reason": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "aspect",
+            "request_quote",
+            "interpretation",
+            "unresolved_reason"
+          ],
+          "title": "RequestFacet",
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "aspect": {
+          "description": "Presentation describes requested answer format or length, grounded in request_quote; result_unit describes domain result units and requires domain evidence or an unresolved reason. Classification remains subject to semantic review.",
+          "enum": [
+            "target",
+            "scope",
+            "time",
+            "condition",
+            "comparison",
+            "result_unit",
+            "explanation",
+            "presentation"
+          ],
+          "title": "Aspect",
+          "type": "string"
+        },
+        "request_quote": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Request Quote",
+          "type": "string"
+        },
+        "interpretation": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Interpretation",
+          "type": "string"
+        },
+        "citations": {
+          "default": [],
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "execution_result": "#/$defs/ExecutionResultCitation",
+                "meaning": "#/$defs/MeaningCitation",
+                "source_quote": "#/$defs/SourceCitation",
+                "source_scope": "#/$defs/SourceScopeCitation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/MeaningCitation"
+              },
+              {
+                "$ref": "#/$defs/SourceCitation"
+              },
+              {
+                "$ref": "#/$defs/SourceScopeCitation"
+              },
+              {
+                "$ref": "#/$defs/ExecutionResultCitation"
+              }
+            ]
+          },
+          "title": "Citations",
+          "type": "array"
+        },
+        "statement_pointers": {
+          "default": [],
+          "description": "Statement paths in this answer, /sentences/i or /limitations/i.",
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Statement Pointers",
+          "type": "array"
+        },
+        "unresolved_reason": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unresolved Reason"
+        }
+      },
+      "required": [
+        "aspect",
+        "request_quote",
+        "interpretation"
+      ],
+      "title": "RequestFacet",
+      "type": "object"
+    },
+    "RequestPlan": {
+      "additionalProperties": false,
+      "description": "Candidate request interpretation, not an evaluation key or truth claim.",
+      "properties": {
+        "facets": {
+          "items": {
+            "$ref": "#/$defs/RequestFacet"
+          },
+          "minItems": 1,
+          "title": "Facets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "facets"
+      ],
+      "title": "RequestPlan",
+      "type": "object"
+    },
+    "RevisionRef": {
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Ref",
+          "type": "string"
+        },
+        "revision_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Revision Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "revision_digest"
+      ],
+      "title": "RevisionRef",
+      "type": "object"
+    },
+    "RuntimeStatement": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Text",
+          "type": "string"
+        },
+        "kind": {
+          "const": "runtime_state",
+          "title": "Kind",
+          "type": "string"
+        },
+        "citations": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "asset_state": "#/$defs/AssetStateCitation",
+                "execution_result": "#/$defs/ExecutionResultCitation",
+                "wiki_state": "#/$defs/WikiStateCitation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/WikiStateCitation"
+              },
+              {
+                "$ref": "#/$defs/AssetStateCitation"
+              },
+              {
+                "$ref": "#/$defs/ExecutionResultCitation"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Citations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text",
+        "kind",
+        "citations"
+      ],
+      "title": "RuntimeStatement",
+      "type": "object"
+    },
+    "SourceCitation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "source_quote",
+          "default": "source_quote",
+          "title": "Kind",
+          "type": "string"
+        },
+        "source_revision_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Source Revision Digest",
+          "type": "string"
+        },
+        "quotation": {
+          "$ref": "#/$defs/ProcessQuotation"
+        }
+      },
+      "required": [
+        "source_revision_digest",
+        "quotation"
+      ],
+      "title": "SourceCitation",
+      "type": "object"
+    },
+    "SourceScopeCitation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "source_scope",
+          "default": "source_scope",
+          "title": "Kind",
+          "type": "string"
+        },
+        "source_revision_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Source Revision Digest",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Explain the relevance of the complete source reading to this limited evidence gap. A scope receipt does not prove absence or authorize a claim about other sources.",
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_revision_digest",
+        "reason"
+      ],
+      "title": "SourceScopeCitation",
+      "type": "object"
+    },
+    "SourceStatement": {
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Text",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "source_reported_fact",
+            "interpretation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "citations": {
+          "description": "Include positive source/meaning evidence. A statement combining a supported interpretation and a scoped non-establishment may also cite the complete source scope. Scope alone is not positive evidence and never proves absence.",
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "meaning": "#/$defs/MeaningCitation",
+                "source_quote": "#/$defs/SourceCitation",
+                "source_scope": "#/$defs/SourceScopeCitation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/MeaningCitation"
+              },
+              {
+                "$ref": "#/$defs/SourceCitation"
+              },
+              {
+                "$ref": "#/$defs/SourceScopeCitation"
+              }
+            ]
+          },
+          "minItems": 1,
+          "title": "Citations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "text",
+        "kind",
+        "citations"
+      ],
+      "title": "SourceStatement",
+      "type": "object"
+    },
+    "WikiStateCitation": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "wiki_state",
+          "default": "wiki_state",
+          "title": "Kind",
+          "type": "string"
+        },
+        "context_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Context Digest",
+          "type": "string"
+        },
+        "field": {
+          "enum": [
+            "lane",
+            "dependency_completeness",
+            "source_fidelity",
+            "domain_verdict",
+            "task_readiness",
+            "display_status"
+          ],
+          "title": "Field",
+          "type": "string"
+        }
+      },
+      "required": [
+        "context_digest",
+        "field"
+      ],
+      "title": "WikiStateCitation",
+      "type": "object"
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/NativeAnswerComposition"
+    },
+    {
+      "$ref": "#/$defs/NativePreparedComposition"
+    },
+    {
+      "$ref": "#/$defs/NativeAuthoringComposition"
+    }
+  ]
+}

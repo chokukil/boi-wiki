@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boi.internal/schemas/boi-profile-v02.schema.json",
+  "title": "BoI protected Profile 0.2",
+  "description": "Structural schema. Runtime policy and cross-field authority checks are fail-closed in okf_v02.py.",
+  "type": "object",
+  "required": [
+    "okf_version", "boi_profile_version", "profiles", "type", "title", "description",
+    "boi_id", "visibility", "classification", "owner", "acl_policy", "generated",
+    "sources", "status", "stale_after"
+  ],
+  "properties": {
+    "okf_version": {"const": "0.2"},
+    "boi_profile_version": {"const": "0.2"},
+    "profiles": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"enum": ["boi/sci@0.7.0", "boi/domain@0.1.0", "boi/domain@0.2.0", "boi/domain@0.3.0", "boi/domain@0.4.0", "boi/domain@0.5.0", "boi/data-mapping@0.1.0", "boi/data-mapping@0.2.0", "boi/query@0.1.0", "boi/query@0.2.0", "boi/query@0.3.0", "boi/query@0.4.0", "boi/content@0.1.0"]}
+    },
+    "type": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "description": {"type": "string", "minLength": 1},
+    "boi_id": {"type": "string", "minLength": 1},
+    "visibility": {"enum": ["private", "team", "public"]},
+    "classification": {"enum": ["internal", "confidential", "restricted"]},
+    "owner": {"type": "string", "minLength": 1},
+    "acl_policy": {"type": "string", "minLength": 1},
+    "generated": {
+      "type": "object", "required": ["by", "at"],
+      "properties": {"by": {"type": "string", "minLength": 1}, "at": {"type": "string", "format": "date-time"}},
+      "additionalProperties": true
+    },
+    "sources": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "required": ["type", "resource", "relation"],
+        "properties": {
+          "type": {"type": "string", "minLength": 1},
+          "resource": {"type": "string", "minLength": 1},
+          "relation": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": true
+      }
+    },
+    "status": {"enum": ["draft", "stable", "deprecated"]},
+    "stale_after": {"type": "string", "format": "date-time"},
+    "science": {"$ref": "#/$defs/science"},
+    "domain": {"$ref": "#/$defs/domain"},
+    "data_mapping": {"$ref": "#/$defs/dataMapping"},
+    "query": {"$ref": "#/$defs/query"},
+    "runtime": {"type": "string", "minLength": 1},
+    "parameters": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/officialParameter"}
+    },
+    "computation": {"type": "string", "minLength": 1},
+    "executor": {"$ref": "#/$defs/officialExecutor"},
+    "attester": {"$ref": "#/$defs/officialAttester"},
+    "content": {"$ref": "#/$defs/content"},
+    "source_refs": false,
+    "generated_from": false,
+    "timestamp": false
+  },
+  "allOf": [
+    {"if": {"properties": {"profiles": {"contains": {"const": "boi/sci@0.7.0"}}}}, "then": {"required": ["science"]}},
+    {"if": {"properties": {"profiles": {"contains": {"const": "boi/domain@0.1.0"}}}}, "then": {"required": ["domain"]}},
+    {"if": {"properties": {"profiles": {"contains": {"const": "boi/domain@0.2.0"}}}}, "then": {"required": ["domain"]}},
+    {"if": {"properties": {"profiles": {"contains": {"const": "boi/domain@0.3.0"}}}}, "then": {"required": ["domain"]}},
+    {"if": {"properties": {"profiles": {"contains": {"const": "boi/domain@0.4.0"}}}}, "then": {"required": ["domain"], "properties": {"domain": {"$ref": "domain-profile-v04.schema.json"}}}},
+    {"if": {"properties": {"profiles": {"contains": {"const": "boi/domain@0.5.0"}}}}, "then": {"required": ["domain"], "properties": {"domain": {"$ref": "domain-profile-v05.schema.json"}}}},
+    {"if": {"properties": {"profiles": {"contains": {"const": "boi/data-mapping@0.1.0"}}}}, "then": {"required": ["data_mapping"]}},
+    {"if": {"properties": {"profiles": {"contains": {"const": "boi/query@0.1.0"}}}}, "then": {"required": ["query"]}},
+    {
+      "if": {"properties": {"profiles": {"contains": {"const": "boi/query@0.2.0"}}}},
+      "then": {
+        "oneOf": [
+          {
+            "properties": {
+              "type": {"const": "Attested Computation"},
+              "query": false
+            },
+            "required": ["runtime", "parameters", "executor", "attester"]
+          },
+          {
+            "properties": {"type": {"const": "boi/Exploratory Query Contract"}},
+            "required": ["query"]
+          }
+        ]
+      }
+    },
+    {"if": {"properties": {"profiles": {"contains": {"const": "boi/content@0.1.0"}}}}, "then": {"required": ["content"]}}
+  ],
+  "$defs": {
+    "officialParameter": {
+      "type": "object",
+      "required": ["name", "type", "required"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "officialExecutor": {
+      "type": "object",
+      "required": ["resource", "receipt"],
+      "properties": {
+        "resource": {"type": "string", "minLength": 1},
+        "receipt": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        }
+      },
+      "additionalProperties": true
+    },
+    "officialAttester": {
+      "type": "object",
+      "required": ["resource"],
+      "properties": {"resource": {"type": "string", "minLength": 1}},
+      "additionalProperties": true
+    },
+    "science": {
+      "type": "object", "required": ["kind", "layer"],
+      "properties": {
+        "kind": {"enum": ["formula", "constant", "unit", "derivation", "dictionary", "case", "claim", "law", "principle"]},
+        "layer": {"enum": ["L0", "L1", "L2", "L3", "L4"]}
+      },
+      "additionalProperties": true
+    },
+    "domain": {
+      "type": "object", "required": ["kind", "id", "authority_basis"],
+      "properties": {
+        "kind": {"enum": ["Term", "ObjectType", "PropertyDefinition", "RelationType", "ValueType", "Metric", "Rule"]},
+        "id": {"type": "string", "minLength": 1},
+        "authority_basis": {"enum": ["policy", "master_data", "system_of_record", "steward_review", "observed", "source_reported"]},
+        "source": false, "source_id": false, "table": false, "column": false, "physical": false,
+        "sql": false, "raw_sql": false, "dialect": false, "schema_snapshot": false, "schema_snapshot_digest": false
+      },
+      "additionalProperties": true
+    },
+    "dataMapping": {
+      "type": "object", "required": ["mapping_id", "domain_ref", "physical", "schema_snapshot_digest"],
+      "properties": {
+        "mapping_id": {"type": "string", "minLength": 1},
+        "domain_ref": {"type": "string", "minLength": 1},
+        "physical": {
+          "type": "object", "required": ["source", "table", "column"],
+          "properties": {"source": {"type": "string"}, "table": {"type": "string"}, "column": {"type": "string"}},
+          "additionalProperties": true
+        },
+        "schema_snapshot_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "relationship_contract": {"$ref": "cardinality-query-shape-v01.schema.json#/$defs/relationshipContract"},
+        "data_quality_receipt": {"$ref": "cardinality-query-shape-v01.schema.json#/$defs/dataQualityReceipt"}
+      },
+      "additionalProperties": true
+    },
+    "query": {
+      "type": "object", "required": ["query_spec_id", "logical_plan", "parameters"],
+      "properties": {
+        "query_spec_id": {"type": "string", "minLength": 1},
+        "logical_plan": {"type": "object"},
+        "parameters": {"type": "array"},
+        "result_shape_contract": {"$ref": "cardinality-query-shape-v01.schema.json#/$defs/resultShapeContract"},
+        "source": false, "source_id": false, "table": false, "column": false, "physical": false,
+        "dialect": false, "schema_snapshot": false, "schema_snapshot_digest": false,
+        "question": false, "question_text": false, "natural_language_question": false,
+        "golden": false, "golden_answer": false, "golden_digest": false,
+        "expected_digest": false, "expected_result_digest": false, "expected_fixture_contract": false,
+        "multi_result_plan": false,
+        "raw_sql": false, "sql": false, "executed_sql": false, "repaired_sql": false
+      },
+      "additionalProperties": true
+    },
+    "content": {
+      "type": "object", "required": ["kind", "legacy_type"],
+      "properties": {
+        "kind": {"enum": ["action", "action-skill", "action-spec", "data-context", "event-skill", "event-type", "harness", "manual", "reference", "report", "sop", "source-wiki-page", "validation-report", "workflow-definition"]},
+        "legacy_type": {"type": "string", "pattern": "^boi/[a-z0-9-]+$"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

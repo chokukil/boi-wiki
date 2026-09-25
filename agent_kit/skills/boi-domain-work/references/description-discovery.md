@@ -1,0 +1,13 @@
+# Description and language recovery
+
+Use this path when a natural-language description does not reach relevant definitions, or accessible source snippets use a different language. Semantic search being unavailable is a retrieval limitation, not evidence that the requested knowledge is absent. Keep successful direct retrieval short; do not translate every request or require a full review workflow for a source explanation.
+
+Keep the original question as the answer request. Separate provisional retrieval wording from the requested target, relationship and direction, conditions, negation, time and numerical role. Search with `boi_search`, inspect the channel states and available descriptions, and read the applicable pack/definition before fixing the interpretation.
+
+When language mismatch plausibly explains missing candidates, the host may translate the user's ordinary description into the language visible in the accessible material and submit that candidate query through the same tool. Preserve proper names, supplied identifiers, numbers and units; do not invent an acronym expansion, internal process name, accepted alias or source fact. Record the actual original and candidate queries. This is host interpretation for discovery, not a stored terminology equivalence. Never add a per-question translation table to the engine or treat a guessed translation as reviewed knowledge.
+
+Compare the additional candidates with the original question. Read the exact returned revision and relevant source/meaning fields. A high rank or shared method/material does not establish that the target, role or relation fits. A changed target may require a lower-ranked candidate; a reversed relation or measurement-versus-setting request may reach the same document but require a different answer. Preserve that distinction in the existing request plan and claim review.
+
+Once useful evidence is found, stop expanding and answer what it supports. If the reformulation adds no useful evidence, avoid repeated synonym guessing or increasing limits until a preferred answer appears. Use accessible definitions/catalog continuation when justified by the question, or state the specific remaining retrieval or source limitation. Ask the user only about an unresolved ambiguity that changes the answer, not for internal terminology or IDs.
+
+Search hits are candidates, not an exact set, factual approval or evidence of current operation. Obtain full lists/counts through the existing set/query contracts. Check each final claim against the original question and source; retain supported explanation even when current observations or other requested facts are missing. Do not silently change the question to the reformulated query in answer preparation.

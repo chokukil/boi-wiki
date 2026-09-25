@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Event Broker · BoI Wiki</title>
+  <title>Event 기술 로그 · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
   <script src="{{ asset_url('events.js') }}" defer></script>
 </head>
 <body>
   {% include "_app_shell.html" %}
-  {% with title="Event 발생 이력", description="발생한 업무 Event와 trace 흐름을 확인합니다.", eyebrow=None, primary_action=None %}
+  {% with title="Event 기술 로그", description="운영 진단을 위해 Event row와 trace 정보를 확인합니다.", eyebrow=None, primary_action=None %}
     {% include "_section_intro.html" %}
   {% endwith %}
   <section class="toolbar page-filterbar event-filterbar">

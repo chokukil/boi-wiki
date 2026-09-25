@@ -63,4 +63,4 @@ python scripts/check_local_full_datalake.py --base-url http://localhost:28000 --
 
 ## Example
 
-- [Workflow/Task Builder Step-by-step](/public/boi-wiki-manual/sop-workflows/workflow-task-builder-step-by-step.md) shows where SOP authoring stops at evidence requirements and where runtime Data Lake attachment begins.
+- [Workflow/Task Builder 따라하기](/docs/boi:public:boi-wiki-manual:sop-workflows:workflow-task-builder-step-by-step)는 SOP의 확인 자료 설계와 runtime 자료 연결의 경계를 보여준다.

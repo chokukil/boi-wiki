@@ -25,11 +25,11 @@ review:
 
 # Data Lake Query Harness
 
-BoI Wiki core는 OKF 내용을 DB에 넣지 않고 Markdown/JSONL 기반으로 동작한다. 사용자-facing Data Lake는 MinIO artifact store다. PostgreSQL은 Data Lake 필수 구성요소가 아니라 선택형 `local-full-legacy-db-demo` structured query adapter 예시다.
+이 하네스는 기존 Markdown/JSONL 문서와 MinIO artifact 흐름을 설명한다. DB 기반 MCP 지식 작업은 별도로 PostgreSQL에 게시·revision·영향 검토 상태를 보존하며, 원천 SQLite·조회 게이트웨이는 읽기 전용으로 접근한다.
 
-Agent, MCP, UI는 PostgreSQL에 직접 접속하지 않고, MinIO도 BoI API/MCP artifact 도구를 통해서만 사용한다. 파일 첨부는 Markdown body에 원문을 넣지 않고 Data Lake artifact로 저장한다. SQL-style 조회는 Legacy DB Demo adapter가 명시적으로 켜져 있을 때만 사용한다. 재사용할 source profile은 `data_lake_import_sources` 또는 `POST /api/data-lake/import`로 private OKF Data Context BoI에 materialize한다.
+Agent, MCP, UI는 원천 DB와 MinIO에 직접 접속하지 않고 BoI API/MCP 도구를 사용한다. 파일 첨부는 Markdown body에 원문을 넣지 않고 Data Lake artifact로 저장한다. DB 의미 준비는 `boi_native_query`의 `source_discover`부터 시작해 기존 source·Profile·게시 계약을 따른다. 물리 조회는 검토된 Profile을 연결한 NativeQueryHost에서 실행한다. 기존 파일 기반 Data Context는 `data_lake_import_sources` 또는 `POST /api/data-lake/import` 경로를 유지한다.
 
-선택 fixture source는 `/home/chokukil/ontology`의 JSON/CSV이며 런타임 의존성이 아니다. 큰 raw table은 LLM prompt에 넣지 않고 profile, sample, chart, query result artifact 링크로 연결한다.
+선택 fixture source는 관리자가 별도로 제공한 JSON/CSV이며 런타임 의존성이 아니다. 큰 raw table은 LLM prompt에 넣지 않고 profile, sample, chart, query result artifact 링크로 연결한다.
 
 ## Artifact Flow
 

@@ -1,0 +1,5111 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Literal
+from urllib.parse import unquote, urlsplit
+
+from fastapi import HTTPException
+
+from ..task_completion import evaluate_evidence_requirements
+from .harness import (
+    HARNESS_PARETO_METRICS,
+    HARNESS_REQUIRED_PARETO_DIMENSIONS,
+    HarnessRegistry,
+)
+from .models import (
+    CapabilityDefinition,
+    ContextAnchor,
+    ContextManifest,
+    ContextItemUsage,
+    EvidenceLedgerEntry,
+    EvidenceRef,
+    ExitCriteriaResult,
+    HarnessChangeHypothesis,
+    HarnessCheck,
+    HarnessEvaluationReport,
+    HarnessFailureRecord,
+    HarnessResult,
+    KnowledgeCandidatePatchRequest,
+    KnowledgeCandidatePromoteRequest,
+    KnowledgeCandidateRef,
+    LoopKind,
+    LoopPolicy,
+    LoopTriggerKind,
+    LoopDelta,
+    ProgressDelta,
+    Principal,
+    RiskLevel,
+    TaskCompletionDesign,
+    TaskMode,
+    WorkAssetKind,
+    WorkContextPack,
+    WorkIntent,
+    WorkOperation,
+    WorkRunCancelRequest,
+    WorkRunContinueRequest,
+    WorkRunCheckpoint,
+)
+from .repository import KnowledgeRepository
+from .search import HybridSearchService
+from .store import AgentV2Store, now_iso
+
+
+def _id(prefix: str, value: str = "") -> str:
+    digest = hashlib.sha256((value or f"{prefix}:{now_iso()}").encode("utf-8")).hexdigest()[:32]
+    return f"{prefix}_{digest}"
+
+
+def _compact(value: Any, limit: int) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()[:limit]
+
+
+def _context_token_cost(*values: Any) -> int:
+    text = " ".join(
+        value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+        for value in values
+        if value not in (None, "", [], {})
+    )
+    return max(0, (len(text.encode("utf-8")) + 3) // 4)
+
+
+def _string_list(value: Any, *, limit: int = 50) -> list[str]:
+    values = value if isinstance(value, (list, tuple, set)) else [value] if value else []
+    return list(dict.fromkeys(str(item).strip() for item in values if str(item).strip()))[:limit]
+
+
+def _harness_pareto_analysis(metric_deltas: dict[str, Any]) -> dict[str, Any]:
+    numeric = {
+        str(key): float(value)
+        for key, value in metric_deltas.items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+    }
+    unknown = sorted(set(numeric) - set(HARNESS_PARETO_METRICS))
+    covered = sorted(
+        {
+            HARNESS_PARETO_METRICS[key][0]
+            for key in numeric
+            if key in HARNESS_PARETO_METRICS
+        }
+    )
+    missing = sorted(HARNESS_REQUIRED_PARETO_DIMENSIONS - set(covered))
+    regressions = sorted(
+        key
+        for key, value in numeric.items()
+        if key in HARNESS_PARETO_METRICS
+        and (
+            (HARNESS_PARETO_METRICS[key][1] == "maximize" and value < 0)
+            or (HARNESS_PARETO_METRICS[key][1] == "minimize" and value > 0)
+        )
+    )
+    return {
+        "metric_deltas": numeric,
+        "directions": {
+            key: HARNESS_PARETO_METRICS[key][1]
+            for key in numeric
+            if key in HARNESS_PARETO_METRICS
+        },
+        "covered_dimensions": covered,
+        "missing_dimensions": missing,
+        "unknown_metrics": unknown,
+        "regressed_metrics": regressions,
+        "complete": not missing and not unknown,
+        "no_regression": not regressions,
+    }
+
+
+_HARNESS_PATCH_READ_ONLY_PATHS = (
+    ".git",
+    ".env",
+    "tests/fixtures",
+    "data/agent_catalog",
+    "boi_api/app/v2/evaluation.py",
+    "scripts/evaluate_agent_v2_work_scenarios.py",
+)
+
+
+def _structured_progress(delta: LoopDelta, *, sequence: int) -> ProgressDelta:
+    metadata = delta.metadata if isinstance(delta.metadata, dict) else {}
+    kind_map = {
+        "new_evidence": "evidence",
+        "action_result": "tool_result",
+        "human_input": "human_input",
+        "new_artifact": "artifact",
+        "state_transition": "state_transition",
+        "blocker": "blocker",
+        "knowledge_candidate": "artifact",
+        "no_progress": "strategy_change" if metadata.get("strategy") else "blocker",
+    }
+    progress_kind = kind_map[delta.kind]
+    entity_refs = _string_list(metadata.get("entity_refs"))
+    evidence_refs = _string_list(metadata.get("evidence_refs"))
+    tool_result_refs = _string_list(metadata.get("tool_result_refs"))
+    artifact_refs = _string_list(metadata.get("artifact_refs"))
+    if delta.ref:
+        if progress_kind == "evidence":
+            evidence_refs = _string_list([*evidence_refs, delta.ref])
+        elif progress_kind == "tool_result":
+            tool_result_refs = _string_list([*tool_result_refs, delta.ref])
+        elif progress_kind == "artifact":
+            artifact_refs = _string_list([*artifact_refs, delta.ref])
+        elif progress_kind == "human_input":
+            entity_refs = _string_list([*entity_refs, delta.ref])
+    completion_changes = metadata.get("completion_changes")
+    if not isinstance(completion_changes, dict):
+        completion_changes = {}
+    for key in ("work_record", "verified_binding_refs", "completion_state"):
+        if key in metadata:
+            completion_changes[key] = metadata[key]
+    state_transition = metadata.get("state_transition")
+    if isinstance(state_transition, dict):
+        completion_changes = {**completion_changes, **state_transition}
+    blocker_code = str(metadata.get("blocker_code") or ("no_progress" if delta.kind == "no_progress" else "")).strip()
+    strategy = str(metadata.get("strategy") or "").strip()
+    strategy_refs = _string_list(
+        [
+            *_string_list(metadata.get("alternate_evidence_refs")),
+            *_string_list(metadata.get("alternate_tool_refs")),
+            *_string_list(metadata.get("approach_refs")),
+        ]
+    )
+    error_disposition = str(metadata.get("error_disposition") or "").strip()
+    allowed_dispositions = {
+        "", "transient_retry", "semantic_repair", "human_interrupt", "policy_stop", "unexpected_failure"
+    }
+    if error_disposition not in allowed_dispositions:
+        error_disposition = "unexpected_failure"
+    return ProgressDelta(
+        delta_id=_id("progress", f"{sequence}:{delta.kind}:{delta.ref}:{json.dumps(metadata, sort_keys=True, default=str)}"),
+        kind=progress_kind,  # type: ignore[arg-type]
+        entity_refs=entity_refs,
+        evidence_refs=evidence_refs,
+        tool_result_refs=tool_result_refs,
+        artifact_refs=artifact_refs,
+        completion_changes=completion_changes,
+        blocker_code=blocker_code,
+        strategy=strategy,
+        strategy_refs=strategy_refs,
+        error_disposition=error_disposition,  # type: ignore[arg-type]
+        summary=_compact(delta.summary, 2000),
+    )
+
+
+def _progress_signature(delta: ProgressDelta) -> str:
+    """Hash only durable domain changes; prose cannot manufacture progress."""
+
+    value = json.dumps(
+        {
+            "kind": delta.kind,
+            "entity_refs": sorted(delta.entity_refs),
+            "evidence_refs": sorted(delta.evidence_refs),
+            "tool_result_refs": sorted(delta.tool_result_refs),
+            "artifact_refs": sorted(delta.artifact_refs),
+            "completion_changes": delta.completion_changes,
+            "blocker_code": delta.blocker_code,
+            "strategy_refs": sorted(delta.strategy_refs),
+            "error_disposition": delta.error_disposition,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+class ContextCompiler:
+    def __init__(
+        self,
+        repository: KnowledgeRepository,
+        store: AgentV2Store,
+        page_context_provider: Callable[[str, str], dict[str, Any]] | None = None,
+    ):
+        self.repository = repository
+        self.store = store
+        self.page_context_provider = page_context_provider
+
+    @staticmethod
+    def _canonical_url(value: str) -> str:
+        parsed = urlsplit(str(value or ""))
+        return unquote(parsed.path or "/").rstrip("/") or "/"
+
+    def page_anchor(self, principal: Principal, page_ref: str) -> ContextAnchor | None:
+        path = self._canonical_url(page_ref)
+        records = self.repository.authoritative_records(principal, include_drafts=True)
+        if self.page_context_provider is not None:
+            try:
+                page_context = self.page_context_provider(page_ref, principal.employee_id) or {}
+            except Exception:
+                page_context = {}
+            if not page_context.get("resolved"):
+                return ContextAnchor(
+                    ref=path,
+                    kind=str(page_context.get("page_kind") or "page"),
+                    title="",
+                    url=page_ref,
+                    source="page",
+                    resolved=False,
+                    context_resolution=(
+                        "ontology_only"
+                        if page_context.get("context_resolution") == "ontology_search_only"
+                        else "none"
+                    ),
+                )
+            candidate_refs = [
+                str(page_context.get("boi_id") or ""),
+                str(page_context.get("source_ref") or ""),
+            ]
+            candidate_urls = [str(page_context.get("url") or ""), page_ref]
+            record = next(
+                (
+                    item
+                    for item in records
+                    if item.record_id in candidate_refs
+                    or any(self._canonical_url(item.url) == self._canonical_url(url) for url in candidate_urls if url)
+                ),
+                None,
+            )
+            title = str(page_context.get("title") or (record.title if record else "") or "현재 화면")
+            revision_seed = (
+                f"{record.record_id}:{record.timestamp}:{record.status}"
+                if record
+                else json.dumps(page_context, ensure_ascii=False, sort_keys=True, default=str)
+            )
+            if page_context.get("knowledge_context"):
+                revision_seed += ":" + str(page_context["knowledge_context"].get("content_digest", ""))
+            return ContextAnchor(
+                ref=(record.record_id if record else candidate_refs[0] or path),
+                kind=(record.kind if record else str(page_context.get("page_kind") or "page")),
+                title=title,
+                url=str(page_context.get("url") or page_ref),
+                revision=hashlib.sha256(revision_seed.encode()).hexdigest()[:16],
+                source="page",
+                resolved=True,
+                context_resolution="route",
+                navigation_guidance=dict(page_context.get("navigation_guidance") or {}),
+                knowledge_context=dict(page_context.get("knowledge_context") or {}),
+            )
+        record = None
+        if path.startswith("/docs/"):
+            ref = path.removeprefix("/docs/")
+            record = next((item for item in records if item.record_id == ref), None)
+        if record is None:
+            record = next((item for item in records if self._canonical_url(item.url) == path), None)
+        if record is None:
+            return ContextAnchor(
+                ref=path,
+                kind="page",
+                title="",
+                url=page_ref,
+                source="page",
+                resolved=False,
+                context_resolution="none",
+            )
+        revision = hashlib.sha256(f"{record.record_id}:{record.timestamp}:{record.status}".encode()).hexdigest()[:16]
+        return ContextAnchor(
+            ref=record.record_id,
+            kind=record.kind,
+            title=record.title,
+            url=record.url,
+            revision=revision,
+            source="page",
+            resolved=True,
+            context_resolution="ontology_only",
+        )
+
+    def goal_anchor(
+        self,
+        principal: Principal,
+        session: dict[str, Any],
+        task_ref: str,
+        *,
+        subject_ref: str = "",
+        subject_title: str = "",
+    ) -> ContextAnchor | None:
+        if task_ref:
+            return ContextAnchor(ref=task_ref, kind="task", title="진행 중 Task", source="task", resolved=True)
+        if subject_ref:
+            return ContextAnchor(
+                ref=subject_ref,
+                kind=subject_ref.partition(":")[0] or "subject",
+                title=subject_title or subject_ref,
+                source="goal",
+                resolved=True,
+                context_resolution="ontology_only",
+            )
+        artifact_id = str(session.get("active_artifact_id") or "")
+        if not artifact_id:
+            return None
+        artifact = self.store.get("artifacts", artifact_id) or {}
+        if artifact.get("employee_id") != principal.employee_id and not principal.is_admin:
+            return None
+        return ContextAnchor(
+            ref=artifact_id,
+            kind=str(artifact.get("capability_id") or "artifact"),
+            title=str(artifact.get("title") or "진행 중 결과"),
+            url=f"/agent?session={session.get('session_id') or ''}&artifact={artifact_id}",
+            revision=str(artifact.get("revision") or 1),
+            source="goal",
+            resolved=True,
+        )
+
+    def compile(
+        self,
+        *,
+        principal: Principal,
+        definition: CapabilityDefinition,
+        goal: str,
+        page_ref: str,
+        task_ref: str,
+        task_mode: TaskMode,
+        task: dict[str, Any],
+        evidence: list[EvidenceRef],
+        session: dict[str, Any],
+        source_set: dict[str, Any],
+        external_ai_summary: str,
+        external_refs: list[str],
+        subject_ref: str = "",
+        subject_title: str = "",
+        model_profile: str = "default",
+        context_token_budget: int = 0,
+    ) -> WorkContextPack:
+        page_anchor = self.page_anchor(principal, page_ref)
+        goal_anchor = self.goal_anchor(
+            principal,
+            session,
+            task_ref,
+            subject_ref=subject_ref,
+            subject_title=subject_title,
+        )
+        context_token_budget = max(0, min(int(context_token_budget or 0), 2_000_000))
+        if page_anchor and page_anchor.navigation_guidance and context_token_budget > 0:
+            guidance_cost = _context_token_cost(page_anchor.model_dump(mode="json"))
+            base_cost = _context_token_cost(goal, task, external_ai_summary)
+            if base_cost + guidance_cost > context_token_budget:
+                # Do not truncate conditions or describe a preview as a complete read.
+                page_anchor.navigation_guidance = {
+                    **{key: value for key, value in page_anchor.navigation_guidance.items() if key != "body"},
+                    "read_scope": "not_read_context_capacity",
+                }
+        if page_anchor and page_anchor.knowledge_context and context_token_budget > 0:
+            if (_context_token_cost(goal, task, external_ai_summary)
+                    + _context_token_cost(page_anchor.model_dump(mode="json")) > context_token_budget):
+                # Keep the digest for a subsequent read, never partial conditions.
+                page_anchor.knowledge_context = {
+                    "content_digest": page_anchor.knowledge_context.get("content_digest", ""),
+                    "read_scope": "not_read_context_capacity",
+                }
+        fixed_token_cost = _context_token_cost(
+            goal,
+            task.get("title") or task.get("name") or "",
+            task.get("completion_design") or {},
+            external_ai_summary,
+            page_anchor.model_dump(mode="json") if page_anchor else {},
+        )
+        # The provider resolver already reserves output and runtime headroom.
+        # Keep selected evidence intact; when the remaining physical capacity
+        # is exhausted, exclude the next ranked item instead of truncating it.
+        evidence_budget = (
+            max(0, context_token_budget - fixed_token_cost)
+            if context_token_budget > 0
+            else None
+        )
+        selected: list[EvidenceRef] = []
+        budget_excluded_refs: list[str] = []
+        evidence_usage: list[ContextItemUsage] = []
+        selected_token_cost = 0
+        for item in evidence:
+            best_chunk = item.metadata.get("best_chunk") if isinstance(item.metadata, dict) else {}
+            item_cost = _context_token_cost(
+                item.title,
+                item.summary,
+                (
+                    best_chunk.get("content") or best_chunk.get("text") or ""
+                    if isinstance(best_chunk, dict)
+                    else ""
+                ),
+            )
+            within_token_budget = (
+                evidence_budget is None
+                or selected_token_cost + item_cost <= evidence_budget
+            )
+            is_selected = within_token_budget
+            if is_selected:
+                selected.append(item)
+                selected_token_cost += item_cost
+            else:
+                budget_excluded_refs.append(item.evidence_id)
+            evidence_usage.append(
+                ContextItemUsage(
+                    item_ref=item.evidence_id,
+                    item_kind="evidence",
+                    provenance=item.source,
+                    revision=str(
+                        (item.metadata or {}).get("revision")
+                        or (best_chunk.get("revision") if isinstance(best_chunk, dict) else "")
+                        or ""
+                    ),
+                    token_cost=item_cost,
+                    selected=is_selected,
+                    selection_reason=(
+                        "ranked_evidence"
+                        if is_selected
+                        else "provider_context_capacity"
+                    ),
+                    source_refs=[item.evidence_id],
+                )
+            )
+        task_exit = task.get("exit_criteria") or task.get("completion_conditions") or definition.completion_criteria
+        required = task.get("required_evidence") or task.get("evidence_requirements") or []
+        task_exit = [task_exit] if isinstance(task_exit, str) else list(task_exit or [])
+        required = [required] if isinstance(required, str) else list(required or [])
+        available_evidence_refs = {item.evidence_id for item in selected if item.evidence_id}
+        for item in selected:
+            for key in ("satisfies_evidence_refs", "requirement_refs"):
+                values = item.metadata.get(key) if isinstance(item.metadata, dict) else None
+                available_evidence_refs.update(_string_list(values, limit=100))
+        missing = [item for item in required if str(item).strip() not in available_evidence_refs]
+        chunk_refs = list(
+            dict.fromkeys(
+                str(item.metadata.get("best_chunk", {}).get("chunk_id") or "")
+                for item in selected
+                if isinstance(item.metadata.get("best_chunk"), dict)
+                and item.metadata.get("best_chunk", {}).get("chunk_id")
+            )
+        )
+        metadata: dict[str, Any] = {}
+        if page_anchor and page_anchor.resolved:
+            record = next(
+                (item for item in self.repository.authoritative_records(principal, include_drafts=True) if item.record_id == page_anchor.ref),
+                None,
+            )
+            if record:
+                for key in ("workflow", "event_type", "action_key", "source_refs", "owner", "status", "tags"):
+                    if record.metadata.get(key) not in (None, "", [], {}):
+                        metadata[key] = record.metadata.get(key)
+        now = datetime.now(timezone.utc)
+        playbook_items: list[dict[str, Any]] = []
+        for item in self.store.list("context_playbook_items", limit=1000):
+            visibility = str(item.get("visibility") or "private")
+            owner_visible = str(item.get("employee_id") or "") == principal.employee_id
+            team_visible = visibility == "team" and bool(set(item.get("team_ids") or []) & set(principal.teams))
+            if not (owner_visible or team_visible):
+                continue
+            item_status = str(item.get("status") or "")
+            if item_status not in {"provisional", "active"}:
+                continue
+            if item_status == "provisional" and not owner_visible:
+                continue
+            valid_until = str((item.get("freshness") or {}).get("valid_until") or "")
+            if valid_until:
+                try:
+                    expires = datetime.fromisoformat(valid_until.replace("Z", "+00:00"))
+                    if expires.tzinfo is None:
+                        expires = expires.replace(tzinfo=timezone.utc)
+                    if expires <= now:
+                        continue
+                except ValueError:
+                    continue
+            profiles = [str(value) for value in item.get("model_profiles") or ["default"]]
+            if "default" not in profiles and model_profile not in profiles:
+                continue
+            applies_to = item.get("applies_to") if isinstance(item.get("applies_to"), dict) else {}
+            if applies_to.get("capability_ids") and definition.capability_id not in applies_to["capability_ids"]:
+                continue
+            if applies_to.get("task_refs") and task_ref not in applies_to["task_refs"]:
+                continue
+            playbook_items.append(item)
+        playbook_items.sort(
+            key=lambda item: (
+                str(item.get("status") or "") == "active",
+                len(item.get("successful_run_ids") or []) - len(item.get("failed_run_ids") or []),
+                str(item.get("updated_at") or item.get("created_at") or ""),
+            ),
+            reverse=True,
+        )
+        active_harness = self.store.get(
+            "harness_active_versions",
+            f"context.work:{model_profile}",
+        ) or {}
+        active_changes = (
+            active_harness.get("changes")
+            if isinstance(active_harness.get("changes"), dict)
+            else {}
+        )
+        playbook_policy = (
+            active_changes.get("context_playbook")
+            if isinstance(active_changes.get("context_playbook"), dict)
+            else {}
+        )
+        pinned_ids = [str(item) for item in playbook_policy.get("item_ids") or [] if str(item)]
+        if pinned_ids:
+            by_id = {str(item.get("item_id") or ""): item for item in playbook_items}
+            pinned = [by_id[item_id] for item_id in pinned_ids if item_id in by_id]
+            remainder = [item for item in playbook_items if str(item.get("item_id") or "") not in pinned_ids]
+            playbook_items = (
+                [*remainder, *pinned]
+                if playbook_policy.get("order") == "append"
+                else [*pinned, *remainder]
+            )
+        try:
+            configured_playbook_limit = int(playbook_policy.get("max_items") or 0)
+        except (TypeError, ValueError):
+            configured_playbook_limit = 0
+        if configured_playbook_limit > 0:
+            playbook_items = playbook_items[: min(1000, configured_playbook_limit)]
+        playbook_usage = [
+            ContextItemUsage(
+                item_ref=str(item.get("item_id") or ""),
+                item_kind="playbook",
+                provenance="context_playbook",
+                revision=str(item.get("revision") or 1),
+                token_cost=_context_token_cost(
+                    item.get("description") or "",
+                    item.get("conditions") or [],
+                    item.get("source_refs") or [],
+                ),
+                selected=True,
+                selection_reason="active_context_playbook",
+                source_refs=[str(ref) for ref in item.get("source_refs") or [] if str(ref)],
+            )
+            for item in playbook_items
+            if item.get("item_id")
+        ]
+        playbook_budget = (
+            max(0, context_token_budget - fixed_token_cost - selected_token_cost)
+            if context_token_budget > 0
+            else None
+        )
+        accepted_playbook_usage: list[ContextItemUsage] = []
+        accepted_playbook_cost = 0
+        for usage in playbook_usage:
+            if (
+                playbook_budget is not None
+                and accepted_playbook_cost + usage.token_cost > playbook_budget
+            ):
+                continue
+            accepted_playbook_usage.append(usage)
+            accepted_playbook_cost += usage.token_cost
+        playbook_usage = accepted_playbook_usage
+        accepted_playbook_ids = {item.item_ref for item in playbook_usage}
+        playbook_items = [
+            item
+            for item in playbook_items
+            if str(item.get("item_id") or "") in accepted_playbook_ids
+        ]
+        if playbook_items:
+            metadata["context_playbook"] = [
+                {
+                    "item_id": item.get("item_id"),
+                    "description": item.get("description"),
+                    "conditions": item.get("conditions") or [],
+                    "source_refs": item.get("source_refs") or [],
+                    "status": item.get("status"),
+                    "revision": item.get("revision") or 1,
+                    "model_profiles": item.get("model_profiles") or ["default"],
+                }
+                for item in playbook_items
+            ]
+        else:
+            metadata.pop("context_playbook", None)
+        source_set_excluded = [str(item) for item in source_set.get("excluded") or []]
+        all_excluded = list(dict.fromkeys([*source_set_excluded, *budget_excluded_refs]))
+        exclusion_reasons = {
+            **{item: "user_excluded" for item in source_set_excluded},
+            **{
+                item.item_ref: item.selection_reason
+                for item in evidence_usage
+                if not item.selected and item.item_ref
+            },
+        }
+        context_items = [*evidence_usage, *playbook_usage]
+        manifest = ContextManifest(
+            selected_refs=[item.evidence_id for item in selected],
+            excluded_refs=all_excluded,
+            exclusion_reasons=exclusion_reasons,
+            pinned_refs=[str(item) for item in source_set.get("pinned") or []],
+            chunk_refs=chunk_refs,
+            external_refs=list(dict.fromkeys(str(item) for item in external_refs if str(item))),
+            source_revision=self.repository.source_signature(),
+            token_budget=context_token_budget,
+            raw_content_in_prompt=bool(page_anchor and (page_anchor.navigation_guidance.get("body")
+                or page_anchor.knowledge_context.get("science"))),
+            provenance={
+                item.evidence_id: {
+                    "source": item.source,
+                    "authority": item.authority,
+                    "url": item.url,
+                }
+                for item in selected
+            },
+            items=context_items,
+            token_cost_total=fixed_token_cost + sum(item.token_cost for item in context_items if item.selected),
+        )
+        completion = task.get("completion_design")
+        return WorkContextPack(
+            context_id=_id("ctx"),
+            employee_id=principal.employee_id,
+            capability_id=definition.capability_id,
+            goal=goal,
+            page_ref=page_ref,
+            task_ref=task_ref,
+            workflow_ref=str(task.get("workflow_ref") or ""),
+            task_mode=task_mode,
+            exit_criteria=[str(item) for item in task_exit],
+            required_evidence=[str(item) for item in required],
+            completion_design=TaskCompletionDesign.model_validate(completion) if completion else None,
+            evidence_refs=selected,
+            external_ai_summary=external_ai_summary,
+            page_anchor=page_anchor,
+            goal_anchor=goal_anchor,
+            business_context=metadata,
+            evidence_summary={
+                "required": [str(item) for item in required],
+                "available": sorted(available_evidence_refs),
+                "missing": [str(item) for item in missing],
+            },
+            context_manifest=manifest,
+            manifest={
+                "context_recipe": definition.context_recipe,
+                "evidence_policy": definition.evidence_policy,
+                "work_session_id": session.get("session_id") or "",
+                "large_object_policy": "reference_only",
+                "raw_content_in_prompt": False,
+                "context_playbook_item_ids": [str(item.get("item_id") or "") for item in playbook_items],
+            },
+        )
+
+
+class WorkLearningService:
+    FLOW = ["observe", "context", "semantic_plan", "act_or_ask", "verify", "reflect", "continue_or_stop"]
+
+    def __init__(
+        self,
+        *,
+        store: AgentV2Store,
+        repository: KnowledgeRepository,
+        search: HybridSearchService,
+        harnesses: HarnessRegistry,
+        page_context_provider: Callable[[str, str], dict[str, Any]] | None = None,
+        knowledge_change_notifier: Callable[[str, str, str], None] | None = None,
+        runtime_relation_notifier: Callable[[Principal], dict[str, Any]] | None = None,
+        model_profile: str = "default",
+    ):
+        self.store = store
+        self.repository = repository
+        self.search = search
+        self.harnesses = harnesses
+        self.contexts = ContextCompiler(repository, store, page_context_provider)
+        self.knowledge_change_notifier = knowledge_change_notifier
+        self.runtime_relation_notifier = runtime_relation_notifier
+        self.model_profile = model_profile or "default"
+
+    def _reconcile_runtime_relations(
+        self,
+        principal: Principal,
+        work_run: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Refresh the Ontology read model after a durable WorkRun result.
+
+        The operational records remain authoritative if read-model
+        reconciliation fails.  Expose the degraded state on the WorkRun
+        instead of rolling back an already verified business result.
+        """
+
+        if self.runtime_relation_notifier is None:
+            work_run["ontology_reconciliation"] = {
+                "status": "unavailable",
+                "reason": "runtime_relation_notifier_unavailable",
+                "updated_at": now_iso(),
+            }
+            return self.store.put(
+                "work_runs", str(work_run["work_run_id"]), work_run
+            )
+        try:
+            manifest = self.runtime_relation_notifier(principal)
+        except Exception as exc:
+            work_run["ontology_reconciliation"] = {
+                "status": "degraded",
+                "reason": "ontology_reconciliation_failed",
+                "error_type": type(exc).__name__,
+                "updated_at": now_iso(),
+            }
+        else:
+            work_run["ontology_reconciliation"] = {
+                "status": "synced",
+                "runtime_relation_signature": str(
+                    manifest.get("runtime_relation_signature") or ""
+                ),
+                "ontology_schema_revision": str(
+                    manifest.get("ontology_schema_revision") or ""
+                ),
+                "node_count": int(manifest.get("nodes") or 0),
+                "edge_count": int(manifest.get("edges") or 0),
+                "updated_at": now_iso(),
+            }
+        return self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
+
+    def reconcile_runtime_relations(
+        self,
+        principal: Principal,
+        work_run_id: str,
+    ) -> dict[str, Any]:
+        """Rebuild runtime Ontology relations after all domain records are durable."""
+
+        work_run = self.get_run(principal, work_run_id)
+        return self._reconcile_runtime_relations(principal, work_run)
+
+    def _record_context_outcome(
+        self,
+        *,
+        context: WorkContextPack,
+        work_run: dict[str, Any],
+        used_source_refs: list[str],
+        outcome: Literal["answer", "artifact", "decision", "completion", "blocker"],
+    ) -> None:
+        manifest = context.context_manifest
+        if manifest is None:
+            return
+        used_refs = {str(item) for item in used_source_refs if str(item)}
+        updated_items: list[ContextItemUsage] = []
+        for item in manifest.items:
+            item_sources = {str(ref) for ref in item.source_refs if str(ref)}
+            used = item.item_ref in used_refs or bool(item_sources & used_refs)
+            updated_items.append(
+                item.model_copy(
+                    update={
+                        "used": used,
+                        "outcome_contribution": outcome if used else "none",
+                    }
+                )
+            )
+        manifest.items = updated_items
+        manifest.used_refs = sorted(used_refs)
+        context.context_manifest = manifest
+        summary = {
+            "selected_item_count": sum(1 for item in updated_items if item.selected),
+            "used_item_count": sum(1 for item in updated_items if item.used),
+            "token_cost_total": manifest.token_cost_total,
+            "token_budget": manifest.token_budget,
+            "outcome": outcome,
+        }
+        context.manifest["context_usage"] = summary
+        work_run["context_usage"] = summary
+        self.store.put("contexts", context.context_id, context.model_dump(mode="json"))
+
+    def _append_checkpoint(
+        self,
+        run: dict[str, Any],
+        *,
+        node: str,
+        raw_state: dict[str, Any],
+        idempotency_key: str = "",
+    ) -> WorkRunCheckpoint:
+        checkpoint_ids = list(run.get("checkpoint_ids") or [])
+        sequence = len(checkpoint_ids) + 1
+        bindings = run.get("harness_bindings") or []
+        harness_revisions = {
+            str(item.get("harness_id") or ""): str(item.get("version") or "")
+            for item in bindings
+            if isinstance(item, dict) and item.get("harness_id")
+        }
+        revisions = run.get("contract_revisions") if isinstance(run.get("contract_revisions"), dict) else {}
+        loop = run.get("loop") if isinstance(run.get("loop"), dict) else {}
+        status = str(run.get("status") or "")
+        checkpoint = WorkRunCheckpoint(
+            checkpoint_id=_id("checkpoint", f"{run['work_run_id']}:{sequence}:{node}"),
+            work_run_id=str(run["work_run_id"]),
+            node=node,  # type: ignore[arg-type]
+            sequence=sequence,
+            raw_state=raw_state,
+            catalog_revision=str(revisions.get("capability_catalog") or ""),
+            harness_revisions=harness_revisions,
+            planner_schema_revision=str(revisions.get("planner_schema") or "semantic-plan/v4"),
+            loop_position={
+                "iteration": int(loop.get("iteration_count") or 0),
+                "tool_calls": int(loop.get("tool_loop_count") or 0),
+                "no_progress": int(loop.get("no_progress_count") or 0),
+            },
+            pending_interrupt=(
+                {
+                    "status": status,
+                    "decision": str(run.get("decision") or ""),
+                    "stop_reason": str(run.get("stop_reason") or ""),
+                }
+                if status in {
+                    "waiting_human",
+                    "waiting_review",
+                    "waiting_signal",
+                    "waiting_evidence",
+                    "cancelled",
+                    "failed",
+                }
+                else {}
+            ),
+            idempotency_key=idempotency_key,
+        )
+        self.store.put(
+            "work_run_checkpoints",
+            checkpoint.checkpoint_id,
+            {
+                "employee_id": run.get("employee_id") or "",
+                **checkpoint.model_dump(mode="json"),
+            },
+        )
+        run["checkpoint_ids"] = [*checkpoint_ids, checkpoint.checkpoint_id][-100:]
+        run.setdefault("events", []).append(
+            {
+                "event": "work.checkpoint",
+                "checkpoint_id": checkpoint.checkpoint_id,
+                "node": checkpoint.node,
+                "sequence": checkpoint.sequence,
+                "at": now_iso(),
+            }
+        )
+        return checkpoint
+
+    @staticmethod
+    def _valid_strategy_change(progress: ProgressDelta) -> bool:
+        return bool(progress.strategy and progress.strategy_refs)
+
+    def _append_progress(
+        self,
+        run: dict[str, Any],
+        delta: LoopDelta,
+    ) -> tuple[LoopDelta, ProgressDelta, bool, bool]:
+        loop = run.setdefault("loop", {})
+        progress_rows = list(loop.get("progress_deltas") or [])
+        progress = _structured_progress(delta, sequence=len(progress_rows) + 1)
+        signature = _progress_signature(progress)
+        delta = delta.model_copy(update={"fingerprint": signature})
+        state = loop.get("progress_state") if isinstance(loop.get("progress_state"), dict) else {}
+        known_entities = set(_string_list(state.get("entity_refs"), limit=500))
+        known_evidence = set(_string_list(state.get("evidence_refs"), limit=500))
+        known_tools = set(_string_list(state.get("tool_result_refs"), limit=500))
+        known_artifacts = set(_string_list(state.get("artifact_refs"), limit=500))
+        known_blockers = set(_string_list(state.get("blocker_codes"), limit=200))
+        known_completion = state.get("completion") if isinstance(state.get("completion"), dict) else {}
+        completion_changed = any(known_completion.get(key) != value for key, value in progress.completion_changes.items())
+        domain_progress = any(
+            (
+                set(progress.entity_refs) - known_entities,
+                set(progress.evidence_refs) - known_evidence,
+                set(progress.tool_result_refs) - known_tools,
+                set(progress.artifact_refs) - known_artifacts,
+                ({progress.blocker_code} - known_blockers) if progress.blocker_code and progress.blocker_code != "no_progress" else set(),
+            )
+        ) or completion_changed
+        if delta.kind == "no_progress" or progress.kind == "strategy_change":
+            domain_progress = False
+        payload = progress.model_dump(mode="json")
+        payload["signature"] = signature
+        payload["domain_progress"] = domain_progress
+        loop["progress_deltas"] = [*progress_rows, payload][-50:]
+        loop["deltas"] = [*(loop.get("deltas") or []), delta.model_dump(mode="json")][-50:]
+        if domain_progress:
+            loop["progress_state"] = {
+                "entity_refs": sorted(known_entities | set(progress.entity_refs)),
+                "evidence_refs": sorted(known_evidence | set(progress.evidence_refs)),
+                "tool_result_refs": sorted(known_tools | set(progress.tool_result_refs)),
+                "artifact_refs": sorted(known_artifacts | set(progress.artifact_refs)),
+                "blocker_codes": sorted(known_blockers | ({progress.blocker_code} if progress.blocker_code else set())),
+                "completion": {**known_completion, **progress.completion_changes},
+            }
+        repeated = any(str(item.get("signature") or "") == signature for item in progress_rows)
+        return delta, progress, domain_progress, repeated
+
+    @staticmethod
+    def _exit_result(
+        *,
+        context: WorkContextPack,
+        mode: TaskMode,
+        progress: ProgressDelta,
+        confirmation: str | None,
+        evidence_ledger_ids: list[str],
+        standalone_action: bool = False,
+        standalone_domain_confirmation: bool = False,
+    ) -> ExitCriteriaResult:
+        metadata_record = progress.completion_changes.get("work_record")
+        work_record = metadata_record if isinstance(metadata_record, dict) else {}
+        record_fields = ("observations", "actions", "judgment", "result")
+        recorded_fields = [name for name in record_fields if str(work_record.get(name) or "").strip()]
+        valid_record = len(recorded_fields) >= 2 and bool({"judgment", "result"} & set(recorded_fields))
+        work_record_ref = str(work_record.get("work_record_ref") or "").strip()
+        completion = context.completion_design
+        checks = list(completion.checks) if completion else []
+        binding_refs = {
+            item.binding.ref
+            for item in checks
+            if item.binding is not None and item.binding.ref
+        }
+        verified_bindings = set(_string_list(progress.completion_changes.get("verified_binding_refs"), limit=100))
+        completion_evidence = [
+            item.model_dump(mode="python")
+            for item in (completion.evidence if completion else [])
+            if item.required
+        ]
+        if not completion_evidence:
+            completion_evidence = [
+                {
+                    "evidence_id": str(item),
+                    "label": str(item),
+                    "ref": str(item),
+                    "source_kind": "human_note",
+                    "required": True,
+                }
+                for item in context.required_evidence
+                if str(item).strip()
+            ]
+        available_evidence_refs = set(_string_list(context.evidence_summary.get("available"), limit=100))
+        available_evidence_refs.update(progress.evidence_refs)
+        available_evidence_refs.update(progress.tool_result_refs)
+        record_evidence_refs = _string_list(work_record.get("evidence_refs"), limit=100)
+        if work_record_ref:
+            record_evidence_refs = _string_list([*record_evidence_refs, work_record_ref], limit=100)
+        available_evidence_refs.update(record_evidence_refs)
+        raw_evidence_links = (
+            work_record.get("evidence_links")
+            if isinstance(work_record.get("evidence_links"), dict)
+            else {}
+        )
+        linked_refs_by_requirement = {
+            str(requirement_id): _string_list(refs, limit=100)
+            for requirement_id, refs in raw_evidence_links.items()
+            if str(requirement_id).strip() and isinstance(refs, (list, tuple, set))
+        }
+        for requirement_id in _string_list(
+            work_record.get("satisfied_evidence_ids"), limit=100
+        ):
+            linked_refs_by_requirement.setdefault(requirement_id, record_evidence_refs)
+        human_note_requirements = [
+            str(item.get("evidence_id") or "").strip()
+            for item in completion_evidence
+            if str(item.get("source_kind") or "") == "human_note"
+            and str(item.get("provided_by") or "human") == "human"
+            and bool(item.get("required", True))
+            and str(item.get("evidence_id") or "").strip()
+        ]
+        if (
+            valid_record
+            and confirmation == "confirm"
+            and work_record_ref
+            and len(human_note_requirements) == 1
+        ):
+            requirement_id = human_note_requirements[0]
+            linked_refs_by_requirement[requirement_id] = _string_list(
+                [*linked_refs_by_requirement.get(requirement_id, []), work_record_ref],
+                limit=100,
+            )
+        evidence_status = evaluate_evidence_requirements(
+            completion_evidence,
+            available_refs=available_evidence_refs,
+            linked_refs_by_requirement=linked_refs_by_requirement,
+        )
+        task_requires_evidence = bool(evidence_status["required_ids"])
+        required_evidence_ready = not evidence_status["missing_ids"]
+        has_ledger = bool(evidence_ledger_ids)
+        criteria: list[HarnessCheck] = []
+        if standalone_action:
+            criteria.append(
+                HarnessCheck(
+                    check_id="exit.action-result",
+                    label="검증된 Action 결과",
+                    status="passed" if bool(progress.tool_result_refs) else "blocked",
+                    message="검증된 Action 결과가 없습니다." if not progress.tool_result_refs else "",
+                )
+            )
+        elif standalone_domain_confirmation:
+            domain_status = str(progress.completion_changes.get("domain_result_status") or "").strip().lower()
+            accepted_status = bool(domain_status) and domain_status not in {
+                "failed",
+                "rejected",
+                "cancelled",
+                "error",
+            }
+            criteria.extend(
+                [
+                    HarnessCheck(
+                        check_id="exit.domain-outcome",
+                        label="업무 서비스 결과",
+                        status="passed" if accepted_status else "blocked",
+                        message="확인된 업무 서비스 결과가 없습니다." if not accepted_status else "",
+                    ),
+                    HarnessCheck(
+                        check_id="exit.human-confirmation",
+                        label="담당자 최종 확인",
+                        status="passed" if confirmation == "confirm" else "blocked",
+                        message="담당자의 최종 확인이 필요합니다." if confirmation != "confirm" else "",
+                    ),
+                ]
+            )
+        elif mode in {TaskMode.manual, TaskMode.copilot}:
+            criteria.extend(
+                [
+                    HarnessCheck(
+                        check_id="exit.work-record",
+                        label="업무 수행 기록",
+                        status="passed" if valid_record else "blocked",
+                        message="확인한 내용, 수행 조치, 판단 또는 결과가 포함된 업무 기록이 필요합니다." if not valid_record else "",
+                    ),
+                    HarnessCheck(
+                        check_id="exit.human-confirmation",
+                        label="담당자 최종 확인",
+                        status="passed" if confirmation == "confirm" else "blocked",
+                        message="담당자의 최종 확인이 필요합니다." if confirmation != "confirm" else "",
+                    ),
+                ]
+            )
+        else:
+            system_ready = bool(binding_refs) and verified_bindings.issuperset(binding_refs)
+            criteria.append(
+                HarnessCheck(
+                    check_id="exit.system-bindings",
+                    label="시스템 완료 조건",
+                    status="passed" if system_ready and bool(progress.tool_result_refs) else "blocked",
+                    message="허용된 Action 결과와 시스템 완료 조건이 모두 검증되어야 합니다."
+                    if not (system_ready and bool(progress.tool_result_refs))
+                    else "",
+                )
+            )
+        if task_requires_evidence:
+            criteria.append(
+                HarnessCheck(
+                    check_id="exit.required-evidence",
+                    label="필수 확인 자료",
+                    status="passed" if required_evidence_ready else "blocked",
+                    message=(
+                        "필수 확인 자료가 실제 근거와 연결되지 않았습니다: "
+                        + ", ".join(evidence_status["missing_ids"])
+                    )
+                    if not required_evidence_ready
+                    else "",
+                )
+            )
+        if task_requires_evidence or context.task_ref or standalone_action or standalone_domain_confirmation:
+            criteria.append(
+                HarnessCheck(
+                    check_id="exit.evidence-ledger",
+                    label="검증 근거 기록",
+                    status="passed" if has_ledger else "blocked",
+                    message="검증된 Evidence Ledger가 없습니다." if not has_ledger else "",
+                )
+            )
+        satisfied = bool(criteria) and all(item.status == "passed" for item in criteria)
+        return ExitCriteriaResult(
+            satisfied=satisfied,
+            criteria=criteria,
+            evidence_ledger_ids=evidence_ledger_ids,
+            evaluated_facts={
+                "task_mode": mode.value,
+                "work_record_fields": recorded_fields,
+                "required_binding_refs": sorted(binding_refs),
+                "verified_binding_refs": sorted(verified_bindings),
+                "task_requires_evidence": task_requires_evidence,
+                "required_evidence_ids": evidence_status["required_ids"],
+                "satisfied_evidence_ids": evidence_status["satisfied_ids"],
+                "missing_evidence_ids": evidence_status["missing_ids"],
+                "evidence_satisfied_by": evidence_status["satisfied_by"],
+                "standalone_domain_confirmation": standalone_domain_confirmation,
+                "domain_result_status": str(progress.completion_changes.get("domain_result_status") or ""),
+            },
+            stop_reason="exit_criteria_satisfied" if satisfied else "needs_human",
+        )
+
+    def _notify_operational_change(self, record_id: str, employee_id: str) -> None:
+        if self.knowledge_change_notifier is not None and record_id:
+            self.knowledge_change_notifier(record_id, employee_id, "upsert")
+
+    def _record_harness_failures(
+        self,
+        *,
+        principal: Principal,
+        work_run: dict[str, Any],
+        context: WorkContextPack,
+        results: list[HarnessResult],
+        phase: str,
+        terminal_cause: str = "",
+    ) -> list[str]:
+        record_ids: list[str] = []
+        for result in results:
+            if result.status != "blocked":
+                continue
+            blocked_checks = [item for item in result.checks if item.status == "blocked"]
+            definition = self.harnesses.definition(result.harness_id)
+            mechanisms = sorted(
+                {item.check_id for item in blocked_checks if item.check_id}
+                or {"verifier.blocked"}
+            )
+            causal_mechanism = "+".join(mechanisms)
+            component_ref = f"{result.harness_id}:{phase}"
+            record_id = _id(
+                "hfailure",
+                f"{work_run['work_run_id']}:{result.harness_id}:{result.version}:{phase}:{causal_mechanism}",
+            )
+            context_manifest = (
+                context.context_manifest.model_dump(mode="json")
+                if context.context_manifest is not None
+                else {}
+            )
+            revisions = (
+                work_run.get("contract_revisions")
+                if isinstance(work_run.get("contract_revisions"), dict)
+                else {}
+            )
+            failure = HarnessFailureRecord(
+                failure_record_id=record_id,
+                employee_id=principal.employee_id,
+                work_run_id=str(work_run["work_run_id"]),
+                harness_id=result.harness_id,
+                harness_version=result.version,
+                model_profile=self.model_profile,
+                phase=phase,
+                component_ref=component_ref,
+                causal_taxonomy_revision=definition.causal_taxonomy_revision,
+                causal_mechanism=causal_mechanism,
+                verifier_facts={
+                    "terminal_cause": terminal_cause or "; ".join(result.blockers),
+                    "blocked_checks": [item.model_dump(mode="json") for item in blocked_checks],
+                    "evaluated_facts": dict(result.evaluated_facts),
+                },
+                trace_refs=[str(item) for item in work_run.get("checkpoint_ids") or []],
+                context_id=context.context_id,
+                evidence_refs=[item.evidence_id for item in context.evidence_refs],
+                artifact_refs=[str(item) for item in work_run.get("artifact_refs") or []],
+                catalog_revision=str(revisions.get("capability_catalog") or ""),
+                planner_schema_revision=str(revisions.get("planner_schema") or ""),
+                source_revision=str(context_manifest.get("source_revision") or ""),
+            )
+            record = {
+                **failure.model_dump(mode="json"),
+                # Kept as read aliases for stored v2 records and existing
+                # operational views. Grouping uses the typed mechanism below.
+                "terminal_verifier_cause": failure.verifier_facts["terminal_cause"],
+                "causal_agent_stage": causal_mechanism,
+                "exposed_mechanism": mechanisms,
+                "context_manifest": context_manifest,
+                "loop_deltas": list((work_run.get("loop") or {}).get("deltas") or [])[-10:],
+                "runtime_events": list(work_run.get("events") or [])[-10:],
+                "tool_action_results": [
+                    item
+                    for item in (work_run.get("loop") or {}).get("deltas") or []
+                    if isinstance(item, dict) and item.get("kind") in {"action_result", "state_transition", "blocker"}
+                ][-10:],
+                "user_corrections": [
+                    item
+                    for item in (work_run.get("loop") or {}).get("deltas") or []
+                    if isinstance(item, dict) and item.get("kind") == "human_input"
+                ][-10:],
+                "reproducibility": "fixture_required",
+                "scope": "recurrent_candidate" if len(blocked_checks) == 1 else "run_specific",
+            }
+            pattern_seed = {
+                "harness_id": result.harness_id,
+                "phase": phase,
+                "component_ref": component_ref,
+                "causal_taxonomy_revision": definition.causal_taxonomy_revision,
+                "causal_mechanism": causal_mechanism,
+            }
+            pattern_id = _id(
+                "hpattern",
+                json.dumps(pattern_seed, ensure_ascii=False, sort_keys=True),
+            )
+            record["failure_pattern_id"] = pattern_id
+            self.store.put("harness_failure_records", record_id, record)
+            pattern = self.store.get("harness_failure_patterns", pattern_id) or {
+                "failure_pattern_id": pattern_id,
+                "harness_id": result.harness_id,
+                "phase": phase,
+                "component_ref": component_ref,
+                "causal_taxonomy_revision": definition.causal_taxonomy_revision,
+                "causal_mechanism": causal_mechanism,
+                "causal_agent_stage": causal_mechanism,
+                "exposed_mechanism": mechanisms,
+                "summary": record["terminal_verifier_cause"],
+                "failure_record_ids": [],
+                "work_run_ids": [],
+                "model_profiles": [],
+                "first_seen_at": now_iso(),
+                "status": "open",
+            }
+            work_run_ids = list(
+                dict.fromkeys([*pattern.get("work_run_ids", []), work_run["work_run_id"]])
+            )[-200:]
+            pattern.update(
+                {
+                    "failure_record_ids": list(dict.fromkeys([*pattern.get("failure_record_ids", []), record_id]))[-200:],
+                    "work_run_ids": work_run_ids,
+                    "model_profiles": list(dict.fromkeys([*pattern.get("model_profiles", []), self.model_profile])),
+                    "occurrence_count": len(work_run_ids),
+                    "candidate_eligible": len(work_run_ids) >= definition.candidate_min_distinct_runs,
+                    "candidate_min_distinct_runs": definition.candidate_min_distinct_runs,
+                    "last_seen_at": now_iso(),
+                }
+            )
+            self.store.put("harness_failure_patterns", pattern_id, pattern)
+            negative_id = _id("negative", record_id)
+            self.store.put(
+                "negative_results",
+                negative_id,
+                {
+                    "negative_result_id": negative_id,
+                    "employee_id": principal.employee_id,
+                    "kind": "harness_blocker",
+                    "work_run_id": work_run["work_run_id"],
+                    "failure_record_id": record_id,
+                    "failure_pattern_id": pattern_id,
+                    "summary": record["terminal_verifier_cause"],
+                    "source_refs": record["evidence_refs"],
+                    "status": "active",
+                    "created_at": now_iso(),
+                },
+            )
+            self._notify_operational_change(pattern_id, principal.employee_id)
+            record_ids.append(record_id)
+        return record_ids
+
+    def _record_negative_result(
+        self,
+        *,
+        principal: Principal,
+        kind: str,
+        summary: str,
+        work_run_id: str = "",
+        source_refs: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        payload = {
+            "kind": kind,
+            "summary": _compact(summary, 2000),
+            "work_run_id": work_run_id,
+            "source_refs": list(dict.fromkeys(source_refs or [])),
+            "metadata": metadata or {},
+        }
+        negative_id = _id(
+            "negative",
+            f"{principal.employee_id}:{json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)}",
+        )
+        row = {
+            "negative_result_id": negative_id,
+            "employee_id": principal.employee_id,
+            **payload,
+            "status": "active",
+            "created_at": now_iso(),
+        }
+        self.store.put("negative_results", negative_id, row)
+        self._notify_operational_change(negative_id, principal.employee_id)
+        return negative_id
+
+    def list_harness_failures(self, principal: Principal, *, status: str = "open") -> dict[str, Any]:
+        items = [
+            item for item in self.store.list("harness_failure_records", limit=1000)
+            if (principal.is_admin or str(item.get("employee_id") or "") == principal.employee_id)
+            and (not status or str(item.get("status") or "") == status)
+        ]
+        return {"count": len(items), "items": items}
+
+    def list_harness_failure_patterns(self, principal: Principal, *, status: str = "open") -> dict[str, Any]:
+        visible_failure_ids = {
+            str(item.get("failure_record_id") or "")
+            for item in self.list_harness_failures(principal, status="")["items"]
+        }
+        items = [
+            item for item in self.store.list("harness_failure_patterns", limit=1000)
+            if (not status or str(item.get("status") or "") == status)
+            and bool(set(item.get("failure_record_ids") or []) & visible_failure_ids)
+        ]
+        return {"count": len(items), "items": items}
+
+    def list_negative_results(self, principal: Principal, *, status: str = "active") -> dict[str, Any]:
+        items = [
+            item for item in self.store.list("negative_results", limit=1000)
+            if (principal.is_admin or str(item.get("employee_id") or "") == principal.employee_id)
+            and (not status or str(item.get("status") or "") == status)
+        ]
+        return {"count": len(items), "items": items}
+
+    def create_harness_code_patch_artifact(
+        self,
+        principal: Principal,
+        request: Any,
+    ) -> dict[str, Any]:
+        """Store a review-only diff without touching the checkout or runtime."""
+
+        if not principal.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        definition = self.harnesses.definition(request.harness_id)
+        failures = [
+            self.store.get("harness_failure_records", failure_id)
+            for failure_id in request.failure_record_ids
+        ]
+        if any(not item for item in failures):
+            raise HTTPException(status_code=404, detail="실패 기록을 찾을 수 없습니다.")
+        pattern_ids = {
+            str(item.get("failure_pattern_id") or "")
+            for item in failures
+            if item and item.get("failure_pattern_id")
+        }
+        mechanisms = {
+            (
+                str(item.get("causal_taxonomy_revision") or ""),
+                str(item.get("causal_mechanism") or item.get("causal_agent_stage") or ""),
+            )
+            for item in failures
+            if item
+        }
+        work_run_ids = {
+            str(item.get("work_run_id") or "")
+            for item in failures
+            if item and item.get("work_run_id")
+        }
+        model_profiles = {
+            str(item.get("model_profile") or "")
+            for item in failures
+            if item and item.get("model_profile")
+        }
+        harness_ids = {
+            str(item.get("harness_id") or "")
+            for item in failures
+            if item and item.get("harness_id")
+        }
+        if (
+            harness_ids != {request.harness_id}
+            or len(pattern_ids) != 1
+            or len(mechanisms) != 1
+            or len(work_run_ids) < definition.candidate_min_distinct_runs
+            or model_profiles != {request.model_profile}
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "harness_patch_recurrence_required",
+                    "required_distinct_runs": definition.candidate_min_distinct_runs,
+                    "distinct_runs": len(work_run_ids),
+                    "pattern_count": len(pattern_ids),
+                    "mechanism_count": len(mechanisms),
+                    "model_profiles": sorted(model_profiles),
+                },
+            )
+        files = []
+        for raw_path in request.files:
+            original_path = str(raw_path or "").replace("\\", "/").strip()
+            path = original_path
+            while path.startswith("./"):
+                path = path[2:]
+            if (
+                not path
+                or original_path.startswith("/")
+                or ".." in path.split("/")
+                or any(part.startswith(".env") for part in path.split("/"))
+                or any(path == prefix or path.startswith(f"{prefix}/") for prefix in _HARNESS_PATCH_READ_ONLY_PATHS)
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "harness_patch_path_read_only", "path": raw_path},
+                )
+            files.append(path)
+        files = list(dict.fromkeys(files))
+        if len(files) != len(request.files):
+            raise HTTPException(status_code=400, detail={"code": "harness_patch_duplicate_files"})
+        if "GIT binary patch" in request.unified_diff or "Binary files " in request.unified_diff:
+            raise HTTPException(status_code=400, detail={"code": "harness_patch_binary_forbidden"})
+        diff_paths = {
+            match.group(1).split("\t", 1)[0].strip()
+            for match in re.finditer(
+                r"^(?:--- a/|\+\+\+ b/)([^\n]+)$",
+                request.unified_diff,
+                flags=re.MULTILINE,
+            )
+            if match.group(1).strip() != "/dev/null"
+        }
+        if diff_paths != set(files):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "harness_patch_file_manifest_mismatch",
+                    "declared_files": files,
+                    "diff_files": sorted(diff_paths),
+                },
+            )
+        fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "harness_id": request.harness_id,
+                    "failure_pattern_ids": sorted(pattern_ids),
+                    "model_profile": request.model_profile,
+                    "files": files,
+                    "diff_sha256": hashlib.sha256(request.unified_diff.encode("utf-8")).hexdigest(),
+                    "source_revision": request.source_revision,
+                    "evaluation_lock_checksum": request.evaluation_lock_checksum,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        patch_id = f"hpatch_{fingerprint[:32]}"
+        existing = self.store.get("harness_code_patch_artifacts", patch_id)
+        if existing:
+            return existing
+        artifact = {
+            "patch_artifact_id": patch_id,
+            "artifact_type": "code_patch_review",
+            "employee_id": principal.employee_id,
+            "harness_id": request.harness_id,
+            "failure_record_ids": list(request.failure_record_ids),
+            "failure_pattern_ids": sorted(pattern_ids),
+            "work_run_ids": sorted(work_run_ids),
+            "causal_taxonomy_revision": next(iter(mechanisms))[0],
+            "causal_mechanism": next(iter(mechanisms))[1],
+            "model_profile": request.model_profile,
+            "files": files,
+            "unified_diff": request.unified_diff,
+            "diff_sha256": hashlib.sha256(request.unified_diff.encode("utf-8")).hexdigest(),
+            "rationale": _compact(request.rationale, 4000),
+            "source_revision": request.source_revision,
+            "evaluation_lock_checksum": request.evaluation_lock_checksum,
+            "status": "review_only",
+            "apply_supported": False,
+            "git_changed": False,
+            "production_changed": False,
+            "raw_trace_stored": False,
+            "created_at": now_iso(),
+        }
+        stored = self.store.put("harness_code_patch_artifacts", patch_id, artifact)
+        self._notify_operational_change(patch_id, principal.employee_id)
+        return stored
+
+    def list_harness_code_patch_artifacts(self, principal: Principal) -> dict[str, Any]:
+        if not principal.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        items = self.store.list("harness_code_patch_artifacts", limit=1000)
+        return {"count": len(items), "items": items}
+
+    def list_context_playbook(self, principal: Principal, *, status: str = "") -> dict[str, Any]:
+        items = [
+            item for item in self.store.list("context_playbook_items", limit=1000)
+            if (
+                principal.is_admin
+                or str(item.get("employee_id") or "") == principal.employee_id
+                or (
+                    str(item.get("visibility") or "") == "team"
+                    and bool(set(item.get("team_ids") or []) & set(principal.teams))
+                )
+            )
+            and (not status or str(item.get("status") or "") == status)
+        ]
+        return {"count": len(items), "items": items}
+
+    @staticmethod
+    def _playbook_fingerprint(description: str, applies_to: dict[str, Any], model_profiles: list[str]) -> str:
+        payload = {
+            "description": _compact(description, 4000).casefold(),
+            "applies_to": applies_to,
+            "model_profiles": sorted(set(model_profiles or ["default"])),
+        }
+        return hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+
+    def create_context_playbook_item(self, principal: Principal, request: Any) -> dict[str, Any]:
+        if request.visibility == "team" and not principal.teams and not principal.is_admin:
+            raise HTTPException(status_code=403, detail="팀 Playbook 항목을 만들 권한이 없습니다.")
+        if request.visibility == "team" and not principal.is_admin and not set(request.team_ids or principal.teams).issubset(set(principal.teams)):
+            raise HTTPException(status_code=403, detail="소속되지 않은 팀의 Playbook 항목을 만들 수 없습니다.")
+        for run_id in request.supporting_work_run_ids:
+            run = self.store.get("work_runs", run_id)
+            if not run or (not principal.is_admin and str(run.get("employee_id") or "") != principal.employee_id):
+                raise HTTPException(status_code=404, detail="근거 WorkRun을 찾을 수 없습니다.")
+        applies_to = {
+            "capability_ids": list(dict.fromkeys(request.capability_ids)),
+            "asset_kinds": list(dict.fromkeys(request.asset_kinds)),
+            "task_refs": list(dict.fromkeys(request.task_refs)),
+        }
+        profiles = list(dict.fromkeys(request.model_profiles or ["default"]))
+        fingerprint = self._playbook_fingerprint(request.description, applies_to, profiles)
+        duplicate = next(
+            (
+                item for item in self.store.list("context_playbook_items", limit=1000)
+                if item.get("fingerprint") == fingerprint
+                and str(item.get("status") or "") not in {"deprecated", "rejected"}
+                and (principal.is_admin or str(item.get("employee_id") or "") == principal.employee_id)
+            ),
+            None,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "context_playbook_duplicate", "existing_item_id": duplicate.get("item_id")},
+            )
+        item_id = _id("playbook", f"{principal.employee_id}:{fingerprint}")
+        item = {
+            "item_id": item_id,
+            "employee_id": principal.employee_id,
+            "description": _compact(request.description, 4000),
+            "conditions": list(dict.fromkeys(_compact(item, 240) for item in request.conditions if _compact(item, 240))),
+            "applies_to": applies_to,
+            "team_ids": list(dict.fromkeys(request.team_ids or (principal.teams if request.visibility == "team" else []))),
+            "model_profiles": profiles,
+            "source_refs": list(dict.fromkeys(request.source_refs)),
+            "supporting_work_run_ids": list(dict.fromkeys(request.supporting_work_run_ids)),
+            "successful_run_ids": [],
+            "failed_run_ids": [],
+            "freshness": {"created_at": now_iso(), "valid_until": request.valid_until},
+            "status": "provisional",
+            "visibility": request.visibility,
+            "fingerprint": fingerprint,
+            "revision": 1,
+            "deprecates_item_ids": [],
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+        }
+        stored = self.store.put("context_playbook_items", item_id, item)
+        self._notify_operational_change(item_id, principal.employee_id)
+        return stored
+
+    def patch_context_playbook_item(self, principal: Principal, item_id: str, request: Any) -> dict[str, Any]:
+        item = self.store.get("context_playbook_items", item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Context Playbook 항목을 찾을 수 없습니다.")
+        if not principal.is_admin and str(item.get("employee_id") or "") != principal.employee_id:
+            raise HTTPException(status_code=403, detail="이 Context Playbook 항목을 수정할 수 없습니다.")
+        revision = int(item.get("revision") or 1)
+        if request.expected_revision != revision:
+            raise HTTPException(status_code=409, detail={"code": "revision_conflict", "current_revision": revision})
+        if request.status == "active" and not item.get("source_refs"):
+            raise HTTPException(status_code=422, detail="출처 없는 Playbook 항목은 활성화할 수 없습니다.")
+        if request.status == "active" and item.get("visibility") == "team" and not principal.is_admin:
+            raise HTTPException(status_code=403, detail="팀 Playbook 활성화는 검토 권한이 필요합니다.")
+        if request.description is not None:
+            item["description"] = _compact(request.description, 4000)
+        if request.valid_until is not None:
+            item.setdefault("freshness", {})["valid_until"] = request.valid_until
+        if request.status is not None:
+            item["status"] = request.status
+        if request.deprecates_item_ids is not None:
+            for old_id in request.deprecates_item_ids:
+                old = self.store.get("context_playbook_items", old_id)
+                if not old:
+                    raise HTTPException(status_code=404, detail=f"대체할 Playbook 항목을 찾을 수 없습니다: {old_id}")
+                if not principal.is_admin and str(old.get("employee_id") or "") != principal.employee_id:
+                    raise HTTPException(status_code=403, detail="다른 사용자의 Playbook 항목을 대체할 수 없습니다.")
+                old.update({"status": "deprecated", "superseded_by": item_id, "updated_at": now_iso()})
+                self.store.put("context_playbook_items", old_id, old)
+            item["deprecates_item_ids"] = list(dict.fromkeys(request.deprecates_item_ids))
+        item.update(
+            {
+                "review_note": _compact(request.review_note, 4000),
+                "reviewed_by": principal.employee_id if request.status in {"active", "rejected"} else item.get("reviewed_by") or "",
+                "revision": revision + 1,
+                "updated_at": now_iso(),
+            }
+        )
+        item["fingerprint"] = self._playbook_fingerprint(
+            str(item.get("description") or ""),
+            item.get("applies_to") or {},
+            item.get("model_profiles") or ["default"],
+        )
+        duplicate = next(
+            (
+                row for row in self.store.list("context_playbook_items", limit=1000)
+                if row.get("item_id") != item_id
+                and row.get("fingerprint") == item["fingerprint"]
+                and str(row.get("status") or "") not in {"deprecated", "rejected"}
+                and (principal.is_admin or str(row.get("employee_id") or "") == principal.employee_id)
+            ),
+            None,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "context_playbook_duplicate", "existing_item_id": duplicate.get("item_id")},
+            )
+        stored = self.store.put("context_playbook_items", item_id, item)
+        self._notify_operational_change(item_id, principal.employee_id)
+        return stored
+
+    def create_harness_candidate(self, principal: Principal, request: Any) -> dict[str, Any]:
+        definition = self.harnesses.definition(request.harness_id)
+        forbidden = sorted(set(request.changes) & set(definition.immutable_boundaries))
+        unsupported = sorted(set(request.changes) - set(definition.editable_surfaces) - set(definition.immutable_boundaries))
+        if forbidden or unsupported:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "harness_candidate_surface_not_editable",
+                    "immutable": forbidden,
+                    "unsupported": unsupported,
+                },
+            )
+        if len(request.changes) != 1:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "harness_candidate_single_surface_required",
+                    "editable_surface_count": len(request.changes),
+                    "editable_surfaces": sorted(request.changes),
+                },
+            )
+        self._validate_executable_harness_changes(request.changes)
+        failures = [self.store.get("harness_failure_records", item) for item in request.failure_record_ids]
+        if any(not item for item in failures):
+            raise HTTPException(status_code=404, detail="실패 기록을 찾을 수 없습니다.")
+        if not principal.is_admin and any(str(item.get("employee_id") or "") != principal.employee_id for item in failures if item):
+            raise HTTPException(status_code=403, detail="다른 사용자의 실패 기록으로 후보를 만들 수 없습니다.")
+        mismatched_harnesses = sorted(
+            {
+                str(item.get("harness_id") or "")
+                for item in failures
+                if item and str(item.get("harness_id") or "") != request.harness_id
+            }
+        )
+        if mismatched_harnesses:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "harness_candidate_mixed_harnesses", "harnesses": mismatched_harnesses},
+            )
+        pattern_ids = list(
+            dict.fromkeys(str(item.get("failure_pattern_id") or "") for item in failures if item and item.get("failure_pattern_id"))
+        )
+        work_run_ids = list(
+            dict.fromkeys(
+                str(item.get("work_run_id") or "")
+                for item in failures
+                if item and item.get("work_run_id")
+            )
+        )
+        mechanisms = {
+            (
+                str(item.get("causal_taxonomy_revision") or ""),
+                str(item.get("causal_mechanism") or item.get("causal_agent_stage") or ""),
+            )
+            for item in failures
+            if item
+        }
+        failure_model_profiles = {
+            str(item.get("model_profile") or "")
+            for item in failures
+            if item and str(item.get("model_profile") or "")
+        }
+        if (
+            len(pattern_ids) != 1
+            or len(mechanisms) != 1
+            or len(work_run_ids) < definition.candidate_min_distinct_runs
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "harness_candidate_recurrence_required",
+                    "required_distinct_runs": definition.candidate_min_distinct_runs,
+                    "distinct_runs": len(work_run_ids),
+                    "pattern_count": len(pattern_ids),
+                    "mechanism_count": len(mechanisms),
+                },
+            )
+        if failure_model_profiles != {request.model_profile}:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "harness_candidate_model_profile_mismatch",
+                    "requested_model_profile": request.model_profile,
+                    "failure_model_profiles": sorted(failure_model_profiles),
+                },
+            )
+        pattern = self.store.get("harness_failure_patterns", pattern_ids[0]) or {}
+        rejected_attempts = [
+            item
+            for item in self.store.list("harness_candidates", limit=10_000)
+            if pattern_ids[0] in set(item.get("failure_pattern_ids") or [])
+            and str(item.get("model_profile") or "") == request.model_profile
+            and str(item.get("status") or "") == "rejected"
+        ]
+        if str(pattern.get("status") or "") == "auto_stopped" or len(rejected_attempts) >= 3:
+            if pattern:
+                pattern.update(
+                    {
+                        "status": "auto_stopped",
+                        "auto_stop_reason": pattern.get("auto_stop_reason") or "three_no_improvement",
+                        "updated_at": now_iso(),
+                    }
+                )
+                self.store.put("harness_failure_patterns", pattern_ids[0], pattern)
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "harness_improvement_auto_stopped",
+                    "failure_pattern_id": pattern_ids[0],
+                    "reason": pattern.get("auto_stop_reason") or "three_no_improvement",
+                    "rejected_attempts": len(rejected_attempts),
+                },
+            )
+        active_key = f"{definition.harness_id}:{request.model_profile or self.model_profile}"
+        active = self.store.get("harness_active_versions", active_key) or {}
+        current_version = str(active.get("harness_version_id") or definition.version)
+        if request.rollback_target != current_version:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "harness_candidate_rollback_target_stale",
+                    "expected": current_version,
+                },
+            )
+        expires_at = request.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail={"code": "harness_candidate_expired"})
+        preservation_runs = [
+            self.store.get("work_runs", work_run_id)
+            for work_run_id in request.preservation_run_ids
+        ]
+        if any(
+            not item or str(item.get("status") or "") != "completed"
+            for item in preservation_runs
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "harness_candidate_preservation_runs_invalid"},
+            )
+        hypothesis = HarnessChangeHypothesis(
+            editable_surface=(
+                next(iter(request.changes))
+                if len(request.changes) == 1
+                else "composite"
+            ),
+            diff=request.changes,
+            predicted_impact=request.predicted_impact,
+            at_risk_regressions=request.at_risk_regressions,
+            preservation_run_ids=request.preservation_run_ids,
+            expires_at=expires_at,
+            rollback_target=request.rollback_target,
+        )
+        candidate_fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "harness_id": request.harness_id,
+                    "base_version": current_version,
+                    "model_profile": request.model_profile,
+                    "changes": request.changes,
+                    "failure_pattern_ids": pattern_ids,
+                    "hypothesis": {
+                        "predicted_impact": request.predicted_impact,
+                        "at_risk_regressions": request.at_risk_regressions,
+                        "preservation_run_ids": request.preservation_run_ids,
+                        "rollback_target": request.rollback_target,
+                    },
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        duplicate = next(
+            (
+                item
+                for item in self.store.list("harness_candidates", limit=10_000)
+                if str(item.get("candidate_fingerprint") or "") == candidate_fingerprint
+            ),
+            None,
+        )
+        if duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "harness_candidate_duplicate",
+                    "candidate_id": duplicate.get("candidate_id"),
+                    "status": duplicate.get("status"),
+                },
+            )
+        candidate_id = _id("hcandidate", f"{request.harness_id}:{request.model_profile}:{now_iso()}")
+        candidate = {
+            "candidate_id": candidate_id,
+            "employee_id": principal.employee_id,
+            "harness_id": request.harness_id,
+            "base_version": current_version,
+            "model_profile": request.model_profile,
+            "failure_record_ids": request.failure_record_ids,
+            "failure_pattern_ids": pattern_ids,
+            "causal_taxonomy_revision": next(iter(mechanisms))[0],
+            "causal_mechanism": next(iter(mechanisms))[1],
+            "work_run_ids": work_run_ids,
+            "recurrent_pattern": True,
+            "changes": request.changes,
+            "rationale": request.rationale,
+            "hypothesis": hypothesis.model_dump(mode="json"),
+            "predicted_impact": request.predicted_impact,
+            "at_risk_regressions": request.at_risk_regressions,
+            "preservation_run_ids": request.preservation_run_ids,
+            "expires_at": expires_at.isoformat(),
+            "rollback_target": request.rollback_target,
+            "status": "shadow_pending",
+            "production_changed": False,
+            "candidate_fingerprint": candidate_fingerprint,
+            "created_at": now_iso(),
+        }
+        stored = self.store.put("harness_candidates", candidate_id, candidate)
+        self._notify_operational_change(candidate_id, principal.employee_id)
+        return stored
+
+    @staticmethod
+    def _candidate_addressable_stages(
+        definition: Any,
+        changes: dict[str, Any],
+    ) -> set[str]:
+        return {
+            component
+            for surface in changes
+            for component in definition.editable_surface_components.get(surface, ())
+        }
+
+    @staticmethod
+    def _validate_executable_harness_changes(changes: dict[str, Any]) -> None:
+        retrieval = changes.get("retrieval_policy")
+        if retrieval is not None:
+            if not isinstance(retrieval, dict):
+                raise HTTPException(status_code=400, detail={"code": "invalid_retrieval_policy"})
+            weight_keys = {
+                "lexical_weight", "semantic_weight", "graph_weight", "ontology_weight",
+                "authority_weight", "recency_weight", "identity_weight", "context_anchor_weight",
+            }
+            threshold_ranges = {
+                "semantic_skip_enabled": (0.0, 1.0),
+                "semantic_skip_min_lexical": (0.1, 1.0),
+                "semantic_skip_min_identity": (0.1, 1.0),
+                "semantic_skip_min_ontology": (0.1, 1.0),
+                "semantic_skip_max_anchor_df_ratio": (0.001, 0.25),
+                "semantic_skip_anchor_df_floor_count": (1.0, 64.0),
+                "semantic_skip_min_anchor_chars": (2.0, 64.0),
+                "candidate_limit": (12.0, 48.0),
+            }
+            allowed = weight_keys | set(threshold_ranges)
+            unknown = sorted(set(retrieval) - allowed)
+            invalid = sorted(
+                key
+                for key, value in retrieval.items()
+                if isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or (
+                    key in weight_keys
+                    and not 0.25 <= float(value) <= 2.0
+                )
+                or (
+                    key in threshold_ranges
+                    and not threshold_ranges[key][0]
+                    <= float(value)
+                    <= threshold_ranges[key][1]
+                )
+            )
+            if unknown or invalid:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "invalid_retrieval_policy",
+                        "unsupported": unknown,
+                        "out_of_range": invalid,
+                    },
+                )
+        context_playbook = changes.get("context_playbook")
+        if context_playbook is not None:
+            if not isinstance(context_playbook, dict):
+                raise HTTPException(status_code=400, detail={"code": "invalid_context_playbook"})
+            allowed = {"item_ids", "order", "max_items"}
+            unknown = sorted(set(context_playbook) - allowed)
+            item_ids = context_playbook.get("item_ids")
+            try:
+                valid = (
+                    isinstance(item_ids, list)
+                    and 1 <= len(item_ids) <= 1000
+                    and len({str(item) for item in item_ids if str(item)}) == len(item_ids)
+                    and context_playbook.get("order", "prepend") in {"prepend", "append"}
+                    and 0 <= int(context_playbook.get("max_items") or 0) <= 1000
+                )
+            except (TypeError, ValueError):
+                valid = False
+            if unknown or not valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "invalid_context_playbook",
+                        "unsupported": unknown,
+                    },
+                )
+        loop_policy = changes.get("loop_policy")
+        if loop_policy is not None:
+            if not isinstance(loop_policy, dict):
+                raise HTTPException(status_code=400, detail={"code": "invalid_loop_policy"})
+            allowed = {"max_iterations", "max_no_progress", "max_tool_loops"}
+            unknown = sorted(set(loop_policy) - allowed)
+            try:
+                valid = (
+                    1 <= int(loop_policy.get("max_iterations") or 5) <= 5
+                    and int(loop_policy.get("max_no_progress") or 2) == 2
+                    and 1 <= int(loop_policy.get("max_tool_loops") or 5) <= 5
+                )
+            except (TypeError, ValueError):
+                valid = False
+            if unknown or not valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": "invalid_loop_policy", "unsupported": unknown},
+                )
+
+    def shadow_harness_candidate(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
+        candidate = self.store.get("harness_candidates", candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+        if not principal.is_admin and str(candidate.get("employee_id") or "") != principal.employee_id:
+            raise HTTPException(status_code=403, detail="이 Harness 후보를 시험할 수 없습니다.")
+        expires_at = datetime.fromisoformat(str(candidate.get("expires_at") or "").replace("Z", "+00:00"))
+        if expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=409, detail={"code": "harness_candidate_expired"})
+        definition = self.harnesses.definition(str(candidate.get("harness_id") or ""))
+        forbidden = sorted(set(candidate.get("changes") or {}) & set(definition.immutable_boundaries))
+        addressable = self._candidate_addressable_stages(
+            definition,
+            candidate.get("changes") or {},
+        )
+        failure_rows = [
+            self.store.get("harness_failure_records", item) or {}
+            for item in candidate.get("failure_record_ids") or []
+        ]
+        unresolved = [
+            str(row.get("failure_record_id") or "")
+            for row in failure_rows
+            if str(row.get("causal_agent_stage") or "").split(".", 1)[0] not in addressable
+        ]
+        successful_runs = []
+        for work_run_id in (candidate.get("preservation_run_ids") or [])[: request.held_out_limit]:
+            run = self.store.get("work_runs", str(work_run_id))
+            if not run or str(run.get("status") or "") != "completed":
+                continue
+            successful_runs.append(
+                {
+                    "work_run_id": run.get("work_run_id"),
+                    "intent": run.get("intent"),
+                    "harness_bindings": run.get("harness_bindings") or [],
+                    "stop_reason": run.get("stop_reason") or "completed",
+                }
+            )
+        loop_change = (candidate.get("changes") or {}).get("loop_policy")
+        bounded_loop = True
+        if isinstance(loop_change, dict):
+            bounded_loop = (
+                1 <= int(loop_change.get("max_iterations") or 5) <= 5
+                and int(loop_change.get("max_no_progress") or 2) == 2
+                and 1 <= int(loop_change.get("max_tool_loops") or 5) <= 5
+            )
+        preflight_passed = (
+            not forbidden
+            and not unresolved
+            and bounded_loop
+            and bool(failure_rows)
+            and len(successful_runs) == len(candidate.get("preservation_run_ids") or [])
+        )
+        shadow_run_id = _id("hshadow", f"{candidate_id}:{request.fixture_revision}:{now_iso()}")
+        shadow = {
+            "shadow_run_id": shadow_run_id,
+            "candidate_id": candidate_id,
+            "employee_id": principal.employee_id,
+            "candidate_fingerprint": candidate.get("candidate_fingerprint"),
+            "fixture_revision": request.fixture_revision,
+            "evaluation_lock_checksum": request.evaluation_lock_checksum,
+            "status": "preflight_passed" if preflight_passed else "preflight_failed",
+            "held_in_failure_record_ids": [str(item.get("failure_record_id") or "") for item in failure_rows],
+            "unaddressed_failure_record_ids": unresolved,
+            "held_out_preservation_runs": successful_runs,
+            "adversarial": {
+                "immutable_changes": forbidden,
+                "bounded_loop": bounded_loop,
+                "permission_layer_outside_candidate": True,
+            },
+            "canary_contract": {
+                "environment": request.canary_environment,
+                "isolation": "local-full-overlay",
+                "overlay_scope": sorted(candidate.get("changes") or {}),
+                "read_only_surfaces": [
+                    "runs",
+                    "tracer",
+                    "evaluator",
+                    "fixtures",
+                    "model_config",
+                    "permissions",
+                ],
+                "production_changed": False,
+            },
+            "production_changed": False,
+            "created_at": now_iso(),
+        }
+        self.store.put("harness_shadow_runs", shadow_run_id, shadow)
+        candidate.update(
+            {
+                "status": "shadow_ready" if preflight_passed else "shadow_preflight_failed",
+                "latest_shadow_run_id": shadow_run_id,
+                "updated_at": now_iso(),
+            }
+        )
+        self.store.put("harness_candidates", candidate_id, candidate)
+        self._notify_operational_change(candidate_id, principal.employee_id)
+        return {"candidate": candidate, "shadow_run": shadow}
+
+    def evaluate_harness_candidate(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
+        candidate = self.store.get("harness_candidates", candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+        if not principal.is_admin and str(candidate.get("employee_id") or "") != principal.employee_id:
+            raise HTTPException(status_code=403, detail="이 Harness 후보를 평가할 수 없습니다.")
+        shadow = self.store.get("harness_shadow_runs", request.shadow_run_id)
+        if not shadow or shadow.get("candidate_id") != candidate_id:
+            raise HTTPException(status_code=409, detail="이 후보의 서버 shadow preflight가 필요합니다.")
+        if shadow.get("status") != "preflight_passed":
+            raise HTTPException(status_code=409, detail="서버 shadow preflight를 통과하지 못했습니다.")
+        if shadow.get("candidate_fingerprint") != candidate.get("candidate_fingerprint"):
+            raise HTTPException(status_code=409, detail="후보가 shadow preflight 이후 변경되었습니다.")
+        if request.fixture_revision != shadow.get("fixture_revision"):
+            raise HTTPException(status_code=409, detail="shadow와 평가 fixture revision이 다릅니다.")
+        if request.evaluation_lock_checksum != shadow.get("evaluation_lock_checksum"):
+            raise HTTPException(status_code=409, detail="shadow와 평가 evaluation lock이 다릅니다.")
+        held_in_records = [
+            self.store.get("harness_failure_records", str(item))
+            for item in shadow.get("held_in_failure_record_ids") or []
+        ]
+        preservation_ids = [
+            str(item.get("work_run_id") or "")
+            for item in shadow.get("held_out_preservation_runs") or []
+            if isinstance(item, dict) and item.get("work_run_id")
+        ]
+        preservation_runs = [self.store.get("work_runs", item) for item in preservation_ids]
+        held_in_ids = {
+            str(item.get("failure_record_id") or "")
+            for item in held_in_records
+            if item and item.get("failure_record_id")
+        }
+        reported_held_in_ids = {
+            str(item)
+            for item in request.held_in.get("failure_record_ids") or []
+            if str(item)
+        }
+        reported_preservation_ids = {
+            str(item)
+            for item in request.held_out.get("preservation_run_ids") or []
+            if str(item)
+        }
+        held_in_server_ok = (
+            bool(held_in_records)
+            and all(held_in_records)
+            and not shadow.get("unaddressed_failure_record_ids")
+            and reported_held_in_ids == held_in_ids
+        )
+        held_out_server_ok = (
+            bool(preservation_runs)
+            and all(item and str(item.get("status") or "") == "completed" for item in preservation_runs)
+            and reported_preservation_ids == set(preservation_ids)
+        )
+        shadow_adversarial = shadow.get("adversarial") if isinstance(shadow.get("adversarial"), dict) else {}
+        adversarial_server_ok = (
+            not shadow_adversarial.get("immutable_changes")
+            and bool(shadow_adversarial.get("bounded_loop"))
+            and bool(shadow_adversarial.get("permission_layer_outside_candidate"))
+        )
+        held_in_ok = request.held_in.get("passed") is True and held_in_server_ok
+        held_out_ok = (
+            request.held_out.get("passed") is True
+            and int(request.held_out.get("regressions") or 0) == 0
+            and held_out_server_ok
+        )
+        adversarial_ok = (
+            request.adversarial.get("passed", True) is True
+            and int(request.adversarial.get("unauthorized_mutations") or 0) == 0
+            and adversarial_server_ok
+        )
+        canary_report = (
+            request.long_term.get("canary")
+            if isinstance(request.long_term.get("canary"), dict)
+            else {}
+        )
+        canary_contract = (
+            shadow.get("canary_contract")
+            if isinstance(shadow.get("canary_contract"), dict)
+            else {}
+        )
+        canary_ok = (
+            canary_report.get("environment") == "local-full"
+            and canary_report.get("isolated") is True
+            and canary_report.get("overlay_applied") is True
+            and canary_report.get("production_changed") is False
+            and canary_report.get("evaluation_lock_checksum") == request.evaluation_lock_checksum
+            and canary_contract.get("environment") == "local-full"
+            and canary_contract.get("isolation") == "local-full-overlay"
+            and canary_contract.get("production_changed") is False
+        )
+        long_term_ok = (
+            request.long_term.get("passed") is True
+            and int(request.long_term.get("regressions") or 0) == 0
+            and canary_ok
+        )
+        metric_deltas = request.held_out.get("metric_deltas") if isinstance(request.held_out.get("metric_deltas"), dict) else {}
+        pareto = _harness_pareto_analysis(metric_deltas)
+        actual_impact = dict(pareto["metric_deltas"])
+        predicted_impact = {
+            str(key): float(value)
+            for key, value in (candidate.get("predicted_impact") or {}).items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
+        prediction_met = all(
+            key in actual_impact
+            and key in HARNESS_PARETO_METRICS
+            and (
+                actual_impact[key] >= expected
+                if HARNESS_PARETO_METRICS[key][1] == "maximize"
+                else actual_impact[key] <= expected
+            )
+            for key, expected in predicted_impact.items()
+        )
+        regressed_metrics = list(pareto["regressed_metrics"])
+        eval_id = _id("heval", f"{candidate_id}:{request.fixture_revision}:{now_iso()}")
+        qualified = (
+            held_in_ok
+            and held_out_ok
+            and adversarial_ok
+            and long_term_ok
+            and pareto["complete"]
+            and pareto["no_regression"]
+            and prediction_met
+        )
+        report = HarnessEvaluationReport(
+            eval_id=eval_id,
+            candidate_id=candidate_id,
+            shadow_run_id=request.shadow_run_id,
+            fixture_revision=request.fixture_revision,
+            held_in=request.held_in,
+            held_out=request.held_out,
+            preserved={
+                "passed": held_out_server_ok,
+                "work_run_ids": preservation_ids,
+                "at_risk_regressions": candidate.get("at_risk_regressions") or [],
+            },
+            adversarial=request.adversarial,
+            long_term=request.long_term,
+            predicted_impact=predicted_impact,
+            actual_impact=actual_impact,
+            prediction_met=prediction_met,
+            qualified=qualified,
+        )
+        evaluation = {
+            **report.model_dump(mode="json"),
+            "employee_id": principal.employee_id,
+            "server_observations": {
+                "held_in_failure_record_ids": [
+                    str(item.get("failure_record_id") or "")
+                    for item in held_in_records
+                    if item
+                ],
+                "held_out_work_run_ids": preservation_ids,
+                "held_in_verified": held_in_server_ok,
+                "held_out_verified": held_out_server_ok,
+                "adversarial_boundaries_verified": adversarial_server_ok,
+                "held_in_report_matches": reported_held_in_ids == held_in_ids,
+                "held_out_report_matches": reported_preservation_ids == set(preservation_ids),
+                "canary_verified": canary_ok,
+                "evaluation_lock_checksum": request.evaluation_lock_checksum,
+            },
+            "pareto": pareto,
+        }
+        self.store.put("harness_eval_runs", eval_id, evaluation)
+        candidate.update(
+            {
+                "status": "review_required" if evaluation["qualified"] else "rejected",
+                "latest_eval_id": eval_id,
+                "production_changed": False,
+                "updated_at": now_iso(),
+            }
+        )
+        self.store.put("harness_candidates", candidate_id, candidate)
+        pattern_id = str((candidate.get("failure_pattern_ids") or [""])[0])
+        pattern = self.store.get("harness_failure_patterns", pattern_id) or {}
+        if pattern:
+            if evaluation["qualified"]:
+                pattern.update(
+                    {
+                        "consecutive_no_improvement": 0,
+                        "last_qualified_candidate_id": candidate_id,
+                        "updated_at": now_iso(),
+                    }
+                )
+            else:
+                safety_violation = not adversarial_ok
+                no_improvement = int(pattern.get("consecutive_no_improvement") or 0) + 1
+                archive = list(pattern.get("failed_candidate_archive") or [])
+                archive.append(
+                    {
+                        "candidate_id": candidate_id,
+                        "eval_id": eval_id,
+                        "changes": candidate.get("changes") or {},
+                        "pareto": pareto,
+                        "safety_violation": safety_violation,
+                        "created_at": now_iso(),
+                    }
+                )
+                pattern.update(
+                    {
+                        "failed_candidate_archive": archive[-100:],
+                        "consecutive_no_improvement": no_improvement,
+                        "status": (
+                            "auto_stopped"
+                            if safety_violation or no_improvement >= 3
+                            else pattern.get("status") or "open"
+                        ),
+                        "auto_stop_reason": (
+                            "safety_violation"
+                            if safety_violation
+                            else "three_no_improvement"
+                            if no_improvement >= 3
+                            else ""
+                        ),
+                        "updated_at": now_iso(),
+                    }
+                )
+            self.store.put("harness_failure_patterns", pattern_id, pattern)
+        self._notify_operational_change(candidate_id, principal.employee_id)
+        if not evaluation["qualified"]:
+            self._record_negative_result(
+                principal=principal,
+                kind="rejected_harness_candidate",
+                summary="Harness 후보가 held-in·held-out·adversarial·장기 기준 중 하나를 통과하지 못했습니다.",
+                source_refs=[candidate_id, eval_id],
+                metadata={"candidate_id": candidate_id, "eval_id": eval_id, "pareto": evaluation["pareto"]},
+            )
+        return {"candidate": candidate, "evaluation": evaluation}
+
+    def review_harness_candidate(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
+        candidate = self.store.get("harness_candidates", candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+        expires_at = datetime.fromisoformat(str(candidate.get("expires_at") or "").replace("Z", "+00:00"))
+        if expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=409, detail={"code": "harness_candidate_expired"})
+        evaluation = self.store.get("harness_eval_runs", request.expected_eval_id)
+        if not evaluation or evaluation.get("candidate_id") != candidate_id:
+            raise HTTPException(status_code=409, detail="검토할 평가 결과가 현재 후보와 일치하지 않습니다.")
+        if request.decision == "approve_for_release" and not evaluation.get("qualified"):
+            raise HTTPException(status_code=409, detail="합격하지 않은 후보는 release 검토 승인할 수 없습니다.")
+        status = {
+            "approve_for_release": "approved_for_manual_release",
+            "hold": "held",
+            "reject": "rejected",
+        }[request.decision]
+        candidate.update(
+            {
+                "status": status,
+                "review": {
+                    "decision": request.decision,
+                    "note": _compact(request.note, 4000),
+                    "reviewed_by": principal.employee_id,
+                    "reviewed_at": now_iso(),
+                    "eval_id": request.expected_eval_id,
+                },
+                "production_changed": False,
+                "updated_at": now_iso(),
+            }
+        )
+        self.store.put("harness_candidates", candidate_id, candidate)
+        version_id = ""
+        if request.decision == "approve_for_release":
+            version_id = _id("hversion", f"{candidate_id}:{request.expected_eval_id}")
+            self.store.put(
+                "harness_versions",
+                version_id,
+                {
+                    "harness_version_id": version_id,
+                    "harness_id": candidate.get("harness_id"),
+                    "base_version": candidate.get("base_version"),
+                    "model_profile": candidate.get("model_profile"),
+                    "changes": candidate.get("changes"),
+                    "candidate_id": candidate_id,
+                    "eval_id": request.expected_eval_id,
+                    "status": "approved_not_deployed",
+                    "production_changed": False,
+                    "rollback_version": candidate.get("rollback_target") or candidate.get("base_version"),
+                    "created_at": now_iso(),
+                },
+            )
+        elif request.decision == "reject":
+            self._record_negative_result(
+                principal=principal,
+                kind="review_rejected_harness_candidate",
+                summary=request.note,
+                source_refs=[candidate_id, request.expected_eval_id],
+                metadata={"candidate_id": candidate_id, "eval_id": request.expected_eval_id},
+            )
+        self._notify_operational_change(version_id or candidate_id, principal.employee_id)
+        return {"candidate": candidate, "harness_version_id": version_id, "production_changed": False}
+
+    def release_harness_version(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
+        if not principal.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        candidate = self.store.get("harness_candidates", candidate_id)
+        version = self.store.get("harness_versions", request.expected_version_id)
+        if not candidate or not version or version.get("candidate_id") != candidate_id:
+            raise HTTPException(status_code=404, detail="배포할 Harness 버전을 찾을 수 없습니다.")
+        expires_at = datetime.fromisoformat(str(candidate.get("expires_at") or "").replace("Z", "+00:00"))
+        if expires_at <= datetime.now(timezone.utc):
+            raise HTTPException(status_code=409, detail={"code": "harness_candidate_expired"})
+        if candidate.get("status") != "approved_for_manual_release" or version.get("status") != "approved_not_deployed":
+            raise HTTPException(status_code=409, detail="사람 검토를 통과한 대기 버전만 배포할 수 있습니다.")
+        if not request.user_confirmed:
+            raise HTTPException(status_code=400, detail="Harness 버전 배포를 확인해주세요.")
+        active_key = f"{version.get('harness_id')}:{version.get('model_profile') or 'default'}"
+        previous = self.store.get("harness_active_versions", active_key) or {}
+        audit_id = _id("haudit", f"release:{candidate_id}:{now_iso()}")
+        result = {
+            "operation": "release",
+            "candidate_id": candidate_id,
+            "harness_version_id": request.expected_version_id,
+            "previous_version": previous.get("harness_version_id") or version.get("rollback_version"),
+            "rehearsal": bool(request.rehearsal),
+            "production_changed": not request.rehearsal,
+            "note": _compact(request.note, 4000),
+            "actor_employee_id": principal.employee_id,
+            "created_at": now_iso(),
+        }
+        self.store.put("harness_release_audits", audit_id, {"audit_id": audit_id, **result})
+        if request.rehearsal:
+            return result
+        self.store.put(
+            "harness_active_versions",
+            active_key,
+            {
+                "active_key": active_key,
+                "harness_id": version.get("harness_id"),
+                "model_profile": version.get("model_profile") or "default",
+                "harness_version_id": request.expected_version_id,
+                "changes": version.get("changes") or {},
+                "previous_version": result["previous_version"],
+                "activated_by": principal.employee_id,
+                "activated_at": now_iso(),
+            },
+        )
+        version.update({"status": "active", "production_changed": True, "activated_at": now_iso()})
+        candidate.update({"status": "released", "production_changed": True, "updated_at": now_iso()})
+        self.store.put("harness_versions", request.expected_version_id, version)
+        self.store.put("harness_candidates", candidate_id, candidate)
+        self._notify_operational_change(request.expected_version_id, principal.employee_id)
+        return result
+
+    def rollback_harness_version(self, principal: Principal, candidate_id: str, request: Any) -> dict[str, Any]:
+        if not principal.is_admin:
+            raise HTTPException(status_code=403, detail="boi.admin is required")
+        candidate = self.store.get("harness_candidates", candidate_id)
+        if not candidate:
+            raise HTTPException(status_code=404, detail="Harness 후보를 찾을 수 없습니다.")
+        version = next(
+            (item for item in self.store.list("harness_versions", limit=1000) if item.get("candidate_id") == candidate_id and item.get("status") == "active"),
+            None,
+        )
+        if not version:
+            raise HTTPException(status_code=409, detail="현재 활성화된 Harness 후보 버전이 없습니다.")
+        if not request.user_confirmed:
+            raise HTTPException(status_code=400, detail="Harness 버전 되돌리기를 확인해주세요.")
+        active_key = f"{version.get('harness_id')}:{version.get('model_profile') or 'default'}"
+        audit_id = _id("haudit", f"rollback:{candidate_id}:{now_iso()}")
+        result = {
+            "operation": "rollback",
+            "candidate_id": candidate_id,
+            "harness_version_id": version.get("harness_version_id"),
+            "rollback_version": version.get("rollback_version"),
+            "rehearsal": bool(request.rehearsal),
+            "production_changed": not request.rehearsal,
+            "note": _compact(request.note, 4000),
+            "actor_employee_id": principal.employee_id,
+            "created_at": now_iso(),
+        }
+        self.store.put("harness_release_audits", audit_id, {"audit_id": audit_id, **result})
+        if request.rehearsal:
+            return result
+        self.store.delete("harness_active_versions", active_key)
+        version.update({"status": "rolled_back", "production_changed": False, "rolled_back_at": now_iso()})
+        candidate.update({"status": "rolled_back", "production_changed": False, "updated_at": now_iso()})
+        self.store.put("harness_versions", str(version["harness_version_id"]), version)
+        self.store.put("harness_candidates", candidate_id, candidate)
+        self._notify_operational_change(str(version["harness_version_id"]), principal.employee_id)
+        return result
+
+    def effective_harness_bindings(self, harness_ids: list[str]) -> list[dict[str, Any]]:
+        bindings = self.harnesses.bindings(harness_ids, self.model_profile)
+        for binding in bindings:
+            active_key = f"{binding.get('harness_id')}:{self.model_profile}"
+            active = self.store.get("harness_active_versions", active_key)
+            if active:
+                binding.update(
+                    {
+                        "version": active.get("harness_version_id"),
+                        "active_changes": active.get("changes") or {},
+                        "release_state": "active_reviewed_version",
+                    }
+                )
+        return bindings
+
+    @staticmethod
+    def retrieval_policy(bindings: list[dict[str, Any]]) -> dict[str, float]:
+        policy: dict[str, float] = {}
+        for binding in bindings:
+            definition = binding.get("definition") if isinstance(binding, dict) else {}
+            base_retrieval = (
+                definition.get("retrieval_policy")
+                if isinstance(definition, dict)
+                else None
+            )
+            if isinstance(base_retrieval, dict):
+                for key, value in base_retrieval.items():
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        policy[str(key)] = float(value)
+            changes = binding.get("active_changes") if isinstance(binding, dict) else {}
+            retrieval = changes.get("retrieval_policy") if isinstance(changes, dict) else None
+            if not isinstance(retrieval, dict):
+                continue
+            for key, value in retrieval.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    policy[str(key)] = float(value)
+        return policy
+
+    @staticmethod
+    def _binding_for(
+        bindings: list[dict[str, Any]],
+        harness_id: str,
+    ) -> dict[str, Any] | None:
+        return next(
+            (
+                item
+                for item in bindings
+                if isinstance(item, dict) and str(item.get("harness_id") or "") == harness_id
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _pinned_harness_ids(
+        bindings: list[dict[str, Any]],
+        *,
+        operation: str,
+        phase: str,
+    ) -> list[str]:
+        selected: list[str] = []
+        for binding in bindings:
+            if not isinstance(binding, dict):
+                continue
+            definition = binding.get("definition") if isinstance(binding.get("definition"), dict) else {}
+            phases = {str(item) for item in definition.get("phases") or []}
+            operations = {str(item) for item in definition.get("operations") or []}
+            harness_id = str(binding.get("harness_id") or "")
+            if harness_id and (not phases or phase in phases) and (not operations or operation in operations):
+                selected.append(harness_id)
+        return list(dict.fromkeys(selected))
+
+    @staticmethod
+    def _apply_pinned_loop_policy(
+        policy: LoopPolicy,
+        bindings: list[dict[str, Any]],
+    ) -> LoopPolicy:
+        budgets = [
+            changes.get("loop_policy") or changes.get("loop_budget")
+            for item in bindings
+            if isinstance(item, dict)
+            for changes in [item.get("active_changes") if isinstance(item.get("active_changes"), dict) else {}]
+            if isinstance(changes.get("loop_policy") or changes.get("loop_budget"), dict)
+        ]
+        if not budgets:
+            return policy
+        max_iterations = min(
+            [policy.max_iterations, *[int(item.get("max_iterations") or policy.max_iterations) for item in budgets]]
+        )
+        max_tool_loops = min(
+            [policy.max_tool_loops, *[int(item.get("max_tool_loops") or policy.max_tool_loops) for item in budgets]]
+        )
+        max_no_progress = min(
+            [policy.max_no_progress, *[int(item.get("max_no_progress") or policy.max_no_progress) for item in budgets]]
+        )
+        return policy.model_copy(
+            update={
+                "max_iterations": max(1, min(5, max_iterations)),
+                "max_tool_loops": max(1, min(5, max_tool_loops)),
+                # The loop contract stops after the second consecutive
+                # no-progress result. Reviewed candidates may tighten work and
+                # tool budgets, but cannot weaken this invariant.
+                "max_no_progress": 2,
+            }
+        )
+
+    @staticmethod
+    def resolve_loop_policy(
+        intent: WorkIntent,
+        policy: LoopPolicy | dict[str, Any] | None = None,
+    ) -> LoopPolicy:
+        selected = policy if policy is not None else intent.loop_contract
+        if isinstance(selected, LoopPolicy):
+            return selected
+        if hasattr(selected, "model_dump"):
+            selected = selected.model_dump(mode="json")
+        return LoopPolicy.model_validate(selected)
+
+    def create_run(
+        self,
+        *,
+        principal: Principal,
+        agent_run_id: str,
+        session: dict[str, Any],
+        context: WorkContextPack,
+        intent: WorkIntent,
+        goal_plan_id: str,
+        loop_policy: LoopPolicy | dict[str, Any] | None = None,
+        catalog_revision: str = "",
+        planner_schema_revision: str = "semantic-plan/v4",
+        semantic_plan_ref: str = "",
+        pinned_harness_bindings: list[dict[str, Any]] | None = None,
+        persist: bool = True,
+    ) -> dict[str, Any]:
+        work_run_id = (
+            _id("workrun", f"{agent_run_id}:{principal.employee_id}")
+            if persist
+            else ""
+        )
+        all_harness_ids = self.harnesses.harnesses_for(
+            intent,
+            intent.asset_kind.value,
+        )
+        effective_bindings = self.effective_harness_bindings(all_harness_ids)
+        pinned_by_id = {
+            str(item.get("harness_id") or ""): item
+            for item in (pinned_harness_bindings or [])
+            if isinstance(item, dict) and item.get("harness_id")
+        }
+        harness_bindings = [
+            pinned_by_id.get(str(item.get("harness_id") or ""), item)
+            for item in effective_bindings
+        ]
+        preflight_ids = self._pinned_harness_ids(
+            harness_bindings,
+            operation=intent.operation.value,
+            phase="preflight",
+        )
+        preflights = [
+            self.harnesses.evaluate(
+                harness_id,
+                phase="preflight",
+                intent=intent,
+                context=context,
+                task_mode=context.task_mode,
+                binding=self._binding_for(harness_bindings, harness_id),
+            )
+            for harness_id in preflight_ids
+        ]
+        status = "blocked" if any(item.status == "blocked" for item in preflights) else "running"
+        ledger_ids = [
+            self._record_evidence(
+                principal=principal,
+                work_run_id=work_run_id,
+                evidence_id=item.evidence_id,
+                kind=item.kind,
+                title=item.title,
+                summary=item.summary,
+                source=item.source,
+                authority=item.authority,
+                verification="selected",
+            )
+            for item in context.evidence_refs
+        ] if persist else []
+        resolved_loop_policy = self._apply_pinned_loop_policy(
+            self.resolve_loop_policy(intent, loop_policy),
+            harness_bindings,
+        )
+        run = {
+            "work_run_id": work_run_id,
+            "agent_run_id": agent_run_id,
+            "employee_id": principal.employee_id,
+            "work_session_id": session.get("session_id") or "",
+            "context_id": context.context_id,
+            "goal_plan_id": goal_plan_id,
+            "semantic_plan_ref": semantic_plan_ref,
+            "intent": intent.model_dump(mode="json"),
+            "task_mode": context.task_mode.value,
+            "status": status,
+            "decision": "blocked" if status == "blocked" else "continue",
+            "revision": 1,
+            "loop": {
+                "flow": self.FLOW,
+                "policy": resolved_loop_policy.model_dump(mode="json"),
+                "iteration_count": 0,
+                "no_progress_count": 0,
+                "max_iterations": resolved_loop_policy.max_iterations,
+                "max_no_progress": resolved_loop_policy.max_no_progress,
+                "max_tool_loops": resolved_loop_policy.max_tool_loops,
+                "max_model_calls": resolved_loop_policy.max_model_calls,
+                "max_elapsed_seconds": resolved_loop_policy.max_elapsed_seconds,
+                "max_context_tokens": resolved_loop_policy.max_context_tokens,
+                "tool_loop_count": 0,
+                "started_at": now_iso(),
+                "deltas": [],
+                "progress_deltas": [],
+                "progress_state": {
+                    "entity_refs": [],
+                    "evidence_refs": [item.evidence_id for item in context.evidence_refs],
+                    "tool_result_refs": [],
+                    "artifact_refs": [],
+                    "blocker_codes": [],
+                    "completion": {},
+                },
+                "idempotency_keys": [],
+                "resource_budget": (
+                    context.context_manifest.budget_resolution
+                    if context.context_manifest is not None
+                    else {}
+                ),
+            },
+            "harness_results": [item.model_dump(mode="json") for item in preflights],
+            "harness_bindings": harness_bindings,
+            "contract_revisions": {
+                "capability_catalog": catalog_revision,
+                "harness_catalog": self.harnesses.version,
+                "planner_schema": planner_schema_revision,
+            },
+            "checkpoint_ids": [],
+            "events": [
+                {"event": "work.observed", "at": now_iso()},
+                {"event": "context.compiled", "context_id": context.context_id, "at": now_iso()},
+                {
+                    "event": "harness.preflight",
+                    "status": "blocked" if status == "blocked" else "passed",
+                    "harness_ids": preflight_ids,
+                    "at": now_iso(),
+                },
+            ],
+            "artifact_refs": [],
+            "evidence_refs": [item.evidence_id for item in context.evidence_refs],
+            "evidence_ledger_ids": ledger_ids,
+            "knowledge_candidate_ids": [],
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+            "_transient_turn": not persist,
+        }
+        if not persist:
+            return run
+        self._append_checkpoint(
+            run,
+            node="observe",
+            raw_state={
+                "agent_run_id": agent_run_id,
+                "session_id": session.get("session_id") or "",
+                "task_mode": context.task_mode.value,
+                "loop_policy": resolved_loop_policy.model_dump(mode="json"),
+            },
+        )
+        self._append_checkpoint(
+            run,
+            node="context",
+            raw_state={
+                "context_id": context.context_id,
+                "task_ref": context.task_ref,
+                "workflow_ref": context.workflow_ref,
+                "evidence_refs": [item.evidence_id for item in context.evidence_refs],
+                "context_manifest": context.context_manifest.model_dump(mode="json")
+                if context.context_manifest
+                else {},
+            },
+        )
+        self._append_checkpoint(
+            run,
+            node="semantic_plan",
+            raw_state={
+                "semantic_plan_ref": semantic_plan_ref,
+                "goal_plan_id": goal_plan_id,
+                "intent": intent.model_dump(mode="json"),
+            },
+        )
+        for preflight in preflights:
+            self.store.put(
+                "harness_results",
+                f"{work_run_id}:{preflight.harness_id}:preflight",
+                {
+                    "employee_id": principal.employee_id,
+                    "work_run_id": work_run_id,
+                    **preflight.model_dump(mode="json"),
+                },
+            )
+        failure_ids = self._record_harness_failures(
+            principal=principal,
+            work_run=run,
+            context=context,
+            results=preflights,
+            phase="preflight",
+        )
+        run["harness_failure_record_ids"] = failure_ids
+        return self.store.put("work_runs", work_run_id, run)
+
+    def restart_run(
+        self,
+        *,
+        principal: Principal,
+        parent_work_run_id: str,
+        agent_run_id: str,
+        context: WorkContextPack,
+        job_id: str,
+        restarted_from_job_checkpoint_id: str,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        """Create a distinct WorkRun from one terminal run's pinned contract.
+
+        A restart is a new execution attempt, not a status reset. The parent
+        remains terminal while the child receives its own evidence ledger,
+        Harness preflight, checkpoints, progress stream and idempotency space.
+        """
+
+        parent = self.get_run(principal, parent_work_run_id)
+        if str(parent.get("status") or "") not in {
+            "cancelled",
+            "failed",
+            "stopped",
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail="only a terminal WorkRun can restart",
+            )
+        intent = WorkIntent.model_validate(parent.get("intent") or {})
+        contract_revisions = (
+            parent.get("contract_revisions")
+            if isinstance(parent.get("contract_revisions"), dict)
+            else {}
+        )
+        parent_loop = (
+            parent.get("loop")
+            if isinstance(parent.get("loop"), dict)
+            else {}
+        )
+        child = self.create_run(
+            principal=principal,
+            agent_run_id=agent_run_id,
+            session={"session_id": str(parent.get("work_session_id") or "")},
+            context=context,
+            intent=intent,
+            goal_plan_id=str(parent.get("goal_plan_id") or ""),
+            loop_policy=parent_loop.get("policy") or intent.loop_contract,
+            catalog_revision=str(contract_revisions.get("capability_catalog") or ""),
+            planner_schema_revision=str(
+                contract_revisions.get("planner_schema") or "semantic-plan/v4"
+            ),
+            semantic_plan_ref=str(parent.get("semantic_plan_ref") or ""),
+            pinned_harness_bindings=[
+                dict(item)
+                for item in parent.get("harness_bindings") or []
+                if isinstance(item, dict)
+            ],
+        )
+        parent_checkpoint_id = str((parent.get("checkpoint_ids") or [""])[-1])
+        root_work_run_id = str(
+            parent.get("root_work_run_id") or parent_work_run_id
+        )
+        restart_number = int(parent.get("restart_number") or 0) + 1
+        child.update(
+            {
+                "parent_work_run_id": parent_work_run_id,
+                "root_work_run_id": root_work_run_id,
+                "restart_number": restart_number,
+                "restart_job_id": job_id,
+                "restarted_from_checkpoint_id": parent_checkpoint_id,
+                "restarted_from_job_checkpoint_id": restarted_from_job_checkpoint_id,
+                "restart_idempotency_key": idempotency_key,
+                "updated_at": now_iso(),
+            }
+        )
+        progress = ProgressDelta(
+            delta_id=_id(
+                "progress",
+                f"{child['work_run_id']}:restart:{idempotency_key}",
+            ),
+            kind="state_transition",
+            completion_changes={
+                "restart_number": restart_number,
+                "parent_work_run_id": parent_work_run_id,
+            },
+            summary="보존된 checkpoint에서 새 WorkRun을 시작했습니다.",
+        )
+        child_loop = child.setdefault("loop", {})
+        child_loop["progress_deltas"] = [
+            *list(child_loop.get("progress_deltas") or []),
+            progress.model_dump(mode="json"),
+        ]
+        child.setdefault("events", []).append(
+            {
+                "event": "work.restarted",
+                "parent_work_run_id": parent_work_run_id,
+                "root_work_run_id": root_work_run_id,
+                "restarted_from_checkpoint_id": parent_checkpoint_id,
+                "restarted_from_job_checkpoint_id": restarted_from_job_checkpoint_id,
+                "at": now_iso(),
+            }
+        )
+        restart_checkpoint = self._append_checkpoint(
+            child,
+            node="observe",
+            raw_state={
+                "state_transition": "restart",
+                "parent_work_run_id": parent_work_run_id,
+                "root_work_run_id": root_work_run_id,
+                "restarted_from_checkpoint_id": parent_checkpoint_id,
+                "restarted_from_job_checkpoint_id": restarted_from_job_checkpoint_id,
+                "job_id": job_id,
+            },
+            idempotency_key=idempotency_key,
+        )
+        child["restart_checkpoint_id"] = restart_checkpoint.checkpoint_id
+        return self.store.put("work_runs", str(child["work_run_id"]), child)
+
+    def _record_evidence(
+        self,
+        *,
+        principal: Principal,
+        work_run_id: str,
+        evidence_id: str,
+        kind: str,
+        title: str,
+        summary: str,
+        source: str,
+        authority: str,
+        verification: str,
+        chunk_ids: list[str] | None = None,
+        claim_bindings: list[dict[str, Any]] | None = None,
+        displayed: bool = False,
+    ) -> str:
+        ledger_id = _id("ledger", f"{work_run_id}:{evidence_id}:{verification}")
+        entry = EvidenceLedgerEntry(
+            ledger_id=ledger_id,
+            employee_id=principal.employee_id,
+            work_run_id=work_run_id,
+            evidence_id=evidence_id,
+            kind=kind,
+            title=_compact(title, 240),
+            summary=_compact(summary, 2000),
+            source=source,
+            authority=authority,
+            verification=verification,
+            chunk_ids=list(dict.fromkeys(str(item) for item in (chunk_ids or []) if str(item))),
+            claim_bindings=claim_bindings or [],
+            displayed=displayed,
+        )
+        self.store.put(
+            "evidence_ledger",
+            ledger_id,
+            entry.model_dump(mode="json"),
+        )
+        return ledger_id
+
+    def finish_run(
+        self,
+        *,
+        principal: Principal,
+        work_run: dict[str, Any],
+        context: WorkContextPack,
+        intent: WorkIntent,
+        response_status: str,
+        answer_summary: str,
+        artifacts: list[dict[str, Any]],
+        evidence_refs: list[str],
+        evidence_bindings: dict[str, dict[str, Any]] | None = None,
+        job_id: str = "",
+    ) -> tuple[dict[str, Any], list[KnowledgeCandidateRef]]:
+        transient_turn = bool(work_run.get("_transient_turn"))
+        artifact = artifacts[0] if artifacts else {}
+        artifact_kind = str(artifact.get("artifact_type") or artifact.get("kind") or "")
+        results: list[HarnessResult] = []
+        pinned_bindings = [
+            item
+            for item in work_run.get("harness_bindings") or []
+            if isinstance(item, dict)
+        ]
+        post_verify_ids = self._pinned_harness_ids(
+            pinned_bindings,
+            operation=intent.operation.value,
+            phase="post_verify",
+        )
+        for harness_id in post_verify_ids:
+            result = self.harnesses.evaluate(
+                harness_id,
+                phase="post_verify",
+                intent=intent,
+                context=context,
+                artifact=artifact,
+                task_mode=context.task_mode,
+                binding=self._binding_for(pinned_bindings, harness_id),
+            )
+            results.append(result)
+            if not transient_turn:
+                self.store.put(
+                    "harness_results",
+                    f"{work_run['work_run_id']}:{harness_id}:post_verify",
+                    {
+                        "employee_id": principal.employee_id,
+                        "work_run_id": work_run["work_run_id"],
+                        **result.model_dump(mode="json"),
+                    },
+                )
+        blocked = any(item.status == "blocked" for item in results)
+        if job_id:
+            delta_kind = "state_transition"
+        elif artifacts:
+            delta_kind = "new_artifact"
+        elif evidence_refs:
+            delta_kind = "new_evidence"
+        elif blocked or response_status in {"failed", "blocked"}:
+            delta_kind = "blocker"
+        else:
+            # Waiting for Task input is a normal state transition, not a blocker.
+            delta_kind = "state_transition"
+        delta = LoopDelta(
+            kind=delta_kind,  # type: ignore[arg-type]
+            summary=("심층 작업이 대기열에 등록되었습니다." if job_id else answer_summary),
+            ref=job_id or str(artifact.get("artifact_id") or (evidence_refs[0] if evidence_refs else "")),
+            metadata={
+                "evidence_refs": evidence_refs,
+                "artifact_refs": [str(item.get("artifact_id") or "") for item in artifacts if item.get("artifact_id")],
+                "completion_changes": {"response_status": response_status},
+                "blocker_code": "harness_blocked" if blocked else "response_failed" if response_status == "failed" else "",
+                "error_disposition": "policy_stop" if blocked else "unexpected_failure" if response_status == "failed" else "",
+            },
+        )
+        loop = dict(work_run.get("loop") or {})
+        work_run["loop"] = loop
+        delta, progress_delta, _, _ = self._append_progress(work_run, delta)
+        loop = dict(work_run.get("loop") or {})
+        loop["iteration_count"] = int(loop.get("iteration_count") or 0) + 1
+        added_ledger_ids = [
+            self._record_evidence(
+                principal=principal,
+                work_run_id=str(work_run["work_run_id"]),
+                evidence_id=ref,
+                kind="evidence",
+                title=ref,
+                summary=answer_summary,
+                source="operation",
+                authority="runtime",
+                verification="used",
+                chunk_ids=list(
+                    (evidence_bindings or {}).get(ref, {}).get("chunk_ids") or []
+                ),
+                claim_bindings=list(
+                    (evidence_bindings or {}).get(ref, {}).get("claim_bindings") or []
+                ),
+            )
+            for ref in evidence_refs
+            if ref
+        ] if not transient_turn else []
+        ledger_ids = list(
+            dict.fromkeys([*work_run.get("evidence_ledger_ids", []), *added_ledger_ids])
+        )
+        eligible_complete = False
+        if response_status == "failed" or blocked:
+            status, decision, stop_reason = "blocked", "blocked", "policy_stop" if blocked else "unexpected_failure"
+        elif response_status == "queued":
+            status, decision, stop_reason = "queued", "continue", ""
+        elif intent.operation == WorkOperation.complete and not intent.needs_clarification:
+            if context.task_mode == TaskMode.autopilot:
+                status, decision, stop_reason = "waiting_signal", "continue", "needs_human"
+            else:
+                status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
+        elif response_status == "needs_input" or intent.needs_clarification:
+            status, decision, stop_reason = "waiting_human", "needs_human", "human_interrupt"
+        elif context.task_ref and intent.asset_kind == WorkAssetKind.task:
+            if context.task_mode == TaskMode.autopilot:
+                status, decision, stop_reason = "waiting_signal", "continue", "needs_human"
+            else:
+                status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
+        elif artifacts and intent.operation in {WorkOperation.validate, WorkOperation.test}:
+            eligible_complete = True
+            status, decision, stop_reason = "completed", "complete", "exit_criteria_satisfied"
+        elif artifacts and artifact_kind in {
+            "mermaid_diagram",
+            "ontology_graph",
+            "knowledge_graph",
+            "data_table",
+            "timeline",
+        }:
+            eligible_complete = True
+            status, decision, stop_reason = "completed", "complete", "exit_criteria_satisfied"
+        elif artifacts:
+            status, decision, stop_reason = "waiting_review", "needs_human", "needs_human"
+        elif intent.operation in {
+            WorkOperation.complete,
+            WorkOperation.test,
+            WorkOperation.run,
+            WorkOperation.promote,
+        }:
+            status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
+        else:
+            eligible_complete = True
+            status, decision, stop_reason = "completed", "complete", "exit_criteria_satisfied"
+        exit_checks = [
+            HarnessCheck(
+                check_id="exit.operation-outcome",
+                label="업무 결과",
+                status="passed" if eligible_complete else "blocked",
+                message="검토, 사람 입력 또는 실행 결과가 더 필요합니다." if not eligible_complete else "",
+            ),
+            HarnessCheck(
+                check_id="exit.harness",
+                label="Harness 검증",
+                status="passed" if not blocked and response_status != "failed" else "blocked",
+                message="Harness 또는 실행 결과 검증을 통과하지 못했습니다."
+                if blocked or response_status == "failed"
+                else "",
+            ),
+        ]
+        if evidence_refs:
+            transient_bindings_complete = bool(
+                transient_turn
+                and all(
+                    list((evidence_bindings or {}).get(ref, {}).get("chunk_ids") or [])
+                    for ref in evidence_refs
+                )
+            )
+            exit_checks.append(
+                HarnessCheck(
+                    check_id="exit.evidence-ledger",
+                    label="사용 근거 연결",
+                    status="passed" if ledger_ids or transient_bindings_complete else "blocked",
+                    message=(
+                        "표시 근거가 citation·claim binding에 연결되지 않았습니다."
+                        if not ledger_ids and not transient_bindings_complete
+                        else ""
+                    ),
+                )
+            )
+        exit_result = ExitCriteriaResult(
+            satisfied=bool(exit_checks) and all(item.status == "passed" for item in exit_checks),
+            criteria=exit_checks,
+            evidence_ledger_ids=ledger_ids,
+            evaluated_facts={
+                "response_status": response_status,
+                "artifact_count": len(artifacts),
+                "evidence_count": len(evidence_refs),
+                "harness_blocked": blocked,
+            },
+            stop_reason="exit_criteria_satisfied" if eligible_complete and not blocked else "needs_human",
+        )
+        if status == "completed" and not exit_result.satisfied:
+            status, decision, stop_reason = "waiting_human", "needs_human", "needs_human"
+        work_run.update(
+            {
+                "status": status,
+                "decision": decision,
+                "stop_reason": stop_reason,
+                "loop": loop,
+                "artifact_refs": [str(item.get("artifact_id") or "") for item in artifacts if item.get("artifact_id")],
+                "evidence_refs": list(dict.fromkeys([*work_run.get("evidence_refs", []), *evidence_refs])),
+                "job_id": job_id or work_run.get("job_id") or "",
+                "harness_results": [
+                    *work_run.get("harness_results", []),
+                    *[item.model_dump(mode="json") for item in results],
+                ],
+                "evidence_ledger_ids": ledger_ids,
+                "exit_criteria_result": exit_result.model_dump(mode="json"),
+                "revision": int(work_run.get("revision") or 1) + 1,
+                "updated_at": now_iso(),
+            }
+        )
+        failure_ids = (
+            self._record_harness_failures(
+                principal=principal,
+                work_run=work_run,
+                context=context,
+                results=results,
+                phase="post_verify",
+                terminal_cause="response_failed" if response_status == "failed" else "",
+            )
+            if not transient_turn
+            else []
+        )
+        work_run["harness_failure_record_ids"] = list(
+            dict.fromkeys([*work_run.get("harness_failure_record_ids", []), *failure_ids])
+        )
+        if not transient_turn:
+            self._append_checkpoint(
+                work_run,
+                node="act",
+                raw_state={
+                    "progress_delta": progress_delta.model_dump(mode="json"),
+                    "artifact_refs": work_run.get("artifact_refs") or [],
+                    "job_id": job_id,
+                },
+            )
+            self._append_checkpoint(
+                work_run,
+                node="verify",
+                raw_state={
+                    "harness_results": [item.model_dump(mode="json") for item in results],
+                    "exit_criteria": exit_result.model_dump(mode="json"),
+                },
+            )
+            self._append_checkpoint(
+                work_run,
+                node="reflect",
+                raw_state={"status": status, "decision": decision, "stop_reason": stop_reason},
+            )
+            if status in {"completed", "blocked"}:
+                self._append_checkpoint(
+                    work_run,
+                    node="stop",
+                    raw_state={"status": status, "decision": decision, "exit_criteria": exit_result.model_dump(mode="json")},
+                )
+            elif status in {"waiting_human", "waiting_review", "waiting_signal"}:
+                self._append_checkpoint(
+                    work_run,
+                    node="ask",
+                    raw_state={"status": status, "decision": decision, "stop_reason": stop_reason},
+                )
+        work_run.setdefault("events", []).extend(
+            [
+                {"event": "loop.delta", "delta": delta.model_dump(mode="json"), "at": now_iso()},
+                {"event": "harness.verified", "status": "blocked" if blocked else "passed", "at": now_iso()},
+                {"event": "work.waiting" if status == "waiting_review" else "work.completed" if status == "completed" else "work.updated", "status": status, "at": now_iso()},
+            ]
+        )
+        candidates: list[KnowledgeCandidateRef] = []
+        if status == "completed" and intent.operation == WorkOperation.capture:
+            candidate = self._create_candidate(
+                principal=principal,
+                work_run=work_run,
+                context=context,
+                title=answer_summary,
+                summary=answer_summary,
+                source_refs=evidence_refs,
+            )
+            if candidate:
+                candidates.append(candidate)
+                work_run["knowledge_candidate_ids"] = [candidate.candidate_id]
+                playbook_id = _id("playbook", f"{principal.employee_id}:{candidate.candidate_id}")
+                playbook_applies_to = {
+                    "capability_ids": [context.capability_id],
+                    "asset_kinds": [intent.asset_kind.value],
+                    "task_refs": [context.task_ref] if context.task_ref else [],
+                }
+                self.store.put(
+                    "context_playbook_items",
+                    playbook_id,
+                    {
+                        "item_id": playbook_id,
+                        "employee_id": principal.employee_id,
+                        "description": answer_summary,
+                        "conditions": [intent.asset_kind.value, intent.operation.value],
+                        "applies_to": {
+                            **playbook_applies_to,
+                        },
+                        "team_ids": [],
+                        "model_profiles": [self.model_profile],
+                        "source_refs": evidence_refs,
+                        "supporting_work_run_ids": [work_run["work_run_id"]],
+                        "successful_run_ids": [work_run["work_run_id"]],
+                        "failed_run_ids": [],
+                        "freshness": {"created_at": now_iso(), "valid_until": ""},
+                        "status": "provisional",
+                        "visibility": "private",
+                        "fingerprint": self._playbook_fingerprint(
+                            answer_summary,
+                            playbook_applies_to,
+                            [self.model_profile],
+                        ),
+                        "revision": 1,
+                        "deprecates_item_ids": [],
+                        "created_at": now_iso(),
+                        "updated_at": now_iso(),
+                    },
+                )
+        context_outcome: Literal["answer", "artifact", "decision", "completion", "blocker"]
+        if status == "blocked":
+            context_outcome = "blocker"
+        elif artifacts:
+            context_outcome = "artifact"
+        elif status == "completed" and intent.operation in {WorkOperation.complete, WorkOperation.capture}:
+            context_outcome = "completion"
+        elif status in {"waiting_human", "waiting_review", "waiting_signal"}:
+            context_outcome = "decision"
+        else:
+            context_outcome = "answer"
+        self._record_context_outcome(
+            context=context,
+            work_run=work_run,
+            used_source_refs=evidence_refs,
+            outcome=context_outcome,
+        )
+        stored = (
+            work_run
+            if transient_turn
+            else self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
+        )
+        if not transient_turn and status == "completed":
+            stored = self._reconcile_runtime_relations(principal, stored)
+        if job_id:
+            job = self.store.get("jobs", job_id)
+            if job:
+                job.update(
+                    {
+                        "work_run_id": work_run["work_run_id"],
+                        "agent_run_id": work_run.get("agent_run_id") or "",
+                        "updated_at": now_iso(),
+                    }
+                )
+                self.store.put("jobs", job_id, job)
+        return stored, candidates
+
+    def reconcile_response_evidence(
+        self,
+        *,
+        context: WorkContextPack,
+        work_run: dict[str, Any],
+        displayed_source_refs: list[str],
+        citations: list[dict[str, Any]],
+        claims: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Bind durable evidence rows to the provenance actually shown to the user."""
+
+        visible_refs = {
+            str(item) for item in displayed_source_refs if str(item).strip()
+        }
+        citation_chunks = {
+            str(item.get("source_ref") or ""): str(item.get("chunk_id") or "")
+            for item in citations
+            if isinstance(item, dict)
+            and str(item.get("source_ref") or "") in visible_refs
+            and str(item.get("chunk_id") or "")
+        }
+        visible_claims_by_ref: dict[str, set[str]] = {}
+        for claim in claims:
+            if not isinstance(claim, dict) or claim.get("support_status") != "supported":
+                continue
+            claim_id = str(claim.get("claim_id") or "")
+            chunks = {str(item) for item in claim.get("supporting_chunk_ids") or [] if str(item)}
+            for ref in claim.get("source_refs") or []:
+                source_ref = str(ref)
+                if (
+                    source_ref in visible_refs
+                    and citation_chunks.get(source_ref) in chunks
+                    and claim_id
+                ):
+                    visible_claims_by_ref.setdefault(source_ref, set()).add(claim_id)
+
+        transient_turn = bool(work_run.get("_transient_turn"))
+        displayed_ledger_ids: list[str] = []
+        for ledger_id in work_run.get("evidence_ledger_ids") or []:
+            raw = self.store.get("evidence_ledger", str(ledger_id))
+            if not raw:
+                continue
+            entry = EvidenceLedgerEntry.model_validate(raw)
+            displayed = entry.evidence_id in visible_refs
+            displayed_chunks = (
+                [citation_chunks[entry.evidence_id]]
+                if displayed and entry.evidence_id in citation_chunks
+                else []
+            )
+            displayed_claim_ids = sorted(
+                visible_claims_by_ref.get(entry.evidence_id, set())
+            )
+            entry = entry.model_copy(
+                update={
+                    "displayed": displayed,
+                    "displayed_chunk_ids": displayed_chunks,
+                    "displayed_claim_ids": displayed_claim_ids,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            )
+            self.store.put(
+                "evidence_ledger",
+                entry.ledger_id,
+                entry.model_dump(mode="json"),
+            )
+            if displayed and entry.verification == "used":
+                displayed_ledger_ids.append(entry.ledger_id)
+
+        work_run["displayed_evidence_refs"] = sorted(visible_refs)
+        work_run["displayed_evidence_ledger_ids"] = displayed_ledger_ids
+        work_run["updated_at"] = now_iso()
+        self._record_context_outcome(
+            context=context,
+            work_run=work_run,
+            used_source_refs=sorted(visible_refs),
+            outcome=(
+                "blocker"
+                if str(work_run.get("status") or "") == "blocked"
+                else "artifact"
+                if work_run.get("artifact_refs")
+                else "answer"
+            ),
+        )
+        return (
+            work_run
+            if transient_turn
+            else self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
+        )
+
+    def finish_system_run(
+        self,
+        *,
+        principal: Principal,
+        work_run: dict[str, Any],
+        summary: str,
+        result_ref: str,
+        result_status: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Close a deterministic system operation without asking an LLM to self-grade it."""
+
+        successful = result_status not in {"failed", "error", "blocked"}
+        delta = LoopDelta(
+            kind="action_result" if successful else "blocker",
+            summary=_compact(summary, 2000),
+            ref=result_ref,
+            metadata={
+                **(metadata or {}),
+                "tool_result_refs": [result_ref] if successful and result_ref else [],
+                "completion_changes": {"result_status": result_status},
+                "blocker_code": "system_operation_failed" if not successful else "",
+                "error_disposition": "unexpected_failure" if not successful else "",
+            },
+        )
+        loop = dict(work_run.get("loop") or {})
+        work_run["loop"] = loop
+        delta, progress_delta, _, _ = self._append_progress(work_run, delta)
+        loop = dict(work_run.get("loop") or {})
+        loop["iteration_count"] = int(loop.get("iteration_count") or 0) + 1
+        loop["no_progress_count"] = 0
+        ledger_ids = list(work_run.get("evidence_ledger_ids") or [])
+        if result_ref:
+            ledger_ids.append(
+                self._record_evidence(
+                    principal=principal,
+                    work_run_id=str(work_run["work_run_id"]),
+                    evidence_id=result_ref,
+                    kind="runtime",
+                    title=result_ref,
+                    summary=summary,
+                    source="system_operation",
+                    authority="runtime",
+                    verification="verified" if successful else "failed",
+                )
+            )
+        exit_result = ExitCriteriaResult(
+            satisfied=successful and bool(result_ref) and bool(ledger_ids),
+            criteria=[
+                HarnessCheck(
+                    check_id="exit.system-result",
+                    label="시스템 실행 결과",
+                    status="passed" if successful and bool(result_ref) else "blocked",
+                    message="검증 가능한 시스템 실행 결과가 없습니다." if not (successful and result_ref) else "",
+                ),
+                HarnessCheck(
+                    check_id="exit.evidence-ledger",
+                    label="실행 근거 기록",
+                    status="passed" if bool(ledger_ids) else "blocked",
+                    message="시스템 실행 결과가 Evidence Ledger에 기록되지 않았습니다." if not ledger_ids else "",
+                ),
+            ],
+            evidence_ledger_ids=ledger_ids,
+            evaluated_facts={"result_status": result_status, "result_ref": result_ref},
+            stop_reason="exit_criteria_satisfied" if successful and result_ref and ledger_ids else "blocked",
+        )
+        successful = successful and exit_result.satisfied
+        work_run.update(
+            {
+                "status": "completed" if successful else "blocked",
+                "decision": "complete" if successful else "blocked",
+                "stop_reason": "exit_criteria_satisfied" if successful else "unexpected_failure",
+                "loop": loop,
+                "evidence_ledger_ids": list(dict.fromkeys(ledger_ids)),
+                "exit_criteria_result": exit_result.model_dump(mode="json"),
+                "revision": int(work_run.get("revision") or 1) + 1,
+                "updated_at": now_iso(),
+            }
+        )
+        work_run.setdefault("events", []).extend(
+            [
+                {"event": "loop.delta", "delta": delta.model_dump(mode="json"), "at": now_iso()},
+                {
+                    "event": "work.completed" if successful else "work.blocked",
+                    "status": work_run["status"],
+                    "at": now_iso(),
+                },
+            ]
+        )
+        self._append_checkpoint(
+            work_run,
+            node="act",
+            raw_state={"progress_delta": progress_delta.model_dump(mode="json")},
+        )
+        self._append_checkpoint(
+            work_run,
+            node="verify",
+            raw_state={"exit_criteria": exit_result.model_dump(mode="json")},
+        )
+        self._append_checkpoint(
+            work_run,
+            node="reflect",
+            raw_state={"status": work_run["status"], "decision": work_run["decision"]},
+        )
+        self._append_checkpoint(
+            work_run,
+            node="stop",
+            raw_state={"status": work_run["status"], "exit_criteria": exit_result.model_dump(mode="json")},
+        )
+        if not successful:
+            negative_id = self._record_negative_result(
+                principal=principal,
+                kind="failed_system_operation",
+                summary=summary,
+                work_run_id=str(work_run["work_run_id"]),
+                source_refs=[result_ref] if result_ref else [],
+                metadata={"result_status": result_status, **(metadata or {})},
+            )
+            work_run["negative_result_ids"] = list(
+                dict.fromkeys([*work_run.get("negative_result_ids", []), negative_id])
+            )
+        stored = self.store.put("work_runs", str(work_run["work_run_id"]), work_run)
+        if successful:
+            stored = self._reconcile_runtime_relations(principal, stored)
+        return stored
+
+    def fail_run(
+        self,
+        principal: Principal,
+        work_run_id: str,
+        message: str,
+        *,
+        disposition: str = "unexpected_failure",
+    ) -> dict[str, Any]:
+        run = self.get_run(principal, work_run_id)
+        allowed = {
+            "transient_retry",
+            "semantic_repair",
+            "human_interrupt",
+            "policy_stop",
+            "timeout",
+            "unexpected_failure",
+        }
+        disposition = disposition if disposition in allowed else "unexpected_failure"
+        delta = LoopDelta(
+            kind="blocker",
+            summary=_compact(message, 2000),
+            metadata={"blocker_code": disposition, "error_disposition": disposition},
+        )
+        loop = dict(run.get("loop") or {})
+        run["loop"] = loop
+        delta, progress_delta, _, _ = self._append_progress(run, delta)
+        loop = dict(run.get("loop") or {})
+        loop["iteration_count"] = int(loop.get("iteration_count") or 0) + 1
+        if disposition in {"transient_retry", "semantic_repair"}:
+            status, decision, stop_reason = "in_progress", "continue", disposition
+        elif disposition == "human_interrupt":
+            status, decision, stop_reason = "waiting_human", "needs_human", disposition
+        elif disposition in {"policy_stop", "timeout"}:
+            status, decision, stop_reason = "stopped", "stop", disposition
+        else:
+            status, decision, stop_reason = "blocked", "blocked", "unexpected_failure"
+        if (
+            disposition in {"transient_retry", "semantic_repair"}
+            and int(loop.get("iteration_count") or 0) >= int(loop.get("max_iterations") or 5)
+        ):
+            status, decision, stop_reason = "stopped", "stop", "max_iterations"
+            disposition = "policy_stop"
+        run.update(
+            {
+                "status": status,
+                "decision": decision,
+                "stop_reason": stop_reason,
+                "error_disposition": disposition,
+                "loop": loop,
+                "revision": int(run.get("revision") or 1) + 1,
+                "updated_at": now_iso(),
+            }
+        )
+        run.setdefault("events", []).append(
+            {
+                "event": (
+                    "work.retryable"
+                    if status == "in_progress"
+                    else "work.interrupted"
+                    if status == "waiting_human"
+                    else "work.stopped"
+                    if status == "stopped"
+                    else "work.blocked"
+                ),
+                "delta": delta.model_dump(mode="json"),
+                "at": now_iso(),
+            }
+        )
+        self._append_checkpoint(
+            run,
+            node="verify",
+            raw_state={"progress_delta": progress_delta.model_dump(mode="json"), "error_disposition": disposition},
+        )
+        self._append_checkpoint(
+            run,
+            node="reflect",
+            raw_state={"status": status, "decision": decision, "error_disposition": disposition},
+        )
+        if status in {"stopped", "blocked"}:
+            self._append_checkpoint(
+                run,
+                node="stop",
+                raw_state={"status": status, "error_disposition": disposition},
+            )
+        negative_id = self._record_negative_result(
+            principal=principal,
+            kind="failed_work_run",
+            summary=message,
+            work_run_id=work_run_id,
+            source_refs=list(run.get("evidence_refs") or []),
+            metadata={"stop_reason": disposition},
+        )
+        run["negative_result_ids"] = list(dict.fromkeys([*run.get("negative_result_ids", []), negative_id]))
+        return self.store.put("work_runs", work_run_id, run)
+
+    def finish_deep_job(
+        self,
+        principal: Principal,
+        *,
+        work_run_id: str,
+        artifact: dict[str, Any],
+        result: dict[str, Any],
+    ) -> dict[str, Any]:
+        run = self.get_run(principal, work_run_id)
+        context_row = self.store.get("contexts", str(run.get("context_id") or "")) or {}
+        context = WorkContextPack.model_validate(context_row)
+        intent = WorkIntent.model_validate(run.get("intent") or {})
+        evidence_refs = [
+            str(item.get("evidence_id") or "")
+            for item in result.get("evidence_ledger") or []
+            if isinstance(item, dict) and item.get("evidence_id")
+        ]
+        stored, _ = self.finish_run(
+            principal=principal,
+            work_run=run,
+            context=context,
+            intent=intent,
+            response_status="completed",
+            answer_summary=str(result.get("title") or "심층 작업 초안이 준비되었습니다."),
+            artifacts=[artifact],
+            evidence_refs=evidence_refs,
+        )
+        return stored
+
+    def _owned(self, principal: Principal, row: dict[str, Any] | None, label: str) -> dict[str, Any]:
+        if not row:
+            raise HTTPException(status_code=404, detail=f"{label} not found")
+        if row.get("employee_id") != principal.employee_id and not principal.is_admin:
+            raise HTTPException(status_code=403, detail=f"{label} belongs to another employee")
+        return row
+
+    def get_run(self, principal: Principal, work_run_id: str) -> dict[str, Any]:
+        return self._owned(principal, self.store.get("work_runs", work_run_id), "work run")
+
+    def view_completion_record(
+        self,
+        principal: Principal,
+        completion_id: str,
+    ) -> dict[str, Any]:
+        """Return the durable completion source without requiring its WorkRun.
+
+        Completion records can be indexed from imported or retained outcome
+        history after the originating runtime namespace is gone.  Ownership is
+        checked on the record itself; optional lineage is exposed only when an
+        accessible WorkRun still exists.
+        """
+
+        stored = self.store.get("completion_records", completion_id)
+        # A private completion source must not reveal whether another
+        # employee's record exists.  Admin access remains available through
+        # the authenticated principal contract.
+        if not stored or (
+            str(stored.get("employee_id") or "") != principal.employee_id
+            and not principal.is_admin
+        ):
+            raise HTTPException(status_code=404, detail="completion record not found")
+        record = dict(stored)
+        work_run_id = str(record.get("work_run_id") or "")
+        work_run = self.store.get("work_runs", work_run_id) if work_run_id else None
+        record["work_run_available"] = bool(
+            work_run
+            and (
+                str(work_run.get("employee_id") or "") == principal.employee_id
+                or principal.is_admin
+            )
+        )
+        record["work_run_url"] = (
+            f"/api/v2/work-runs/{work_run_id}"
+            if record["work_run_available"]
+            else ""
+        )
+        return record
+
+    def view_run(self, principal: Principal, work_run_id: str) -> dict[str, Any]:
+        run = dict(self.get_run(principal, work_run_id))
+        ledger_ids = set(run.get("evidence_ledger_ids") or [])
+        run["evidence_ledger"] = [
+            item
+            for item in self.store.list(
+                "evidence_ledger",
+                employee_id=principal.employee_id,
+                limit=500,
+            )
+            if item.get("ledger_id") in ledger_ids and item.get("work_run_id") == work_run_id
+        ]
+        checkpoint_ids = set(run.get("checkpoint_ids") or [])
+        run["checkpoints"] = sorted(
+            [
+                item
+                for item in self.store.list(
+                    "work_run_checkpoints",
+                    employee_id=principal.employee_id,
+                    limit=500,
+                )
+                if item.get("checkpoint_id") in checkpoint_ids and item.get("work_run_id") == work_run_id
+            ],
+            key=lambda item: int(item.get("sequence") or 0),
+        )
+        run["checkpoint"] = run["checkpoints"][-1] if run["checkpoints"] else {}
+        completion_id = str(run.get("completion_record_id") or "")
+        completion = self.store.get("completion_records", completion_id) if completion_id else None
+        # Keep the REST/MCP WorkRun shape typed across every terminal state.
+        # Failure, cancellation, and waiting-for-evidence are explicitly not
+        # completion, so expose JSON null instead of omitting the field and
+        # forcing clients to conflate a missing contract with no completion.
+        run["completion_record"] = None
+        if (
+            completion
+            and str(completion.get("work_run_id") or "") == work_run_id
+            and (
+                str(completion.get("employee_id") or "") == principal.employee_id
+                or principal.is_admin
+            )
+        ):
+            run["completion_record"] = completion
+        outcome_id = str(run.get("outcome_id") or "")
+        outcome = self.store.get("outcomes", outcome_id) if outcome_id else None
+        run["outcome"] = None
+        if (
+            outcome
+            and str(outcome.get("work_run_id") or "") == work_run_id
+            and (
+                str(outcome.get("employee_id") or "") == principal.employee_id
+                or principal.is_admin
+            )
+        ):
+            run["outcome"] = outcome
+        return run
+
+    def cancel_run(
+        self,
+        principal: Principal,
+        work_run_id: str,
+        request: WorkRunCancelRequest,
+    ) -> dict[str, Any]:
+        run = self.get_run(principal, work_run_id)
+        replays = run.get("cancel_replays") if isinstance(run.get("cancel_replays"), dict) else {}
+        replay = replays.get(request.idempotency_key)
+        if isinstance(replay, dict):
+            return {**replay, "replayed": True}
+        revision = int(run.get("revision") or 1)
+        if request.expected_revision != revision:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "revision_conflict", "current_revision": revision},
+            )
+        if run.get("status") in {"completed", "failed", "cancelled", "stopped"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"work run is already {run.get('status')}",
+            )
+        child_job_ids = {
+            str(item)
+            for item in run.get("child_job_ids") or []
+            if str(item)
+        }
+        child_job_ids.update(
+            str(item.get("job_id") or "")
+            for item in self.store.list("jobs", limit=10_000)
+            if str(item.get("parent_work_run_id") or "") == work_run_id
+        )
+        for child_job_id in child_job_ids:
+            child = self.store.get("jobs", child_job_id) or {}
+            if child.get("status") in {"completed", "failed", "cancelled"}:
+                continue
+            child.update(
+                {
+                    "status": "cancelled",
+                    "stop_reason": "parent_cancelled",
+                    "worker_id": "",
+                    "worker_stop_ack": True,
+                    "revision": int(child.get("revision") or 1) + 1,
+                    "updated_at": now_iso(),
+                }
+            )
+            self.store.put("jobs", child_job_id, child)
+        run.update(
+            {
+                "status": "cancelled",
+                "decision": "stop",
+                "stop_reason": "user_cancelled",
+                "cancel_reason": request.reason,
+                "cancelled_by": principal.employee_id,
+                "cancelled_at": now_iso(),
+                "active_workers": 0,
+                "pending_child_jobs": 0,
+                "orphan_workers": 0,
+                "revision": revision + 1,
+                "updated_at": now_iso(),
+            }
+        )
+        run.setdefault("events", []).append(
+            {
+                "event": "work.cancelled",
+                "status": "cancelled",
+                "stop_reason": "user_cancelled",
+                "reason": request.reason,
+                "at": now_iso(),
+            }
+        )
+        self._append_checkpoint(
+            run,
+            node="stop",
+            raw_state={
+                "status": "cancelled",
+                "stop_reason": "user_cancelled",
+                "reason": request.reason,
+            },
+            idempotency_key=request.idempotency_key,
+        )
+        response = {
+            **run,
+            "checkpoint": self.store.get(
+                "work_run_checkpoints",
+                str(run.get("checkpoint_ids", [""])[-1]),
+            )
+            or {},
+            "replayed": False,
+        }
+        run["cancel_replays"] = {
+            **replays,
+            request.idempotency_key: response,
+        }
+        self.store.put("work_runs", work_run_id, run)
+        return response
+
+    def list_runs(self, principal: Principal, *, limit: int = 20) -> dict[str, Any]:
+        items = self.store.list("work_runs", employee_id=principal.employee_id, limit=max(1, min(limit, 100)))
+        return {"count": len(items), "items": items}
+
+    def continue_run(
+        self,
+        principal: Principal,
+        work_run_id: str,
+        request: WorkRunContinueRequest,
+        *,
+        reconcile_runtime_relations: bool = True,
+    ) -> tuple[dict[str, Any], list[KnowledgeCandidateRef]]:
+        run = self.get_run(principal, work_run_id)
+        existing_loop = run.get("loop") if isinstance(run.get("loop"), dict) else {}
+        if request.idempotency_key and request.idempotency_key in set(existing_loop.get("idempotency_keys") or []):
+            return run, []
+        revision = int(run.get("revision") or 1)
+        if request.expected_revision != revision:
+            raise HTTPException(status_code=409, detail={"status": "revision_conflict", "current_revision": revision, "work_run": run})
+        if run.get("status") in {"completed", "failed", "cancelled", "stopped"}:
+            raise HTTPException(status_code=409, detail=f"work run is already {run.get('status')}")
+        loop_started_at = str(existing_loop.get("started_at") or run.get("created_at") or "")
+        try:
+            loop_started = datetime.fromisoformat(loop_started_at.replace("Z", "+00:00"))
+            if loop_started.tzinfo is None:
+                loop_started = loop_started.replace(tzinfo=timezone.utc)
+        except ValueError:
+            loop_started = datetime.now(timezone.utc)
+        elapsed_seconds = max(0.0, (datetime.now(timezone.utc) - loop_started).total_seconds())
+        max_elapsed_seconds = int(existing_loop.get("max_elapsed_seconds") or 30)
+        if elapsed_seconds >= max_elapsed_seconds:
+            run.update(
+                {
+                    "status": "stopped",
+                    "decision": "stop",
+                    "stop_reason": "max_elapsed_seconds",
+                    "exit_criteria_result": ExitCriteriaResult(
+                        satisfied=False,
+                        evaluated_facts={
+                            "elapsed_seconds": elapsed_seconds,
+                            "max_elapsed_seconds": max_elapsed_seconds,
+                        },
+                        stop_reason="max_elapsed_seconds",
+                    ).model_dump(mode="json"),
+                    "revision": revision + 1,
+                    "updated_at": now_iso(),
+                }
+            )
+            run.setdefault("events", []).append(
+                {
+                    "event": "work.stopped",
+                    "status": "stopped",
+                    "stop_reason": "max_elapsed_seconds",
+                    "at": now_iso(),
+                }
+            )
+            self._append_checkpoint(
+                run,
+                node="stop",
+                raw_state={
+                    "status": "stopped",
+                    "stop_reason": "max_elapsed_seconds",
+                    "elapsed_seconds": elapsed_seconds,
+                },
+            )
+            return self.store.put("work_runs", work_run_id, run), []
+        mode = TaskMode(str(run.get("task_mode") or "copilot"))
+        context_row = self.store.get("contexts", str(run.get("context_id") or "")) or {}
+        context = WorkContextPack.model_validate(context_row)
+        intent = WorkIntent.model_validate(run.get("intent") or {})
+        delta = request.delta
+        metadata = delta.metadata if isinstance(delta.metadata, dict) else {}
+        if mode == TaskMode.autopilot and delta.kind in {"action_result", "state_transition"} and delta.ref:
+            binding_refs = {
+                item.binding.ref
+                for item in (context.completion_design.checks if context.completion_design else [])
+                if item.binding is not None and item.binding.ref
+            }
+            if delta.ref in binding_refs:
+                metadata = {
+                    **metadata,
+                    "verified_binding_refs": _string_list(
+                        [*_string_list(metadata.get("verified_binding_refs")), delta.ref]
+                    ),
+                    "tool_result_refs": _string_list(
+                        [*_string_list(metadata.get("tool_result_refs")), delta.ref]
+                    ),
+                }
+                delta = delta.model_copy(update={"metadata": metadata})
+        work_record = metadata.get("work_record") if isinstance(metadata.get("work_record"), dict) else {}
+        if work_record:
+            record_payload = json.dumps(work_record, ensure_ascii=False, sort_keys=True, default=str)
+            work_record_ref = str(work_record.get("work_record_ref") or "").strip() or _id(
+                "workrecord",
+                f"{work_run_id}:{revision}:{record_payload}",
+            )
+            work_record = {**work_record, "work_record_ref": work_record_ref}
+            metadata = {
+                **metadata,
+                "work_record": work_record,
+                "evidence_refs": _string_list(
+                    [*_string_list(metadata.get("evidence_refs")), work_record_ref],
+                    limit=100,
+                ),
+            }
+            delta = delta.model_copy(
+                update={
+                    "ref": delta.ref or work_record_ref,
+                    "metadata": metadata,
+                }
+            )
+        loop = dict(run.get("loop") or {})
+        run["loop"] = loop
+        delta, progress_delta, domain_progress, repeated = self._append_progress(run, delta)
+        loop = dict(run.get("loop") or {})
+        valid_strategy_change = self._valid_strategy_change(progress_delta)
+        previous_no_progress = int(loop.get("no_progress_count") or 0)
+        strategy_change_used = bool(loop.get("strategy_change_used"))
+        if domain_progress:
+            no_progress_count = 0
+            strategy_change_used = False
+        elif valid_strategy_change and not strategy_change_used:
+            no_progress_count = max(1, previous_no_progress)
+            strategy_change_used = True
+        else:
+            no_progress_count = previous_no_progress + 1
+        iteration = int(loop.get("iteration_count") or 0) + 1
+        tool_loop_count = int(loop.get("tool_loop_count") or 0)
+        if delta.kind == "action_result" or progress_delta.tool_result_refs:
+            tool_loop_count += 1
+        loop.update(
+            {
+                "iteration_count": iteration,
+                "tool_loop_count": tool_loop_count,
+                "no_progress_count": no_progress_count,
+                "strategy_change_used": strategy_change_used,
+                "idempotency_keys": list(
+                    dict.fromkeys([*(loop.get("idempotency_keys") or []), request.idempotency_key])
+                )[-100:]
+                if request.idempotency_key
+                else list(loop.get("idempotency_keys") or []),
+            }
+        )
+        standalone_action_complete = (
+            intent.operation in {WorkOperation.test, WorkOperation.run}
+            and intent.asset_kind.value == "action"
+            and not context.task_ref
+            and delta.kind == "action_result"
+            and bool(delta.ref)
+        )
+        standalone_domain_confirmation = (
+            not context.task_ref
+            and request.confirmation == "confirm"
+            and delta.kind == "human_input"
+            and bool(delta.ref)
+            and bool(str(metadata.get("domain_operation") or "").strip())
+            and bool(str(metadata.get("domain_result_status") or "").strip())
+        )
+        ledger_refs = list(
+            dict.fromkeys(
+                [
+                    *progress_delta.evidence_refs,
+                    *progress_delta.tool_result_refs,
+                    *progress_delta.artifact_refs,
+                    *([delta.ref] if delta.kind == "human_input" and delta.ref else []),
+                ]
+            )
+        )
+        ledger_ids = list(run.get("evidence_ledger_ids") or [])
+        for ref in ledger_refs:
+            ledger_ids.append(
+                self._record_evidence(
+                    principal=principal,
+                    work_run_id=work_run_id,
+                    evidence_id=ref,
+                    kind=delta.kind,
+                    title=delta.summary or ref,
+                    summary=delta.summary,
+                    source="human" if delta.kind == "human_input" else "runtime",
+                    authority="confirmed" if request.confirmation == "confirm" else "runtime",
+                    verification="confirmed" if request.confirmation == "confirm" else "observed",
+                )
+            )
+        ledger_ids = list(dict.fromkeys(ledger_ids))
+        completion_attempt = standalone_action_complete or standalone_domain_confirmation or (
+            request.confirmation == "confirm"
+            and delta.kind in {"human_input", "state_transition", "action_result"}
+        ) or (mode == TaskMode.autopilot and delta.kind in {"action_result", "state_transition"})
+        exit_result = self._exit_result(
+            context=context,
+            mode=mode,
+            progress=progress_delta,
+            confirmation=request.confirmation,
+            evidence_ledger_ids=ledger_ids,
+            standalone_action=standalone_action_complete,
+            standalone_domain_confirmation=standalone_domain_confirmation,
+        ) if completion_attempt else ExitCriteriaResult(
+            satisfied=False,
+            evidence_ledger_ids=ledger_ids,
+            evaluated_facts={"completion_attempt": False, "task_mode": mode.value},
+            stop_reason="needs_human",
+        )
+        domain_result_status = str(
+            progress_delta.completion_changes.get("domain_result_status") or ""
+        ).strip().lower()
+        domain_result_stop_reason = str(
+            progress_delta.completion_changes.get("domain_result_stop_reason") or ""
+        ).strip()
+        action_failure_reasons = {
+            "failed_timeout": "timeout",
+            "failed_post_verify": "post_verify_failed",
+            "failed": "action_failed",
+            "error": "action_failed",
+            "rejected": "action_rejected",
+        }
+        if delta.kind == "action_result" and domain_result_status in action_failure_reasons:
+            status, decision, stop_reason = (
+                "failed",
+                "stop",
+                domain_result_stop_reason or action_failure_reasons[domain_result_status],
+            )
+            exit_result.satisfied = False
+            exit_result.stop_reason = stop_reason
+        elif delta.kind == "action_result" and domain_result_status in {
+            "revision_required",
+            "waiting_evidence",
+        }:
+            status, decision, stop_reason = (
+                "waiting_evidence",
+                "needs_human",
+                domain_result_stop_reason or "missing_evidence",
+            )
+            exit_result.satisfied = False
+            exit_result.stop_reason = stop_reason
+        elif delta.kind == "action_result" and domain_result_status in {
+            "waiting_human",
+            "pending_confirmation",
+        }:
+            # A typed handoff is progress, but it is not an Action outcome.
+            # Evidence that describes the handoff must never satisfy the
+            # completion contract before a human result is submitted.
+            status, decision, stop_reason = (
+                "waiting_human",
+                "needs_human",
+                domain_result_stop_reason or "waiting_human",
+            )
+            exit_result.satisfied = False
+            exit_result.stop_reason = stop_reason
+        elif delta.kind == "action_result" and domain_result_status in {"queued", "running"}:
+            status, decision, stop_reason = "in_progress", "continue", "action_pending"
+            exit_result.satisfied = False
+            exit_result.stop_reason = stop_reason
+        elif exit_result.satisfied:
+            status, decision, stop_reason = "completed", "complete", "exit_criteria_satisfied"
+        elif tool_loop_count >= int(loop.get("max_tool_loops") or 5):
+            status, decision, stop_reason = "stopped", "stop", "max_tool_loops"
+            exit_result.stop_reason = "max_tool_loops"
+        elif iteration >= int(loop.get("max_iterations") or 5):
+            status, decision, stop_reason = "stopped", "stop", "max_iterations"
+            exit_result.stop_reason = "max_iterations"
+        elif no_progress_count >= int(loop.get("max_no_progress") or 2):
+            status, decision, stop_reason = "stopped", "stop", "no_progress"
+            exit_result.stop_reason = "no_progress"
+        elif completion_attempt:
+            if mode == TaskMode.autopilot:
+                required_bindings = set(exit_result.evaluated_facts.get("required_binding_refs") or [])
+                verified_bindings = set(exit_result.evaluated_facts.get("verified_binding_refs") or [])
+                stop_reason = (
+                    "unrelated_system_result"
+                    if required_bindings and not required_bindings.intersection(verified_bindings)
+                    else "exit_criteria_not_met"
+                )
+                status, decision = "waiting_signal", "continue"
+            else:
+                status, decision, stop_reason = "waiting_human", "needs_human", "exit_criteria_not_met"
+        elif delta.kind == "blocker":
+            disposition = progress_delta.error_disposition
+            if disposition in {"transient_retry", "semantic_repair"}:
+                status, decision, stop_reason = "in_progress", "continue", disposition
+            elif disposition == "policy_stop":
+                status, decision, stop_reason = "stopped", "stop", disposition
+            elif disposition == "unexpected_failure":
+                status, decision, stop_reason = "blocked", "blocked", disposition
+            else:
+                status, decision, stop_reason = "waiting_human", "needs_human", "human_interrupt"
+            exit_result.stop_reason = "policy_stop" if disposition == "policy_stop" else "blocked"
+        elif not domain_progress and valid_strategy_change:
+            status, decision, stop_reason = "in_progress", "continue", "strategy_changed"
+        elif not domain_progress:
+            status, decision, stop_reason = "waiting_human", "needs_human", "strategy_change_required"
+        else:
+            status, decision, stop_reason = "in_progress", "continue", "progress_recorded"
+        run.update(
+            {
+                "status": status,
+                "decision": decision,
+                "stop_reason": stop_reason,
+                "loop": loop,
+                "evidence_ledger_ids": ledger_ids,
+                "exit_criteria_result": exit_result.model_dump(mode="json"),
+                "revision": revision + 1,
+                "updated_at": now_iso(),
+            }
+        )
+        run.setdefault("events", []).append(
+            {
+                "event": "loop.delta",
+                "delta": delta.model_dump(mode="json"),
+                "progress_delta": progress_delta.model_dump(mode="json"),
+                "decision": decision,
+                "at": now_iso(),
+            }
+        )
+        self._append_checkpoint(
+            run,
+            node="act" if delta.kind not in {"human_input", "blocker"} else "ask",
+            raw_state={
+                "progress_delta": progress_delta.model_dump(mode="json"),
+                "confirmation": request.confirmation or "",
+            },
+            idempotency_key=request.idempotency_key,
+        )
+        self._append_checkpoint(
+            run,
+            node="verify",
+            raw_state={
+                "exit_criteria": exit_result.model_dump(mode="json"),
+                "domain_progress": domain_progress,
+                "repeated": repeated,
+            },
+            idempotency_key=request.idempotency_key,
+        )
+        self._append_checkpoint(
+            run,
+            node="reflect",
+            raw_state={
+                "status": status,
+                "decision": decision,
+                "stop_reason": stop_reason,
+                "no_progress_count": no_progress_count,
+                "tool_loop_count": tool_loop_count,
+            },
+            idempotency_key=request.idempotency_key,
+        )
+        if status in {"completed", "failed", "stopped"}:
+            self._append_checkpoint(
+                run,
+                node="stop",
+                raw_state={"status": status, "exit_criteria": exit_result.model_dump(mode="json")},
+                idempotency_key=request.idempotency_key,
+            )
+        candidates: list[KnowledgeCandidateRef] = []
+        if status == "completed":
+            completion_id = _id("completion", f"{work_run_id}:{revision + 1}")
+            outcome_id = _id("outcome", f"{work_run_id}:{completion_id}")
+            outcome_ref = f"boi:runtime:outcome:{outcome_id}"
+            completed_at = now_iso()
+            work_record = (
+                progress_delta.completion_changes.get("work_record")
+                if isinstance(
+                    progress_delta.completion_changes.get("work_record"), dict
+                )
+                else {}
+            )
+            completion_criteria = exit_result.model_dump(mode="json")
+            incomplete_items = [
+                str(item.get("message") or item.get("label") or item.get("check_id") or "")
+                for item in completion_criteria.get("criteria") or []
+                if isinstance(item, dict) and item.get("status") != "passed"
+            ]
+            incomplete_items = [item for item in incomplete_items if item]
+            exception_values: list[Any] = []
+            for value in (
+                work_record.get("exception"),
+                work_record.get("exceptions"),
+                work_record.get("blocker"),
+            ):
+                if isinstance(value, (list, tuple, set)):
+                    exception_values.extend(value)
+                elif value:
+                    exception_values.append(value)
+            exceptions = _string_list(exception_values, limit=50)
+            evidence_refs = list(
+                dict.fromkeys(
+                    [
+                        *run.get("evidence_refs", []),
+                        *progress_delta.evidence_refs,
+                        *progress_delta.tool_result_refs,
+                        *progress_delta.artifact_refs,
+                        *([delta.ref] if delta.ref else []),
+                    ]
+                )
+            )
+            completion = {
+                "completion_id": completion_id,
+                "employee_id": principal.employee_id,
+                "work_run_id": work_run_id,
+                "context_id": context.context_id,
+                "task_ref": context.task_ref,
+                "workflow_ref": context.workflow_ref,
+                "task_mode": mode.value,
+                "decision": "complete",
+                "summary": delta.summary,
+                "evidence_refs": evidence_refs,
+                "used_evidence_refs": evidence_refs,
+                "evidence_ledger_ids": run.get("evidence_ledger_ids", []),
+                "execution_result": str(
+                    work_record.get("result")
+                    or work_record.get("outcome")
+                    or delta.summary
+                ),
+                "completion_criteria": completion_criteria,
+                "exceptions": exceptions,
+                "incomplete_items": incomplete_items,
+                "next_work_lesson": str(
+                    work_record.get("next_work")
+                    or work_record.get("lesson")
+                    or delta.summary
+                ),
+                "outcome_id": outcome_id,
+                "outcome_ref": outcome_ref,
+                "exit_criteria_result": completion_criteria,
+                "created_at": completed_at,
+            }
+            self.store.put("completion_records", completion_id, completion)
+            if self.knowledge_change_notifier is not None:
+                self.knowledge_change_notifier(completion_id, principal.employee_id, "upsert")
+            run["completion_record_id"] = completion_id
+            action_run_ids = list(
+                dict.fromkeys(
+                    str(item.get("action_run_id") or "")
+                    for item in self.store.list(
+                        "action_runs",
+                        employee_id=principal.employee_id,
+                        limit=10_000,
+                    )
+                    if str(item.get("work_run_id") or "") == work_run_id
+                    and str(item.get("action_run_id") or "")
+                )
+            )
+            outcome = {
+                "outcome_id": outcome_id,
+                "boi_ref": outcome_ref,
+                "employee_id": principal.employee_id,
+                "work_run_id": work_run_id,
+                "workflow_run_id": context.workflow_ref,
+                "task_ref": context.task_ref,
+                "status": "completed",
+                "quality_state": "verified",
+                "verifier": (
+                    f"person:{principal.employee_id}"
+                    if delta.kind == "human_input" or request.confirmation
+                    else "harness:work-learning-runtime"
+                ),
+                "completion_record_id": completion_id,
+                "evidence_ledger_ids": list(run.get("evidence_ledger_ids") or []),
+                "action_run_ids": action_run_ids,
+                "artifact_refs": list(run.get("artifact_refs") or []),
+                "result_summary": completion["execution_result"],
+                "next_work_lesson": completion["next_work_lesson"],
+                "visibility": "private",
+                "allowed_employee_ids": [principal.employee_id],
+                "provenance": (
+                    "human_verified"
+                    if delta.kind == "human_input" or request.confirmation
+                    else "operational_verified"
+                ),
+                "created_at": completed_at,
+            }
+            self.store.put("outcomes", outcome_id, outcome)
+            if self.knowledge_change_notifier is not None:
+                self.knowledge_change_notifier(outcome_id, principal.employee_id, "upsert")
+            run["outcome_id"] = outcome_id
+            run["outcome_ref"] = outcome_ref
+            should_capture = intent.operation in {WorkOperation.complete, WorkOperation.capture} or bool(
+                delta.metadata.get("capture")
+            )
+            if should_capture:
+                candidate = self._create_candidate(
+                    principal=principal,
+                    work_run=run,
+                    context=context,
+                    title=delta.summary or "완료된 업무에서 남길 내용",
+                    summary=delta.summary,
+                    source_refs=completion["evidence_refs"],
+                )
+                if candidate:
+                    candidates.append(candidate)
+                    run["knowledge_candidate_ids"] = [*run.get("knowledge_candidate_ids", []), candidate.candidate_id]
+            pattern_candidate = self._maybe_create_manual_pattern_candidate(
+                principal=principal,
+                work_run=run,
+                context=context,
+                completion=completion,
+            )
+            if pattern_candidate:
+                candidates.append(pattern_candidate)
+                run["knowledge_candidate_ids"] = [
+                    *run.get("knowledge_candidate_ids", []),
+                    pattern_candidate.candidate_id,
+                ]
+                run.setdefault("events", []).append(
+                    {
+                        "event": "learning.pattern_detected",
+                        "candidate_id": pattern_candidate.candidate_id,
+                        "pattern_kind": "repeated_manual_work",
+                        "at": now_iso(),
+                    }
+                )
+        elif delta.kind == "blocker":
+            blocker_candidate = self._maybe_create_blocker_pattern_candidate(
+                principal=principal,
+                work_run=run,
+                context=context,
+                summary=delta.summary,
+            )
+            if blocker_candidate:
+                candidates.append(blocker_candidate)
+                run["knowledge_candidate_ids"] = [
+                    *run.get("knowledge_candidate_ids", []),
+                    blocker_candidate.candidate_id,
+                ]
+                run.setdefault("events", []).append(
+                    {
+                        "event": "learning.pattern_detected",
+                        "candidate_id": blocker_candidate.candidate_id,
+                        "pattern_kind": "repeated_blocker",
+                        "at": now_iso(),
+                    }
+                )
+        if stop_reason in {"no_progress", "max_iterations"}:
+            negative_id = self._record_negative_result(
+                principal=principal,
+                kind=stop_reason,
+                summary=delta.summary or (
+                    "새 근거나 상태 변화 없이 같은 시도가 반복되어 작업을 중단했습니다."
+                    if stop_reason == "no_progress"
+                    else "허용된 반복 횟수 안에 완료 조건을 충족하지 못했습니다."
+                ),
+                work_run_id=work_run_id,
+                source_refs=[delta.ref] if delta.ref else [],
+                metadata={
+                    "iteration_count": iteration,
+                    "no_progress_count": no_progress_count,
+                    "delta_fingerprint": delta.fingerprint,
+                    "harness_bindings": run.get("harness_bindings") or [],
+                },
+            )
+            run["negative_result_ids"] = list(
+                dict.fromkeys([*run.get("negative_result_ids", []), negative_id])
+            )
+        elif delta.kind == "blocker":
+            negative_id = self._record_negative_result(
+                principal=principal,
+                kind="work_blocker",
+                summary=delta.summary or "업무 진행을 막는 조건이 기록되었습니다.",
+                work_run_id=work_run_id,
+                source_refs=[delta.ref] if delta.ref else [],
+                metadata={
+                    "iteration_count": iteration,
+                    "blocker_metadata": delta.metadata,
+                    "harness_bindings": run.get("harness_bindings") or [],
+                },
+            )
+            run["negative_result_ids"] = list(
+                dict.fromkeys([*run.get("negative_result_ids", []), negative_id])
+            )
+        continuation_used_refs = list(
+            dict.fromkeys(
+                [
+                    *progress_delta.evidence_refs,
+                    *progress_delta.tool_result_refs,
+                    *progress_delta.artifact_refs,
+                ]
+            )
+        )
+        continuation_outcome: Literal["answer", "artifact", "decision", "completion", "blocker"]
+        if status == "completed":
+            continuation_outcome = "completion"
+        elif delta.kind == "blocker" or status in {"blocked", "stopped"}:
+            continuation_outcome = "blocker"
+        elif progress_delta.artifact_refs:
+            continuation_outcome = "artifact"
+        else:
+            continuation_outcome = "decision"
+        self._record_context_outcome(
+            context=context,
+            work_run=run,
+            used_source_refs=continuation_used_refs,
+            outcome=continuation_outcome,
+        )
+        stored = self.store.put("work_runs", work_run_id, run)
+        if status == "completed" and reconcile_runtime_relations:
+            stored = self._reconcile_runtime_relations(principal, stored)
+        return stored, candidates
+
+    def _verified_learning_refs(
+        self,
+        principal: Principal,
+        source_refs: list[str],
+    ) -> tuple[list[str], list[str]]:
+        canonical_refs = {
+            item.record_id
+            for item in self.repository.authoritative_records(
+                principal,
+                include_drafts=False,
+            )
+        }
+        operational_collections = (
+            "completion_records",
+            "work_runs",
+            "negative_results",
+            "artifacts",
+            "citations",
+        )
+        verified_ledger_refs: set[str] = set()
+        for item in self.store.list(
+            "evidence_ledger",
+            employee_id=principal.employee_id,
+            limit=10_000,
+        ):
+            if str(item.get("verification") or "") not in {"confirmed", "verified"}:
+                continue
+            verified_ledger_refs.update(
+                str(value)
+                for value in (item.get("ledger_id"), item.get("evidence_id"))
+                if str(value or "").strip()
+            )
+        verified: list[str] = []
+        rejected: list[str] = []
+        for raw in source_refs:
+            ref = str(raw or "").strip()
+            if not ref:
+                continue
+            exists = ref in canonical_refs or ref in verified_ledger_refs or any(
+                self.store.get(collection, ref) is not None
+                for collection in operational_collections
+            )
+            (verified if exists else rejected).append(ref)
+        return list(dict.fromkeys(verified)), list(dict.fromkeys(rejected))
+
+    def _verified_candidate_claims(
+        self,
+        *,
+        work_run: dict[str, Any],
+        verified_refs: list[str],
+    ) -> list[dict[str, Any]]:
+        """Project only claim bindings backed by the candidate's verified refs.
+
+        EvidenceLedger entries are the durable bridge between the answer shown
+        to the user and a reusable private lesson.  A source merely existing is
+        not enough to manufacture a claim: the answer must have bound a
+        supported claim to that exact source.  CompletionRecord metadata is
+        retained as typed predicate/value data so Knowledge Health can compare
+        decisions without interpreting prose.
+        """
+
+        allowed_refs = {str(ref) for ref in verified_refs if str(ref).strip()}
+        projected: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        for ledger_id in work_run.get("evidence_ledger_ids") or []:
+            entry = self.store.get("evidence_ledger", str(ledger_id)) or {}
+            source_ref = str(entry.get("evidence_id") or "").strip()
+            if source_ref not in allowed_refs:
+                continue
+            completion = self.store.get("completion_records", source_ref) or {}
+            source_work_run = (
+                self.store.get(
+                    "work_runs",
+                    str(completion.get("work_run_id") or ""),
+                )
+                if completion
+                else None
+            ) or {}
+            source_intent = (
+                source_work_run.get("intent")
+                if isinstance(source_work_run.get("intent"), dict)
+                else {}
+            )
+            completion_asset_kind = str(
+                source_intent.get("asset_kind") or "work"
+            ).strip()
+            predicate = (
+                f"{completion_asset_kind}_completion_decision"
+                if completion
+                else ""
+            )
+            value = str(completion.get("decision") or "") if completion else ""
+            for raw_binding in entry.get("claim_bindings") or []:
+                if not isinstance(raw_binding, dict):
+                    continue
+                if str(raw_binding.get("support_status") or "") != "supported":
+                    continue
+                claim_id = str(raw_binding.get("claim_id") or "").strip()
+                claim_text = _compact(raw_binding.get("text"), 4000)
+                if not claim_id or not claim_text:
+                    continue
+                identity = (claim_id, source_ref)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                projected.append(
+                    {
+                        "claim_id": claim_id,
+                        "text": claim_text,
+                        "predicate": predicate,
+                        "value": value,
+                        "support_status": "supported",
+                        "verification": "verified",
+                        "source_refs": [source_ref],
+                        "chunk_ids": list(
+                            dict.fromkeys(
+                                str(item)
+                                for item in raw_binding.get("chunk_ids") or []
+                                if str(item).strip()
+                            )
+                        ),
+                    }
+                )
+        return projected
+
+    @staticmethod
+    def _merge_candidate_claims(
+        *claim_groups: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        seen: set[tuple[str, tuple[str, ...]]] = set()
+        for claims in claim_groups:
+            for raw in claims:
+                if not isinstance(raw, dict):
+                    continue
+                if raw.get("support_status") != "supported" or raw.get("verification") != "verified":
+                    continue
+                identity = (
+                    str(raw.get("claim_id") or ""),
+                    tuple(sorted(str(item) for item in raw.get("source_refs") or [])),
+                )
+                if not identity[0] or identity in seen:
+                    continue
+                seen.add(identity)
+                merged.append(dict(raw))
+        return merged
+
+    @staticmethod
+    def _lesson_fingerprint(value: str) -> str:
+        normalized = re.sub(r"\s+", " ", str(value or "").casefold()).strip()
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+    def _record_candidate_suppression(
+        self,
+        *,
+        principal: Principal,
+        work_run_id: str,
+        fingerprint: str,
+        reason: str,
+        duplicate_refs: list[str],
+    ) -> None:
+        suppression_id = _id(
+            "candidate-suppression",
+            f"{work_run_id}:{fingerprint}:{reason}",
+        )
+        self.store.put(
+            "knowledge_candidate_suppressions",
+            suppression_id,
+            {
+                "suppression_id": suppression_id,
+                "employee_id": principal.employee_id,
+                "work_run_id": work_run_id,
+                "fingerprint": fingerprint,
+                "reason": reason,
+                "duplicate_refs": duplicate_refs,
+                "created_at": now_iso(),
+            },
+        )
+
+    def _expire_candidate_if_due(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        if candidate.get("status") != "provisional":
+            return candidate
+        expires_at = str(candidate.get("expires_at") or "")
+        if not expires_at:
+            return candidate
+        try:
+            expires = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return candidate
+        if expires > datetime.now(timezone.utc):
+            return candidate
+        candidate.update(
+            {
+                "status": "expired",
+                "lifecycle_reason": "candidate_expired",
+                "revision": int(candidate.get("revision") or 1) + 1,
+                "updated_at": now_iso(),
+            }
+        )
+        self.search.remove_private_candidate(candidate)
+        candidate["search_index_status"] = "removed"
+        candidate["search_chunk_ids"] = []
+        return self.store.put(
+            "knowledge_candidates",
+            str(candidate["candidate_id"]),
+            candidate,
+        )
+
+    def _create_candidate(
+        self,
+        *,
+        principal: Principal,
+        work_run: dict[str, Any],
+        context: WorkContextPack,
+        title: str,
+        summary: str,
+        source_refs: list[str],
+    ) -> KnowledgeCandidateRef | None:
+        clean_summary = _compact(summary, 4000)
+        refs, rejected_refs = self._verified_learning_refs(principal, source_refs)
+        if not clean_summary:
+            return None
+        fingerprint = self._lesson_fingerprint(clean_summary)
+        if not refs:
+            self._record_candidate_suppression(
+                principal=principal,
+                work_run_id=str(work_run["work_run_id"]),
+                fingerprint=fingerprint,
+                reason="no_verified_sources",
+                duplicate_refs=rejected_refs,
+            )
+            return None
+        verified_claims = self._verified_candidate_claims(
+            work_run=work_run,
+            verified_refs=refs,
+        )
+        existing_candidates = [
+            self._expire_candidate_if_due(item)
+            for item in self.store.list(
+                "knowledge_candidates",
+                employee_id=principal.employee_id,
+                limit=1000,
+            )
+        ]
+        same_lesson = next(
+            (
+                item
+                for item in existing_candidates
+                if item.get("lesson_fingerprint") == fingerprint
+                and item.get("status") not in {"archived", "rejected", "expired"}
+            ),
+            None,
+        )
+        if same_lesson and same_lesson.get("status") == "provisional":
+            prior_validation = (
+                same_lesson.get("source_validation")
+                if isinstance(same_lesson.get("source_validation"), dict)
+                else {}
+            )
+            merged_verified_refs = list(
+                dict.fromkeys(
+                    [*prior_validation.get("verified_refs", []), *refs]
+                )
+            )
+            verified_ref_set = set(merged_verified_refs)
+            merged_rejected_refs = [
+                ref
+                for ref in dict.fromkeys(
+                    [*prior_validation.get("rejected_refs", []), *rejected_refs]
+                )
+                if ref not in verified_ref_set
+            ]
+            same_lesson.update(
+                {
+                    "source_refs": list(
+                        dict.fromkeys([*same_lesson.get("source_refs", []), *refs])
+                    ),
+                    "supporting_work_run_ids": list(
+                        dict.fromkeys(
+                            [
+                                *same_lesson.get("supporting_work_run_ids", []),
+                                str(work_run["work_run_id"]),
+                            ]
+                        )
+                    ),
+                    "recurrence_count": int(same_lesson.get("recurrence_count") or 1) + 1,
+                    "source_validation": {
+                        "verified_refs": merged_verified_refs,
+                        "rejected_refs": merged_rejected_refs,
+                    },
+                    "claims": self._merge_candidate_claims(
+                        list(same_lesson.get("claims") or []),
+                        verified_claims,
+                    ),
+                    "expires_at": (
+                        datetime.now(timezone.utc) + timedelta(days=180)
+                    ).isoformat(),
+                    "revision": int(same_lesson.get("revision") or 1) + 1,
+                    "updated_at": now_iso(),
+                }
+            )
+            self.store.put(
+                "knowledge_candidates",
+                str(same_lesson["candidate_id"]),
+                same_lesson,
+            )
+            try:
+                self.search.index_private_candidate(same_lesson)
+            except Exception:
+                pass
+            return KnowledgeCandidateRef(
+                candidate_id=str(same_lesson["candidate_id"]),
+                title=str(same_lesson.get("title") or "업무에서 남길 내용"),
+                status="provisional",
+                url=f"/api/v2/knowledge-candidates/{same_lesson['candidate_id']}",
+                deduplicated=True,
+            )
+        if same_lesson:
+            self._record_candidate_suppression(
+                principal=principal,
+                work_run_id=str(work_run["work_run_id"]),
+                fingerprint=fingerprint,
+                reason="verified_lesson_already_exists",
+                duplicate_refs=[str(same_lesson.get("candidate_id") or "")],
+            )
+            return None
+        matches = self.search.search(clean_summary, principal, limit=5, include_history=False).items
+        duplicate_refs = [item.evidence_id for item in matches if item.score >= 0.82]
+        record_by_ref = {
+            item.record_id: item
+            for item in self.repository.authoritative_records(
+                principal,
+                include_drafts=False,
+            )
+        }
+        exact_duplicate_refs = [
+            ref
+            for ref, record in record_by_ref.items()
+            if self._lesson_fingerprint(record.text or record.description) == fingerprint
+        ]
+        if exact_duplicate_refs:
+            self._record_candidate_suppression(
+                principal=principal,
+                work_run_id=str(work_run["work_run_id"]),
+                fingerprint=fingerprint,
+                reason="no_novelty_against_verified_knowledge",
+                duplicate_refs=exact_duplicate_refs,
+            )
+            return None
+        candidate_id = _id("candidate", f"{work_run['work_run_id']}:{clean_summary}")
+        candidate = {
+            "candidate_id": candidate_id,
+            "employee_id": principal.employee_id,
+            "source_work_run_id": work_run["work_run_id"],
+            "source_task_ref": context.task_ref,
+            "title": _compact(title, 160) or "업무에서 남길 내용",
+            "summary": clean_summary,
+            "reusable_lesson": clean_summary,
+            "source_refs": refs,
+            "supporting_work_run_ids": [str(work_run["work_run_id"])],
+            "lesson_fingerprint": fingerprint,
+            "recurrence_count": 1,
+            "target_asset_ref": (
+                duplicate_refs[0]
+                if duplicate_refs
+                else context.goal_anchor.ref
+                if context.goal_anchor
+                else context.page_anchor.ref
+                if context.page_anchor
+                else ""
+            ),
+            "visibility": "private",
+            "status": "provisional",
+            "novelty": {
+                "checked": True,
+                "duplicate_refs": duplicate_refs,
+                "recommendation": "augment_existing" if duplicate_refs else "create_new",
+            },
+            "source_validation": {
+                "verified_refs": refs,
+                "rejected_refs": rejected_refs,
+            },
+            "claims": verified_claims,
+            "raw_transcript_stored": False,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(days=180)).isoformat(),
+            "lifecycle_reason": "",
+            "revision": 1,
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+        }
+        result = self.harnesses.evaluate(
+            "learning.capture",
+            phase="capture",
+            intent=WorkIntent.model_validate(work_run["intent"]),
+            context=context,
+            candidate=candidate,
+            task_mode=context.task_mode,
+            binding=self._binding_for(
+                [item for item in work_run.get("harness_bindings") or [] if isinstance(item, dict)],
+                "learning.capture",
+            ),
+        )
+        self.store.put(
+            "harness_results",
+            f"{work_run['work_run_id']}:learning.capture:{candidate_id}",
+            {"employee_id": principal.employee_id, "work_run_id": work_run["work_run_id"], **result.model_dump(mode="json")},
+        )
+        if result.status == "blocked":
+            return None
+        self.store.put("knowledge_candidates", candidate_id, candidate)
+        try:
+            index_result = self.search.index_private_candidate(candidate)
+            candidate["search_index_status"] = index_result.get("status") or "unknown"
+            candidate["search_chunk_ids"] = index_result.get("chunk_ids") or []
+        except Exception as exc:
+            candidate["search_index_status"] = f"failed:{type(exc).__name__}"
+            candidate["search_chunk_ids"] = []
+        self.store.put("knowledge_candidates", candidate_id, candidate)
+        return KnowledgeCandidateRef(
+            candidate_id=candidate_id,
+            title=candidate["title"],
+            status="provisional",
+            url=f"/api/v2/knowledge-candidates/{candidate_id}",
+        )
+
+    def _existing_pattern_candidate(self, principal: Principal, pattern_key: str) -> bool:
+        return any(
+            item.get("pattern_key") == pattern_key
+            and item.get("status") not in {"archived", "rejected", "expired"}
+            for item in self.store.list(
+                "knowledge_candidates",
+                employee_id=principal.employee_id,
+                limit=500,
+            )
+        )
+
+    def _decorate_pattern_candidate(
+        self,
+        candidate: KnowledgeCandidateRef,
+        *,
+        pattern_key: str,
+        pattern_kind: str,
+        recommended_asset_kind: str,
+        occurrences: int,
+    ) -> KnowledgeCandidateRef:
+        row = self.store.get("knowledge_candidates", candidate.candidate_id)
+        if not row:
+            return candidate
+        row.update(
+            {
+                "candidate_kind": "work_pattern",
+                "pattern_key": pattern_key,
+                "pattern_kind": pattern_kind,
+                "recommended_asset_kind": recommended_asset_kind,
+                "occurrences": occurrences,
+                "updated_at": now_iso(),
+            }
+        )
+        self.store.put("knowledge_candidates", candidate.candidate_id, row)
+        return candidate
+
+    def _maybe_create_manual_pattern_candidate(
+        self,
+        *,
+        principal: Principal,
+        work_run: dict[str, Any],
+        context: WorkContextPack,
+        completion: dict[str, Any],
+    ) -> KnowledgeCandidateRef | None:
+        if context.task_mode != TaskMode.manual or not context.task_ref:
+            return None
+        matches = [
+            item
+            for item in self.store.list(
+                "completion_records",
+                employee_id=principal.employee_id,
+                limit=500,
+            )
+            if item.get("task_ref") == context.task_ref and item.get("task_mode") == TaskMode.manual.value
+        ]
+        if len(matches) < 3:
+            return None
+        pattern_key = f"manual:{context.task_ref}"
+        if self._existing_pattern_candidate(principal, pattern_key):
+            return None
+        source_refs = [str(item.get("completion_id") or "") for item in matches if item.get("completion_id")]
+        summary = (
+            f"{context.task_ref} 업무가 Manual 방식으로 {len(matches)}회 반복 완료되었습니다. "
+            "재사용 가능한 Skill 또는 안전한 Action으로 만들 수 있는지 검토할 후보입니다."
+        )
+        candidate = self._create_candidate(
+            principal=principal,
+            work_run=work_run,
+            context=context,
+            title="반복 Manual 업무 자동화 후보",
+            summary=summary,
+            source_refs=source_refs or [str(completion["completion_id"])],
+        )
+        if not candidate:
+            return None
+        return self._decorate_pattern_candidate(
+            candidate,
+            pattern_key=pattern_key,
+            pattern_kind="repeated_manual_work",
+            recommended_asset_kind="skill_or_action",
+            occurrences=len(matches),
+        )
+
+    def _maybe_create_blocker_pattern_candidate(
+        self,
+        *,
+        principal: Principal,
+        work_run: dict[str, Any],
+        context: WorkContextPack,
+        summary: str,
+    ) -> KnowledgeCandidateRef | None:
+        if not context.task_ref:
+            return None
+        run_refs: list[str] = [str(work_run["work_run_id"])]
+        occurrences = 1
+        for item in self.store.list("negative_results", employee_id=principal.employee_id, limit=500):
+            if item.get("kind") != "work_blocker":
+                continue
+            source_run_id = str(item.get("work_run_id") or "")
+            if not source_run_id or source_run_id == work_run.get("work_run_id"):
+                continue
+            source_run = self.store.get("work_runs", source_run_id) or {}
+            candidate_context = self.store.get("contexts", str(source_run.get("context_id") or "")) or {}
+            if candidate_context.get("task_ref") != context.task_ref:
+                continue
+            occurrences += 1
+            run_refs.append(str(item.get("negative_result_id") or source_run_id))
+        if occurrences < 2:
+            return None
+        pattern_key = f"blocker:{context.task_ref}"
+        if self._existing_pattern_candidate(principal, pattern_key):
+            return None
+        lesson = (
+            f"{context.task_ref} 업무에서 blocker가 {occurrences}회 반복되었습니다. "
+            f"최근 blocker: {_compact(summary, 600)}. SOP의 예외 처리 또는 Harness의 필수 근거를 보완할 후보입니다."
+        )
+        candidate = self._create_candidate(
+            principal=principal,
+            work_run=work_run,
+            context=context,
+            title="반복 blocker 개선 후보",
+            summary=lesson,
+            source_refs=list(dict.fromkeys(ref for ref in run_refs if ref)),
+        )
+        if not candidate:
+            return None
+        return self._decorate_pattern_candidate(
+            candidate,
+            pattern_key=pattern_key,
+            pattern_kind="repeated_blocker",
+            recommended_asset_kind="sop_or_harness",
+            occurrences=occurrences,
+        )
+
+    def get_candidate(self, principal: Principal, candidate_id: str) -> dict[str, Any]:
+        candidate = self.store.get("knowledge_candidates", candidate_id)
+        # Private provisional knowledge is not an admin analytics surface.
+        # Hide both existence and ownership unless the authenticated employee
+        # owns the candidate; break-glass source access is a separate contract.
+        if not candidate or str(candidate.get("employee_id") or "") != principal.employee_id:
+            raise HTTPException(status_code=404, detail="knowledge candidate not found")
+        return self._expire_candidate_if_due(candidate)
+
+    def list_candidates(self, principal: Principal, *, status: str = "", limit: int = 50) -> dict[str, Any]:
+        items = [
+            self._expire_candidate_if_due(item)
+            for item in self.store.list(
+                "knowledge_candidates",
+                employee_id=principal.employee_id,
+                limit=max(1, min(limit, 100)),
+            )
+        ]
+        if status:
+            items = [item for item in items if item.get("status") == status]
+        return {"count": len(items), "items": items}
+
+    def patch_candidate(
+        self,
+        principal: Principal,
+        candidate_id: str,
+        request: KnowledgeCandidatePatchRequest,
+    ) -> dict[str, Any]:
+        candidate = self.get_candidate(principal, candidate_id)
+        revision = int(candidate.get("revision") or 1)
+        if request.expected_revision != revision:
+            raise HTTPException(status_code=409, detail={"status": "revision_conflict", "current_revision": revision, "candidate": candidate})
+        values = request.model_dump(exclude_unset=True)
+        values.pop("expected_revision", None)
+        candidate.update(values)
+        candidate.update({"revision": revision + 1, "updated_at": now_iso()})
+        stored = self.store.put("knowledge_candidates", candidate_id, candidate)
+        if stored.get("status") in {"archived", "rejected", "expired"}:
+            self.search.remove_private_candidate(stored)
+            stored["search_index_status"] = "removed"
+            stored["search_chunk_ids"] = []
+        else:
+            try:
+                index_result = self.search.index_private_candidate(stored)
+                stored["search_index_status"] = index_result.get("status") or "unknown"
+                stored["search_chunk_ids"] = index_result.get("chunk_ids") or []
+            except Exception as exc:
+                stored["search_index_status"] = f"failed:{type(exc).__name__}"
+        return self.store.put("knowledge_candidates", candidate_id, stored)
+
+    def validate_candidate_promotion(
+        self,
+        principal: Principal,
+        candidate_id: str,
+    ) -> tuple[dict[str, Any], HarnessResult]:
+        candidate = self.get_candidate(principal, candidate_id)
+        if candidate.get("status") in {"archived", "rejected", "expired"}:
+            raise HTTPException(status_code=409, detail="an inactive candidate cannot be promoted")
+        source_run = self.store.get("work_runs", str(candidate.get("source_work_run_id") or "")) or {}
+        context_row = self.store.get("contexts", str(source_run.get("context_id") or "")) or {}
+        if not context_row:
+            raise HTTPException(status_code=409, detail="candidate source context is unavailable")
+        context = WorkContextPack.model_validate(context_row)
+        source_intent = WorkIntent.model_validate(source_run.get("intent") or {})
+        promotion_intent = source_intent.model_copy(
+            update={
+                "operation": WorkOperation.promote,
+                "operation_plan": [WorkOperation.understand, WorkOperation.validate, WorkOperation.promote],
+                "desired_outcome": "promotion_request",
+                "risk": RiskLevel.high,
+            }
+        )
+        harness_result = self.harnesses.evaluate(
+            "learning.capture",
+            phase="promote",
+            intent=promotion_intent,
+            context=context,
+            candidate=candidate,
+            task_mode=context.task_mode,
+            binding=self._binding_for(
+                [item for item in source_run.get("harness_bindings") or [] if isinstance(item, dict)],
+                "learning.capture",
+            ),
+        )
+        self.store.put(
+            "harness_results",
+            f"{source_run.get('work_run_id') or candidate_id}:learning.capture:promote:{candidate_id}",
+            {
+                "employee_id": principal.employee_id,
+                "work_run_id": str(source_run.get("work_run_id") or ""),
+                "candidate_id": candidate_id,
+                **harness_result.model_dump(mode="json"),
+            },
+        )
+        if harness_result.status == "blocked":
+            raise HTTPException(
+                status_code=409,
+                detail={"status": "promotion_harness_failed", "harness": harness_result.model_dump(mode="json")},
+            )
+        return candidate, harness_result
+
+    def promote_candidate(
+        self,
+        principal: Principal,
+        candidate_id: str,
+        request: KnowledgeCandidatePromoteRequest,
+        *,
+        promotion_preview: dict[str, Any] | None = None,
+        plan_id: str = "",
+        harness_result: HarnessResult | None = None,
+    ) -> dict[str, Any]:
+        candidate = self.get_candidate(principal, candidate_id)
+        revision = int(candidate.get("revision") or 1)
+        if request.expected_revision != revision:
+            raise HTTPException(status_code=409, detail={"status": "revision_conflict", "current_revision": revision, "candidate": candidate})
+        if candidate.get("status") in {"archived", "rejected", "expired"}:
+            raise HTTPException(status_code=409, detail="an inactive candidate cannot be promoted")
+        if not request.reason.strip():
+            raise HTTPException(status_code=422, detail="promotion reason is required")
+        if harness_result is None:
+            _, harness_result = self.validate_candidate_promotion(principal, candidate_id)
+        preview = promotion_preview if isinstance(promotion_preview, dict) else {}
+        preview_validation = preview.get("validation") if isinstance(preview.get("validation"), dict) else {}
+        candidate.update(
+            {
+                "status": "promotion_requested",
+                "promotion": {
+                    "target_visibility": request.target_visibility,
+                    "team_id": request.team_id,
+                    "reason": request.reason,
+                    "requested_by": principal.employee_id,
+                    "requested_at": now_iso(),
+                    "preview_id": str(preview.get("preview_id") or ""),
+                    "preview_hash": str(preview.get("preview_hash") or ""),
+                    "preview_status": str(preview.get("status") or ""),
+                    "plan_id": plan_id,
+                    "requires_existing_promotion_api": False,
+                },
+                "revision": revision + 1,
+                "updated_at": now_iso(),
+            }
+        )
+        self.store.put("knowledge_candidates", candidate_id, candidate)
+        return {
+            "candidate_id": candidate_id,
+            "status": "promotion_requested",
+            "production_changed": False,
+            "plan_ref": plan_id,
+            "domain_preview": preview,
+            "harness": harness_result.model_dump(mode="json"),
+            "promotion_preview": {
+                "title": candidate.get("title"),
+                "body": candidate.get("reusable_lesson"),
+                "source_refs": candidate.get("source_refs"),
+                "target_visibility": request.target_visibility,
+                "team_id": request.team_id,
+                "validation": preview_validation,
+            },
+            "message": "기존 promotion 검증을 통과한 공유 검토 요청을 만들었습니다. 별도 확인 전에는 정본을 바꾸지 않습니다.",
+        }

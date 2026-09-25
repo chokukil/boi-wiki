@@ -65,6 +65,8 @@ class AuthIdentity:
     teams: list[str] = field(default_factory=list)
     roles: list[str] = field(default_factory=list)
     auth_source: str = "dev"
+    session_actor: str = ""
+    delegation_ref: str = ""
 
     @property
     def is_admin(self) -> bool:
@@ -290,6 +292,11 @@ def create_session_token(identity: AuthIdentity) -> str:
         "iat": now,
         "exp": now + int(os.getenv("BOI_SESSION_TTL_SECONDS", "28800")),
     }
+    if identity.auth_source == 'dev_session':
+        from .dev_browser_auth import configured_identity
+        if identity != configured_identity():
+            raise AuthError(403, 'development browser identity changed')
+        payload.update(session_actor=identity.session_actor, delegation_ref=identity.delegation_ref)
     return jwt.encode(payload, session_secret(), algorithm="HS256")
 
 
@@ -298,6 +305,16 @@ def identity_from_session_token(token: str) -> AuthIdentity:
         claims = jwt.decode(token, session_secret(), algorithms=["HS256"])
     except Exception as exc:
         raise AuthError(401, f"invalid BoI session: {exc}") from exc
+    if claims.get('auth_source') == 'dev_session':
+        from .dev_browser_auth import configured_identity
+        current = configured_identity()
+        if (not isinstance(claims.get('exp'), int) or not isinstance(claims.get('iat'), int)
+                or claims.get('employee_id') != current.employee_id
+                or claims.get('session_actor') != current.session_actor
+                or claims.get('delegation_ref') != current.delegation_ref):
+            raise AuthError(403, 'development browser identity changed')
+        # Settings and current roles, never old grants serialized in the cookie.
+        return current
     identity = AuthIdentity(
         employee_id=str(claims.get("employee_id") or claims.get("sub") or ""),
         display_name=str(claims.get("name") or claims.get("employee_id") or ""),
@@ -597,6 +614,15 @@ def resolve_identity(
 ) -> AuthIdentity:
     mode = auth_mode()
     if mode == "dev":
+        if session_token:
+            identity = identity_from_session_token(session_token)
+            if identity.auth_source == 'dev_session':
+                if any(value and value != identity.employee_id for value in
+                       (query_employee_id, x_employee_id, x_hynix_employee_id)):
+                    raise AuthError(403, 'employee id does not match development browser session')
+                if authorization:
+                    raise AuthError(403, 'ambiguous development browser authentication')
+                return identity
         token = bearer_token(authorization)
         if token and token.startswith("mock."):
             return identity_from_claims(parse_mock_bearer(token[5:]), auth_source="dev_bearer", bearer_token=token)

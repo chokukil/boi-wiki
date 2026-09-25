@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>연결 관계 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script type="module" src="{{ asset_url('dist/knowledge-graph.js') }}"></script>
+</head>
+<body>
+{% include "_app_shell.html" %}
+
+<main class="page-content knowledge-graph-page">
+  <section class="knowledge-graph-intro">
+    <div>
+      <span class="eyebrow">BoI Wiki · 연결 관계</span>
+      <h1>필요한 관계부터 이어서 살펴보세요</h1>
+      <p>처음에는 중심 항목의 직접 관계만 불러옵니다. 노드를 선택하면 해당 항목 주변만 추가해 큰 지식 그래프도 빠르게 탐색합니다.</p>
+    </div>
+    <form method="get" action="/knowledge-graph" class="knowledge-graph-focus-form">
+      <input type="hidden" name="employee_id" value="{{ employee_id }}" />
+      <label for="graph-source-ref">중심 항목</label>
+      <div>
+        <input id="graph-source-ref" value="{{ source_title }}" readonly aria-describedby="graph-source-help" />
+        <input type="hidden" name="source_ref" value="{{ source_ref }}" />
+        <button class="button primary" type="submit">중심으로 열기</button>
+      </div>
+      <small id="graph-source-help">다른 항목은 아래 찾기에서 이름으로 검색해 중심으로 열 수 있습니다.</small>
+    </form>
+  </section>
+
+  <section
+    class="relationship-panel knowledge-explorer knowledge-graph-hub"
+    id="knowledge-explorer"
+    data-auto-open="true"
+    data-explore-url="{{ knowledge_graph_explore_url }}"
+    data-source-ref="{{ source_ref }}"
+  >
+    <div class="knowledge-explorer-tabs" role="tablist" aria-label="업무 관계 보기 방식">
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="neighbors">직접 연결</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="path">연결 경로</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="workflow">업무 흐름</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="impact">영향 범위</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="lineage">근거 계보</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="responsibility">담당 관계</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="timeline">시간 흐름</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="compare">두 항목 비교</button>
+      <button type="button" role="tab" aria-selected="false" data-knowledge-view="tour">이해 순서</button>
+      <button type="button" role="tab" aria-selected="true" class="active" data-knowledge-view="explorer">그래프로 탐색</button>
+    </div>
+    <div class="knowledge-path-search" hidden>
+      <label for="knowledge-path-query">이어지는 항목 찾기</label>
+      <div>
+        <input id="knowledge-path-query" type="search" placeholder="문서나 업무 이름을 입력하세요" autocomplete="off" />
+        <button type="button" class="button secondary" data-knowledge-search>찾기</button>
+      </div>
+      <div class="knowledge-path-candidates"></div>
+    </div>
+    <p class="knowledge-explorer-status muted" aria-live="polite">직접 연결된 항목을 불러오고 있습니다.</p>
+    <div class="knowledge-explorer-content" hidden></div>
+    <div class="knowledge-graph-hub-layout">
+      <div class="knowledge-graph-shell">
+        <div class="knowledge-graph-canvas" role="application" tabindex="0" aria-label="선택한 업무 맥락을 중심으로 한 관계 그래프. 방향키로 항목을 이동하고 Enter로 상세를 확인합니다."></div>
+      </div>
+      <aside class="knowledge-node-details" data-knowledge-node-details aria-live="polite" hidden>
+        <header><span class="eyebrow">선택한 항목</span><button type="button" class="icon-button" data-knowledge-node-close title="선택한 항목 닫기" aria-label="선택한 항목 닫기">×</button></header>
+        <div class="knowledge-node-details-body">
+          <div><h2 data-knowledge-node-title>중심 항목</h2><p data-knowledge-node-summary></p></div>
+          <dl>
+            <div><dt>종류</dt><dd data-knowledge-node-kind>확인 중</dd></div>
+            <div><dt>연결</dt><dd data-knowledge-node-degree>확인 중</dd></div>
+            <div><dt>관계 이유</dt><dd data-knowledge-node-reason>직접 연결된 업무 맥락</dd></div>
+            <div><dt>검증 상태</dt><dd data-knowledge-node-provenance>근거가 있는 관계만 표시</dd></div>
+            <div><dt>확인 시점</dt><dd data-knowledge-node-observed>기록된 시점 없음</dd></div>
+          </dl>
+          <div class="knowledge-node-actions"><a class="button secondary" data-knowledge-open-node hidden>원문 열기</a><button type="button" class="button secondary" data-knowledge-node-close>닫기</button></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,1574 @@
+version: "2.0"
+graph_query_filter_contract:
+  filter_policy: explicit_only
+  node_kinds:
+    - document
+    - dictionary
+    - concept
+    - sop
+    - workflow
+    - task
+    - event
+    - business_event
+    - event_occurrence
+    - workflow_run
+    - task_run
+    - action
+    - action_run
+    - skill
+    - evidence
+    - evidence_ledger
+    - external_work_result
+    - output_artifact
+    - outcome
+    - next_event
+    - data_artifact
+    - person
+    - team
+    - role
+    - work_record
+    - completion_record
+    - knowledge_candidate
+    - runtime
+    - runtime_catalog
+    - code_entity
+  relation_kinds:
+    - part_of
+    - guides
+    - uses
+    - triggers
+    - executes
+    - part_of_workflow
+    - has_task
+    - next_task
+    - precedes
+    - uses_sop
+    - uses_event
+    - uses_action
+    - uses_skill
+    - triggered_by
+    - results_in
+    - produces
+    - assigned_to
+    - reviewed_by
+    - related_team
+    - member_of
+    - has_role
+    - performed_by
+    - completed_by
+    - repeated_performer
+    - requires_evidence
+    - derived_from
+    - evidence
+    - broader
+    - narrower
+    - related
+    - links_to
+    - supersedes
+loop_contract_templates:
+  bounded_turn: &bounded_turn
+    kind: turn
+    trigger: user
+    task_stop: agent_done
+    routine_stop: one_shot
+    max_iterations: 1
+    max_no_progress: 2
+    max_tool_loops: 1
+    max_model_calls: 2
+    max_elapsed_seconds: 15
+    max_context_tokens: 16384
+    max_runs: 1
+    exit_criteria_refs: []
+    progress_policy: structured_delta
+    verifier_policy: harness
+  bounded_goal: &bounded_goal
+    kind: goal
+    trigger: user
+    task_stop: exit_criteria
+    routine_stop: one_shot
+    max_iterations: 5
+    max_no_progress: 2
+    max_tool_loops: 5
+    max_model_calls: 8
+    max_elapsed_seconds: 900
+    max_context_tokens: 0
+    max_runs: 1
+    exit_criteria_refs: []
+    progress_policy: structured_delta
+    verifier_policy: harness
+  deep_goal: &deep_goal
+    kind: goal
+    trigger: user
+    task_stop: exit_criteria
+    routine_stop: one_shot
+    max_iterations: 5
+    max_no_progress: 2
+    max_tool_loops: 5
+    max_model_calls: 12
+    max_elapsed_seconds: 3600
+    max_context_tokens: 0
+    max_runs: 1
+    exit_criteria_refs: []
+    progress_policy: structured_delta
+    verifier_policy: harness
+asset_defaults:
+  knowledge: knowledge.search
+  sop: sop.plan
+  workflow: workflow.transform
+  task: task.work
+  business_event: business_event.plan
+  action: action.plan
+  skill: skill.plan
+  runtime: work.inbox
+  evidence: cases.similar
+legacy_import:
+  capability_aliases:
+    search: knowledge.search
+    summarize: knowledge.search
+    validate: cases.similar
+    diagram: sop.plan
+    draft: knowledge.draft
+    request_action: action.plan
+    sop: sop.plan
+    event: business_event.plan
+    knowledge.deep: deep.research
+  source_scope_aliases:
+    boi_docs: boi
+    sops: sop
+    events_actions: event
+    similar_cases: history
+  required_capabilities: [knowledge.search]
+helper_templates:
+  - template_id: search
+    name: 자료 찾기 도우미
+    instructions: 질문과 관련된 검토된 BoI 자료를 먼저 찾고, 근거 링크와 함께 간결하게 답합니다.
+    capability_ids: [knowledge.search, cases.similar]
+  - template_id: sop
+    name: SOP 설계 도우미
+    instructions: 업무 목표를 Task로 나누고 각 Task의 목적, 종료 기준, 필요한 근거를 구체화합니다.
+    capability_ids: [knowledge.search, sop.plan, action.plan, business_event.plan]
+  - template_id: evidence
+    name: 근거 검증 도우미
+    instructions: 주장의 근거를 BoI Wiki와 유사 사례에서 확인하고, 부족한 근거와 다음 확인 항목을 구분합니다.
+    capability_ids: [knowledge.search, cases.similar, knowledge.draft]
+  - template_id: blank
+    name: 새 BoI Agent
+    instructions: ""
+    capability_ids: [knowledge.search]
+capabilities:
+  - capability_id: knowledge.search
+    title: 업무 지식 찾기
+    description: 빠른 질문, 현재 문서 설명, 관계 확인에 필요한 BoI 문서·SOP·Event·Action·Skill을 함께 찾습니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge, sop, workflow, task, business_event, action, skill, runtime, evidence]
+    subject_kinds: [knowledge, concept, dictionary, document, sop, workflow, workflow_run, task, task_run, business_event, event, event_occurrence, action, action_run, skill, runtime, runtime_catalog, evidence, evidence_ledger, external_work_result, output_artifact, person, team, org_unit, company, role, responsibility, outcome, next_event, usage_record, agent_definition, agent_deployment, system, data_artifact, work_record, completion_record, knowledge_candidate, case]
+    examples: [찾아줘, 검색, 관련 문서, 무엇인지 알려줘, 업무 지식]
+    operation: read
+    user_effects: [read]
+    default_user_effect: read
+    semantic_operations: [understand, compare, connect, validate, observe]
+    semantic_compile:
+      priority: 10
+      preferred_subject_kinds: [knowledge, concept, document, sop, workflow, workflow_run, task, task_run, business_event, event, event_occurrence, action, action_run, skill, evidence_ledger, external_work_result, output_artifact, person, team, org_unit, company, role, responsibility, outcome, next_event, usage_record, agent_definition, agent_deployment, system]
+      evidence_modes: [current_work, relationship_provenance, authoritative_knowledge, private_learning, execution_evidence]
+      evidence_modes_by_operation:
+        validate: [private_learning, execution_evidence]
+      evidence_scopes_by_operation:
+        validate: [operational, validation]
+      evidence_scopes_by_mode:
+        authoritative_knowledge: [canonical]
+        current_work: [operational]
+        execution_evidence: [operational]
+        relationship_provenance: [canonical, operational]
+      evidence_authorities_by_mode:
+        authoritative_knowledge: [reviewed, published, active, approved, canonical]
+        relationship_provenance: [reviewed, published, active, approved, canonical, runtime]
+        private_learning: [provisional, reviewed]
+      evidence_statuses_by_mode:
+        authoritative_knowledge: [reviewed, published, active, approved, final]
+        relationship_provenance: [reviewed, published, active, approved, final]
+        private_learning: [provisional, reviewed]
+      work_perspectives: [current, responsibility]
+      work_perspective_subject_kinds: [person, team, role, task, runtime, action, work_record]
+      work_perspective_subject_kinds_by_perspective:
+        current: [person, team, task, runtime, action, work_record, business_event, event, event_occurrence]
+        responsibility: [person, team, org_unit, company, role, responsibility]
+      mutation_intents: [none]
+      loop_intents: [turn]
+      presentation_operation_aliases: {mermaid: connect, explorer: connect}
+      default_graph_query_by_operation: {compare: compare, connect: neighbors, validate: lineage}
+      default_graph_query_by_presentation: {timeline: timeline}
+      default_graph_query_by_evidence_mode: {execution_evidence: neighbors}
+      default_graph_query_by_work_view: {responsibility: responsibility, combined: responsibility}
+      ontology_projection_recipes_by_evidence_mode:
+        relationship_provenance:
+          task:
+            - projection_id: task_context_lineage
+              evidence_category: relationship
+              required_for_answer: true
+              empty_message: 이 Task와 연결된 Event·Evidence·Action 관계를 확인할 수 없습니다.
+              primary_graph_mode: projection_only
+              graph_query_kind_by_operation: {connect: workflow}
+        execution_evidence:
+          person:
+            - projection_id: person_tools
+              evidence_category: usage
+              required_for_answer: true
+              empty_message: 검증된 Agent·System 업무 사용 기록을 확인할 수 없습니다.
+              primary_graph_mode: projection_only
+              graph_query_kind_by_operation: {connect: usage}
+            - projection_id: person_outcomes
+              evidence_category: verified_outcome
+              required_for_answer: true
+              empty_message: 검증된 업무 결과나 Outcome 기록을 확인할 수 없습니다.
+              primary_graph_mode: projection_only
+              graph_query_kind_by_operation: {connect: usage}
+          agent_definition:
+            - projection_id: agent_adoption
+              evidence_category: usage
+              required_for_answer: true
+              empty_message: 이 Agent를 사용한 사람·팀의 검증 기록을 확인할 수 없습니다.
+              primary_graph_mode: projection_only
+              graph_query_kind_by_operation: {connect: usage}
+          agent_deployment:
+            - projection_id: agent_adoption
+              evidence_category: usage
+              required_for_answer: true
+              empty_message: 이 Agent 배포를 사용한 사람·팀의 검증 기록을 확인할 수 없습니다.
+              primary_graph_mode: projection_only
+              graph_query_kind_by_operation: {connect: usage}
+          system:
+            - projection_id: system_adoption
+              evidence_category: usage
+              required_for_answer: true
+              empty_message: 이 System을 사용한 사람·팀의 검증 기록을 확인할 수 없습니다.
+              primary_graph_mode: projection_only
+              graph_query_kind_by_operation: {connect: usage}
+      # Reverse adoption needs one additional hop to reach the owning team:
+      # definition -> deployment -> usage -> person -> team.
+      graph_depth_by_subject_kind: {person: 2, agent_definition: 4, agent_deployment: 3, system: 3, usage_record: 2, outcome: 2}
+    semantic_operation_contracts:
+      understand:
+        description: Explain the meaning, facts, or procedure of the selected subjects without traversing a relationship graph.
+        presentations: [prose, table]
+        graph_query_kinds: []
+      compare:
+        description: Contrast two or more selected subjects and make their similarities and differences explicit.
+        presentations: [prose, table]
+        graph_query_kinds: [compare]
+      connect:
+        description: Traverse, sequence, or visualize verified relationships between selected subjects.
+        presentations: [prose, table, timeline, mermaid, explorer]
+        graph_query_kinds: [neighbors, path, workflow, impact, lineage, responsibility, timeline, tour, usage]
+        requires_graph: true
+      validate:
+        description: Check a claim or result against its supporting evidence and provenance.
+        presentations: [prose, table, timeline, mermaid, explorer]
+        graph_query_kinds: [lineage]
+      observe:
+        description: Report current operational state without changing it or inferring a relationship traversal.
+        presentations: [prose, table, timeline]
+        graph_query_kinds: []
+    default_operation: understand
+    operation_pipeline: [understand]
+    presentations: [prose, table, timeline, mermaid, explorer]
+    presentation_aliases: {answer: prose}
+    graph_query_kinds: [neighbors, path, workflow, impact, lineage, responsibility, timeline, compare, tour, usage]
+    work_views: [none, responsibility, combined]
+    work_view_operation_contracts:
+      responsibility: [understand, compare, connect, validate, observe]
+      combined: [understand, compare, connect, validate, observe]
+    evidence_scopes: [canonical, operational, validation]
+    default_evidence_scope: canonical
+    topic_identity_sources: [grounded_claims, artifact, resolved_entities]
+    harness_ids: [context.work]
+    subject_policy: optional
+    risk: low
+    task_modes: [manual, copilot, autopilot]
+    input_schema: {required: [query]}
+    output_schema: {type: search_results}
+    context_recipe: [page, selected_text, ontology, authoritative_knowledge]
+    evidence_policy: [acl_visible, published_or_reviewed, cite_sources]
+    completion_criteria: [one_or_more_relevant_evidence_or_explicit_no_result]
+    allowed_loop_kinds: [turn, time, proactive]
+    allowed_loop_triggers: [user, api, event, schedule, interval]
+    default_loop_contract:
+      <<: *bounded_turn
+      exit_criteria_refs: [one_or_more_relevant_evidence_or_explicit_no_result]
+    handler: grounded_read
+    handler_config:
+      retrieval_provider: hybrid
+      unbound_fallback: evidence_table
+      empty_summary: 확인된 근거가 없습니다.
+      answer_input_tokens: 5000
+      max_answer_sources: 4
+      # Broad recall remains available in the retrieval manifest and graph
+      # artifact, while synchronous WorkContext/citation compilation handles a
+      # bounded whole-item set. Exact page, selection, topic, and pinned refs
+      # are protected by the common Catalog boundary in AgentV2Service.
+      max_context_sources: 8
+      max_presentation_sources: 6
+      max_display_items: 5
+      max_relation_items: 12
+    renderer: search
+    permissions: [boi.viewer]
+    readiness: [content]
+    offer_surfaces: [library, document, sop, event, action, agent]
+    starter_offers:
+      - offer_id: knowledge.current-responsibility
+        category: current_work
+        area: current_work
+        selector: current_work
+        subject_binding: principal_person
+        current_work_condition: present
+        label_template: 내 역할과 지금 맡은 일을 한눈에 보기
+        prompt_template: 내 공식 역할과 검증된 업무 관계를 현재 Inbox 업무와 구분해서 보여줘. 지금은 '{subject_title}'을 포함해 먼저 확인할 일을 표로 정리해줘.
+        reason_template: 현재 처리할 업무가 있습니다.
+        priority: 10
+        context_basis: current_work
+        result_kind: table
+        graph_query_kind: responsibility
+        semantic_operation: connect
+        fallback_to_answer: true
+        work_view: combined
+      - offer_id: knowledge.page-relations
+        category: knowledge_relation
+        area: knowledge
+        selector: page_anchor
+        label_template: "{subject_title}의 핵심과 연결 관계 보기"
+        prompt_template: 현재 보고 있는 {subject_title}의 핵심을 설명하고, Wiki 전체에서 실제로 연결된 내용만 근거와 함께 보여줘.
+        reason_template: 현재 화면을 출발점으로 Wiki 전체의 관계를 살펴봅니다.
+        priority: 20
+        context_basis: page_anchor
+        result_kind: explorer
+        graph_query_kind: neighbors
+        semantic_operation: connect
+        fallback_to_answer: true
+      - offer_id: knowledge.page-relation-table
+        category: knowledge_relation
+        area: knowledge
+        selector: page_anchor
+        only_when_category_empty: false
+        label_template: "{subject_title}의 핵심 항목을 표로 보기"
+        prompt_template: 현재 보고 있는 {subject_title}과 직접 연결된 항목을 관계와 확인 상태가 드러나는 표로 보여줘.
+        reason_template: 현재 화면과 직접 연결된 검토 항목을 비교하기 쉽게 봅니다.
+        priority: 21
+        context_basis: page_anchor
+        result_kind: table
+        graph_query_kind: neighbors
+        semantic_operation: connect
+        fallback_to_answer: true
+      - offer_id: knowledge.connected-workflow
+        category: sop_task
+        area: workflow
+        selector: connected_record
+        anchor_entrypoint_area: knowledge
+        record_kinds: [sop, workflow]
+        include_anchor_source: true
+        label_template: "{anchor_title}와 연결된 '{subject_title}' 보기"
+        prompt_template: "'{anchor_title}'과 '{subject_title}'이 실제로 어떻게 연결되는지, 업무 흐름과 근거를 쉽게 설명해줘."
+        reason_template: 현재 맥락과 직접 연결된 검토된 업무 흐름입니다.
+        priority: 50
+        context_basis: ontology_neighbor
+        result_kind: mermaid
+        graph_query_kind: workflow
+        semantic_operation: connect
+      - offer_id: knowledge.connected-event
+        category: business_event
+        area: event_action
+        selector: connected_record
+        anchor_entrypoint_area: knowledge
+        record_kinds: [event]
+        include_anchor_source: true
+        label_template: "{anchor_title}와 연결된 '{subject_title}' 보기"
+        prompt_template: "'{anchor_title}'과 업무 이벤트 '{subject_title}'의 실제 연결 관계와 발생 조건, 이어지는 결과를 근거와 함께 보여줘."
+        reason_template: 현재 맥락과 직접 연결된 검토된 업무 이벤트입니다.
+        priority: 60
+        context_basis: ontology_neighbor
+        result_kind: explorer
+        graph_query_kind: impact
+        semantic_operation: connect
+      - offer_id: knowledge.connected-action
+        category: action
+        area: event_action
+        selector: connected_record
+        anchor_entrypoint_area: knowledge
+        record_kinds: [action]
+        include_anchor_source: true
+        only_when_category_empty: false
+        label_template: "{anchor_title}와 연결된 '{subject_title}' 보기"
+        prompt_template: "'{anchor_title}'에서 Action '{subject_title}'을 어디에 사용하는지, 입력과 결과 및 실행 전 확인할 근거를 설명해줘."
+        reason_template: 현재 맥락과 직접 연결된 검토된 Action입니다.
+        priority: 65
+        context_basis: ontology_neighbor
+        result_kind: explorer
+        graph_query_kind: impact
+        semantic_operation: connect
+      - offer_id: knowledge.entrypoint-knowledge
+        category: knowledge_relation
+        area: knowledge
+        selector: canonical_entrypoint
+        entrypoint_area: knowledge
+        only_when_area_empty: true
+        use_entrypoint_copy: true
+        label_template: "{subject_title}부터 BoI Wiki 살펴보기"
+        prompt_template: 검토된 지식 {subject_title}의 핵심과 실제로 연결된 내용을 Wiki 전체 근거로 설명해줘.
+        reason_template: 검토된 공용 지식에서 시작합니다.
+        priority: 91
+        context_basis: canonical_entrypoint
+        result_kind: explorer
+        graph_query_kind: neighbors
+        semantic_operation: connect
+        fallback_to_answer: true
+      - offer_id: knowledge.entrypoint-workflow
+        category: sop_task
+        area: workflow
+        selector: canonical_entrypoint
+        entrypoint_area: workflow
+        only_when_area_empty: true
+        use_entrypoint_copy: true
+        label_template: "{subject_title}에서 업무 흐름 살펴보기"
+        prompt_template: 검토된 지식 '{subject_title}'을 바탕으로 업무 흐름과 Task를 설계하는 방법을 근거와 함께 설명해줘.
+        reason_template: 검토된 업무 흐름 지식에서 살펴봅니다.
+        priority: 92
+        context_basis: canonical_entrypoint
+        result_kind: mermaid
+        graph_query_kind: workflow
+        semantic_operation: connect
+        fallback_to_answer: true
+      - offer_id: knowledge.entrypoint-event-action
+        category: business_event
+        area: event_action
+        selector: canonical_entrypoint
+        entrypoint_area: event_action
+        only_when_area_empty: true
+        use_entrypoint_copy: true
+        label_template: "{subject_title}에서 업무 발생과 실행 살펴보기"
+        prompt_template: 검토된 지식 '{subject_title}'을 바탕으로 업무 이벤트와 Action의 연결을 근거와 함께 설명해줘.
+        reason_template: 검토된 업무 이벤트 지식에서 살펴봅니다.
+        priority: 93
+        context_basis: canonical_entrypoint
+        result_kind: explorer
+        graph_query_kind: impact
+        semantic_operation: connect
+        fallback_to_answer: true
+      - offer_id: knowledge.entrypoint-learning
+        category: knowledge_capture
+        area: learning
+        selector: canonical_entrypoint
+        entrypoint_area: learning
+        only_when_category_empty: false
+        only_when_area_empty: false
+        use_entrypoint_copy: true
+        label_template: "{subject_title}에서 지식 재사용 살펴보기"
+        prompt_template: 검토된 지식 '{subject_title}'을 바탕으로 업무 결과가 다음 업무에 재사용되는 과정을 설명해줘.
+        reason_template: 검토된 학습 순환 지식에서 살펴봅니다.
+        priority: 94
+        context_basis: canonical_entrypoint
+        result_kind: timeline
+        graph_query_kind: timeline
+        semantic_operation: connect
+        fallback_to_answer: true
+      - offer_id: knowledge.entrypoint-automation
+        category: automatic_check
+        area: automation
+        selector: canonical_entrypoint
+        entrypoint_area: automation
+        only_when_area_empty: true
+        use_entrypoint_copy: true
+        label_template: "{subject_title}에서 자동 확인 살펴보기"
+        prompt_template: 검토된 지식 '{subject_title}'을 바탕으로 자동 확인 계획과 사람 확인 절차를 설명해줘.
+        reason_template: 검토된 자동 확인 지식에서 살펴봅니다.
+        priority: 95
+        context_basis: canonical_entrypoint
+        result_kind: answer
+
+  - capability_id: work.inbox
+    title: 내 업무 보기
+    description: 현재 처리해야 할 Inbox와 Task만 보여줍니다.
+    primary_asset: runtime
+    supported_assets: [runtime]
+    subject_kinds: [runtime, person, team]
+    examples: [내 할 일, 처리할 업무, inbox, 승인 대기, 담당 업무]
+    operation: read
+    user_effects: [read]
+    default_user_effect: read
+    semantic_operations: [understand, observe, connect]
+    semantic_compile:
+      priority: 80
+      preferred_subject_kinds: [runtime, person, team]
+      evidence_modes: [current_work, execution_evidence]
+      work_perspectives: [current]
+      work_perspective_subject_kinds: [person, task, runtime, action, work_record]
+      work_perspective_subject_kinds_by_perspective:
+        current: [person, task, runtime, action, work_record]
+      mutation_intents: [none]
+      loop_intents: [turn]
+      default_graph_query_by_operation: {connect: lineage}
+    default_operation: observe
+    operation_pipeline: [observe]
+    operation_pipelines:
+      understand: [understand]
+      observe: [observe]
+      connect: [understand, connect]
+    presentations: [prose, table, timeline]
+    presentation_aliases: {answer: prose}
+    graph_query_kinds: [lineage]
+    work_views: [current]
+    default_work_view: current
+    default_evidence_scope: operational
+    topic_identity_sources: [grounded_claims, artifact, resolved_entities]
+    harness_ids: [context.work]
+    subject_policy: optional
+    risk: low
+    task_modes: [manual, copilot, autopilot]
+    input_schema: {}
+    output_schema: {type: task_cards}
+    context_recipe: [current_identity, active_runtime]
+    evidence_policy: [exclude_history_seed, acl_visible]
+    completion_criteria: [current_work_count_reported]
+    allowed_loop_kinds: [turn]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_turn
+      exit_criteria_refs: [current_work_count_reported]
+    handler: current_work
+    handler_config:
+      retrieval_provider: current_work
+      default_goal: 현재 내가 처리할 업무를 보여줘
+      max_display_items: 8
+    renderer: task_cards
+    permissions: [boi.viewer]
+    readiness: [content]
+    offer_surfaces: [library, inbox]
+
+  - capability_id: task.work
+    title: Task 진행하기
+    description: 지정한 Task의 업무 맥락, 완료된 모습과 확인할 자료를 바탕으로 사람과 AI가 같은 WorkRun에서 수행·확인·완료 기록을 이어갑니다. Inbox 목록 조회나 등록된 Action의 직접 호출에는 사용하지 않습니다.
+    primary_asset: task
+    supported_assets: [task, runtime, evidence, knowledge]
+    subject_kinds: [task, sop, workflow, evidence, document, runtime, work_record, completion_record]
+    examples: [이 Task 진행, Task 완료, 근거 확인, 결과 기록, 업무 이어서]
+    operation: read
+    user_effects: [read, execute]
+    default_user_effect: read
+    semantic_operations: [understand, observe, run, complete]
+    semantic_compile:
+      priority: 90
+      preferred_subject_kinds: [task]
+      evidence_modes: [current_work, execution_evidence, authoritative_knowledge]
+      work_perspectives: [current]
+      mutation_intents: [none, execute]
+      loop_intents: [goal]
+    default_operation: understand
+    operation_pipeline: [understand]
+    operation_pipelines:
+      understand: [understand]
+      observe: [understand, observe]
+      run: [understand, validate, run, observe]
+      complete: [understand, validate, complete, capture]
+    presentations: [prose, table, timeline, artifact]
+    presentation_aliases: {answer: prose, work_form: artifact}
+    default_evidence_scope: operational
+    topic_identity_sources: [grounded_claims, artifact, resolved_entities]
+    harness_ids: [context.work, task.runtime]
+    subject_policy: target_required
+    risk: low
+    task_modes: [manual, copilot, autopilot]
+    input_schema: {required: [query]}
+    output_schema: {type: task_progress}
+    context_recipe: [task, workflow, completion_design, evidence, active_work_run]
+    evidence_policy: [acl_visible, task_completion_contract, human_or_system_confirmation]
+    completion_criteria: [work_run_state_reported, completion_never_self_declared]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [task_exit_criteria, evidence_ledger_verified]
+    handler: task_runtime
+    handler_config:
+      retrieval_provider: hybrid
+    renderer: task_progress
+    permissions: [boi.viewer]
+    readiness: [content, model]
+
+  - capability_id: workflow.transform
+    title: 흐름을 Task 후보로 나누기
+    description: 선택한 근거 기반 흐름 그림을 실행 가능한 private Task 후보로 변환합니다.
+    primary_asset: workflow
+    supported_assets: [sop, workflow, task, evidence]
+    subject_kinds: [artifact, sop, workflow]
+    examples: [이 흐름을 Task로 나눠줘, 선택한 흐름을 실행 단계로 바꿔줘]
+    operation: draft
+    user_effects: [transform]
+    default_user_effect: transform
+    semantic_operations: [refine]
+    semantic_compile:
+      priority: 100
+      preferred_subject_kinds: [artifact, sop, workflow]
+      evidence_modes: [authoritative_knowledge, execution_evidence]
+      evidence_modes_by_operation:
+        refine: [authoritative_knowledge, execution_evidence]
+      evidence_mode_aliases_by_operation:
+        refine:
+          current_work: execution_evidence
+      evidence_scopes_by_operation:
+        refine: [canonical, operational]
+      mutation_intents: [transform_preview]
+      loop_intents: [goal]
+      required_context: [active_artifact]
+    default_operation: refine
+    operation_pipeline: [understand, refine, validate]
+    presentations: [artifact]
+    presentation_aliases: {answer: artifact, work_form: artifact}
+    default_presentation: artifact
+    harness_ids: [context.work]
+    subject_policy: target_required
+    risk: low
+    task_modes: [manual, copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: workflow_draft}
+    context_recipe: [active_artifact, source_refs]
+    evidence_policy: [acl_visible, grounded_source_artifact, private_draft]
+    completion_criteria: [workflow_tasks_present, production_unchanged]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [workflow_tasks_present, production_unchanged]
+    handler: artifact_transform
+    handler_config:
+      domain_operation: mermaid.workflow_draft.create
+      accepted_artifact_types: [mermaid_diagram, ontology_graph, sop_draft]
+      output_artifact_type: workflow_draft
+      title_suffix: Task 후보
+      note: BoI Agent에서 사용자가 명시적으로 흐름의 Task 분해를 요청함
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content]
+    offer_surfaces: [document, agent]
+
+  - capability_id: cases.similar
+    title: 유사 사례 찾기
+    description: 현재 업무 맥락과 종료 기준이 비슷한 과거 사례를 찾아 근거와 결과를 집중 비교합니다.
+    primary_asset: evidence
+    # Reviewed case projections are reusable knowledge records while their
+    # typed comparison result remains evidence. Declaring both prevents a
+    # broad knowledge result intent from hiding the stronger historical-case
+    # evidence contract during deterministic Catalog compilation.
+    supported_assets: [knowledge, evidence, task, runtime]
+    # The subject is the business anchor used to find cases, while the output
+    # remains evidence/runtime. Follow-up selections are persisted as
+    # knowledge refs, so both concept and knowledge are first-class anchors.
+    subject_kinds: [knowledge, concept, dictionary, document, sop, workflow, task, business_event, event, action, skill, runtime, runtime_catalog, evidence, person, team, role, data_artifact, work_record, completion_record, knowledge_candidate, case]
+    examples: [유사 사례, 비슷한 경우, 과거 처리, 이전 사례]
+    operation: read
+    user_effects: [read]
+    default_user_effect: read
+    semantic_operations: [understand, compare, connect]
+    semantic_compile:
+      priority: 100
+      preferred_subject_kinds: [case, evidence, task, runtime, work_record, business_event, event, action]
+      evidence_modes: [historical_cases]
+      continuation_evidence_modes: [historical_cases, execution_evidence]
+      continuation_evidence_mode_aliases_by_operation:
+        understand:
+          authoritative_knowledge: historical_cases
+      continuation_operation_aliases: {validate: understand}
+      evidence_scopes_by_mode:
+        historical_cases: [canonical, operational, validation]
+      evidence_authorities_by_mode:
+        # Reviewed case projections are published knowledge records whose
+        # review state lives in status, while raw Event/Action history keeps
+        # historical/runtime authority.  Both forms are legitimate case
+        # evidence and remain subject to ACL and outcome checks.
+        historical_cases: [published, historical, reviewed, runtime, verified, provisional]
+      evidence_statuses_by_mode:
+        # Similar-case evidence must represent an outcome, not merely an
+        # observed Event, pending Action, or private draft.  This typed policy
+        # is enforced before ranking for every Web/API/MCP client.
+        historical_cases: [completed, succeeded, success, resolved, closed, final, reviewed, published, approved, verified, provisional]
+      # Similarity compares every verified case the principal may read.
+      # Provenance and ACL still filter the records; a planner cannot
+      # accidentally narrow the set to org-only and discard personal/runtime
+      # completion evidence before deterministic ranking.
+      evidence_authority_scope_by_mode:
+        historical_cases: any
+      mutation_intents: [none]
+      loop_intents: [turn]
+      default_graph_query_by_operation: {connect: lineage}
+      default_graph_query_by_presentation: {timeline: timeline}
+    semantic_operation_contracts:
+      understand:
+        description: Explain one selected case and its verified judgment evidence without searching for another comparison set.
+        presentations: [prose, table]
+        graph_query_kinds: []
+      compare:
+        description: Find and contrast two or more relevant cases; do not use this operation for a drill-down into one selected case.
+        presentations: [prose, table]
+        graph_query_kinds: []
+      connect:
+        description: Traverse the evidence lineage, path, or time sequence that connects cases and their outcomes.
+        presentations: [prose, table, timeline, mermaid, explorer]
+        graph_query_kinds: [neighbors, path, lineage, timeline]
+        requires_graph: true
+    default_operation: compare
+    operation_pipeline: [understand, compare]
+    presentations: [prose, table, timeline, mermaid, explorer]
+    presentation_aliases: {answer: prose}
+    graph_query_kinds: [neighbors, path, lineage, timeline]
+    evidence_scopes: [canonical, operational, validation]
+    topic_identity_sources: [grounded_claims, artifact, resolved_entities]
+    # The first resolved identity is the business anchor. Additional resolved
+    # identities are case results, and ordinal follow-ups address that result
+    # list even when only one case was returned.
+    topic_primary_subject_count: 1
+    followup_ordinal_scope: results
+    harness_ids: [context.work]
+    subject_policy: required
+    risk: low
+    task_modes: [manual, copilot, autopilot]
+    input_schema: {required: [query]}
+    output_schema:
+      type: case_results
+      grounded_output_contract: case_comparison.v1
+      required_claim_kinds: [case_difference, case_applicability, application_limit]
+    context_recipe: [task, exit_criteria, evidence_types, history_seed]
+    evidence_policy: [acl_visible, outcome_present]
+    completion_criteria: [similarity_reason_reported]
+    allowed_loop_kinds: [turn]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_turn
+      exit_criteria_refs: [similarity_reason_reported]
+    handler: grounded_read
+    handler_config:
+      retrieval_provider: hybrid
+      # Output semantics are compiled after retrieval from exact ACL/policy-
+      # checked citation bindings. The compiler is selected by this typed
+      # operation contract, never by request wording or a scenario identifier.
+      grounded_output_contracts:
+        compare: case_comparison.v1
+      # If semantic ranking is unavailable or the request wording has no
+      # deterministic overlap, return a bounded, ACL-filtered set of verified
+      # outcome candidates and expose degraded relevance. This is a catalog
+      # policy, not a question-keyword route.
+      retrieval_policy:
+        eligible_outcome_fallback_enabled: 1.0
+        eligible_outcome_fallback_min_items: 2
+        eligible_outcome_fallback_limit: 4
+      include_history: true
+      include_history_by_operation:
+        understand: false
+        compare: true
+        connect: true
+      require_outcome_by_operation:
+        understand: false
+        compare: true
+        connect: true
+      kinds: [case, knowledge_candidate, completion_record, work_record]
+      unbound_fallback: evidence_table
+      answer_input_tokens: 5000
+      max_answer_sources: 4
+      # Keep broad ACL/policy-filtered recall in the retrieval manifest, but
+      # compile only this ranked set into WorkContext, citations, and answer.
+      max_context_sources: 8
+      max_presentation_sources: 4
+      empty_summary: 확인된 유사 사례가 없습니다.
+    renderer: cases
+    permissions: [boi.viewer]
+    readiness: [content]
+    offer_surfaces: [library, document, inbox, event, action]
+    starter_offers:
+      - offer_id: cases.current-similar
+        category: similar_case
+        area: knowledge
+        selector: current_work
+        current_work_condition: present
+        label_template: "'{subject_title}'와 비슷한 사례 보기"
+        prompt_template: "'{subject_title}'와 업무 맥락과 결과가 비슷한 과거 사례를 근거와 함께 비교해줘."
+        reason_template: 현재 업무에 참고할 과거 결과를 찾습니다.
+        priority: 30
+        context_basis: current_work
+        result_kind: table
+        fallback_to_answer: true
+      - offer_id: cases.page-similar
+        category: similar_case
+        area: knowledge
+        selector: page_anchor
+        current_work_condition: absent
+        label_template: "{subject_title}와 닮은 사례 보기"
+        prompt_template: "{subject_title}와 관련된 실제 처리 사례와 결과를 찾아 차이점을 비교해줘."
+        reason_template: 현재 화면과 관련된 과거 처리 결과를 찾습니다.
+        priority: 35
+        context_basis: page_anchor
+        result_kind: table
+        fallback_to_answer: true
+
+  - capability_id: business_event.plan
+    title: 업무 이벤트 초안 만들기
+    description: 어떤 순간을 업무 발생으로 볼지 정의하는 초안을 만듭니다.
+    primary_asset: business_event
+    supported_assets: [business_event, knowledge, evidence, sop, workflow]
+    subject_kinds: [business_event, event, raw_signal, concept, dictionary, knowledge, evidence, document, sop, workflow]
+    examples: [업무 이벤트, 알람 조건, 상태 변경, 반복 신호, event definition]
+    operation: draft
+    user_effects: [draft, transform]
+    default_user_effect: draft
+    semantic_operations: [create, refine, connect, validate, test]
+    semantic_compile:
+      priority: 90
+      preferred_subject_kinds: [business_event, event, raw_signal]
+      evidence_modes: [authoritative_knowledge, execution_evidence]
+      mutation_intents: [private_draft, transform_preview, activate]
+      loop_intents: [goal]
+      default_graph_query_by_operation: {connect: workflow, validate: impact}
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, mermaid, prose]
+    presentation_aliases: {answer: prose, work_form: artifact, confirmation: artifact}
+    graph_query_kinds: [workflow, impact]
+    harness_ids: [context.work, business-event.definition]
+    subject_policy: optional
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: business_event_definition_draft}
+    context_recipe: [goal, related_event_types, related_sops, evidence]
+    evidence_policy: [cite_related_contracts]
+    completion_criteria: [trigger_mode_present, target_event_present, source_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [trigger_mode_present, target_event_present, source_present]
+    handler: draft_artifact
+    handler_config:
+      retrieval_provider: hybrid
+      draft_contract: business_event.v1
+      domain_operation: business_event.draft.create
+      max_presentation_sources: 6
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content, model]
+    offer_surfaces: [event]
+
+  - capability_id: sop.plan
+    title: SOP 초안 만들기
+    description: 목표와 종료 기준을 바탕으로 Workflow와 Task 초안을 만듭니다.
+    primary_asset: sop
+    supported_assets: [knowledge, evidence, sop, workflow, task, business_event, action, skill, runtime]
+    subject_kinds: [concept, dictionary, knowledge, evidence, document, sop, workflow, task, business_event, event, action, skill, runtime, data_artifact, case, work_record, completion_record, knowledge_candidate]
+    examples: [SOP 만들어, workflow 초안, task로 나눠, 절차 작성]
+    operation: draft
+    user_effects: [draft, transform]
+    default_user_effect: draft
+    semantic_operations: [create, refine, connect, validate, test]
+    semantic_compile:
+      priority: 90
+      preferred_subject_kinds: [sop, workflow, task, concept, dictionary, knowledge, evidence, document, work_record, completion_record, knowledge_candidate]
+      evidence_modes: [authoritative_knowledge, execution_evidence]
+      mutation_intents: [private_draft, transform_preview]
+      loop_intents: [goal]
+      default_graph_query_by_operation: {connect: workflow, validate: lineage}
+    semantic_operation_contracts:
+      refine:
+        description: Refine an existing active SOP artifact; when none exists, create a new private SOP draft from the verified context.
+        required_context: [active_artifact]
+        fallback_operation: create
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, mermaid, prose]
+    presentation_aliases: {answer: prose, work_form: artifact, confirmation: artifact}
+    graph_query_kinds: [workflow, impact, lineage]
+    harness_ids: [context.work, sop.authoring]
+    subject_policy: optional
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: sop_draft}
+    context_recipe: [goal, related_sops, actions, events, evidence]
+    evidence_policy: [cite_reused_assets, mark_gaps]
+    completion_criteria: [workflow_goal_present, tasks_have_exit_criteria]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [workflow_goal_present, tasks_have_exit_criteria]
+    handler: draft_artifact
+    handler_config:
+      retrieval_provider: hybrid
+      draft_contract: sop.v1
+      domain_operation: sop.draft.create
+      max_presentation_sources: 6
+      next_actions:
+        - action_id: task_refine
+          label: Task 다듬기
+          action_kind: open_task_editor
+          bind_artifact: true
+        - action_id: sop_full_edit
+          label: 전체 SOP 편집
+          action_kind: open_full_editor
+          bind_artifact: true
+          href_template: /sops/new?work_session_id={work_session_id}&artifact_id={artifact_id}&return_to=/agent?session={work_session_id}
+    renderer: mermaid_draft
+    permissions: [boi.editor]
+    readiness: [content, model]
+    offer_surfaces: [sop]
+    starter_offers:
+      - offer_id: sop.recent-artifact-refine
+        category: sop_task
+        area: workflow
+        selector: recent_artifact
+        artifact_type_prefixes: [sop]
+        label_template: "'{subject_title}' Task 이어서 다듬기"
+        prompt_template: "최근 만든 '{subject_title}'을 열어 Task별 목적, 완료된 모습과 확인할 자료를 함께 다듬어줘."
+        reason_template: 최근 저장한 SOP 초안을 이어서 작업합니다.
+        priority: 25
+        context_basis: recent_artifact
+        result_kind: work_form
+        graph_query_kind: workflow
+        user_effect: draft
+        semantic_operation: refine
+
+  - capability_id: action.plan
+    title: 실행 요청 초안 만들기
+    description: 필요한 입력, 결과 계약과 위험도를 갖춘 Action 초안을 만들고, 이미 등록된 Action의 dry-run 또는 실행 요청은 확인 가능한 실행 계획으로 준비합니다.
+    primary_asset: action
+    supported_assets: [action]
+    subject_kinds: [action]
+    examples: [Action 만들어, Action dry-run, 등록된 Action 실행, 실행 연결, API 연결, MCP 연결, Langflow 연결]
+    operation: draft
+    user_effects: [draft, transform, execute]
+    default_user_effect: draft
+    semantic_operations: [create, refine, connect, validate, test, run]
+    semantic_compile:
+      priority: 90
+      preferred_subject_kinds: [action]
+      evidence_modes: [authoritative_knowledge, execution_evidence]
+      mutation_intents: [private_draft, transform_preview, execute]
+      loop_intents: [goal]
+      default_graph_query_by_operation: {connect: workflow, validate: lineage}
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    operation_pipelines:
+      create: [understand, create, validate]
+      refine: [understand, refine, validate]
+      connect: [understand, connect, validate]
+      validate: [understand, validate]
+      test: [understand, validate, test, observe]
+      run: [understand, validate, run, observe]
+    presentations: [artifact, prose]
+    presentation_aliases: {answer: prose, confirmation: artifact}
+    default_evidence_scope: operational
+    graph_query_kinds: [workflow, impact, lineage]
+    harness_ids: [context.work, action.authoring, action.execution]
+    subject_policy: optional
+    risk: medium
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: action_draft}
+    context_recipe: [goal, action_catalog, related_sops, connector_contract]
+    evidence_policy: [risk_required, preview_only]
+    completion_criteria: [inputs_present, output_contract_present, risk_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [inputs_present, output_contract_present, risk_present]
+    handler: draft_artifact
+    handler_config:
+      retrieval_provider: hybrid
+      draft_contract: action.v1
+      domain_operation: action.draft.create
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content, model]
+    offer_surfaces: [sop, action]
+
+  - capability_id: skill.plan
+    title: Skill 초안 만들기
+    description: 반복 가능한 업무 능력을 입력·출력·근거·테스트가 있는 Skill 초안으로 만듭니다.
+    primary_asset: skill
+    supported_assets: [skill]
+    examples: [Skill 만들어, 업무 도우미, 능력 추가, 반복 업무 자동화]
+    operation: draft
+    user_effects: [draft, transform]
+    default_user_effect: draft
+    semantic_operations: [create, refine, validate, test]
+    semantic_compile:
+      priority: 90
+      preferred_subject_kinds: [skill]
+      evidence_modes: [authoritative_knowledge, execution_evidence]
+      mutation_intents: [private_draft, transform_preview]
+      loop_intents: [goal]
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, prose]
+    presentation_aliases: {answer: prose, confirmation: artifact}
+    harness_ids: [context.work, skill.authoring]
+    subject_policy: optional
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: skill_draft}
+    context_recipe: [goal, capability_registry, existing_skills, actions]
+    evidence_policy: [tests_required, permissions_required]
+    completion_criteria: [schema_present, tests_present, permissions_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [schema_present, tests_present, permissions_present]
+    handler: draft_artifact
+    handler_config:
+      retrieval_provider: hybrid
+      draft_contract: skill.v1
+      domain_operation: skill.draft.create
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content, model]
+    offer_surfaces: [agent]
+
+  - capability_id: knowledge.draft
+    title: 지식 후보 만들기
+    description: 근거를 갖춘 private 지식 후보를 만듭니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge, evidence, task, runtime]
+    # A verified lesson may be requested while the active UI context carries
+    # both its definition-level anchor and operational execution lineage.
+    # These are typed runtime subjects, not alternate routing hints: the
+    # direct-capture handler still requires an owned CompletionRecord before
+    # it can create a private candidate.
+    subject_kinds: [knowledge, evidence, evidence_ledger, task, task_run, work_record, knowledge_candidate, completion_record, action, action_run, outcome, workflow, workflow_run, business_event, event, event_occurrence, external_work_result, output_artifact, usage_record]
+    examples: [지식으로 남겨, Wiki에 정리, 자산화, 기억해]
+    operation: draft
+    user_effects: [draft, transform]
+    default_user_effect: draft
+    semantic_operations: [create, refine, capture, validate, promote]
+    semantic_compile:
+      priority: 85
+      preferred_subject_kinds: [knowledge, evidence, evidence_ledger, task, task_run, work_record, knowledge_candidate, completion_record, action, action_run, outcome, workflow, workflow_run, business_event, event, event_occurrence, external_work_result, output_artifact, usage_record]
+      evidence_modes: [private_learning, execution_evidence]
+      work_perspectives: [current]
+      mutation_intents: [private_draft, transform_preview, promote]
+      loop_intents: [goal]
+      default_graph_query_by_operation: {validate: lineage, promote: lineage}
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, prose]
+    presentation_aliases: {answer: prose, work_form: artifact}
+    graph_query_kinds: [lineage]
+    harness_ids: [context.work, learning.capture]
+    subject_policy: required
+    risk: low
+    task_modes: [manual, copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: knowledge_candidate}
+    context_recipe: [goal, evidence, task_outcome]
+    evidence_policy: [provenance_required, private_provisional]
+    completion_criteria: [source_refs_present, status_provisional]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [source_refs_present, status_provisional]
+    handler: draft_artifact
+    handler_config:
+      retrieval_provider: hybrid
+      draft_contract: knowledge.v1
+      artifact_status: provisional
+      direct_verified_capture: true
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content, model]
+    offer_surfaces: [document, inbox]
+    starter_offers:
+      - offer_id: knowledge-draft.recent-artifact
+        category: knowledge_capture
+        area: learning
+        selector: recent_artifact
+        label_template: "'{subject_title}'에서 재사용할 내용 남기기"
+        prompt_template: "최근 작업한 '{subject_title}'에서 다음 업무에도 재사용할 판단과 근거만 private 지식 후보로 정리해줘."
+        reason_template: 최근 결과에서 재사용 가치가 있는 내용을 남깁니다.
+        priority: 70
+        context_basis: recent_artifact
+        result_kind: work_form
+        user_effect: draft
+        semantic_operation: create
+
+  - capability_id: data.query.governed
+    title: 근거 결박 데이터 조회
+    description: 등록 QuerySpec 또는 검증된 typed logical plan만 Query Gateway에서 실행하고 receipt가 결박된 결과를 반환합니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge]
+    subject_kinds: [data_artifact, runtime_catalog, evidence]
+    examples: [공정 데이터 조회, Route별 ETCH 공정 순서, 최신 recipe parameter, MES 데이터]
+    operation: read
+    user_effects: [read]
+    default_user_effect: read
+    semantic_operations: [understand, validate, observe]
+    default_operation: understand
+    operation_pipeline: [understand, validate]
+    presentations: [table, prose, artifact]
+    harness_ids: [context.work]
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: governed_query_result}
+    evidence_policy: [execution_receipt_required, raw_sql_forbidden, provisional_unless_attested]
+    completion_criteria: [execution_receipt_present, result_digest_present]
+    allowed_loop_kinds: [turn]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_turn
+      exit_criteria_refs: [execution_receipt_present, result_digest_present]
+    handler: governed_query
+    handler_config: {query_lanes: [attested, exploratory], raw_sql: forbidden, release_authority: forbidden}
+    renderer: grounded
+    permissions: [boi.viewer]
+    # Governed query answerability is established by the active profile loader,
+    # mapping/schema closure and Gateway. It must not be coupled to the canonical
+    # Wiki content scanner, a generation model, or a particular persistence
+    # adapter. Product qualification separately requires the durable Postgres
+    # answer store; component tests may use the contract-equivalent memory store.
+    readiness: [governed_query_runtime]
+    offer_surfaces: []
+
+  - capability_id: ontology.migration.pipeline-run
+    title: Ontology migration bulk pipeline 실행
+    description: SourceEnvelope를 공통 intake에서 원문 보존 후 참조로 정규화하고, SourceArtifact와 snapshot digest로 공통 BulkMigrationOrchestrator의 기존 Skill DAG를 실행합니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge]
+    subject_kinds: [data_artifact, evidence, knowledge_candidate]
+    examples: [ontology migration pipeline, metadata bulk migration, SQL evidence migration]
+    operation: draft
+    user_effects: [draft]
+    default_user_effect: draft
+    semantic_operations: [create, validate]
+    default_operation: validate
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, prose]
+    harness_ids: [context.work]
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema:
+      required:
+        - project_id
+        - mode
+        - source_artifacts
+        - catalog_snapshot_ref
+        - catalog_snapshot_digest
+        - schema_snapshot_digest
+        - selector
+        - requested_skill_stages
+        - active_concept_index_digest
+        - acl_policy_digest
+        - dry_run
+        - max_objects_per_shard
+        - local_model_policy
+        - idempotency_key
+        - resume_retry_policy
+      properties:
+        pipeline_contract_id:
+          type: string
+          description: Versioned required-stage DAG contract identifier.
+        candidate_preview_question_digests:
+          type: array
+          items: {type: string, pattern: '^sha256:'}
+          description: Exact semantic digests binding a candidate-preview question closure.
+        candidate_preview_questions:
+          type: array
+          maxItems: 3
+          items: {type: string}
+          description: Transient cold questions; only their digests enter the manifest ledger.
+    output_schema:
+      type: bulk_migration_run
+      required: [run_id, manifest_digest, candidate_digest, pipeline_digest, receipt_digest, ui_url, mcp_invocation_ref]
+    evidence_policy: [source_ref_required, snapshot_digest_required, raw_sql_forbidden, raw_rows_forbidden, golden_forbidden, candidate_only]
+    completion_criteria: [all_required_stages_recorded, result_digests_present, authority_transitions_zero]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [all_required_stages_recorded, result_digests_present, authority_transitions_zero]
+    handler: ontology_migration
+    handler_config:
+      orchestration: bulk_pipeline
+      source_envelope_contract: boi/source-envelope@0.1.0
+      dry_run_semantics: manifest_only
+      output_authority: candidate
+      release_authority: forbidden
+      compile_authority: forbidden
+      database_execution_authority: forbidden
+      attestation_authority: forbidden
+      verdict_authority: forbidden
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content]
+
+  - capability_id: ontology.migration.legacy-source-intake
+    title: Legacy source intake 후보 만들기
+    description: 등록된 원문 참조와 시스템 맥락을 해시·분류하여 SourceArtifact 후보 manifest를 만듭니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge]
+    subject_kinds: [data_artifact, knowledge_candidate]
+    examples: [legacy source intake, SQL 원문 등록, catalog snapshot 등록]
+    operation: draft
+    user_effects: [draft]
+    default_user_effect: draft
+    semantic_operations: [create, validate]
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, prose]
+    harness_ids: [context.work]
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: source_artifact_candidate}
+    evidence_policy: [source_ref_required, raw_rows_forbidden, candidate_only]
+    completion_criteria: [source_digest_present, source_role_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [source_digest_present, source_role_present]
+    handler: ontology_migration
+    handler_config: {skill_id: legacy-source-intake, output_authority: candidate, release_authority: forbidden}
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content]
+
+  - capability_id: ontology.migration.sql-lineage-extract
+    title: SQL lineage 근거 추출 계획
+    description: 등록된 SQL source와 catalog snapshot에서 AST lineage를 결정적으로 추출하는 검토 계획을 만듭니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge]
+    subject_kinds: [data_artifact, evidence]
+    examples: [SQL lineage, 컬럼 계보, join filter aggregation 분석]
+    operation: draft
+    user_effects: [draft]
+    default_user_effect: draft
+    semantic_operations: [validate]
+    default_operation: validate
+    operation_pipeline: [understand, validate]
+    presentations: [artifact, prose]
+    harness_ids: [context.work]
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: lineage_evidence_plan}
+    evidence_policy: [sql_source_ref_required, catalog_snapshot_required, raw_rows_forbidden]
+    completion_criteria: [lineage_classification_declared, unresolved_items_explicit]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [lineage_classification_declared, unresolved_items_explicit]
+    handler: ontology_migration
+    handler_config: {skill_id: sql-lineage-extract, output_authority: evidence, release_authority: forbidden}
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content]
+
+  - capability_id: ontology.migration.domain-ontology-draft
+    title: Domain ontology 후보 만들기
+    description: 제한된 evidence span에서 용어·Object·Property·Rule·Metric 후보와 불확실성을 만듭니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge]
+    subject_kinds: [concept, dictionary, evidence, knowledge_candidate]
+    examples: [도메인 온톨로지 후보, metric rule 초안]
+    operation: draft
+    user_effects: [draft]
+    default_user_effect: draft
+    semantic_operations: [create, connect, validate]
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, prose]
+    harness_ids: [context.work]
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: domain_ontology_candidates}
+    evidence_policy: [evidence_spans_required, candidate_only, local_model_failure_blocks]
+    completion_criteria: [evidence_refs_present, uncertainties_explicit]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [evidence_refs_present, uncertainties_explicit]
+    handler: ontology_migration
+    handler_config: {skill_id: domain-ontology-draft, output_authority: candidate, release_authority: forbidden, local_model_allowed: true}
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content]
+
+  - capability_id: ontology.migration.existing-concept-match
+    title: 기존 개념 재사용 후보 비교
+    description: reuse, evidence 추가, 확장, 신규 순서로 기존 개념과 후보를 비교하고 중복 위험을 Attention으로 보냅니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge]
+    subject_kinds: [concept, knowledge_candidate]
+    examples: [기존 개념 매칭, ontology reuse, 중복 후보]
+    operation: draft
+    user_effects: [draft]
+    default_user_effect: draft
+    semantic_operations: [compare, connect, validate]
+    default_operation: compare
+    operation_pipeline: [understand, compare, validate]
+    presentations: [artifact, prose]
+    harness_ids: [context.work]
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: existing_concept_match_candidates}
+    evidence_policy: [reuse_first, duplicate_risk_attention, local_model_failure_blocks]
+    completion_criteria: [match_evidence_present, duplicate_risks_explicit]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [match_evidence_present, duplicate_risks_explicit]
+    handler: ontology_migration
+    handler_config: {skill_id: existing-concept-match, output_authority: candidate, release_authority: forbidden, local_model_allowed: true}
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content]
+
+  - capability_id: ontology.migration.physical-mapping-verify
+    title: 물리 mapping 검증 계획
+    description: 실제 catalog snapshot에 대해 schema·key·type·cardinality·freshness·ACL 검사를 계획합니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge]
+    subject_kinds: [data_artifact, evidence, knowledge_candidate]
+    examples: [mapping 검증, schema drift, key cardinality 검사]
+    operation: draft
+    user_effects: [draft]
+    default_user_effect: draft
+    semantic_operations: [validate]
+    default_operation: validate
+    operation_pipeline: [understand, validate]
+    presentations: [artifact, prose]
+    harness_ids: [context.work]
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: physical_mapping_check_plan}
+    evidence_policy: [catalog_snapshot_required, fail_closed, raw_rows_forbidden]
+    completion_criteria: [mapping_checks_declared, drift_policy_declared]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [mapping_checks_declared, drift_policy_declared]
+    handler: ontology_migration
+    handler_config: {skill_id: physical-mapping-verify, output_authority: evidence, release_authority: forbidden}
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content]
+
+  - capability_id: ontology.migration.query-contract-author
+    title: LogicalQuerySpec 후보 만들기
+    description: Domain과 Mapping 참조에 결박된 logical plan·typed parameter·golden question·invariant 후보를 만듭니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge]
+    subject_kinds: [data_artifact, evidence, knowledge_candidate]
+    examples: [query contract, LogicalQuerySpec, golden question]
+    operation: draft
+    user_effects: [draft]
+    default_user_effect: draft
+    semantic_operations: [create, validate]
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, prose]
+    harness_ids: [context.work]
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: logical_query_spec_candidate}
+    evidence_policy: [domain_refs_required, mapping_refs_required, sql_compile_forbidden]
+    completion_criteria: [typed_parameters_present, invariants_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [typed_parameters_present, invariants_present]
+    handler: ontology_migration
+    handler_config: {skill_id: query-contract-author, output_authority: candidate, release_authority: forbidden}
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content]
+
+  - capability_id: ontology.migration.migration-batch-review
+    title: Migration batch 검토 계획
+    description: dependency closure·exact diff·impact·beforeHash·preview hash를 갖춘 최대 100개 batch 검토 계획을 만듭니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge]
+    subject_kinds: [knowledge_candidate, evidence]
+    examples: [migration batch, dry run, preview hash, dependency closure]
+    operation: draft
+    user_effects: [draft]
+    default_user_effect: draft
+    semantic_operations: [compare, validate]
+    default_operation: validate
+    operation_pipeline: [understand, compare, validate]
+    presentations: [artifact, prose]
+    harness_ids: [context.work]
+    risk: medium
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: migration_batch_review_plan}
+    evidence_policy: [before_hash_required, max_100_objects, stale_blocks]
+    completion_criteria: [dependency_closure_present, exact_preview_hash_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [dependency_closure_present, exact_preview_hash_present]
+    handler: ontology_migration
+    handler_config: {skill_id: migration-batch-review, output_authority: review_plan, release_authority: forbidden}
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content]
+
+  - capability_id: ontology.migration.harness-evolution
+    title: Harness evolution 후보 만들기
+    description: 반복 실패를 rule·skill·evaluation 후보로 축적하되 현행 evaluator나 Verdict를 변경하지 않습니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge]
+    subject_kinds: [runtime, evidence, knowledge_candidate]
+    examples: [반복 실패 규칙화, harness evolution, eval 후보]
+    operation: draft
+    user_effects: [draft]
+    default_user_effect: draft
+    semantic_operations: [create, validate]
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, prose]
+    harness_ids: [context.work]
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: harness_evolution_candidates}
+    evidence_policy: [failure_cluster_required, candidate_only, verdict_authority_forbidden]
+    completion_criteria: [failure_evidence_present, candidate_boundaries_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_goal
+      exit_criteria_refs: [failure_evidence_present, candidate_boundaries_present]
+    handler: ontology_migration
+    handler_config: {skill_id: harness-evolution, output_authority: candidate, release_authority: forbidden}
+    renderer: draft
+    permissions: [boi.editor]
+    readiness: [content]
+
+  - capability_id: work_routine.plan
+    title: 자동 확인 계획 만들기
+    description: 지식이나 Task를 정해진 시간 또는 업무 상태 변화에 따라 다시 확인하는 계획을 만들고, 사용자 확인 뒤에만 활성화합니다.
+    primary_asset: runtime
+    supported_assets: [runtime, task, knowledge, business_event, evidence]
+    subject_kinds: [runtime, task, knowledge, document, business_event, evidence]
+    examples: [나중에 다시 확인, 매일 확인, 상태가 바뀌면 알려줘, 자동 확인]
+    operation: draft
+    user_effects: [draft, execute]
+    default_user_effect: draft
+    semantic_operations: [create, refine, validate, run]
+    semantic_compile:
+      priority: 100
+      preferred_subject_kinds: [runtime, task, document, business_event]
+      evidence_modes: [current_work, execution_evidence]
+      mutation_intents: [private_draft, activate, execute]
+      loop_intents: [time, proactive]
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, prose]
+    presentation_aliases: {answer: prose, confirmation: artifact}
+    default_evidence_scope: operational
+    harness_ids: [context.work]
+    subject_policy: required
+    risk: medium
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: work_routine_draft}
+    context_recipe: [goal, current_page, active_task, source_refs]
+    evidence_policy: [acl_visible, preview_before_activation]
+    completion_criteria: [trigger_present, stop_condition_present, confirmation_required]
+    allowed_loop_kinds: [turn]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *bounded_turn
+      exit_criteria_refs: [trigger_present, stop_condition_present, confirmation_required]
+    handler: routine_plan
+    handler_config:
+      retrieval_provider: hybrid
+      draft_contract: routine.v1
+      target_capability: knowledge.search
+      next_actions:
+        - action_id: confirm_automatic_check
+          label: 확인하고 자동 확인 만들기
+          action_kind: confirm_plan
+          bind_artifact: true
+          bind_plan: true
+    renderer: routine_preview
+    permissions: [boi.editor]
+    readiness: [content, model]
+    external: false
+    starter_offers:
+      - offer_id: routine.current-or-page
+        category: automatic_check
+        area: automation
+        selector: current_or_page
+        label_template: "'{subject_title}' 다시 확인하도록 계획하기"
+        prompt_template: "'{subject_title}'을 정해진 시간이나 상태 변화에 따라 다시 확인하는 자동 확인 계획을 먼저 보여줘. 만들기 전에는 내 확인을 받아줘."
+        reason_template: 현재 대상의 변화를 놓치지 않도록 확인 계획을 만듭니다.
+        priority: 80
+        context_basis: current_or_page
+        result_kind: confirmation
+        user_effect: draft
+        semantic_operation: create
+
+  - capability_id: deep.research
+    title: 심층 조사 맡기기
+    description: 장시간·다수 자료·위임 조사가 필요한 내구성 있는 연구 결과물을 격리 작업공간에서 draft로 만듭니다. 일반 답변과 집중 유사 사례 비교에는 사용하지 않습니다.
+    primary_asset: knowledge
+    supported_assets: [knowledge, sop, workflow, task, business_event, action, skill, runtime, evidence]
+    examples: [심층 조사, 자세히 분석, 보고서, 여러 자료 비교, 깊게 찾아]
+    operation: draft
+    user_effects: [draft]
+    default_user_effect: draft
+    semantic_operations: [understand, compare, create, validate]
+    semantic_compile:
+      priority: 100
+      preferred_subject_kinds: [knowledge, document, evidence, data_artifact]
+      evidence_modes: [authoritative_knowledge, historical_cases, relationship_provenance]
+      mutation_intents: [private_draft]
+      loop_intents: [goal]
+      default_graph_query_by_operation: {compare: compare, validate: lineage}
+    default_operation: create
+    operation_pipeline: [understand, create, validate]
+    presentations: [artifact, prose, table, timeline, mermaid]
+    presentation_aliases: {answer: prose}
+    graph_query_kinds: [path, impact, lineage, timeline, compare, tour]
+    harness_ids: [context.work]
+    subject_policy: required
+    risk: low
+    task_modes: [copilot, autopilot]
+    input_schema: {required: [goal]}
+    output_schema: {type: deep_work_draft}
+    context_recipe: [goal, bounded_context, evidence, artifact_refs]
+    evidence_policy: [read_only_tools, draft_only, cite_sources]
+    completion_criteria: [artifact_non_empty, evidence_ledger_present]
+    allowed_loop_kinds: [goal]
+    allowed_loop_triggers: [user, api]
+    default_loop_contract:
+      <<: *deep_goal
+      exit_criteria_refs: [artifact_non_empty, evidence_ledger_present]
+    handler: deep_job
+    handler_config:
+      retrieval_provider: hybrid
+    renderer: deep_job
+    permissions: [boi.editor]
+    readiness: [content, model, deep_worker, postgres]
+    offer_surfaces: [agent]
+    deep: true

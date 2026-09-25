@@ -1,6 +1,2 @@
-repository-sources.json text eol=lf
-scripts/check-repository-source-contract.ps1 text eol=lf
-scripts/connect-boi-wiki-mcp.ps1 text eol=lf
-scripts/select-repository-source.ps1 text eol=lf
-config/boi-wiki-mcp-connection.json text eol=lf
-tests/test_repository_source_and_mcp.py text eol=lf
+# Preserve upstream minified vendor bytes, including embedded template whitespace.
+boi_api/app/static/vendor/** -whitespace

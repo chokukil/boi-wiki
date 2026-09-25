@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boi.internal/schemas/okf-v02-cutover-qualification.schema.json",
+  "title": "BoI OKF 0.2 exact cutover qualification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "status", "plan_hash", "source_tree_digest", "candidate_tree_digest", "profile_validation_digest", "code_digest"],
+  "properties": {
+    "schema": {"const": "boi-okf-v02-cutover-qualification/v1"},
+    "status": {"enum": ["passed", "failed"]},
+    "plan_hash": {"$ref": "#/$defs/sha256"},
+    "source_tree_digest": {"$ref": "#/$defs/sha256"},
+    "candidate_tree_digest": {"$ref": "#/$defs/sha256"},
+    "profile_validation_digest": {"$ref": "#/$defs/sha256"},
+    "code_digest": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+}

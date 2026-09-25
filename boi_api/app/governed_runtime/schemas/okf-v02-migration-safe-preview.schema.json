@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boi.internal/schemas/okf-v02-migration-safe-preview.schema.json",
+  "title": "BoI OKF 0.2 privacy-safe migration preview",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "plan_hash", "source_tree_digest", "candidate_tree_digest", "profile_validation_digest", "counts"],
+  "properties": {
+    "schema": {"const": "boi-okf-v02-safe-preview/v1"},
+    "plan_hash": {"$ref": "#/$defs/sha256"},
+    "source_tree_digest": {"$ref": "#/$defs/sha256"},
+    "candidate_tree_digest": {"$ref": "#/$defs/sha256"},
+    "profile_validation_digest": {"$ref": "#/$defs/sha256"},
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "markdown", "binary_or_passthrough", "errors"],
+      "properties": {
+        "files": {"type": "integer", "minimum": 0},
+        "markdown": {"type": "integer", "minimum": 0},
+        "binary_or_passthrough": {"type": "integer", "minimum": 0},
+        "errors": {"const": 0}
+      }
+    }
+  },
+  "$defs": {"sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+}

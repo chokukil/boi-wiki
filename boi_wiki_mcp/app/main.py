@@ -1,4 +1,3 @@
-import inspect
 import json
 import os
 from html import escape
@@ -6,13 +5,12 @@ from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import httpx
-from mcp.server.fastmcp import FastMCP
-try:
-    from mcp.server.streamable_http import TransportSecuritySettings
-except Exception:  # pragma: no cover - older mcp releases did not expose this.
-    TransportSecuritySettings = None  # type: ignore[assignment]
+from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field, ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from .v2 import MCP_V2_REQUIRE_PAT, MCP_V2_TOOLS, McpV2AuthContextMiddleware, mcp_v2, mcp_v2_http_app
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from starlette.responses import JSONResponse
@@ -82,12 +80,6 @@ def mcp_transport_security_settings() -> Any:
     )
 
 
-def fastmcp_transport_kwargs() -> dict[str, Any]:
-    if "transport_security" not in inspect.signature(FastMCP).parameters:
-        return {}
-    return {"transport_security": mcp_transport_security_settings()}
-
-
 def mcp_transport_security_summary() -> dict[str, Any]:
     settings = mcp_transport_security_settings()
     if settings is None:
@@ -114,6 +106,8 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "boi_agent_approve", "description": "Execute a user-confirmed BoI Agent execution card through the same approval API as the Web Pet Agent."},
     {"name": "boi_agent_suggestions", "description": "Return recommended questions for a current BoI Wiki page context."},
     {"name": "ontology_search", "description": "Search the business knowledge graph across Dictionary, SOP, Event Types, Actions, BoI docs, and runtime evidence."},
+    {"name": "hybrid_search", "description": "Search BoI with ontology, pgvector-compatible embeddings, and graph reranking."},
+    {"name": "knowledge_graph", "description": "Return BoI/SOP/Event/Action/Task graph nodes and edges for an employee."},
     {"name": "dictionary_resolve", "description": "Resolve business terms and aliases with private, team, then public priority."},
     {"name": "dictionary_terms", "description": "List accessible BoI dictionary terms by scope."},
     {"name": "agent_memory_search", "description": "Search private Agent Memory BoI documents for the employee."},
@@ -129,6 +123,7 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "source_wiki_refresh_preview", "description": "Preview whether a source-grounded wiki is stale against its last-good manifest."},
     {"name": "source_wiki_markdown_export", "description": "Export a source-grounded wiki as combined Markdown."},
     {"name": "work_context_get", "description": "Return the shared Work Context Pack plus source-bound LLM narrative state for a task, trace, action, SOP, or current page."},
+    {"name": "task_loop_evaluate", "description": "Evaluate Task Loop progress, repeated tool/query guardrails, and exit criteria without mutating production state."},
     {"name": "boi_inbox", "description": "Return BoI Inbox report cards, verified report BoI links, priorities, and user links for an employee."},
     {"name": "boi_inbox_report_get", "description": "Return one verified BoI Inbox review report and its materialized BoI document."},
     {"name": "boi_inbox_decision_preview", "description": "Preview BoI Inbox approval/reject/defer/more-evidence decisions, including high-risk bulk approval guardrails."},
@@ -136,9 +131,13 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "boi_ops_overview", "description": "Return the BoI Operations Center workstream map, priority queue, and SOP run summary for an employee."},
     {"name": "boi_ops_canvas", "description": "Return React Flow-compatible BoI Operations Center nodes and edges for SOP, Agent, Evidence, Report, and Decision flows."},
     {"name": "boi_ops_recent_events", "description": "Return recent BoI Operations Center events such as task updates, report readiness, and SOP run stage changes."},
-    {"name": "agent_draft_create", "description": "Create a Gems-style Agent Builder draft from prompt, optional files, URLs, Git repos, MCP servers, and skills."},
-    {"name": "agent_draft_test", "description": "Validate an Agent Builder draft contract before publishing."},
-    {"name": "agent_draft_publish", "description": "Publish a user-confirmed Agent Builder draft to private/team/public scope metadata."},
+    {"name": "agent_draft_create", "description": "Create a Gems-style 업무 도우미 draft from purpose, capabilities, reference sources, and optional advanced connectors."},
+    {"name": "agent_draft_test", "description": "Validate a 업무 도우미 draft contract before publishing."},
+    {"name": "agent_draft_publish", "description": "Publish a user-confirmed 업무 도우미 draft to private/team/public scope metadata."},
+    {"name": "skill_candidate_create", "description": "Create a draft-only 업무 능력 후보 from a helper or Task need; never registers production skills directly."},
+    {"name": "skill_candidate_list", "description": "List draft 업무 능력 candidates for the employee."},
+    {"name": "agent_deep_work", "description": "Create a DeepAgents-style long-work draft with context manifest and evidence ledger; never applies production changes."},
+    {"name": "mermaid_workflow_draft", "description": "Convert a Mermaid workflow artifact into SOP/Task/Event/Action draft candidates."},
     {"name": "agent_catalog_search", "description": "Search published Operations Center Agents by mine/available/team/public scope."},
     {"name": "agent_link_to_me", "description": "Add an available team/public Agent to the caller's BoI Operations Center."},
     {"name": "agent_unlink_from_me", "description": "Remove an Agent from the caller's BoI Operations Center without deleting the Agent."},
@@ -170,7 +169,6 @@ MCP_TOOL_CAPABILITIES = [
     {"name": "agent_signals", "description": "Return proactive Pet Agent signal candidates ranked by Inbox, current page, and work context."},
     {"name": "work_patterns_search", "description": "Search private work-pattern BoI assets derived from Agent activity."},
     {"name": "work_pattern_derive", "description": "Derive private work-pattern and skill candidate suggestions from recent Agent activity."},
-    {"name": "skill_candidate_create", "description": "Create a private candidate payload for turning repeated work patterns into a Skill draft."},
     {"name": "agent_inbox", "description": "Return open manual/approval/follow-up action tasks with user_links and work_context_narrative state for an employee."},
     {"name": "agent_inbox_review_report", "description": "Return a decision-ready Inbox review report for one task or group without exposing raw trace/action identifiers in the visible report."},
     {"name": "agent_inbox_decision_preview", "description": "Preview Inbox approval/reject/defer/more-evidence decisions, including high-risk bulk approval guardrails."},
@@ -268,9 +266,12 @@ MCP_TOOL_IA_GROUPS = [
             "boi_get",
             "okf_graph_doc",
             "ontology_search",
+            "hybrid_search",
+            "knowledge_graph",
             "dictionary_resolve",
             "dictionary_terms",
             "work_context_get",
+            "task_loop_evaluate",
             "agent_memory_search",
             "agent_memory_review",
             "similar_cases_search",
@@ -278,6 +279,7 @@ MCP_TOOL_IA_GROUPS = [
             "work_patterns_search",
             "work_pattern_derive",
             "skill_candidate_create",
+            "skill_candidate_list",
             "boi_agent_chat",
             "boi_agent_suggestions",
             "boi_agent_capabilities",
@@ -302,6 +304,8 @@ MCP_TOOL_IA_GROUPS = [
             "agent_draft_create",
             "agent_draft_test",
             "agent_draft_publish",
+            "agent_deep_work",
+            "mermaid_workflow_draft",
             "agent_catalog_search",
             "agent_link_to_me",
             "agent_unlink_from_me",
@@ -689,7 +693,7 @@ def is_public_folder_resource(value: str) -> bool:
     return not normalized or normalized == "public" or normalized.startswith("public/")
 
 
-mcp = FastMCP(
+mcp = MCPServer(
     "boi-wiki-mcp",
     instructions=(
         "BoI Wiki MCP exposes OKF BoI documents, action catalog specs, workflow status, "
@@ -697,10 +701,6 @@ mcp = FastMCP(
         "validated source/body editing, user-confirmed promotion publishing, and SOP/action/Langflow authoring prompts. "
         "BoI API/MCP are the official external interfaces; Native BoI Agent is the production backend and direct Langflow runs are trusted/dev visual-debug paths."
     ),
-    streamable_http_path="/mcp",
-    json_response=True,
-    stateless_http=True,
-    **fastmcp_transport_kwargs(),
 )
 
 
@@ -1067,6 +1067,33 @@ async def ontology_search(
     )
 
 
+@mcp.tool(name="hybrid_search")
+async def hybrid_search(
+    query: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    scope: str = "all",
+    limit: int = 8,
+    current_url: str = "",
+    view: str = "compact",
+) -> dict[str, Any]:
+    """Search BoI with ontology, pgvector-compatible embeddings, and graph reranking."""
+    return await api_get(
+        "/api/search/hybrid",
+        employee_id=employee_id,
+        params={"q": query, "scope": scope, "limit": limit, "current_url": current_url, "view": view},
+    )
+
+
+@mcp.tool(name="knowledge_graph")
+async def knowledge_graph(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    query: str = "",
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Return BoI knowledge graph nodes and edges."""
+    return await api_get("/api/knowledge-graph", employee_id=employee_id, params={"q": query, "limit": limit})
+
+
 @mcp.tool(name="dictionary_resolve")
 async def dictionary_resolve(
     query: str,
@@ -1228,6 +1255,53 @@ async def work_context_get(
     )
 
 
+@mcp.tool(name="task_loop_evaluate")
+async def task_loop_evaluate(
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    task_id: str = "",
+    trace_id: str = "",
+    event_id: str = "",
+    action_key: str = "",
+    sop_ref: str = "",
+    sop_stage_id: str = "",
+    workflow_definition_key: str = "",
+    current_url: str = "",
+    execution_mode: Literal["", "manual", "copilot", "autopilot"] = "",
+    iteration_count: int = 0,
+    no_progress_count: int = 0,
+    proposed_tool_name: str = "",
+    proposed_tool_args: dict[str, Any] | None = None,
+    proposed_question: str = "",
+    proposed_delta: dict[str, Any] | None = None,
+    tool_history: list[dict[str, Any]] | None = None,
+    question_history: list[str] | None = None,
+) -> dict[str, Any]:
+    """Evaluate Task Loop progress and exit criteria without mutating state."""
+    return await api_post(
+        "/api/context/work/loop/evaluate",
+        employee_id=employee_id,
+        payload={
+            "task_id": task_id,
+            "trace_id": trace_id,
+            "event_id": event_id,
+            "action_key": action_key,
+            "sop_ref": sop_ref,
+            "sop_stage_id": sop_stage_id,
+            "workflow_definition_key": workflow_definition_key,
+            "current_url": current_url,
+            "execution_mode": execution_mode,
+            "iteration_count": iteration_count,
+            "no_progress_count": no_progress_count,
+            "proposed_tool_name": proposed_tool_name,
+            "proposed_tool_args": proposed_tool_args or {},
+            "proposed_question": proposed_question,
+            "proposed_delta": proposed_delta or {},
+            "tool_history": tool_history or [],
+            "question_history": question_history or [],
+        },
+    )
+
+
 @mcp.tool(name="agent_inbox_context")
 async def agent_inbox_context(task_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
     """Return the Work Context Pack details for one visible Inbox task."""
@@ -1307,26 +1381,37 @@ async def work_pattern_derive(employee_id: str = DEFAULT_EMPLOYEE_ID, limit: int
 
 @mcp.tool(name="skill_candidate_create")
 async def skill_candidate_create(
-    pattern_id: str,
-    employee_id: str = DEFAULT_EMPLOYEE_ID,
     title: str = "",
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    pattern_id: str = "",
     description: str = "",
-    user_confirmed: bool = False,
+    source_agent_draft_id: str = "",
+    helper_surfaces: list[str] | None = None,
+    capabilities: list[str] | None = None,
+    reference_sources: list[str] | None = None,
+    selected_skills: list[str] | None = None,
+    connection_presets: list[str] | None = None,
+    use_cases: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Create a non-published private Skill candidate payload from a repeated work pattern."""
-    return {
-        "ok": True,
-        "published": False,
-        "requires_confirmation": not user_confirmed,
-        "candidate": {
-            "type": "skill_candidate",
-            "employee_id": employee_id,
-            "pattern_id": pattern_id,
-            "title": title or "반복 업무 Skill 후보",
-            "description": description or "반복 업무 패턴을 Skill 초안으로 전환하기 위한 개인 후보입니다.",
-            "promotion_status": "private_draft_only",
+    """Create a draft-only 업무 능력 candidate from a helper need or repeated work pattern."""
+    merged_use_cases = list(use_cases or [])
+    if pattern_id:
+        merged_use_cases.append(f"반복 업무 패턴: {pattern_id}")
+    return await api_post(
+        "/api/skills/candidates",
+        employee_id=employee_id,
+        payload={
+            "title": title or "반복 업무 능력 후보",
+            "description": description or "반복 업무 패턴을 업무 능력 초안으로 전환하기 위한 개인 후보입니다.",
+            "source_agent_draft_id": source_agent_draft_id,
+            "helper_surfaces": helper_surfaces or [],
+            "capabilities": capabilities or [],
+            "reference_sources": reference_sources or [],
+            "selected_skills": selected_skills or [],
+            "connection_presets": connection_presets or [],
+            "use_cases": merged_use_cases,
         },
-    }
+    )
 
 
 @mcp.tool(name="boi_inbox")
@@ -1421,9 +1506,15 @@ async def agent_draft_create(
     git_repos: list[str] | None = None,
     mcp_servers: list[str] | None = None,
     skills: list[str] | None = None,
+    skill_candidates: list[dict[str, Any]] | None = None,
+    connection_presets: list[str] | None = None,
+    helper_surfaces: list[str] | None = None,
+    capabilities: list[str] | None = None,
+    reference_sources: list[str] | None = None,
+    use_cases: list[str] | None = None,
     scope: Literal["private", "team", "public"] = "private",
 ) -> dict[str, Any]:
-    """Create a private/team/public Agent Builder draft."""
+    """Create a private/team/public 업무 도우미 draft."""
     return await api_post(
         "/api/agents/drafts",
         employee_id=employee_id,
@@ -1435,6 +1526,12 @@ async def agent_draft_create(
             "git_repos": git_repos or [],
             "mcp_servers": mcp_servers or [],
             "skills": skills or [],
+            "skill_candidates": skill_candidates or [],
+            "connection_presets": connection_presets or [],
+            "helper_surfaces": helper_surfaces or [],
+            "capabilities": capabilities or [],
+            "reference_sources": reference_sources or [],
+            "use_cases": use_cases or [],
             "scope": scope,
         },
     )
@@ -1442,7 +1539,7 @@ async def agent_draft_create(
 
 @mcp.tool(name="agent_draft_test")
 async def agent_draft_test(draft_id: str, employee_id: str = DEFAULT_EMPLOYEE_ID) -> dict[str, Any]:
-    """Validate an Agent Builder draft before publishing."""
+    """Validate a 업무 도우미 draft before publishing."""
     return await api_post(f"/api/agents/drafts/{draft_id}/test", employee_id=employee_id, payload={})
 
 
@@ -1454,13 +1551,65 @@ async def agent_draft_publish(
     note: str = "",
     user_confirmed: bool = False,
 ) -> dict[str, Any]:
-    """Publish an Agent Builder draft after explicit confirmation."""
+    """Publish a 업무 도우미 draft after explicit confirmation."""
     if not user_confirmed:
         raise RuntimeError("user_confirmed=true is required before publishing an Agent draft")
     return await api_post(
         f"/api/agents/drafts/{draft_id}/publish",
         employee_id=employee_id,
         payload={"scope": scope, "note": note, "user_confirmed": True},
+    )
+
+
+@mcp.tool(name="skill_candidate_list")
+async def skill_candidate_list(employee_id: str = DEFAULT_EMPLOYEE_ID, limit: int = 50) -> dict[str, Any]:
+    """List draft 업무 능력 candidates."""
+    return await api_get("/api/skills/candidates", employee_id=employee_id, params={"limit": limit})
+
+
+@mcp.tool(name="agent_deep_work")
+async def agent_deep_work(
+    objective: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    work_type: Literal["research", "sop_draft", "skill_candidate", "report_draft", "mermaid_workflow", "similar_cases", "knowledge_candidate"] = "research",
+    current_url: str = "",
+    task_id: str = "",
+    trace_id: str = "",
+    context: dict[str, Any] | None = None,
+    artifacts: list[dict[str, Any]] | None = None,
+    max_iterations: int = 5,
+) -> dict[str, Any]:
+    """Create a DeepAgents-style long-work draft without applying changes."""
+    return await api_post(
+        "/api/agents/deep-work",
+        employee_id=employee_id,
+        payload={
+            "objective": objective,
+            "work_type": work_type,
+            "current_url": current_url,
+            "task_id": task_id,
+            "trace_id": trace_id,
+            "context": context or {},
+            "artifacts": artifacts or [],
+            "max_iterations": max_iterations,
+        },
+    )
+
+
+@mcp.tool(name="mermaid_workflow_draft")
+async def mermaid_workflow_draft(
+    mermaid_source: str,
+    employee_id: str = DEFAULT_EMPLOYEE_ID,
+    title: str = "업무 흐름 초안",
+    current_url: str = "",
+    note: str = "",
+    scope: Literal["private", "team", "public"] = "private",
+) -> dict[str, Any]:
+    """Convert Mermaid workflow source into SOP/Task/Event/Action draft candidates."""
+    return await api_post(
+        "/api/mermaid/workflow-draft",
+        employee_id=employee_id,
+        payload={"title": title, "mermaid_source": mermaid_source, "current_url": current_url, "note": note, "scope": scope},
     )
 
 
@@ -3291,7 +3440,8 @@ class McpServiceTokenGateMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-app = mcp.streamable_http_app()
+app = mcp_v2_http_app()
+app.add_middleware(McpV2AuthContextMiddleware)
 app.add_middleware(McpServiceTokenGateMiddleware)
 
 
@@ -3321,24 +3471,41 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
         "status": "ok",
         "service": "boi-wiki-mcp",
         "public_base_url": base_url,
-        "mcp_endpoint": f"{base_url}/mcp",
+        "mcp_endpoint": f"{base_url}/mcp/v2",
+        "legacy_mcp_endpoint": "disabled",
         "bridge_endpoint": f"{base_url}/api/mcp/call",
         "health_endpoint": f"{base_url}/health",
         "protocol": "MCP Streamable HTTP",
-        "capabilities": MCP_CAPABILITIES,
+        "capabilities": {"tools": len(MCP_V2_TOOLS), "resources": 5, "resource_templates": 0, "prompts": 0},
         "capability_lists": {
-            "tools": MCP_TOOL_CAPABILITIES,
+            "tools": MCP_V2_TOOLS,
             "resources": [],
-            "resource_templates": MCP_RESOURCE_TEMPLATE_CAPABILITIES,
-            "prompts": MCP_PROMPT_CAPABILITIES,
+            "resource_templates": [],
+            "prompts": [],
         },
-        "tool_groups": mcp_tool_groups(),
-        "agent_interfaces": AGENT_INTERFACES,
-        "agent_response_contract": AGENT_RESPONSE_CONTRACT,
-        "agent_response_schema": AGENT_RESPONSE_SCHEMA,
+        "tool_groups": [{"name": "BoI Agent v2", "tools": MCP_V2_TOOLS}],
+        "agent_interfaces": {
+            "json_api": f"{BOI_API_URL}/api/v2/agent/turns",
+            "streaming_api": f"{BOI_API_URL}/api/v2/agent/runs/{{run_id}}/events",
+            "streaming_events": ["accepted", "progress", "final", "error"],
+            "mcp_tool": "boi_agent",
+            "bootstrap_tool": "boi_bootstrap",
+            "workspace": f"{BOI_API_URL}/agent",
+        },
+        "agent_response_contract": {
+            "version": "2.0",
+            "canonical_endpoint": "/api/v2/agent/turns",
+            "stream_endpoint": "/api/v2/agent/runs/{run_id}/events",
+            "mcp_tool": "boi_agent",
+            "mcp_resource_template": "boi://v2/capabilities",
+        },
+        "agent_response_schema": {
+            "required": ["run_id", "turn_id", "status", "capability_id", "answer", "evidence_refs", "artifact_refs"],
+            "response_budget_bytes": 8192,
+        },
         "mcp_auth": {
-            "required": MCP_REQUIRE_SERVICE_TOKEN,
-            "accepted_headers": ["x-service-token", "Authorization: Bearer <token>"],
+            "required": MCP_V2_REQUIRE_PAT,
+            "accepted_headers": ["Authorization: Bearer boi_pat_..."],
             "bridge_always_requires_service_token": True,
             "transport_security": mcp_transport_security_summary(),
         },
@@ -3346,9 +3513,13 @@ def status_payload(request: Request | None = None) -> dict[str, Any]:
             "Open / in a browser for this status page.",
             "Do not use a browser to validate /mcp directly; MCP clients must send Streamable HTTP Accept headers.",
             "A direct browser/curl request to /mcp may return 406 even when the server is healthy.",
-            "When MCP auth is required, configure the client to send x-service-token or Authorization: Bearer with the shared service token.",
-            "Static resources are intentionally empty; use resource templates and tools.",
-            "BoI API/MCP are the official external Agent interfaces; Native BoI Agent is the production backend and direct Langflow run URLs are trusted/dev visual-debug only. All Agent/Search/Inbox tools use the same BoI Profile ACL and Team RBAC guardrails as the Web UI.",
+            (
+                "Send a BoI personal access token with every MCP request."
+                if MCP_V2_REQUIRE_PAT
+                else "This isolated MCP runtime permits unauthenticated development requests; production requires a BoI personal access token."
+            ),
+            "Use boi_bootstrap or boi_tools_search before loading detailed capability contracts.",
+            "Web, API, and MCP use the same Agent v2 capability, evidence, artifact, and policy contracts.",
         ],
     }
 
@@ -3438,12 +3609,12 @@ async def status_page(request: Request) -> HTMLResponse:
         <dt>Response contract</dt><dd><code>{payload["agent_response_contract"]["version"]}</code></dd>
         <dt>Response schema</dt><dd><code>{payload["agent_response_contract"]["mcp_resource_template"]}</code></dd>
       </dl>
-      <p>Web Pet Agent uses the streaming API so long requests can show one-line <code>status</code> updates and incremental <code>answer_delta</code> content. MCP clients normally call <code>boi_agent_chat</code> and receive the final JSON response using the same <code>{payload["agent_response_contract"]["version"]}</code> contract. In that JSON, <code>status_updates</code> is canonical and <code>status_events</code> is the compatible alias for event-oriented clients.</p>
+      <p>BoI Agent uses the streaming API to show accepted, progress, and final states without exposing internal reasoning. MCP clients call <code>boi_agent</code> and receive the same grounded <code>{payload["agent_response_contract"]["version"]}</code> response contract used by Web and REST.</p>
     </section>
     <section>
       <h2>Client Registration</h2>
       <p>Register <code>{payload["mcp_endpoint"]}</code> as a Streamable HTTP MCP server in Codex, Claude Desktop, or Cursor.</p>
-      <p>Use <code>ontology_search</code> for knowledge graph exploration, <code>boi_search</code> for document-only search, and <code>boi_agent_chat</code> for page-aware Q&amp;A. The production BoI Agent backend is the native Agent inside BoI API; Langflow direct run URLs are trusted/dev visual-debug paths, not the public Agent API. Agent/Search/Inbox tools use BoI Profile ACL and Team RBAC guardrails.</p>
+      <p>Use <code>boi_search</code> with <code>view=ranked|neighbors|path|impact|tour</code> for hybrid search and graph exploration, and <code>boi_agent</code> for page-aware questions and work. All tools use the same BoI Profile ACL, Team RBAC, Context, Harness, and WorkRun guardrails.</p>
       <p>Opening <code>/mcp</code> directly in a browser is not a valid MCP check. It can return <code>406</code> because the client did not send the required MCP Accept headers.</p>
     </section>
   </main>
@@ -3617,6 +3788,55 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             },
             service_token=True,
         )
+    elif tool_name == "hybrid_search":
+        result = await api_get(
+            "/api/search/hybrid",
+            employee_id=employee_id,
+            params={
+                "q": str(args.get("query") or args.get("q") or ""),
+                "scope": str(args.get("scope") or "all"),
+                "limit": int(args.get("limit") or 8),
+                "current_url": str(args.get("current_url") or ""),
+                "view": str(args.get("view") or "compact"),
+            },
+            service_token=True,
+        )
+    elif tool_name == "knowledge_graph":
+        result = await api_get(
+            "/api/knowledge-graph",
+            employee_id=employee_id,
+            params={"q": str(args.get("query") or args.get("q") or ""), "limit": int(args.get("limit") or 200)},
+            service_token=True,
+        )
+    elif tool_name == "agent_deep_work":
+        result = await api_post(
+            "/api/agents/deep-work",
+            employee_id=employee_id,
+            payload={
+                "objective": str(args.get("objective") or ""),
+                "work_type": str(args.get("work_type") or "research"),
+                "current_url": str(args.get("current_url") or ""),
+                "task_id": str(args.get("task_id") or ""),
+                "trace_id": str(args.get("trace_id") or ""),
+                "context": args.get("context") or {},
+                "artifacts": args.get("artifacts") or [],
+                "max_iterations": int(args.get("max_iterations") or 5),
+            },
+            service_token=True,
+        )
+    elif tool_name == "mermaid_workflow_draft":
+        result = await api_post(
+            "/api/mermaid/workflow-draft",
+            employee_id=employee_id,
+            payload={
+                "title": str(args.get("title") or "업무 흐름 초안"),
+                "mermaid_source": str(args.get("mermaid_source") or args.get("source") or ""),
+                "current_url": str(args.get("current_url") or ""),
+                "note": str(args.get("note") or ""),
+                "scope": str(args.get("scope") or "private"),
+            },
+            service_token=True,
+        )
     elif tool_name == "boi_agent_chat":
         result = await api_post(
             "/api/agents/boi-wiki/chat",
@@ -3725,6 +3945,12 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "git_repos": args.get("git_repos") if isinstance(args.get("git_repos"), list) else [],
                 "mcp_servers": args.get("mcp_servers") if isinstance(args.get("mcp_servers"), list) else [],
                 "skills": args.get("skills") if isinstance(args.get("skills"), list) else [],
+                "skill_candidates": args.get("skill_candidates") if isinstance(args.get("skill_candidates"), list) else [],
+                "connection_presets": args.get("connection_presets") if isinstance(args.get("connection_presets"), list) else [],
+                "helper_surfaces": args.get("helper_surfaces") if isinstance(args.get("helper_surfaces"), list) else [],
+                "capabilities": args.get("capabilities") if isinstance(args.get("capabilities"), list) else [],
+                "reference_sources": args.get("reference_sources") if isinstance(args.get("reference_sources"), list) else [],
+                "use_cases": args.get("use_cases") if isinstance(args.get("use_cases"), list) else [],
                 "scope": str(args.get("scope") or "private"),
             },
             service_token=True,
@@ -3742,6 +3968,30 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
                 "note": str(args.get("note") or ""),
                 "user_confirmed": True,
             },
+            service_token=True,
+        )
+    elif tool_name == "skill_candidate_create":
+        result = await api_post(
+            "/api/skills/candidates",
+            employee_id=employee_id,
+            payload={
+                "title": str(args.get("title") or ""),
+                "description": str(args.get("description") or ""),
+                "source_agent_draft_id": str(args.get("source_agent_draft_id") or ""),
+                "helper_surfaces": args.get("helper_surfaces") if isinstance(args.get("helper_surfaces"), list) else [],
+                "capabilities": args.get("capabilities") if isinstance(args.get("capabilities"), list) else [],
+                "reference_sources": args.get("reference_sources") if isinstance(args.get("reference_sources"), list) else [],
+                "selected_skills": args.get("selected_skills") if isinstance(args.get("selected_skills"), list) else [],
+                "connection_presets": args.get("connection_presets") if isinstance(args.get("connection_presets"), list) else [],
+                "use_cases": args.get("use_cases") if isinstance(args.get("use_cases"), list) else [],
+            },
+            service_token=True,
+        )
+    elif tool_name == "skill_candidate_list":
+        result = await api_get(
+            "/api/skills/candidates",
+            employee_id=employee_id,
+            params={"limit": int(args.get("limit") or 50)},
             service_token=True,
         )
     elif tool_name == "agent_catalog_search":
@@ -4211,6 +4461,31 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             },
             service_token=True,
         )
+    elif tool_name == "task_loop_evaluate":
+        result = await api_post(
+            "/api/context/work/loop/evaluate",
+            employee_id=employee_id,
+            payload={
+                "task_id": str(args.get("task_id") or ""),
+                "trace_id": str(args.get("trace_id") or ""),
+                "event_id": str(args.get("event_id") or ""),
+                "action_key": str(args.get("action_key") or ""),
+                "sop_ref": str(args.get("sop_ref") or ""),
+                "sop_stage_id": str(args.get("sop_stage_id") or ""),
+                "workflow_definition_key": str(args.get("workflow_definition_key") or args.get("capability_key") or ""),
+                "current_url": str(args.get("current_url") or ""),
+                "execution_mode": str(args.get("execution_mode") or ""),
+                "iteration_count": int(args.get("iteration_count") or 0),
+                "no_progress_count": int(args.get("no_progress_count") or 0),
+                "proposed_tool_name": str(args.get("proposed_tool_name") or ""),
+                "proposed_tool_args": args.get("proposed_tool_args") if isinstance(args.get("proposed_tool_args"), dict) else {},
+                "proposed_question": str(args.get("proposed_question") or ""),
+                "proposed_delta": args.get("proposed_delta") if isinstance(args.get("proposed_delta"), dict) else {},
+                "tool_history": args.get("tool_history") if isinstance(args.get("tool_history"), list) else [],
+                "question_history": args.get("question_history") if isinstance(args.get("question_history"), list) else [],
+            },
+            service_token=True,
+        )
     elif tool_name == "agent_inbox_context":
         result = await api_get(
             f"/api/agents/boi-wiki/inbox/{str(args.get('task_id') or '')}/context",
@@ -4259,20 +4534,6 @@ async def mcp_bridge_call(request: Request) -> JSONResponse:
             payload={"limit": int(args.get("limit") or 8)},
             service_token=True,
         )
-    elif tool_name == "skill_candidate_create":
-        result = {
-            "ok": True,
-            "published": False,
-            "requires_confirmation": not bridge_bool(args.get("user_confirmed")),
-            "candidate": {
-                "type": "skill_candidate",
-                "employee_id": employee_id,
-                "pattern_id": str(args.get("pattern_id") or ""),
-                "title": str(args.get("title") or "반복 업무 Skill 후보"),
-                "description": str(args.get("description") or "반복 업무 패턴을 Skill 초안으로 전환하기 위한 개인 후보입니다."),
-                "promotion_status": "private_draft_only",
-            },
-        }
     elif tool_name == "manual_handoff_complete":
         if not bridge_bool(args.get("user_confirmed")):
             return bridge_confirmation_error(req.tool)

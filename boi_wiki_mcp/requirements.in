@@ -1,0 +1,6 @@
+# Linux/Python 3.12 service inputs; requirements.txt is the reproducible lock.
+mcp[cli]==2.2.0
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+pydantic==2.13.4

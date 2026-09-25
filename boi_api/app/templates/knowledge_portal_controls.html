@@ -1,0 +1,15 @@
+{% macro supervision_form(control, operation, label) %}
+{% if control %}<details class="knowledge-control"><summary>{{ label }}</summary>
+<form data-knowledge-supervision data-task-ref="{{ control.task_ref }}">
+  <input type="hidden" name="operation" value="{{ operation }}">
+  <input type="hidden" name="expected_revision" value="{{ control.expected_revision }}">
+  {% if operation == 'correct' %}
+  <input type="hidden" name="unit_ids" value="{{ control.unit_ids|tojson|forceescape }}">
+  <input type="hidden" name="asset_revisions" value="{{ control.asset_revisions|tojson|forceescape }}">
+  <label>확인할 내용<select name="cause_code"><option value="source">원문 내용</option><option value="interpretation">의미 해석</option><option value="coverage">누락된 범위</option><option value="other">기타</option></select></label>
+  {% elif operation == 'resolve' %}<input type="hidden" name="event_ref" value="{{ control.event_ref|tojson|forceescape }}">{% endif %}
+  <label>{{ '처리한 내용과 남은 한계' if operation == 'resolve' else '이유와 요청 내용' }}<textarea name="reason" required maxlength="8000" rows="3"></textarea></label>
+  <button type="submit">{{ '정정 요청 기록' if operation == 'correct' else '작업 중단' if operation == 'stop' else '처리 보고 기록' }}</button>
+  <p role="status" aria-live="polite"></p>
+</form></details>{% endif %}
+{% endmacro %}

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ontology Migration Workbench · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script defer src="{{ asset_url('ontology_migrations.js') }}"></script>
+</head>
+<body>
+{% include "_app_shell.html" %}
+<main class="page-content" id="main-content">
+  <header class="section-intro">
+    <p class="eyebrow">Governed Knowledge Runtime</p>
+    <h1>Ontology Migration Workbench</h1>
+    <p>승인되지 않은 후보와 legacy 원문은 canonical Search·Graph·MCP·download에 나타나지 않습니다. 이 화면은 별도 migration/history 검토 lane입니다.</p>
+  </header>
+
+  {% if intake_options and intake_options.status == 'AVAILABLE' %}
+  <section class="panel" aria-labelledby="metadata-intake-title">
+    <h2 id="metadata-intake-title">Metadata source · 범위 · 목적</h2>
+    <p>서버에 등록된 source profile과 권한 범위를 선택하세요. Catalog, 정의, 정책과 digest는 서버가 확인합니다. SQL은 필요하지 않습니다.</p>
+    <form data-metadata-intake-form>
+      <div class="form-grid">
+        <label>Project ID<input name="project_id" required placeholder="project:metadata" /></label>
+        <label>등록된 source 범위<select name="metadata_source_profile_id" required>
+          <option value="">범위 선택</option>
+          {% for option in intake_options.source_selections %}<option value="{{ option.id }}">{{ option.source_system }} · {{ option.label }} · {{ option.mode }}</option>{% endfor %}
+        </select></label>
+        <label>등록 원문<select name="registered_artifact">
+          <option value="">직접 파일 선택 또는 등록 원문 선택</option>
+          {% for artifact in intake_options.source_artifacts %}<option value="{{ artifact | tojson | forceescape }}">{{ artifact.role }} · {{ artifact.artifact_ref }}</option>{% endfor %}
+        </select></label>
+        <label>작은 metadata 파일 (64 KiB 이하)<input name="source_file" type="file" accept=".json,.yaml,.yml,application/json,application/yaml" /></label>
+        <label>Shard 후보 상한<input name="max_objects_per_shard" type="number" min="1" max="100" value="100" required /></label>
+      </div>
+      <label>검토 목적<textarea name="purpose" required></textarea></label>
+      <p class="muted">큰 원문은 등록 artifact 또는 connector snapshot을 사용하세요. 추출 결과는 후보이며 의미·Mapping·Query 검증 전에는 실행 가능하다고 표시하지 않습니다.</p>
+      <button type="submit" class="button primary">공통 metadata pipeline 실행</button>
+      <p data-metadata-intake-status role="status" aria-live="polite"></p>
+      <details><summary>MCP에서도 같은 source 범위 조회</summary><pre><code>{{ intake_options.mcp_invocation_ref | tojson(indent=2) }}</code></pre></details>
+    </form>
+  </section>
+  {% endif %}
+  <section class="panel" aria-labelledby="migration-intake-title">
+    <details {% if not intake_options or intake_options.status != 'AVAILABLE' %}open{% endif %}>
+    <summary>기존 Query-first / Hybrid 상세 입력 (호환 경로)</summary>
+    <h2 id="migration-intake-title">등록된 source · catalog intake</h2>
+    <p class="muted">SQL/DDL 원문과 credential은 여기에 붙이지 않습니다. Data Lake에 등록된 SourceArtifact ref·digest와 catalog snapshot ref만 candidate로 전달합니다.</p>
+    <form data-migration-intake-form>
+      <div class="form-grid">
+        <label>Project ID<input name="project_id" required placeholder="project:mes" /></label>
+        <label>SQL SourceArtifact ref<input name="sql_source_ref" required placeholder="source:mes-query@1" /></label>
+        <label>SQL source digest<input name="sql_source_digest" required pattern="sha256:[a-f0-9]{64}" placeholder="sha256:…" /></label>
+        <label>Metadata SourceArtifact ref<input name="metadata_source_ref" required placeholder="source:mes-metadata@1" /></label>
+        <label>Metadata source digest<input name="metadata_source_digest" required pattern="sha256:[a-f0-9]{64}" placeholder="sha256:…" /></label>
+        <label>Catalog snapshot ref<input name="catalog_snapshot_ref" required placeholder="catalog:mes@1" /></label>
+        <label>Catalog snapshot digest<input name="catalog_snapshot_digest" required pattern="sha256:[a-f0-9]{64}" placeholder="sha256:…" /></label>
+        <label>Schema snapshot digest<input name="schema_snapshot_digest" required pattern="sha256:[a-f0-9]{64}" placeholder="sha256:…" /></label>
+        <label>Active concept index ref<input name="active_concept_index_ref" required placeholder="concept-index:active" /></label>
+        <label>Active concept index digest<input name="active_concept_index_digest" required pattern="sha256:[a-f0-9]{64}" placeholder="sha256:…" /></label>
+        <label>EvidenceSpan refs<input name="evidence_span_refs" required placeholder="evidence:recipe,evidence:parameter" /></label>
+        <label>ACL/policy digest<input name="acl_policy_digest" required pattern="sha256:[a-f0-9]{64}" placeholder="sha256:…" /></label>
+        <label>Evaluator code digest<input name="evaluator_code_digest" required pattern="sha256:[a-f0-9]{64}" placeholder="sha256:…" /></label>
+        <label>Pi role/prompt digest<input name="model_role_prompt_digest" required pattern="sha256:[a-f0-9]{64}" placeholder="sha256:…" /></label>
+        <label>Idempotency key<input name="idempotency_key" required placeholder="mes-import-20260903-01" /></label>
+        <label>System<input name="system" required placeholder="MES" /></label>
+        <label>Schema<input name="schema" required placeholder="main" /></label>
+        <label>Tables<input name="tables" required placeholder="RECIPE,PARAMETER,LOT_HISTORY" /></label>
+      </div>
+      <label>Mapping candidates JSON<textarea name="mapping_candidates" required>[{"mapping_id":"mapping:recipe-id","table":"RECIPE","column":"recipe_id","value_type":"string"}]</textarea></label>
+      <label>검토 목표<textarea name="goal" required>등록된 legacy source와 catalog를 ontology migration candidate로 검토한다</textarea></label>
+      <button type="submit" class="button primary">Shared pipeline candidate 생성</button>
+      <p data-migration-intake-status role="status" aria-live="polite" class="muted"></p>
+    </form>
+    </details>
+  </section>
+
+  <section class="panel" aria-labelledby="migration-list-title">
+    <div class="section-heading">
+      <div><h2 id="migration-list-title">Migration batches</h2><p class="muted">정상 후보는 자동 진행하고 Attention이 필요한 예외만 검토합니다.</p></div>
+      <span class="status-chip">{{ jobs|length }}건</span>
+    </div>
+    {% if jobs %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Job</th><th scope="col">Skill</th><th scope="col">상태</th><th scope="col">Candidate digest</th><th scope="col">변경</th></tr></thead>
+        <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td><a href="/ontology/migrations/{{ job.job_id }}">{{ job.job_id }}</a></td>
+            <td>{{ job.skill_id }}</td>
+            <td><span class="status-chip">{{ job.state }}</span></td>
+            <td><code>{{ job.candidate_digest }}</code></td>
+            <td>{% if job.production_changed %}변경됨{% else %}없음{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <nav aria-label="Migration batch pagination" class="button-row">
+      <span class="muted">{{ migration_page.count }} / {{ migration_page.total_count }} shown</span>
+      {% if migration_page.next_cursor %}<a class="button secondary" href="/ontology/migrations?cursor={{ migration_page.next_cursor | urlencode }}&page_size={{ migration_page.count }}">다음 batch</a>{% endif %}
+    </nav>
+    {% else %}
+      <p class="empty-state">아직 migration candidate가 없습니다. 기존 <code>boi_plan</code>에서 <code>ontology.migration.*</code> capability를 선택하면 이 lane에 등록됩니다.</p>
+    {% endif %}
+  </section>
+</main>
+</body>
+</html>

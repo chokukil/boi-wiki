@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{{ title }} · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('directory_picker.js') }}" defer></script>
+  <script src="{{ asset_url('task_completion_editor.js') }}" defer></script>
   <script src="{{ asset_url('registration.js') }}" defer></script>
 </head>
 <body>
@@ -49,6 +51,13 @@
     </button>
   </nav>
 
+  {% if v2_artifact_editor.enabled %}
+  <section class="sop-v2-editor-bar" data-v2-sop-editor-bar>
+    <a href="{{ v2_artifact_editor.return_to or ('/agent?session=' ~ v2_artifact_editor.work_session_id) }}">BoI Agent로 돌아가기</a>
+    <div><strong>같은 SOP 초안을 편집 중입니다.</strong><span data-v2-builder-save-state>자동 저장됨 · 버전 {{ v2_artifact_editor.revision }}</span></div>
+  </section>
+  {% endif %}
+
   <section class="registration-layout sop-registration-layout">
     <section class="panel registration-form-panel">
       <div class="section-heading">
@@ -72,7 +81,12 @@
         data-event-adapter-test-url="/api/event-ingestion/adapters/test"
         data-event-adapter-draft-url="/api/event-ingestion/adapters/drafts"
         data-entry-kind="{{ entry_kind }}"
+        data-v2-artifact-id="{{ v2_artifact_editor.artifact_id }}"
+        data-v2-work-session-id="{{ v2_artifact_editor.work_session_id }}"
+        data-v2-artifact-revision="{{ v2_artifact_editor.revision }}"
+        data-v2-return-to="{{ v2_artifact_editor.return_to }}"
       >
+        <script id="sop-mermaid-draft-seed" type="application/json">{{ mermaid_draft_seed | tojson }}</script>
         <input type="hidden" name="entry_kind" value="sop" />
         <input type="hidden" name="event_mode" value="{% if focus == 'event' %}draft{% else %}skip{% endif %}" />
         <input type="hidden" name="sop_mode" value="{% if focus == 'action' or focus == 'event' %}skip{% else %}draft{% endif %}" />
@@ -177,6 +191,27 @@
           </div>
         </div>
 
+        <div class="mermaid-draft-banner" data-mermaid-draft-banner hidden>
+          {% set mermaid_seed_artifact = mermaid_draft_seed.get('artifact') if mermaid_draft_seed else {} %}
+          <div>
+            <strong data-mermaid-draft-title>흐름 그림에서 가져온 Task 후보가 있습니다.</strong>
+            <span data-mermaid-draft-summary>Task 후보를 불러와 SOP Builder에서 이어서 다듬을 수 있습니다.</span>
+          </div>
+          {% if mermaid_seed_artifact and mermaid_seed_artifact.source %}
+          <div class="mermaid-diagram task-console-workflow-canvas sop-builder-mermaid-draft-canvas" data-mermaid-state="pending" data-mermaid-source="{{ mermaid_seed_artifact.source }}">
+            <div class="boi-agent-artifact-title">
+              <strong>{{ mermaid_seed_artifact.title or mermaid_draft_seed.title or "흐름 그림" }}</strong>
+            </div>
+            <div class="mermaid">{{ mermaid_seed_artifact.source }}</div>
+            <p class="mermaid-status" aria-live="polite">업무 흐름 그림을 준비하고 있습니다.</p>
+          </div>
+          {% endif %}
+          <div class="autosave-actions">
+            <button type="button" class="secondary-button" data-mermaid-draft-action="apply">Task 후보 불러오기</button>
+            <button type="button" class="secondary-button" data-mermaid-draft-action="dismiss">나중에</button>
+          </div>
+        </div>
+
         <section class="sop-flow-stack" aria-label="SOP flow sections">
           <article class="sop-flow-section wizard-step-panel" data-step-panel="entry" data-sop-section="event" hidden>
             <div class="sop-flow-section-heading">
@@ -190,7 +225,7 @@
             <div class="sop-flow-option-grid">
               <button type="button" data-section-mode="event_mode" data-mode-value="reuse">기존 업무 이벤트 선택<span>이미 등록된 업무 이벤트 정의를 연결합니다.</span></button>
               <button type="button" data-section-mode="event_mode" data-mode-value="draft">새 업무 이벤트 정의<span>업무가 발생했다고 볼 기준을 새로 만듭니다.</span></button>
-              <button type="button" data-section-mode="event_mode" data-mode-value="schedule">정해진 시간에 발생<span>일정에 따라 업무 이벤트 후보를 만듭니다.</span></button>
+              <button type="button" data-section-mode="event_mode" data-mode-value="schedule">정해진 시간에 발생<span>검토 후 활성화하면 일정에 따라 업무 흐름을 시작합니다.</span></button>
               <button type="button" data-section-mode="event_mode" data-mode-value="skip">사람이 직접 실행<span>외부 신호 없이 필요할 때 직접 시작합니다.</span></button>
             </div>
             <section class="event-ingestion-panel" data-event-definition-panel hidden aria-label="업무 이벤트 정의">
@@ -448,7 +483,17 @@
               <section class="sop-flow-mode-panel" data-event-mode-field="schedule" hidden>
                 <div class="mode-panel-heading">
                   <strong>정해진 시간에 발생</strong>
-                  <span>반복 주기와 시간을 선택하면 내부 일정 값은 자동으로 만들어집니다.</span>
+                  <span>업무 이벤트와 일정을 정한 뒤 샘플로 확인하고 사용을 시작합니다.</span>
+                </div>
+                <div class="two-column-grid">
+                  <label>
+                    예약 이름
+                    <input name="event_source_config.source_name" placeholder="예: 주간 설비 점검" />
+                  </label>
+                  <label>
+                    발생시킬 업무 이벤트
+                    <input name="event_source_config.target_event_type" placeholder="예: equipment.weekly-check.requested.v1" />
+                  </label>
                 </div>
                 <div class="schedule-builder" data-event-mode-field="schedule" hidden>
                   <div class="schedule-builder-heading">
@@ -496,8 +541,14 @@
                     <label><input type="checkbox" data-schedule-weekday value="SAT" /> 토</label>
                     <label><input type="checkbox" data-schedule-weekday value="SUN" /> 일</label>
                   </fieldset>
-                  <p class="schedule-preview" data-schedule-preview>매주 월요일 09:00에 업무 이벤트 초안이 만들어집니다.</p>
+                  <p class="schedule-preview" data-schedule-preview>매주 월요일 09:00에 업무 이벤트 발생 기준을 확인합니다.</p>
                 </div>
+                <div class="event-adapter-actions">
+                  <button type="button" class="secondary-button" data-event-adapter-action="plan">일정 미리보기</button>
+                  <button type="button" class="secondary-button" data-event-adapter-action="test">샘플로 확인하기</button>
+                  <button type="button" class="secondary-button" data-event-adapter-action="draft">예약 초안 저장</button>
+                </div>
+                <div class="event-adapter-preview" data-schedule-event-preview hidden></div>
               </section>
 
               <section class="sop-flow-mode-panel muted-panel" data-event-mode-field="skip" hidden>
@@ -586,13 +637,38 @@
                         </select>
                       </label>
                       <label>
+                        담당자
+                        <div class="directory-picker" data-directory-picker data-directory-kind="people">
+                          <input type="search" data-directory-query placeholder="사번, 이름 또는 부서로 찾기" autocomplete="off" />
+                          <input type="hidden" data-directory-value data-stage-field="assignee_employee_ids" />
+                          <div class="directory-picker-options" data-directory-options hidden></div>
+                          <div class="directory-picker-chips" data-directory-chips></div>
+                        </div>
+                        <small>지정된 담당자 모두의 Inbox에 같은 Task가 표시됩니다.</small>
+                      </label>
+                      <label>
+                        검토 담당자
+                        <div class="directory-picker" data-directory-picker data-directory-kind="people">
+                          <input type="search" data-directory-query placeholder="사번, 이름 또는 부서로 찾기" autocomplete="off" />
+                          <input type="hidden" data-directory-value data-stage-field="reviewer_employee_ids" />
+                          <div class="directory-picker-options" data-directory-options hidden></div>
+                          <div class="directory-picker-chips" data-directory-chips></div>
+                        </div>
+                      </label>
+                      <label>
+                        유관 팀
+                        <div class="directory-picker" data-directory-picker data-directory-kind="teams">
+                          <input type="search" data-directory-query placeholder="팀 이름으로 찾기" autocomplete="off" />
+                          <input type="hidden" data-directory-value data-stage-field="related_team_ids" />
+                          <div class="directory-picker-options" data-directory-options hidden></div>
+                          <div class="directory-picker-chips" data-directory-chips></div>
+                        </div>
+                      </label>
+                      <label>
                         판단 질문
                         <textarea data-stage-field="decision_question" placeholder="예: 판단 근거가 충분한가?"></textarea>
                       </label>
-                      <label>
-                        필요한 근거
-                        <textarea data-stage-field="required_evidence" placeholder="예: Trend, Raw Data, Action 결과"></textarea>
-                      </label>
+                      <div class="stage-completion-editor" data-stage-completion-editor></div>
                       <label>
                         결과 BoI / 산출물
                         <textarea data-stage-field="expected_outputs" placeholder="예: 판단 근거 BoI, 결과 보고서 BoI"></textarea>

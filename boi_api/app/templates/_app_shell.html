@@ -4,8 +4,16 @@
     <h1>{{ shell.title }}</h1>
     {% if shell.description %}<p>{{ shell.description }}</p>{% endif %}
   </div>
+  {% if not shell.hide_pet_agent %}
+  <button
+    type="button"
+    class="app-agent-context-button"
+    data-agent-v2-context-open
+    title="현재 화면과 선택한 내용을 BoI Agent에 전달합니다"
+  >이 화면에서 Agent</button>
+  {% endif %}
   <aside class="identity-strip" aria-label="Authentication status">
-    <span class="auth-mode-chip {% if shell.dev_mode %}dev{% else %}sso{% endif %}">{% if shell.dev_mode %}DEV{% else %}SSO{% endif %}</span>
+    <span class="auth-mode-chip {% if shell.dev_mode %}dev{% else %}sso{% endif %}">{% if shell.identity_auth_label %}{{ shell.identity_auth_label }}{% elif shell.dev_mode %}DEV{% else %}SSO{% endif %}</span>
     {% if shell.sso_active %}
     <strong>{{ shell.display_name }}</strong>
     {% endif %}
@@ -14,7 +22,7 @@
     {% if shell.sso_active and shell.roles %}
     <span>{{ shell.roles[:2] | join(', ') }}</span>
     {% endif %}
-    {% if shell.dev_mode %}
+    {% if shell.can_switch_identity | default(shell.dev_mode) %}
     <form class="dev-employee-switch" method="get" action="{{ shell.switch_action }}">
       {% for item in shell.hidden_query %}
       <input type="hidden" name="{{ item.name }}" value="{{ item.value }}" />
@@ -28,7 +36,7 @@
       <button type="submit">전환</button>
     </form>
     <a class="sso-guide-link" href="{{ shell.sso_guide_url }}">SSO 가이드</a>
-    {% else %}
+    {% elif shell.sso_active %}
     <a class="sso-guide-link" href="{{ shell.logout_url }}">Logout</a>
     {% endif %}
   </aside>
@@ -53,12 +61,41 @@
 {% if not shell.hide_pet_agent %}
 <div
   id="boi-agent-root"
+  class="agent-surface-host"
+  data-agent-v2-workspace
+  data-surface-kind="pet"
+  data-page-ref="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
+  data-selection-ref="{{ shell.agent_context.selection_ref or '' }}"
+  data-task-ref="{{ shell.agent_context.task_ref or '' }}"
+  data-event-ref="{{ shell.agent_context.event_ref or '' }}"
+  data-artifact-ref="{{ shell.agent_context.artifact_ref or '' }}"
+  data-person-ref="{{ shell.agent_context.person_ref or '' }}"
+  data-document-ref="{{ shell.agent_context.document_ref or '' }}"
+  data-action-ref="{{ shell.agent_context.action_ref or '' }}"
+  data-sop-ref="{{ shell.agent_context.sop_ref or '' }}"
+  data-workflow-ref="{{ shell.agent_context.workflow_ref or '' }}"
+  data-org-ref="{{ shell.agent_context.org_ref or '' }}"
+  data-agent-ref="{{ shell.agent_context.agent_ref or '' }}"
+  data-system-ref="{{ shell.agent_context.system_ref or '' }}"
+  data-trace-ref="{{ shell.agent_context.trace_ref or '' }}"
   data-employee-id="{{ shell.employee_id }}"
   data-current-url="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}"
   data-page-title="{{ shell.title }}"
-></div>
+>
+  {% include "_agent_surface_v2.html" %}
+</div>
 {% endif %}
-<script src="{{ asset_url('mermaid_render.js') }}" defer></script>
+{% if not shell.mermaid_renderer_in_head %}
+<script type="module" src="{{ asset_url('dist/mermaid-render.js') }}"></script>
+<script src="{{ asset_url('mermaid_collaboration_v2.js') }}" defer></script>
+{% endif %}
 {% if not shell.hide_pet_agent %}
+{% if shell.agent_v2_default %}
+<script src="{{ asset_url('task_completion_editor.js') }}" defer></script>
+<script src="{{ asset_url('a2ui_renderer.js') }}" defer></script>
+<script type="module" src="{{ asset_url('dist/a2ui-runtime.js') }}"></script>
+<script src="{{ asset_url('agent_workspace_v2.js') }}" defer></script>
+{% else %}
 <script src="{{ asset_url('pet_agent.js') }}" defer></script>
+{% endif %}
 {% endif %}

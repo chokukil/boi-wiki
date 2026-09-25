@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>기술 검증 근거 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+</head>
+<body>
+  {% include "_app_shell.html" %}
+  <main class="page-content source-page">
+    <section class="panel">
+      <div class="section-heading">
+        <div><span class="eyebrow">읽기 전용</span><h2>기술 검증 근거</h2></div>
+      </div>
+      <p>업무 근거와 분리된 관리자용 구현 참고입니다. 이 화면에서는 파일을 수정할 수 없습니다.</p>
+      <code>{{ path }}</code>
+    </section>
+    <section class="source-viewer">
+      <pre class="source-code">{{ content }}</pre>
+    </section>
+  </main>
+</body>
+</html>

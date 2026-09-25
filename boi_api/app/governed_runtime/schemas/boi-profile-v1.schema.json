@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boi.internal/schemas/boi-profile-v1.schema.json",
+  "title": "BoI profile contract v1 (ontology / lexicon / retrieval-policy)",
+  "description": "Domain, language, and operating knowledge declared as governed OKF concept documents instead of code literals. Forward compatible: unknown top-level and entry fields are accepted and survive round trip, matching the pinned OKF 0.2 core surface.",
+  "type": "object",
+  "required": ["type", "profile_kind", "entries"],
+  "properties": {
+    "type": {"type": "string", "minLength": 1},
+    "okf_version": {"const": "0.2"},
+    "profile_kind": {
+      "enum": ["ontology", "lexicon", "retrieval-policy"],
+      "description": "Owner axis. ontology = domain expert, lexicon = language owner, retrieval-policy = operations."
+    },
+    "profile_scope": {
+      "type": "object",
+      "description": "Where this profile applies. Absent means unscoped, which the linter warns about.",
+      "additionalProperties": true
+    },
+    "baseline_ref": {
+      "type": "string",
+      "description": "Evidence document for the no-profile baseline. Required before any contribution claim."
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "declares", "verify", "expected_effect", "measured_contribution"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "kind": {
+            "enum": ["value_vocabulary", "structure_rule", "relation_rule", "signal_words", "policy_value"]
+          },
+          "declares": {
+            "description": "The actual values. Never empty; an empty declaration is a meaningless entry.",
+            "anyOf": [
+              {"type": "array", "minItems": 1},
+              {"type": "object", "minProperties": 1},
+              {"type": "string", "minLength": 1},
+              {"type": "number"}
+            ]
+          },
+          "verify": {
+            "type": "object",
+            "required": ["rule", "fail_if"],
+            "description": "A check that fails when the declaration is wrong. Without it a wrong declaration hardens in place.",
+            "properties": {
+              "rule": {
+                "enum": [
+                  "corpus_token_presence",
+                  "near_duplicate_decomposition",
+                  "path_segment_coverage",
+                  "relation_edge_presence",
+                  "signal_match_rate",
+                  "policy_within_bounds"
+                ]
+              },
+              "fail_if": {"type": "string", "minLength": 1}
+            },
+            "additionalProperties": true
+          },
+          "expected_effect": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Which measurement axis this entry is expected to move."
+          },
+          "measured_contribution": {
+            "description": "Measured contribution. null until measured. Entries with null are not loaded at runtime.",
+            "anyOf": [
+              {"type": "null"},
+              {
+                "type": "object",
+                "required": ["axis", "without", "with", "measured_at"],
+                "properties": {
+                  "axis": {"type": "string", "minLength": 1},
+                  "without": {"type": "number"},
+                  "with": {"type": "number"},
+                  "measured_at": {"type": "string", "minLength": 1},
+                  "evidence_ref": {"type": "string"}
+                },
+                "additionalProperties": true
+              }
+            ]
+          },
+          "source_refs": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

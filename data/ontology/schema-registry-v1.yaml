@@ -1,0 +1,447 @@
+schema_revision: boi-ontology-schema/v1
+version: "1.0.0"
+
+source_bindings:
+  hr_directory:
+    authority: canonical
+    entity_types: [company, org_unit, team, person, role]
+  okf_markdown:
+    authority: canonical
+    entity_types: [document, concept, sop, workflow_definition, task_definition]
+    explicit_relationship_fields: [relationships, relations]
+    excluded_explicit_relations: [evidence]
+    markdown_link_relation: links_to
+    metadata_relation_fields:
+      sop_ref: uses_sop
+      sop_refs: uses_sop
+      action_refs: uses_action
+      event_type: uses_event
+      event_types: uses_event
+      related: related
+      related_terms: related
+      broader: broader
+      narrower: narrower
+      source_refs: evidence
+      supersedes: supersedes
+  catalog:
+    authority: canonical
+    entity_types: [business_event_definition, action, skill, connector, harness_release]
+  operational_ledger:
+    authority: operational
+    entity_types: [event_occurrence, workflow_run, task_run, action_run, usage_record, outcome, completion_record]
+
+provenance_types:
+  - canonical_declared
+  - operational_verified
+  - deterministic_extracted
+  - human_verified
+  - inferred
+  - ambiguous
+  - private_provisional
+
+provenance_priority:
+  - human_verified
+  - canonical_declared
+  - operational_verified
+  - deterministic_extracted
+  - private_provisional
+  - ambiguous
+  - inferred
+
+entity_types:
+  - {entity_type_id: company, label: Company, source_bindings: [hr_directory], default_visibility: directory}
+  - {entity_type_id: org_unit, label: OrgUnit, source_bindings: [hr_directory], default_visibility: directory}
+  - {entity_type_id: team, label: Team, source_bindings: [hr_directory], default_visibility: directory}
+  - {entity_type_id: project_group, label: ProjectGroup, source_bindings: [hr_directory], default_visibility: directory}
+  - {entity_type_id: person, label: Person, source_bindings: [hr_directory, operational_ledger], default_visibility: directory, sensitive: true, lookup_templates: {employee_id: "person:{value}"}}
+  - {entity_type_id: role, label: Role, source_bindings: [hr_directory], default_visibility: directory}
+  - {entity_type_id: responsibility, label: Responsibility, source_bindings: [hr_directory, okf_markdown], default_visibility: directory}
+  - {entity_type_id: access_role, label: AccessRole, source_bindings: [hr_directory], default_visibility: private, sensitive: true}
+  - {entity_type_id: raw_signal, label: RawSignal, source_bindings: [operational_ledger], default_visibility: private, sensitive: true}
+  - {entity_type_id: business_event_definition, label: BusinessEventDefinition, source_bindings: [catalog], default_visibility: public}
+  - {entity_type_id: event_occurrence, label: EventOccurrence, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: workflow_definition, label: WorkflowDefinition, source_bindings: [okf_markdown, catalog], default_visibility: public}
+  - {entity_type_id: workflow_run, label: WorkflowRun, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: task_definition, label: TaskDefinition, source_bindings: [okf_markdown, catalog], default_visibility: public}
+  - {entity_type_id: task_run, label: TaskRun, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: task, label: TaskCompatibility, source_bindings: [okf_markdown, operational_ledger], default_visibility: private, lookup_templates: {source_ref: "task:{value}"}}
+  - {entity_type_id: context_snapshot, label: ContextSnapshot, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: input_evidence, label: InputEvidence, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: participation_record, label: ParticipationRecord, source_bindings: [operational_ledger], default_visibility: private, sensitive: true}
+  - {entity_type_id: decision_record, label: DecisionRecord, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: approval_record, label: ApprovalRecord, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: action, label: Action, source_bindings: [catalog], default_visibility: public}
+  - {entity_type_id: action_run, label: ActionRun, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: external_work_result, label: ExternalWorkResult, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: output_artifact, label: OutputArtifact, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: outcome, label: Outcome, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: evidence_ledger, label: EvidenceLedger, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: completion_record, label: CompletionRecord, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: agent_definition, label: AgentDefinition, source_bindings: [catalog], default_visibility: public}
+  - {entity_type_id: agent_deployment, label: AgentDeployment, source_bindings: [catalog, operational_ledger], default_visibility: directory}
+  - {entity_type_id: system, label: System, source_bindings: [catalog, operational_ledger], default_visibility: directory}
+  - {entity_type_id: connector, label: Connector, source_bindings: [catalog], default_visibility: private, sensitive: true}
+  - {entity_type_id: skill, label: Skill, source_bindings: [catalog], default_visibility: public}
+  - {entity_type_id: harness_release, label: HarnessRelease, source_bindings: [catalog], default_visibility: public}
+  - {entity_type_id: harness_version, label: HarnessVersion, source_bindings: [operational_ledger], default_visibility: admin}
+  - {entity_type_id: usage_record, label: UsageRecord, source_bindings: [operational_ledger], default_visibility: private, sensitive: true}
+  - {entity_type_id: knowledge_candidate, label: KnowledgeCandidate, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: next_event, label: NextEvent, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: document, label: Document, source_bindings: [okf_markdown], default_visibility: public}
+  - {entity_type_id: dictionary, label: Dictionary, source_bindings: [okf_markdown], default_visibility: public}
+  - {entity_type_id: concept, label: Concept, source_bindings: [okf_markdown], default_visibility: public}
+  - {entity_type_id: knowledge, label: Knowledge, source_bindings: [okf_markdown, operational_ledger], default_visibility: public}
+  - {entity_type_id: sop, label: SOP, source_bindings: [okf_markdown], default_visibility: public}
+  - {entity_type_id: workflow, label: WorkflowCompatibility, source_bindings: [okf_markdown], default_visibility: public}
+  - {entity_type_id: event, label: EventCompatibility, source_bindings: [catalog, operational_ledger], default_visibility: public}
+  - {entity_type_id: business_event, label: BusinessEventCompatibility, source_bindings: [catalog], default_visibility: public}
+  - {entity_type_id: evidence, label: Evidence, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: data_artifact, label: DataArtifact, source_bindings: [catalog], default_visibility: private}
+  - {entity_type_id: runtime, label: Runtime, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: runtime_catalog, label: RuntimeCatalog, source_bindings: [catalog], default_visibility: public}
+  - {entity_type_id: work_record, label: WorkRecord, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: work_run, label: WorkRun, source_bindings: [operational_ledger], default_visibility: private}
+  - {entity_type_id: failure_pattern, label: FailurePattern, source_bindings: [operational_ledger], default_visibility: admin}
+  - {entity_type_id: harness_candidate, label: HarnessCandidate, source_bindings: [operational_ledger], default_visibility: admin}
+  - {entity_type_id: evaluation_run, label: EvaluationRun, source_bindings: [operational_ledger], default_visibility: admin}
+  - {entity_type_id: context_playbook_item, label: ContextPlaybookItem, source_bindings: [operational_ledger], default_visibility: private}
+
+relation_types:
+  - {relation_type_id: part_of, label: 구성 요소, family: structure, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read], display_priority: 96}
+  - {relation_type_id: guides, label: 업무 기준을 안내, family: guidance, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read], display_priority: 94}
+  - {relation_type_id: uses, label: 업무에 활용, family: work, allowed_provenance: [canonical_declared, operational_verified], evidence_uses: [read], display_priority: 90}
+  - {relation_type_id: triggers, label: 업무를 시작, family: event, allowed_provenance: [canonical_declared, operational_verified], evidence_uses: [read], display_priority: 94}
+  - {relation_type_id: executes, label: 업무에서 실행, family: work, allowed_provenance: [canonical_declared, operational_verified], evidence_uses: [read], display_priority: 94}
+  - {relation_type_id: part_of_workflow, label: 업무 흐름에 포함, family: structure, allowed_provenance: [canonical_declared, operational_verified], evidence_uses: [read], display_priority: 95}
+  - {relation_type_id: has_task, label: Task로 구성, family: structure, allowed_provenance: [deterministic_extracted], evidence_uses: [read], display_priority: 95}
+  - {relation_type_id: next_task, label: 다음 단계, family: sequence, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read], display_priority: 100}
+  - {relation_type_id: precedes, label: 먼저 수행, family: sequence, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read], display_priority: 100}
+  - {relation_type_id: uses_sop, label: SOP를 활용, family: work, allowed_provenance: [canonical_declared, operational_verified], evidence_uses: [read], display_priority: 90}
+  - {relation_type_id: uses_event, label: 업무 Event를 사용, family: work, allowed_provenance: [canonical_declared, operational_verified], evidence_uses: [read], display_priority: 88}
+  - {relation_type_id: uses_action, label: Action을 실행, family: work, allowed_provenance: [canonical_declared, operational_verified], evidence_uses: [read], display_priority: 88}
+  - {relation_type_id: uses_skill, label: Skill을 활용, family: work, allowed_provenance: [canonical_declared, operational_verified], evidence_uses: [read], display_priority: 82}
+  - {relation_type_id: used_in_task, label: 이 Task에서 사용, family: usage, allowed_provenance: [operational_verified, human_verified], evidence_uses: [read], display_priority: 91}
+  - {relation_type_id: triggered_by, label: 이 Event로 시작, family: event, allowed_provenance: [canonical_declared, operational_verified], evidence_uses: [read], display_priority: 92}
+  - {relation_type_id: results_in, label: 이 결과로 이어짐, family: result, allowed_provenance: [operational_verified, human_verified], evidence_uses: [read, completion], display_priority: 92}
+  - {relation_type_id: produces, label: 결과를 생성, family: result, allowed_provenance: [operational_verified, human_verified], evidence_uses: [read, completion], display_priority: 92}
+  - {relation_type_id: assigned_to, label: 실제 현재 배정, family: current_work, allowed_provenance: [operational_verified], evidence_uses: [read, assignment], display_priority: 100}
+  - {relation_type_id: reviewed_by, label: 실제 검토 배정, family: current_work, allowed_provenance: [operational_verified], evidence_uses: [read, assignment], display_priority: 94}
+  - {relation_type_id: designed_assignee, label: 설계상 수행 후보, family: workflow_design, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read], display_priority: 76}
+  - {relation_type_id: designed_reviewer, label: 설계상 검토 후보, family: workflow_design, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read], display_priority: 74}
+  - {relation_type_id: designed_related_team, label: 설계상 유관 팀, family: workflow_design, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read], display_priority: 70}
+  - {relation_type_id: related_team, label: 실제 유관 팀, family: collaboration, allowed_provenance: [operational_verified, human_verified], evidence_uses: [read], display_priority: 88}
+  - {relation_type_id: member_of, label: 공식 소속, family: organization, allowed_provenance: [canonical_declared], evidence_uses: [read, authority], display_priority: 96}
+  - {relation_type_id: reports_to, label: 공식 보고 관계, family: organization, allowed_provenance: [canonical_declared], evidence_uses: [read, authority], display_priority: 98}
+  - {relation_type_id: has_role, label: 공식 업무 역할, family: official_responsibility, allowed_provenance: [canonical_declared, human_verified], evidence_uses: [read, authority], display_priority: 96}
+  - {relation_type_id: responsible_for, label: 공식 책임, family: official_responsibility, allowed_provenance: [canonical_declared, human_verified], evidence_uses: [read, authority], display_priority: 98}
+  - {relation_type_id: has_access_role, label: 시스템 접근 역할, family: access, allowed_provenance: [canonical_declared], evidence_uses: [read], display_priority: 40}
+  - {relation_type_id: performed_by, label: 검증 수행 기록, family: experience, allowed_provenance: [operational_verified, human_verified], evidence_uses: [read], display_priority: 90}
+  - {relation_type_id: completed_by, label: 검증 완료 기록, family: experience, allowed_provenance: [human_verified, operational_verified], evidence_uses: [read, completion], display_priority: 94}
+  - {relation_type_id: repeated_performer, label: 반복 검증 수행 경험, family: experience, allowed_provenance: [human_verified], evidence_uses: [read], display_priority: 86}
+  - {relation_type_id: approved_by, label: 승인 기록, family: approval, allowed_provenance: [human_verified], evidence_uses: [read, approval], display_priority: 98}
+  - {relation_type_id: participated_in, label: 참여 기록, family: collaboration, allowed_provenance: [operational_verified, human_verified], evidence_uses: [read], display_priority: 78}
+  - {relation_type_id: authored, label: 작성, family: stewardship, allowed_provenance: [operational_verified, human_verified], evidence_uses: [read], display_priority: 80}
+  - {relation_type_id: contributed_to, label: 기여, family: stewardship, allowed_provenance: [operational_verified, human_verified], evidence_uses: [read], display_priority: 76}
+  - {relation_type_id: stewards, label: 관리 책임, family: stewardship, allowed_provenance: [canonical_declared, human_verified], evidence_uses: [read, authority], display_priority: 92}
+  - {relation_type_id: promoted, label: 승격 검토, family: stewardship, allowed_provenance: [human_verified], evidence_uses: [read, approval], display_priority: 84}
+  - {relation_type_id: requires_evidence, label: 확인 근거가 필요, family: lineage, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read, completion], display_priority: 92}
+  - {relation_type_id: derived_from, label: 이 근거에서 도출, family: lineage, allowed_provenance: [deterministic_extracted, human_verified], evidence_uses: [read], display_priority: 94}
+  - {relation_type_id: evidence, label: 근거로 연결, family: lineage, allowed_provenance: [canonical_declared, deterministic_extracted, operational_verified, human_verified], evidence_uses: [read], display_priority: 35}
+  - {relation_type_id: broader, label: 상위 개념, family: concept, allowed_provenance: [canonical_declared], evidence_uses: [read], display_priority: 80}
+  - {relation_type_id: narrower, label: 하위 개념, family: concept, allowed_provenance: [canonical_declared], evidence_uses: [read], display_priority: 80}
+  - {relation_type_id: related, label: 관련 개념, family: concept, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read], symmetric: true, display_priority: 65}
+  - {relation_type_id: links_to, label: 함께 참고, family: reference, allowed_provenance: [deterministic_extracted], evidence_uses: [read], symmetric: true, display_priority: 50}
+  - {relation_type_id: supersedes, label: 이전 내용을 대체, family: change, allowed_provenance: [canonical_declared, human_verified], evidence_uses: [read], display_priority: 86}
+  - {relation_type_id: owns, label: 소유, family: stewardship, allowed_provenance: [canonical_declared, operational_verified], evidence_uses: [read, authority], display_priority: 85}
+  - {relation_type_id: consumed_by, label: 사용됨, family: impact, allowed_provenance: [deterministic_extracted, operational_verified], evidence_uses: [read], display_priority: 72}
+  - {relation_type_id: depends_on, label: 의존, family: impact, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read], display_priority: 82}
+  - {relation_type_id: generated_from, label: 생성 원천, family: lineage, allowed_provenance: [deterministic_extracted, operational_verified], evidence_uses: [read], display_priority: 82}
+  - {relation_type_id: has_usage, label: 공식 사용 기록, family: usage, allowed_provenance: [operational_verified, human_verified], evidence_uses: [read], display_priority: 90}
+  - {relation_type_id: used_agent, label: Agent 사용, family: usage, allowed_provenance: [operational_verified], evidence_uses: [read], display_priority: 88}
+  - {relation_type_id: used_system, label: System 사용, family: usage, allowed_provenance: [operational_verified], evidence_uses: [read], display_priority: 88}
+  - {relation_type_id: used_connector, label: Connector 사용, family: usage, allowed_provenance: [operational_verified], evidence_uses: [read], display_priority: 76}
+  - {relation_type_id: used_harness, label: Harness 사용, family: usage, allowed_provenance: [operational_verified, deterministic_extracted], evidence_uses: [read], display_priority: 82}
+  - {relation_type_id: observed_in, label: 관측됨, family: harness, allowed_provenance: [deterministic_extracted], evidence_uses: [read], display_priority: 72}
+  - {relation_type_id: addresses_failure, label: 실패 원인 대응, family: harness, allowed_provenance: [canonical_declared], evidence_uses: [read], display_priority: 82}
+  - {relation_type_id: evaluated_by, label: 평가됨, family: harness, allowed_provenance: [deterministic_extracted], evidence_uses: [read], display_priority: 84}
+  - {relation_type_id: approved_from, label: 승인 후보에서 생성, family: harness, allowed_provenance: [human_verified], evidence_uses: [read, approval], display_priority: 88}
+  - {relation_type_id: supported_by, label: 실행 근거로 지원, family: harness, allowed_provenance: [canonical_declared, deterministic_extracted], evidence_uses: [read], display_priority: 80}
+  - {relation_type_id: claimed_by, label: Task claim, family: execution, allowed_provenance: [operational_verified], evidence_uses: [read, assignment], display_priority: 92}
+  - {relation_type_id: submitted_by, label: 결과 제출, family: execution, allowed_provenance: [operational_verified], evidence_uses: [read, completion], display_priority: 92}
+
+query_recipes:
+  - recipe_id: neighbors
+    query_kind: neighbors
+    operator: traverse
+    excluded_relation_types: [evidence]
+    default_direction: both
+    max_depth: 4
+    auto_presentation: explorer
+    compact_presentation: list
+  - recipe_id: path
+    query_kind: path
+    operator: path
+    excluded_relation_types: [evidence]
+    default_direction: both
+    max_depth: 6
+    requires_target: true
+    auto_presentation: mermaid
+    compact_presentation: mermaid
+    layout_hint: hierarchical
+    meaningful_when: edges
+  - recipe_id: workflow
+    query_kind: workflow
+    operator: traverse
+    relation_types: [has_task, part_of_workflow, uses_sop, uses_event, uses_action, uses_skill, requires_evidence, produces, results_in, triggered_by, next_task, precedes, part_of, triggers, executes, designed_assignee, designed_reviewer, designed_related_team]
+    default_direction: outgoing
+    max_depth: 4
+    output_ref_field: workflow_refs
+    auto_presentation: mermaid
+    compact_presentation: mermaid
+    layout_hint: hierarchical
+    meaningful_when: edges
+    empty_reason: 이 항목과 직접 연결된 Workflow·Task·Event·Action 관계가 아직 없습니다.
+  - recipe_id: impact
+    query_kind: impact
+    operator: traverse
+    relation_types: [has_task, part_of_workflow, uses_sop, uses_event, uses_action, uses_skill, requires_evidence, produces, results_in, triggered_by, next_task, precedes, part_of, triggers, executes, links_to, related, narrower, supersedes, consumed_by, depends_on, guides, uses]
+    default_direction: outgoing
+    max_depth: 4
+    output_ref_field: downstream_refs
+    auto_presentation: explorer
+    compact_presentation: list
+    meaningful_when: edges
+    empty_reason: 이 항목에서 이어지는 검증된 영향 관계가 아직 없습니다.
+  - recipe_id: lineage
+    query_kind: lineage
+    operator: traverse
+    relation_types: [evidence, requires_evidence, derived_from, produces, results_in, generated_from, completed_by, performed_by, supersedes, links_to, approved_by]
+    default_direction: both
+    max_depth: 4
+    output_ref_field: lineage_refs
+    auto_presentation: mermaid
+    compact_presentation: mermaid
+    layout_hint: hierarchical
+    meaningful_when: edges
+    empty_reason: 이 항목의 근거와 결과 계보를 확인할 관계가 아직 없습니다.
+  - recipe_id: responsibility
+    query_kind: responsibility
+    operator: traverse
+    relation_types: [assigned_to, reviewed_by, related_team, member_of, reports_to, has_role, responsible_for, performed_by, completed_by, repeated_performer]
+    default_direction: both
+    max_depth: 1
+    output_ref_field: responsibility_refs
+    auto_presentation: explorer
+    compact_presentation: list
+    meaningful_when: edges
+    empty_reason: 공식 역할·현재 배정·검증된 수행 관계가 아직 없습니다.
+    relation_groups:
+      current: [assigned_to, reviewed_by, related_team]
+      official: [member_of, reports_to, has_role, responsible_for]
+      experience: [performed_by, completed_by, repeated_performer]
+  - recipe_id: timeline
+    query_kind: timeline
+    operator: timeline
+    excluded_relation_types: [evidence]
+    default_direction: both
+    max_depth: 4
+    auto_presentation: timeline
+    compact_presentation: timeline
+    layout_hint: timeline
+    meaningful_when: timeline_items
+  - recipe_id: compare
+    query_kind: compare
+    operator: compare
+    excluded_relation_types: [evidence]
+    default_direction: both
+    max_depth: 1
+    auto_presentation: table
+    compact_presentation: table
+    layout_hint: comparison
+    meaningful_when: two_groups_and_edges
+  - recipe_id: tour
+    query_kind: tour
+    operator: tour
+    relation_types: [has_task, part_of_workflow, uses_sop, uses_event, uses_action, uses_skill, next_task, precedes, broader, narrower, links_to, guides, uses, part_of]
+    default_direction: both
+    max_depth: 4
+    auto_presentation: explorer
+    compact_presentation: list
+    meaningful_when: edges
+  - recipe_id: usage-records
+    query_kind: usage
+    operator: traverse
+    relation_types: [has_usage, used_agent, used_system, used_connector, uses_action, uses_skill, used_harness, used_in_task, produces, results_in, part_of, member_of]
+    default_direction: both
+    max_depth: 4
+    output_ref_field: usage_refs
+    auto_presentation: table
+    compact_presentation: table
+  - recipe_id: outcomes
+    query_kind: outcomes
+    operator: traverse
+    relation_types: [completed_by, produces, results_in, approved_by, evidence]
+    default_direction: both
+    max_depth: 3
+    output_ref_field: outcome_refs
+    auto_presentation: table
+    compact_presentation: table
+
+projection_recipes:
+  - projection_id: task_context_lineage
+    label: Task Context Lineage
+    subject_types: [task, task_definition]
+    query_recipe_id: workflow
+    sections:
+      workflow_context: [has_task, part_of_workflow, uses_sop, next_task, precedes]
+      event_context: [uses_event, triggered_by, triggers]
+      execution_context: [uses_action, uses_skill, executes]
+      evidence_and_outcome: [requires_evidence, produces, results_in]
+  - projection_id: person_work_profile
+    label: Person Work Profile
+    subject_types: [person]
+    query_recipe_id: responsibility
+    sections:
+      current_assignments: [assigned_to, reviewed_by, related_team]
+      official_responsibilities: [member_of, reports_to, has_role, responsible_for]
+      verified_experience: [performed_by, completed_by, repeated_performer]
+    output_fields:
+      work:
+        - {projection_id: person_work_profile, section_id: current_assignments, node_types: [task, task_run, workflow_run]}
+        - {projection_id: person_work_profile, section_id: verified_experience, node_types: [task, task_run, workflow_run]}
+      current_work:
+        - {projection_id: person_work_profile, section_id: current_assignments, node_types: [task, task_run, workflow_run]}
+        - {projection_id: person_tools, section_id: tasks, node_types: [task, task_run]}
+      work_history:
+        - {projection_id: person_work_profile, section_id: verified_experience, node_types: [task, task_run, workflow_run]}
+        - {projection_id: person_tools, section_id: tasks, node_types: [task, task_run]}
+      outcomes:
+        - {projection_id: person_outcomes, section_id: outcomes, node_types: [outcome, output_artifact, external_work_result, completion_record, task, task_run]}
+        - {projection_id: person_tools, section_id: outcomes, node_types: [outcome, output_artifact, external_work_result, completion_record]}
+      agents:
+        - {projection_id: person_tools, section_id: agents, node_types: [agent_definition], id_field: agent_definition_ref}
+      agent_deployments:
+        - {projection_id: person_tools, section_id: agents, node_types: [agent_deployment], id_field: agent_deployment_ref}
+      systems:
+        - {projection_id: person_tools, section_id: systems, node_types: [system], id_field: system_ref}
+      org_path:
+        - {projection_id: person_work_profile, section_id: official_responsibilities, node_types: [company, org_unit, team, role, responsibility]}
+      usage_records:
+        - {projection_id: person_tools, section_id: agents, node_types: [usage_record], id_field: usage_record_id}
+  - projection_id: person_work_history
+    label: Person Work History
+    subject_types: [person]
+    query_recipe_id: timeline
+    sections:
+      participation: [performed_by, completed_by, participated_in]
+      approvals: [approved_by]
+  - projection_id: person_outcomes
+    label: Person Outcomes
+    subject_types: [person]
+    query_recipe_id: outcomes
+    traversal_relation_types: [has_usage]
+    sections:
+      outcomes: [completed_by, produces, results_in, approved_by]
+  - projection_id: person_tools
+    label: Person Agent and System Usage
+    subject_types: [person]
+    query_recipe_id: usage-records
+    sections:
+      # AgentDeployment is the observed runtime binding and AgentDefinition is
+      # its canonical parent.  Keep both in one data recipe so the Person ->
+      # UsageRecord -> Deployment -> Definition traversal is reversible
+      # without a Python capability branch.
+      agents: [has_usage, used_agent, part_of]
+      systems: [has_usage, used_system]
+      tasks: [has_usage, used_in_task]
+      actions_skills: [uses_action, uses_skill, used_harness]
+      outcomes: [has_usage, produces, results_in]
+  - projection_id: agent_adoption
+    label: Agent Adoption
+    subject_types: [agent_definition, agent_deployment, usage_record]
+    query_recipe_id: usage-records
+    reverse: true
+    admin_only: true
+    sections:
+      people_teams: [part_of, used_agent, has_usage, member_of]
+      tasks_outcomes: [part_of, used_agent, used_in_task, produces, results_in]
+    output_fields:
+      people:
+        - {projection_id: agent_adoption, section_id: people_teams, node_types: [person], nearest_only: true, max_depth_by_subject_type: {usage_record: 1, agent_deployment: 2, agent_definition: 3}}
+      teams:
+        - {projection_id: agent_adoption, section_id: people_teams, node_types: [team, project_group, org_unit], nearest_only: true, max_depth_by_subject_type: {usage_record: 2, agent_deployment: 3, agent_definition: 4}}
+      tasks:
+        - {projection_id: agent_adoption, section_id: tasks_outcomes, node_types: [task, task_run], nearest_only: true, max_depth_by_subject_type: {usage_record: 1, agent_deployment: 2, agent_definition: 3}}
+      outcomes:
+        - {projection_id: agent_adoption, section_id: tasks_outcomes, node_types: [outcome, output_artifact, external_work_result, completion_record], nearest_only: true, max_depth_by_subject_type: {usage_record: 1, agent_deployment: 2, agent_definition: 3}}
+      org_units:
+        - {projection_id: agent_adoption, section_id: people_teams, node_types: [org_unit], nearest_only: true, max_depth_by_subject_type: {usage_record: 3, agent_deployment: 4, agent_definition: 5}}
+      adoption_summary:
+        - {projection_id: agent_adoption, section_id: people_teams, node_types: [person, team, org_unit]}
+      public_usage_summary:
+        - {projection_id: person_tools, section_id: agents, node_types: [agent_definition, agent_deployment, usage_record]}
+  - projection_id: system_adoption
+    label: System Adoption
+    subject_types: [system]
+    query_recipe_id: usage-records
+    reverse: true
+    admin_only: true
+    sections:
+      people_teams: [used_system, has_usage, member_of]
+      tasks_outcomes: [used_in_task, produces, results_in]
+    output_fields:
+      people:
+        - {projection_id: system_adoption, section_id: people_teams, node_types: [person], nearest_only: true, max_depth_by_subject_type: {system: 2}}
+      teams:
+        - {projection_id: system_adoption, section_id: people_teams, node_types: [team, project_group, org_unit], nearest_only: true, max_depth_by_subject_type: {system: 3}}
+      tasks:
+        - {projection_id: system_adoption, section_id: tasks_outcomes, node_types: [task, task_run], nearest_only: true, max_depth_by_subject_type: {system: 2}}
+      outcomes:
+        - {projection_id: system_adoption, section_id: tasks_outcomes, node_types: [outcome, output_artifact, external_work_result, completion_record], nearest_only: true, max_depth_by_subject_type: {system: 2}}
+  - projection_id: team_work_map
+    label: Team Work Map
+    subject_types: [team, project_group]
+    query_recipe_id: responsibility
+    sections:
+      people: [member_of]
+      current_work: [assigned_to, reviewed_by, related_team]
+      experience: [performed_by, completed_by]
+  - projection_id: collaboration_context
+    label: Collaboration Context
+    subject_types: [person, team, project_group]
+    query_recipe_id: responsibility
+    sections:
+      shared_work: [assigned_to, reviewed_by, performed_by, completed_by, participated_in]
+  - projection_id: org_capability_map
+    label: Org Capability Map
+    subject_types: [company, org_unit, team]
+    query_recipe_id: responsibility
+    admin_only: true
+    sections:
+      official: [member_of, reports_to, has_role, responsible_for]
+      verified_experience: [performed_by, completed_by, repeated_performer]
+  - projection_id: knowledge_stewardship
+    label: Knowledge Stewardship
+    subject_types: [person, team, document, knowledge]
+    query_recipe_id: lineage
+    sections:
+      stewardship: [authored, contributed_to, stewards, promoted]
+      evidence: [evidence, derived_from, approved_by]
+  - projection_id: handover_context
+    label: Handover Context
+    subject_types: [person, team, task, task_run]
+    query_recipe_id: responsibility
+    sections:
+      current_work: [assigned_to, reviewed_by]
+      verified_experience: [performed_by, completed_by]
+      knowledge: [authored, contributed_to, stewards]
+
+acl_policy:
+  traversal_filter_stage: pre_traversal
+  hidden_path_disclosure: deny
+  people_analytics_role: boi.admin
+  people_export_role: ontology.people.export
+  private_break_glass_role: ontology.private.break_glass
+  private_projection_fields: [private_provisional, hidden_paths, hidden_counts]
+  principal_inheritance: exact
+  inferred_evidence_denied_for: [assignment, authority, completion, approval, autopilot]

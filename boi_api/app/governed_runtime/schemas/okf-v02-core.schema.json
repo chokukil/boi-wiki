@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boi.internal/schemas/okf-v02-core.schema.json",
+  "title": "Pinned OKF 0.2 core compatibility surface",
+  "description": "Forward-compatible concept metadata. Unknown types and properties are intentionally accepted.",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "type": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": true
+}

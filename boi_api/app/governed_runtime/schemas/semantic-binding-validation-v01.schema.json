@@ -1,0 +1,160 @@
+{
+  "$defs": {
+    "SemanticBindingCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check_id": {
+          "enum": [
+            "access_snapshot_profile",
+            "approved_identity_or_scoped_alias",
+            "kind_target_role",
+            "quantity_unit",
+            "namespace_process_time_version",
+            "relationship_grain_mapping",
+            "source_definition_evidence_use",
+            "required_closure_conflicts"
+          ],
+          "title": "Check Id",
+          "type": "string"
+        },
+        "evidence_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Evidence Digest"
+        },
+        "reason_codes": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "flag",
+            "partial",
+            "skip",
+            "not_run"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "check_id",
+        "status",
+        "evidence_digest",
+        "reason_codes"
+      ],
+      "title": "SemanticBindingCheck",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "approved": {
+      "const": false,
+      "default": false,
+      "title": "Approved",
+      "type": "boolean"
+    },
+    "candidate_digest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "title": "Candidate Digest",
+      "type": "string"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/SemanticBindingCheck"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "contract_version": {
+      "const": "boi/semantic-binding-validation@0.1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "dependency_closure_digest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "title": "Dependency Closure Digest",
+      "type": "string"
+    },
+    "lookup_closure_digest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "title": "Lookup Closure Digest",
+      "type": "string"
+    },
+    "policy_digest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "title": "Policy Digest",
+      "type": "string"
+    },
+    "principal_id": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "title": "Principal Id",
+      "type": "string"
+    },
+    "reason_codes": {
+      "items": {
+        "minLength": 1,
+        "pattern": "\\S",
+        "type": "string"
+      },
+      "title": "Reason Codes",
+      "type": "array"
+    },
+    "receipt_digest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "title": "Receipt Digest",
+      "type": "string"
+    },
+    "semantic_truth_proven": {
+      "const": false,
+      "default": false,
+      "title": "Semantic Truth Proven",
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "VALIDATED",
+        "ATTENTION_REQUIRED",
+        "BLOCKED"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "validator_code_digest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "title": "Validator Code Digest",
+      "type": "string"
+    }
+  },
+  "required": [
+    "contract_version",
+    "candidate_digest",
+    "principal_id",
+    "policy_digest",
+    "validator_code_digest",
+    "lookup_closure_digest",
+    "dependency_closure_digest",
+    "checks",
+    "status",
+    "reason_codes",
+    "receipt_digest"
+  ],
+  "title": "SemanticBindingValidation",
+  "type": "object"
+}

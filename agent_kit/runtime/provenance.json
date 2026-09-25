@@ -1,0 +1,40 @@
+{
+  "archive": "local-contracts.zip",
+  "contract_version": "boi/local-runtime-release@1",
+  "generated_from_canonical_bytes": true,
+  "sha256": "5e1d46bee3b1bbb93649ad62adbcdcb1192a4cb6613e7ab25dbf45f7190a399a",
+  "source_sha256": {
+    "agent_kit/package_contract.py": "2784a6b2ca37d67fb33e086a404d2324d1ce6e62ed8ab85903f898097ebfe296",
+    "agent_kit/python/boi_local_bundle_archive.py": "1a244b2c36e4557c46fef4aa1f783f1402c91d9833d8ece0838c9e028f43db7a",
+    "agent_kit/python/boi_local_knowledge_draft.py": "3f8d255746f653897b58bbda910d21c4531543dbbe607173b3ff1d9240e0779a",
+    "agent_kit/python/boi_local_review.py": "1ab622d7c0657af7f5f2bce522dc3f4f755db07863a907cd7ac0a9e419530c39",
+    "agent_kit/python/boi_ontology_query_host.py": "df6893b94907c758e959dd29367dc32afd66413b18e2db4bc3554a9b2f92b883",
+    "agent_kit/python/boi_profile_intake_host.py": "01e21db182715d6ebbf38019514609c640528384f0536cd99bd9a47abd9784f2",
+    "agent_kit/python/boi_profile_intake_router.py": "eb8ddc2a0712985462543edfd841aa60a3b76453fb665e074a1e04fe3eb3b573",
+    "agent_kit/python/boi_profile_record_query.py": "5f093f7b077569e1fbb3bb483b9056b5696b6616e577fdb2cce1de4ca38d8a27",
+    "agent_kit/python/boi_source_inventory.py": "c8e78cd4b5bc6920870824434688a9421f0b0b97171ca71444b138ddc21e562b",
+    "boi_api/app/governed_runtime/database_source_projection.py": "9d83b632faa5ea56d2018faf404825e0387c67b5d99a752b86f95d57003fae69",
+    "boi_api/app/governed_runtime/filter_expression.py": "29ee44737e974981b8667be0091cdbcbab437a47b9c1c2fff111d10fc2c1f785",
+    "boi_api/app/governed_runtime/formula_definition_context.py": "bff06662780a121eb93fe185bf8ff605a01c65540a240cbba91171006d76fa94",
+    "boi_api/app/governed_runtime/knowledge_content.py": "59902cd195b1fa6c85f6d3324e24a6c78fb02d09e0e2f7eafa7a313b260e477d",
+    "boi_api/app/governed_runtime/knowledge_profile.py": "1adae2994045800841ba160e449e5b5e9fa254de15e9f978e6b42426ad71c89d",
+    "boi_api/app/governed_runtime/knowledge_projection_contract.py": "294583f101f436d59ff0fdbf2d355809d943c586c831481598ab92260a0ecdc8",
+    "boi_api/app/governed_runtime/knowledge_space_contract.py": "2f488dcd23ecf0af85be72c370f253ea4f2d6cac8319d7fb861fe6c3f8d7a24c",
+    "boi_api/app/governed_runtime/knowledge_statement_contract.py": "324456ed531c4b1f2127e849f844201612c263682216bb5b66f953b8763a43c2",
+    "boi_api/app/governed_runtime/knowledge_unresolved_contract.py": "a91c085cdddf9bde85f4bb7067491186f9521912caf7f3ff1d325b68bbac0397",
+    "boi_api/app/governed_runtime/knowledge_use_contract.py": "bd0e168f5fc8e5db98e20c93351bb42ed7c6195710007bd5655016e3cf11c6d9",
+    "boi_api/app/governed_runtime/knowledge_use_purpose.py": "c78f2f15702cb95b1e42e876f58a07fa94c0f3d8a398a5efa0323e3d0b9b4c58",
+    "boi_api/app/governed_runtime/local_bundle_contract.py": "6be21f29ad6736826a674a35e94fd9f653e1f68a769b00d434a4fb91ec1a6aff",
+    "boi_api/app/governed_runtime/local_bundle_json.py": "edbaeddf1684edc77b17064f3969189285703e65c91c0c6ab9d9bad5d80ac7a9",
+    "boi_api/app/governed_runtime/okf_core.py": "48f94a2c7c5d58453557dccb3242f4ff52d41c5b3b484ff29564b11ff1f86597",
+    "boi_api/app/governed_runtime/semantic_binding_contract.py": "8ce89c4e01051aa950b3e683fd6e15fd00e59f1078a9094b0f46574787657b69",
+    "boi_api/app/governed_runtime/source_envelope.py": "e12b2be04972dcf4adc012c77971479439797fbee3118d7748448589911ebc1d",
+    "boi_api/app/governed_runtime/source_field_value.py": "b43cb316f1ff5cc8204b1267bd6ab192d9cda7cec5cb1ac7fda528a586f43fc7",
+    "boi_api/app/governed_runtime/spreadsheet_source_projection.py": "c1762d358cdc891c1713b01a2166c1ea2bfd21256d7b4fb03c361c52370c742d",
+    "boi_api/app/governed_runtime/task_knowledge.py": "ee5da4f18487aeb160698419cc553f969706704cec48c0918d333ffec7032f88",
+    "boi_api/app/governed_runtime/typed_knowledge_meaning.py": "7dfaab5523a3616f27bfb194f1bfff3d04a30daad65b4547be3249fea12f9895"
+  },
+  "third_party": [
+    "pydantic==2.13.4"
+  ]
+}

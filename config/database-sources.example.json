@@ -1,0 +1,11 @@
+{
+  "sources": [
+    {
+      "source_id": "training-db",
+      "title": "Synthetic DB example",
+      "principals": ["REPLACE_WITH_AUTHENTICATED_PRINCIPAL"],
+      "allowed_tables": ["procedures", "telemetry", "components", "route_steps"],
+      "sqlite_path": "/srv/boi-sources/generated.sqlite"
+    }
+  ]
+}

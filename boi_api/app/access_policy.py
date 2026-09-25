@@ -121,6 +121,64 @@ def doc_access_policy(
     else:
         reasons.append("unknown visibility")
 
+    return _resource_permissions(can_read=can_read, visibility=visibility, classification=classification,
+        acl_policy=acl_policy, owner=owner, team_id=team_id, roles=roles,
+        redactions=redactions, reasons=reasons)
+
+
+def knowledge_access_policy(metadata: dict[str, Any], *, identity_owner: str,
+        employee_id: str, teams: list[str], roles: list[str], break_glass: bool = False) -> AccessPolicyDecision:
+    """The same product audience/classification rules for server-owned space policy.
+
+    Native ledger storage has no user-visible private/team directory. The caller
+    must first verify a persisted policy and its exact identity/revision binding;
+    client metadata by itself is never authority. Source/result ACLs are separate.
+    """
+    visibility = str(metadata.get('visibility') or '')
+    owner = str(metadata.get('owner') or '')
+    team_id = str(metadata.get('team_id') or '')
+    acl_policy = _acl_string(metadata.get('acl_policy'))
+    classification = str(metadata.get('classification') or 'internal')
+    if classification not in CLASSIFICATION_LEVELS:
+        classification = 'restricted'
+    reasons, redactions = [], []
+    can_read = False
+    hotl = metadata.get('hotl') if isinstance(metadata.get('hotl'), dict) else {}
+    if str(hotl.get('status') or '') in HOTL_HIDDEN_STATUSES:
+        reasons.append('document is hidden by HOTL status')
+    elif not identity_owner or owner != identity_owner or not employee_id:
+        reasons.append('knowledge identity or current employee mismatch')
+    elif visibility == 'public':
+        can_read = not acl_policy or acl_policy == 'acl:public'
+        if not can_read:
+            reasons.append('public document acl_policy mismatch')
+    elif visibility == 'team':
+        if not team_id or acl_policy != f'acl:team:{team_id}':
+            reasons.append('team_id and matching team acl_policy required')
+        else:
+            can_read = team_id in set(teams)
+            if not can_read:
+                reasons.append('employee is not member of team')
+    elif visibility == 'private':
+        if acl_policy != f'acl:private:{identity_owner}':
+            reasons.append('private acl_policy mismatch')
+        elif employee_id == identity_owner:
+            can_read = True
+        elif break_glass and 'boi.admin' in set(roles):
+            can_read = True
+            reasons.append('break-glass admin read')
+        else:
+            reasons.append('private document belongs to another employee')
+    else:
+        reasons.append('unknown visibility')
+    return _resource_permissions(can_read=can_read, visibility=visibility, classification=classification,
+        acl_policy=acl_policy, owner=owner, team_id=team_id, roles=roles,
+        redactions=redactions, reasons=reasons)
+
+
+def _resource_permissions(*, can_read, visibility, classification, acl_policy, owner, team_id, roles,
+        redactions, reasons):
+    """Common capabilities after each storage adapter validates its own audience."""
     if not can_read:
         return AccessPolicyDecision(False, False, False, False, False, False, False, False, visibility, classification, acl_policy, owner, team_id, redactions, reasons)
 

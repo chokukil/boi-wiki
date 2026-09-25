@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>검증 가능한 답변 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+</head>
+<body>
+{% include "_app_shell.html" %}
+<main class="page-content verified-answer" id="main-content" data-answer-id="{{ answer_record.answer_id }}" data-answer-semantic-digest="{{ answer_record.answer_semantic_digest }}">
+  <nav aria-label="Breadcrumb"><a href="/ontology/migrations">Advanced</a> / <span aria-current="page">검증 가능한 답변</span></nav>
+  <header>
+    <p class="eyebrow">{{ answer.execution_classification }}</p>
+    <h1>{{ answer.direct_answer }}</h1>
+  </header>
+
+  {% if answer_record.presentation %}
+  {% for view in answer_record.presentation.views %}
+  <section aria-labelledby="view-{{ loop.index }}" data-answer-result-view>
+    <h2 id="view-{{ loop.index }}">{{ view.display_name }}</h2>
+    <p>전체 {{ view.total_row_count }}건 · 현재 {{ view.preview_row_count }}건 표시{% if view.truncated %} · 일부만 표시{% endif %}</p>
+    {% if view.render_mode == "ordered_list" %}
+    <ol>
+      {% for row in view.rows %}<li>{% for value in row.cells %}{% if not loop.first %} · {% endif %}{{ value }}{% endfor %}</li>{% endfor %}
+    </ol>
+    {% elif view.render_mode == "aggregate" %}
+    <dl>
+      {% for row in view.rows %}{% for value in row.cells %}<dt>{{ view.columns[loop.index0].label }}</dt><dd>{{ value }}</dd>{% endfor %}{% endfor %}
+    </dl>
+    {% else %}
+    <table>
+      <thead><tr>{% for field in view.columns %}<th scope="col">{{ field.label }}{% if field.unit %} ({{ field.unit }}){% endif %}</th>{% endfor %}</tr></thead>
+      <tbody data-answer-rows>
+      {% for row in view.rows %}
+        <tr>{% for value in row.cells %}<td>{{ value }}</td>{% endfor %}</tr>
+        {% for collection_name, collection in row.collections.items() %}
+        <tr><td colspan="{{ view.columns | length }}">
+          <details>
+            <summary><strong>{{ collection_name }}</strong> · {{ collection.count }}건</summary>
+            {% if collection.rows %}
+            <table>
+              <thead><tr>{% for field in collection.columns %}<th scope="col">{{ field.label }}{% if field.unit %} ({{ field.unit }}){% endif %}</th>{% endfor %}</tr></thead>
+              <tbody>{% for child in collection.rows %}<tr>{% for value in child.cells %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+            </table>
+            {% endif %}
+            {% if collection.truncated and collection.rows_url %}<p><a href="{{ collection.rows_url }}">이 항목의 전체 하위 결과 열기</a></p>{% endif %}
+          </details>
+        </td></tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% if view.truncated and view.rows_url %}
+    <div class="answer-pagination" data-answer-pagination data-rows-url="{{ view.rows_url }}" data-total="{{ view.total_row_count }}">
+      <button type="button" class="button secondary" data-page-previous disabled>이전 페이지</button>
+      <span role="status" aria-live="polite" data-page-range>현재 1–{{ view.preview_row_count }} / 전체 {{ view.total_row_count }}</span>
+      <button type="button" class="button secondary" data-page-next>다음 페이지</button>
+      <a href="{{ view.rows_url }}" data-full-result-link>권한 있는 전체 결과 열기</a>
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+  {% else %}
+  {% for view in answer.result_views %}
+  <section aria-labelledby="view-{{ loop.index }}">
+    <h2 id="view-{{ loop.index }}">역사 답변 결과 {{ loop.index }}</h2>
+    <p>전체 {{ view.total_row_count }}건 · 현재 {{ view.preview_row_count }}건 표시{% if view.truncated %} · 역사 조회에서는 전체 결과 링크를 제공하지 않음{% endif %}</p>
+  </section>
+  {% endfor %}
+  {% endif %}
+
+  <section aria-labelledby="quality-notices">
+    <h2 id="quality-notices">데이터 품질 및 완전성</h2>
+    <ul>{% if answer_record.presentation %}{% for notice in answer_record.presentation.quality_notices %}<li>{{ notice.message }}</li>{% endfor %}{% else %}{% for notice in answer.quality_notices %}<li>{{ notice.message }}</li>{% endfor %}{% endif %}</ul>
+  </section>
+
+  <details>
+    <summary>Evidence / Grounding / Execution</summary>
+    <dl>
+      <dt>Answer status</dt><dd>{{ answer.answer_quality_status }}</dd>
+      <dt>Execution class</dt><dd>{{ answer.execution_classification }}</dd>
+      <dt>Source snapshot</dt><dd>{% if answer_record.presentation %}{{ answer_record.presentation.source_snapshot }}{% else %}historical answer record{% endif %}</dd>
+      <dt>Safe MCP reproduction reference</dt><dd>{{ answer_record.safe_mcp_reproduction_ref }}</dd>
+      <dt>Qualification receipt</dt><dd>{% if answer_record.delivery_receipt %}{{ answer_record.delivery_receipt.receipt_digest }}{% elif answer_record.qualification_receipt %}{{ answer_record.qualification_receipt.receipt_digest }}{% else %}{{ answer_record.record_digest }}{% endif %}</dd>
+    </dl>
+  </details>
+</main>
+<script>
+(() => {
+  const text = (value) => value === null || value === undefined ? "" : String(value);
+  for (const controls of document.querySelectorAll("[data-answer-pagination]")) {
+    const section = controls.closest("[data-answer-result-view]");
+    const body = section?.querySelector("[data-answer-rows]");
+    const previous = controls.querySelector("[data-page-previous]");
+    const next = controls.querySelector("[data-page-next]");
+    const range = controls.querySelector("[data-page-range]");
+    if (!section || !body || !previous || !next || !range) continue;
+    const cursors = [null];
+    let index = 0;
+    let nextCursor = null;
+    const load = async (cursor, render) => {
+      const url = new URL(controls.dataset.rowsUrl, location.origin);
+      if (cursor) url.searchParams.set("cursor", cursor);
+      const response = await fetch(url, {headers: {"accept": "application/json"}});
+      if (!response.ok) throw new Error(`answer page request failed: ${response.status}`);
+      const page = await response.json();
+      nextCursor = page.next_cursor || null;
+      if (render) {
+        body.replaceChildren(...page.rows.map((row) => {
+          const tr = document.createElement("tr");
+          for (const value of row) {
+            const td = document.createElement("td");
+            td.textContent = text(value);
+            tr.appendChild(td);
+          }
+          return tr;
+        }));
+      }
+      range.textContent = `현재 ${page.range_start}–${page.range_end} / 전체 ${page.total_row_count}`;
+      previous.disabled = index === 0;
+      next.disabled = !nextCursor;
+    };
+    let initialized = load(null, false).catch(() => {
+      range.textContent = "전체 결과를 불러오지 못했습니다.";
+      next.disabled = true;
+    });
+    next.addEventListener("click", async () => {
+      await initialized;
+      if (!nextCursor) return;
+      cursors.splice(index + 1);
+      cursors.push(nextCursor);
+      index += 1;
+      await load(cursors[index], true);
+    });
+    previous.addEventListener("click", async () => {
+      await initialized;
+      if (index === 0) return;
+      index -= 1;
+      await load(cursors[index], true);
+    });
+  }
+})();
+</script>
+</body>
+</html>

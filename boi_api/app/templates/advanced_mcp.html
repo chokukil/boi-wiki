@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>MCP · BoI Wiki</title><link rel="stylesheet" href="{{ asset_url('style.css') }}" /></head>
+<body>
+  {% include "_app_shell.html" %}
+  {% with title="MCP", description="Codex·Claude가 사용하는 BoI Wiki MCP v2 계약과 상태를 확인합니다.", eyebrow=None, primary_action={"label":"외부에서 사용 설정","href":"/agent/access?employee_id=" ~ employee_id,"kind":"primary"} %}{% include "_section_intro.html" %}{% endwith %}
+  <main class="page-content advanced-interface-page">
+    <section class="panel interface-status"><div><span class="integration-dot {% if mcp_state.available %}ready{% else %}warning{% endif %}" aria-hidden="true"></span><h2>{% if mcp_state.available %}MCP 연결 가능{% else %}MCP 연결 확인 필요{% endif %}</h2><p>신규 client는 Streamable HTTP v2 endpoint를 사용합니다.</p></div><code>{{ mcp_url }}</code></section>
+    <section class="panel"><h2>핵심 도구 {{ mcp_tool_count if mcp_tool_count else tool_names|length }}개</h2><p>확인된 contract <strong>{{ mcp_contract_version or '확인 중' }}</strong></p><div class="mcp-tool-list">{% for tool in tool_names %}<code>{{ tool }}</code>{% endfor %}</div></section>
+    <section class="panel"><h2>연결 원칙</h2><p>PAT identity가 사용자와 ACL을 결정합니다. prompt나 query의 사번으로 권한을 바꾸지 않습니다.</p><p><a class="button secondary" href="/integrations?employee_id={{ employee_id }}">전체 연결 상태</a></p></section>
+    <details class="panel technical-details"><summary>진단 정보</summary><dl><dt>상태</dt><dd>{{ mcp_state.status or 'checking' }}</dd><dt>Contract</dt><dd>{{ mcp_contract_version or '확인 중' }}</dd><dt>도구 수</dt><dd>{{ mcp_tool_count or '확인 중' }}</dd><dt>응답 시간</dt><dd>{{ mcp_state.latency_ms or 0 }}ms</dd><dt>Base URL</dt><dd>{{ mcp_base_url }}</dd></dl></details>
+  </main>
+</body>
+</html>

@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>{{ doc.metadata.title }} · BoI Wiki</title>
+  <title>{{ shell.title }} · BoI Wiki</title>
   <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
   <script src="{{ asset_url('doc_graph.js') }}" defer></script>
+  <script type="module" src="{{ asset_url('dist/knowledge-graph.js') }}"></script>
   <script src="{{ asset_url('doc_metadata.js') }}" defer></script>
   <script src="{{ asset_url('doc_edit.js') }}" defer></script>
   <script src="{{ asset_url('evidence_tray.js') }}" defer></script>
@@ -94,8 +95,8 @@
     {% endif %}
     <section class="body">
       <div class="section-heading">
-        <h2>Body</h2>
-        {% if body_editor %}<button type="button" class="edit-body-button">Body 수정</button>{% endif %}
+        <h2>내용</h2>
+        {% if body_editor %}<button type="button" class="edit-body-button">내용 수정</button>{% endif %}
       </div>
       <div class="markdown-body rendered-content">{{ body_html }}</div>
       {% if body_editor %}
@@ -145,6 +146,23 @@
     </section>
     {% set inbox_report_meta = doc.metadata.get('inbox_report') if doc.metadata else {} %}
     {% if doc.metadata.type == 'boi/inbox-review-report' %}
+    {% set report_workflow = inbox_report_workflow_canvas or {} %}
+    {% if report_workflow.source %}
+    <section class="inbox-workflow-preview report-workflow-preview">
+      <div class="mode-panel-heading">
+        <strong>관련 업무 흐름</strong>
+        <span>{{ report_workflow.summary or "이 보고서가 전체 업무 흐름의 어느 지점인지 봅니다." }}</span>
+      </div>
+      <div class="mermaid-diagram task-console-workflow-canvas inbox-workflow-canvas report-workflow-canvas" data-mermaid-state="pending" data-mermaid-source="{{ report_workflow.source }}">
+        <div class="boi-agent-artifact-title">
+          <strong>{{ report_workflow.title or "관련 업무 흐름" }}</strong>
+          {% if report_workflow.current_stage_label %}<span>{{ report_workflow.current_stage_label }}</span>{% endif %}
+        </div>
+        <div class="mermaid">{{ report_workflow.source }}</div>
+        <p class="mermaid-status" aria-live="polite">업무 흐름 그림을 준비하고 있습니다.</p>
+      </div>
+    </section>
+    {% endif %}
     <section class="report-action-panel">
       <div class="mode-panel-heading">
         <strong>조치 기록</strong>
@@ -237,10 +255,59 @@
       {% endif %}
     </section>
     {% endif %}
-    <details class="metadata" data-metadata-url="{{ metadata_fragment_url }}">
+    <section class="citations-panel">
+      <h2>근거</h2>
+      {% if citations %}
+      <ul class="relationship-list citation-list">
+        {% for citation in citations %}
+        <li>
+          <span class="badge">{{ citation.type }}</span>
+          {% if citation.url %}<a href="{{ citation.url }}">{{ citation.label }}</a>{% else %}<span>{{ citation.label }}</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="empty-state compact">이 문서에 별도로 연결된 근거가 없습니다.</p>
+      {% endif %}
+    </section>
+    <section
+      class="relationship-panel knowledge-explorer"
+      id="knowledge-explorer"
+      data-explore-url="{{ knowledge_graph_explore_url }}"
+      data-source-ref="{{ knowledge_graph_ref }}"
+    >
+      <div class="knowledge-explorer-heading">
+        <div>
+          <h2>이 지식과 함께 보기</h2>
+          <p>Wiki 전체에서 실제로 이어진 지식과 업무 흐름을 살펴봅니다.</p>
+        </div>
+      </div>
+      <div class="knowledge-explorer-tabs" role="tablist" aria-label="지식 관계 보기 방식">
+        <button type="button" role="tab" aria-selected="false" data-knowledge-view="neighbors">연결 관계</button>
+        <button type="button" role="tab" aria-selected="false" data-knowledge-view="path">어떻게 이어지나요</button>
+        <button type="button" role="tab" aria-selected="false" data-knowledge-view="impact">어디에 영향이 있나요</button>
+        <button type="button" role="tab" aria-selected="false" data-knowledge-view="tour">이 순서로 살펴보기</button>
+        <button type="button" role="tab" aria-selected="false" data-knowledge-view="explorer">그래프로 탐색</button>
+      </div>
+      <div class="knowledge-path-search" hidden>
+        <label for="knowledge-path-query">이어지는 항목 찾기</label>
+        <div>
+          <input id="knowledge-path-query" type="search" placeholder="문서나 업무 이름을 입력하세요" autocomplete="off" />
+          <button type="button" class="secondary-button" data-knowledge-search>찾기</button>
+        </div>
+        <div class="knowledge-path-candidates"></div>
+      </div>
+      <p class="knowledge-explorer-status muted" aria-live="polite">보고 싶은 방식을 선택하세요.</p>
+      <div class="knowledge-explorer-content" hidden></div>
+      <div class="knowledge-graph-shell" hidden>
+        <div class="knowledge-graph-canvas" role="img" aria-label="선택한 지식을 중심으로 한 관계 그래프"></div>
+        <button type="button" class="secondary-button" data-knowledge-open-node>중심 문서 열기</button>
+      </div>
+    </section>
+    <details class="metadata connection-information" data-metadata-url="{{ metadata_fragment_url }}">
       <summary class="section-heading">
-        <h2>Metadata</h2>
-        <span class="muted">summary first · full metadata loads on open</span>
+        <h2>연결 정보</h2>
+        <span class="muted">필요할 때 문서의 세부 연결을 확인합니다.</span>
       </summary>
       <nav class="breadcrumb" aria-label="Document folder">
         {% for crumb in doc_folder_breadcrumbs %}
@@ -254,54 +321,24 @@
         {% endfor %}
       </dl>
       <div class="lazy-panel-controls">
-        <button type="button" class="load-metadata-fragment">Load Full Metadata</button>
-        <a href="{{ access_policy_url }}">Access Policy</a>
-        <a href="{{ metadata_fragment_url }}">HTML fragment</a>
+        <button type="button" class="load-metadata-fragment">세부 정보 불러오기</button>
+        <a href="{{ access_policy_url }}">접근 범위 확인</a>
         <span class="metadata-load-status muted" aria-live="polite"></span>
       </div>
       <div class="metadata-fragment-content" hidden></div>
     </details>
-    <section class="citations-panel">
-      <h2>Citations</h2>
-      {% if citations %}
-      <ul class="relationship-list">
-        {% for citation in citations %}
-        <li>
-          <span class="badge">{{ citation.type }}</span>
-          {% if citation.url %}<a href="{{ citation.url }}">{{ citation.ref }}</a>{% else %}<code>{{ citation.ref }}</code>{% endif %}
-        </li>
-        {% endfor %}
-      </ul>
-      {% else %}
-      <p class="empty-state">No source_refs or # Citations entries are available for this document.</p>
-      {% endif %}
-    </section>
-    <section class="relationship-panel" id="relationship-graph-panel" data-graph-url="{{ doc_graph_url }}">
-      <h2>Relationship Graph</h2>
-      <p class="muted">Graph data is loaded on demand so the document body can render first.</p>
-      <button type="button" class="load-relationship-graph">Load Relationship Graph</button>
-      <a class="graph-api-link" href="{{ doc_graph_url }}">JSON API</a>
-      <div class="relationship-graph-content" hidden></div>
-    </section>
     {% if workflow_poc %}
     <section class="workflow-poc">
-      <h2>Workflow PoC</h2>
-      <p><strong>SOP:</strong> <code>{{ workflow_poc.sop_ref }}</code> <code>{{ workflow_poc.sop_uri }}</code></p>
-      <p><strong>Expected events:</strong> {{ workflow_poc.expected_event_types | join(', ') }}</p>
-      <p><strong>Manual handoffs:</strong> {{ workflow_poc.expected_manual_actions | join(', ') }}</p>
-      <pre>curl -X POST "{{ public_boi_base_url }}/api/workflows/{{ workflow_poc.workflow_key }}/start?employee_id={{ employee_id }}" \
-  -H "Content-Type: application/json" \
-  -d '{"user_confirmed":true,"payload":{"title":"Workflow start","workflow":"{{ workflow_poc.workflow_key }}"}}'</pre>
+      <h2>연결된 업무 흐름</h2>
+      <p>{{ workflow_poc.sop_title or "이 지식을 활용하는 업무 흐름이 있습니다." }}</p>
+      {% if workflow_poc.sop_url %}<a class="button secondary" href="{{ workflow_poc.sop_url }}">업무 흐름 보기</a>{% endif %}
     </section>
     {% endif %}
     {% if doc.metadata.visibility == 'private' and doc.metadata.type != 'boi/inbox-review-report' %}
-    <section class="promotion-help">
-      <h2>Promotion API</h2>
-      <p>명시적 요청 기반 Team 승격 테스트:</p>
-      <pre>curl -X POST "{{ public_boi_base_url }}/api/boi/{{ doc.metadata.boi_id }}/promote?employee_id={{ employee_id }}" \
-  -H "Content-Type: application/json" \
-  -d '{"target_visibility":"team","team_id":"aix-tf","reviewer":"tf-lead","promotion_reason":"PoC demo"}'</pre>
-    </section>
+    <details class="promotion-help">
+      <summary><strong>팀과 공유하기</strong></summary>
+      <p>공유 전에는 근거와 공개 범위를 검토합니다. BoI Agent에서 이 문서를 팀 지식으로 공유해 달라고 요청하면 검토 초안을 만들 수 있습니다.</p>
+    </details>
     {% endif %}
   </main>
 </body>

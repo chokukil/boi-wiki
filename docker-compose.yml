@@ -155,7 +155,8 @@ services:
 
   boi-api:
     build:
-      context: ./boi_api
+      context: .
+      dockerfile: boi_api/Dockerfile
       args:
         BOI_BUILD_REVISION: ${BOI_BUILD_REVISION:-dev-local}
     container_name: boi-api
@@ -165,9 +166,9 @@ services:
         git config --global --add safe.directory "${BOI_CONTENT_SAFE_DIRECTORY}" || true;
       fi;
       if [ "${BOI_API_WORKERS:-1}" = "1" ]; then
-        exec uvicorn app.main:app --host 0.0.0.0 --port 8000;
+        exec uvicorn boi_api.app.main:app --host 0.0.0.0 --port 8000;
       else
-        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers "${BOI_API_WORKERS:-1}";
+        exec uvicorn boi_api.app.main:app --host 0.0.0.0 --port 8000 --workers "${BOI_API_WORKERS:-1}";
       fi'
     ports:
       - "${BOI_API_PORT:-28000}:8000"
@@ -346,7 +347,8 @@ services:
 
   boi-wiki-mcp:
     build:
-      context: ./boi_wiki_mcp
+      context: .
+      dockerfile: boi_wiki_mcp/Dockerfile
     container_name: boi-wiki-mcp
     profiles: ["local-full", "local-full-datalake", "local-full-legacy-db-demo", "pilot-external", "full"]
     depends_on:

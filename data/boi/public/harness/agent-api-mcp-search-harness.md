@@ -81,7 +81,7 @@ Intent 기준은 다음처럼 해석한다.
 
 Pet UI가 보내는 `current_url`, `page_title`, `selected_text`는 힌트다. 서버는 클라이언트 데이터를 신뢰하지 않고 `current_url` 기준으로 `/docs`, `/workflows/.../status`, `/events`, `/actions/raw`, `/event-types` 데이터를 권한 체크 후 다시 로드한다. Router LLM이 실패하거나 confidence가 낮으면 Agent는 deterministic goal registry와 page context로 가능한 답변을 만들고, 실패 원인은 `component_errors`에 남긴다. 승인/실행/편집/publish 요청은 Router 결과와 무관하게 safety guard가 최종 차단한다.
 
-자세한 구현 기준은 [Native BoI Agent Architecture](/public/boi-wiki-manual/agent/native-boi-agent-architecture.md)와 [Native BoI Agent Tool Loop](/public/boi-wiki-manual/agent/native-boi-agent-tool-loop.md)를 따른다.
+자세한 구현 기준은 [BoI Wiki Architecture](/docs/boi:team:platform:boi-wiki-architecture-v0.1)와 [Work Learning System](/docs/boi:public:boi-wiki-manual:agent:work-learning-system)을 따른다.
 
 ## Agent Write Boundary
 
@@ -119,7 +119,7 @@ Agent는 Event 발행, Workflow 시작, Action 호출, Manual Handoff 완료, �
 
 신규 Event Type은 catalog에 즉시 반영하지 않고 private draft BoI와 catalog patch proposal을 함께 만든다. 적용은 validation, review, 승인, lint 후 별도 apply 단계에서 진행한다. Apply가 완료되면 private draft BoI도 `event_type_draft_status: applied`, catalog entry, source edit 결과를 담은 적용 기록으로 갱신된다.
 
-- [Agent Execution and Event Authoring](/public/boi-wiki-manual/agent/agent-execution-and-event-authoring.md)
+- [업무 이벤트 정의 가이드](/docs/boi:public:boi-wiki-manual:workflows:business-event-definition-guide)
 - [Team RBAC Management](/public/boi-wiki-manual/security/team-rbac-management.md)
 
 ## Dictionary
@@ -225,7 +225,7 @@ BoI Inbox에서는 `include_context=compact`를 기본으로 사용한다. 같�
 
 Pet 말풍선은 고정 문구가 아니라 `agent_signals` 결과를 사용한다. Signal은 새 Inbox task, 현재 페이지 관련 task, 빠진 evidence, 답변 follow-up, page starter 순서로 ranking하며, 사용자가 본 signal은 activity에 남겨 반복 노출을 줄인다.
 
-자세한 기준은 [Work Context Pack](/public/boi-wiki-manual/agent/work-context-pack.md), [Inbox Work Context and Historical Patterns](/public/boi-wiki-manual/agent/inbox-work-context-and-history.md), [Personal Work Pattern Assets](/public/boi-wiki-manual/agent/personal-work-pattern-assets.md), [Proactive Signal Bubble](/public/boi-wiki-manual/agent/proactive-signal-bubble.md)를 따른다.
+자세한 기준은 [Work Context Pack](/docs/boi:public:boi-wiki-manual:agent:work-context-pack), [BoI Inbox와 Task 수행](/docs/boi:public:boi-wiki-manual:inbox:inbox-and-task-guide), [BoI Agent 사용 가이드](/docs/boi:public:boi-wiki-manual:agent:using-boi-agent)와 [Living Knowledge System](/docs/boi:public:boi-wiki-manual:knowledge:living-knowledge-system)을 따른다.
 
 # Citations
 

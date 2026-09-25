@@ -1,0 +1,209 @@
+version: "2.0"
+draft_contracts:
+  - contract_id: business_event.v1
+    schema:
+      type: object
+      required: [title, source_kind, trigger_mode, target_event_type, conditions]
+      properties:
+        title: {type: string}
+        source_kind: {type: string}
+        trigger_mode: {type: string}
+        target_event_type: {type: string}
+        conditions: {type: object}
+        fingerprint_fields:
+          type: array
+          items: {type: string}
+        workflow_ref: {type: string}
+        assumptions:
+          type: array
+          items: {type: string}
+
+  - contract_id: sop.v1
+    validator_plugins: [sop_tasks]
+    normalizer_plugins: [sop_tasks]
+    schema:
+      type: object
+      required: [title, goal, tasks]
+      properties:
+        title: {type: string, maxLength: 100}
+        goal: {type: string, maxLength: 240}
+        inputs:
+          type: array
+          items: {type: string, maxLength: 240}
+        outputs:
+          type: array
+          items: {type: string, maxLength: 240}
+        completion_conditions:
+          type: array
+          items: {type: string, maxLength: 240}
+        required_evidence:
+          type: array
+          items: {type: string, maxLength: 240}
+        risks:
+          type: array
+          items: {type: string, maxLength: 240}
+        source_refs:
+          type: array
+          items: {type: string, maxLength: 1000}
+        bindings:
+          type: object
+          properties:
+            events:
+              type: array
+              items: {type: string, maxLength: 240}
+            actions:
+              type: array
+              items: {type: string, maxLength: 240}
+            skills:
+              type: array
+              items: {type: string, maxLength: 240}
+        tasks:
+          type: array
+          minItems: 1
+          maxItems: 6
+          items:
+            type: object
+            required: [name, purpose, execution_mode, exit_criteria, required_evidence]
+            properties:
+              name: {type: string, maxLength: 90}
+              purpose: {type: string, maxLength: 180}
+              execution_mode: {type: string, enum: [manual, copilot, autopilot]}
+              task_mode: {type: string, enum: [manual, copilot, autopilot]}
+              step_kind:
+                type: string
+                enum: [EventWait, Decision, ManualTask, AgentTask, ActionInvoke, HumanApproval]
+              executor_binding:
+                type: string
+                enum: [human, action, agent_claim, external_manual, hybrid]
+              event_refs:
+                type: array
+                items: {type: string, maxLength: 240}
+              action_refs:
+                type: array
+                items: {type: string, maxLength: 240}
+              skill_refs:
+                type: array
+                items: {type: string, maxLength: 240}
+              approval_policy: {type: object}
+              exit_criteria:
+                type: array
+                minItems: 1
+                maxItems: 2
+                items: {type: string, maxLength: 160}
+              required_evidence:
+                type: array
+                minItems: 1
+                maxItems: 2
+                items: {type: string, maxLength: 160}
+        gaps:
+          type: array
+          maxItems: 4
+          items: {type: string, maxLength: 160}
+
+  - contract_id: action.v1
+    validator_plugins: [preview_only]
+    schema:
+      type: object
+      required: [title, connector, inputs, output_contract, risk, preview_only]
+      properties:
+        title: {type: string}
+        connector: {type: string}
+        inputs: {type: object}
+        output_contract: {type: object}
+        risk: {type: string}
+        preview_only: {type: boolean}
+
+  - contract_id: skill.v1
+    normalizer_plugins: [skill_contract]
+    validator_plugins: [skill_tests]
+    schema:
+      type: object
+      required: [skill_id, title, description, input_schema, output_schema, permissions, tests]
+      properties:
+        skill_id: {type: string}
+        title: {type: string}
+        description: {type: string}
+        invocation_mode:
+          type: string
+          enum: [guide_only, agent_tool, sandbox_run]
+        runtime_binding:
+          type: object
+          properties:
+            action_ref: {type: string}
+            tool_ref: {type: string}
+            script_ref: {type: string}
+            language:
+              type: string
+              enum: [python, javascript, shell, notebook, none]
+            code: {type: string}
+        input_schema: {type: object}
+        output_schema: {type: object}
+        permissions:
+          type: array
+          items: {type: string}
+        tests:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [name, sample_input, expected_contains]
+            properties:
+              name: {type: string}
+              sample_input: {type: object}
+              expected_contains:
+                type: array
+                items: {type: string}
+        available_actions:
+          type: array
+          items: {type: string}
+
+  - contract_id: knowledge.v1
+    validator_plugins: [provisional_status]
+    schema:
+      type: object
+      required: [title, summary, body, source_refs, status]
+      properties:
+        title: {type: string}
+        summary: {type: string}
+        body: {type: string}
+        source_refs:
+          type: array
+          items: {type: string}
+        status: {const: provisional}
+
+  - contract_id: routine.v1
+    schema:
+      type: object
+      required: [title, goal, trigger, schedule_description, calendar, routine_stop, completion_condition]
+      properties:
+        title: {type: string}
+        goal: {type: string}
+        trigger: {type: string, enum: [event, schedule, interval]}
+        schedule_description: {type: string}
+        calendar:
+          type: object
+          required: [minutes, hours, days_of_month, months, weekdays]
+          properties:
+            minutes:
+              type: array
+              items: {type: integer, minimum: 0, maximum: 59}
+            hours:
+              type: array
+              items: {type: integer, minimum: 0, maximum: 23}
+            days_of_month:
+              type: array
+              items: {type: integer, minimum: 1, maximum: 31}
+            months:
+              type: array
+              items: {type: integer, minimum: 1, maximum: 12}
+            weekdays:
+              type: array
+              items: {type: integer, minimum: 0, maximum: 6}
+        interval_seconds: {type: integer, minimum: 60, maximum: 31536000}
+        cron: {type: string}
+        timezone: {type: string}
+        event_ref: {type: string}
+        routine_stop: {type: string, enum: [cancelled, max_runs, event_resolved]}
+        max_runs: {type: integer, minimum: 0, maximum: 10000}
+        completion_condition: {type: string}
+        target_ref: {type: string}

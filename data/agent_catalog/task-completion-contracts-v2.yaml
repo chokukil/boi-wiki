@@ -1,0 +1,97 @@
+version: "2.0"
+default_mode: copilot
+execution_mode_aliases:
+  manual: manual
+  human: manual
+  copilot: copilot
+  agent: copilot
+  assisted: copilot
+  autopilot: autopilot
+  automated: autopilot
+  gateway: autopilot
+  agent_server: autopilot
+  inbound: autopilot
+status_mode_defaults:
+  manual_required: manual
+  manual_blocked: manual
+  needs_followup: manual
+  approval_required: copilot
+
+defaults:
+  manual:
+    exit_criteria:
+      - 확인한 내용, 수행한 조치, 판단과 결과가 업무 기록에 남아 있다.
+    completion_design:
+      version: 2
+      checks:
+        - check_id: manual.work-record
+          label: 확인·조치·판단과 결과가 업무 기록에 남아 있어요
+          confirmation: human
+      evidence:
+        - evidence_id: manual.current-event
+          label: 현재 업무 이벤트
+          source_kind: event
+          ref: current_event
+          provided_by: system
+          required: true
+        - evidence_id: manual.review-note
+          label: 담당자 검토 기록
+          source_kind: human_note
+          ref: review_note
+          provided_by: human
+          required: true
+
+  copilot:
+    exit_criteria:
+      - AI가 준비한 결과와 근거를 사람이 검토하고 최종 판단을 업무 기록에 남겼다.
+    completion_design:
+      version: 2
+      checks:
+        - check_id: copilot.human-decision
+          label: AI 결과와 근거를 검토한 사람의 최종 판단이 남아 있어요
+          confirmation: human
+      evidence:
+        - evidence_id: copilot.current-event
+          label: 현재 업무 이벤트
+          source_kind: event
+          ref: current_event
+          provided_by: system
+          required: true
+        - evidence_id: copilot.agent-result
+          label: AI 작업 결과
+          source_kind: external_ai
+          ref: agent_result
+          provided_by: agent
+          required: true
+        - evidence_id: copilot.review-note
+          label: 담당자 검토 기록
+          source_kind: human_note
+          ref: review_note
+          provided_by: human
+          required: true
+
+  autopilot:
+    exit_criteria:
+      - 허용된 Action의 성공 결과와 완료 근거가 시스템 연결로 확인되었다.
+    completion_design:
+      version: 2
+      checks:
+        - check_id: autopilot.action-result
+          label: 허용된 Action의 성공 결과가 시스템에서 확인되었어요
+          confirmation: system
+          binding:
+            kind: action_result
+            ref: action_results
+      evidence:
+        - evidence_id: autopilot.current-event
+          label: 현재 업무 이벤트
+          source_kind: event
+          ref: current_event
+          provided_by: system
+          required: true
+        - evidence_id: autopilot.action-result
+          label: Action 성공 결과
+          source_kind: action_result
+          ref: action_results
+          provided_by: system
+          required: true

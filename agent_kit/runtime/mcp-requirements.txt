@@ -1,0 +1,5 @@
+# Optional official SDK2 transport; local preparation keeps its separate lock.
+# The SDK resolves its own declared dependencies. This file is version pinned,
+# not a transitive hash lock or evidence of another platform's acceptance.
+mcp==2.2.0
+httpx2==2.12.0

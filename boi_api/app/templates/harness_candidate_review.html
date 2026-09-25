@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>업무 실행 품질 개선 검토 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('a2ui_renderer.js') }}" defer></script>
+  <script type="module" src="{{ asset_url('dist/a2ui-runtime.js') }}"></script>
+  <script src="{{ asset_url('harness_review.js') }}" defer></script>
+</head>
+<body>
+{% include "_app_shell.html" %}
+<main class="page-content harness-review-page" data-harness-review data-candidate-id="{{ candidate.candidate_id }}" data-version-id="{{ version.harness_version_id or '' }}" data-eval-id="{{ evaluation.eval_id or '' }}">
+  <section class="panel" data-a2ui-surface-ref="{{ surface.surface_id }}">
+    {% for component in surface.components %}
+    <div class="harness-review-component" data-a2ui-mount="{{ component.component }}" data-a2ui-component-id="{{ component.id }}">
+      <p class="muted">검토 내용을 준비하고 있습니다.</p>
+    </div>
+    {% endfor %}
+  </section>
+  <section class="panel harness-review-decision">
+    <h2>검토 결정</h2>
+    <p>승인은 배포 가능 상태로만 바꿉니다. 실제 운영 반영은 아래 별도 확인을 거쳐야 합니다.</p>
+    <label>검토 메모<textarea rows="4" data-harness-note placeholder="시험 결과와 판단 이유를 남겨주세요."></textarea></label>
+    <div class="button-row">
+      <button type="button" class="button secondary" data-harness-review-action="hold">보류</button>
+      <button type="button" class="button secondary" data-harness-review-action="reject">반려</button>
+      <button type="button" class="button primary" data-harness-review-action="approve_for_release" {% if not evaluation.qualified %}disabled{% endif %}>배포 검토 승인</button>
+    </div>
+    {% if version.harness_version_id %}
+    <div class="harness-release-controls">
+      <label><input type="checkbox" data-harness-confirm /> 시험 결과와 rollback 대상을 확인했습니다.</label>
+      <div class="button-row">
+        <button type="button" class="button secondary" data-harness-release data-rehearsal="true">배포 연습</button>
+        <button type="button" class="button primary" data-harness-release>운영 반영</button>
+        {% if version.status == 'active' %}<button type="button" class="button secondary" data-harness-rollback>이전 버전으로 되돌리기</button>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+    <p data-harness-message aria-live="polite"></p>
+  </section>
+</main>
+</body>
+</html>

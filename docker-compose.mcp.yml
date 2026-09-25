@@ -1,0 +1,67 @@
+# Standalone MCP deployment. Supply secrets and source grants outside Git.
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: boi
+      POSTGRES_USER: boi
+      POSTGRES_PASSWORD: ${BOI_POSTGRES_PASSWORD:?Set a private database password}
+    volumes:
+      - knowledge-db:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U boi -d boi]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    build:
+      context: .
+      dockerfile: boi_api/Dockerfile
+    environment:
+      BOI_AUTH_MODE: ${BOI_AUTH_MODE:-keycloak}
+      BOI_AGENT_V2_DATABASE_URL: ${BOI_AGENT_V2_DATABASE_URL:?Set PostgreSQL DSN for the api}
+      BOI_AGENT_V2_REQUIRE_POSTGRES: 'true'
+      BOI_CONTENT_ROOT: /var/lib/boi/content
+      BOI_RUNTIME_ROOT: /var/lib/boi/runtime
+      BOI_AUTO_COMMIT: 'false'
+      BOI_AUTO_PUSH: 'false'
+      AGENT_CATALOG_ROOT: /app/data/agent_catalog
+      ONTOLOGY_REGISTRY_ROOT: /app/data/ontology
+      BOI_SOURCE_INTAKE_ENABLED: 'true'
+      BOI_PROFILE_QUERY_LEDGER_ROOT: /var/lib/boi/native/ledger
+      BOI_PROFILE_QUERY_OBJECT_ROOT: /var/lib/boi/native/objects
+      BOI_SOURCE_INTAKE_POLICY_PATH: /var/lib/boi/native/source-policy.json
+      BOI_SOURCE_INTAKE_POLICY_DIGEST: ${BOI_SOURCE_INTAKE_POLICY_DIGEST:-}
+      BOI_DATABASE_SOURCES_PATH: /etc/boi/database-sources.json
+      BOI_DATABASE_QUERY_STORAGE: /var/lib/boi/query
+      BOI_EXTERNAL_URL: ${BOI_EXTERNAL_URL:-http://localhost:28000}
+      BOI_WIKI_MCP_EXTERNAL_URL: ${BOI_WIKI_MCP_EXTERNAL_URL:-http://localhost:28200}
+      BOI_PAT_HASH_SECRET: ${BOI_PAT_HASH_SECRET:?Set a private PAT hash secret}
+      BOI_SESSION_SECRET: ${BOI_SESSION_SECRET:?Set a private session secret}
+      KEYCLOAK_ISSUER_URL: ${KEYCLOAK_ISSUER_URL:-}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
+    volumes:
+      - knowledge-state:/var/lib/boi
+      - ${BOI_SERVER_CONFIG_DIR:?Set private server configuration directory}:/etc/boi:ro
+      - ${BOI_SOURCE_DIR:?Set read-only source directory}:/srv/boi-sources:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:${BOI_API_PORT:-28000}:8000'
+  mcp:
+    build:
+      context: .
+      dockerfile: boi_wiki_mcp/Dockerfile
+    environment:
+      BOI_API_URL: http://api:8000
+      MCP_V2_REQUIRE_PAT: 'true'
+      BOI_WIKI_MCP_EXTERNAL_URL: ${BOI_WIKI_MCP_EXTERNAL_URL:-http://localhost:28200}
+    depends_on:
+      - api
+    ports:
+      - '127.0.0.1:${BOI_WIKI_MCP_PORT:-28200}:8200'
+volumes:
+  knowledge-db:
+  knowledge-state:

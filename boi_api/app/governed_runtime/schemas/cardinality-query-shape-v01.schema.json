@@ -1,0 +1,852 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boi.internal/schemas/cardinality-query-shape-v01.schema.json",
+  "title": "BoI cardinality-aware query shape contracts 0.1",
+  "description": "Strict structural contracts. Cross-contract readiness is evaluated deterministically at runtime.",
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "physicalKeys": {
+      "type": "object",
+      "required": [
+        "left_mapping_refs",
+        "right_mapping_refs"
+      ],
+      "properties": {
+        "left_mapping_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "right_mapping_refs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "temporalValidity": {
+      "type": "object",
+      "required": [
+        "mode",
+        "valid_from_property_ref",
+        "valid_to_property_ref"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "none",
+            "point_in_time",
+            "interval"
+          ]
+        },
+        "valid_from_property_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "valid_to_property_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "fanout": {
+      "type": "object",
+      "required": [
+        "observed_min",
+        "observed_p50",
+        "observed_p95",
+        "observed_max",
+        "budget_per_parent",
+        "budget_action"
+      ],
+      "properties": {
+        "observed_min": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observed_p50": {
+          "type": "number",
+          "minimum": 0
+        },
+        "observed_p95": {
+          "type": "number",
+          "minimum": 0
+        },
+        "observed_max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget_per_parent": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "budget_action": {
+          "enum": [
+            "BLOCK",
+            "TRUNCATE_WITH_DISCLOSURE",
+            "REQUIRE_AGGREGATE"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "relationshipContract": {
+      "type": "object",
+      "required": [
+        "contract_id",
+        "left_endpoint_ref",
+        "right_endpoint_ref",
+        "direction",
+        "semantic_name",
+        "cardinality",
+        "optionality",
+        "physical_keys",
+        "relationship_identity_ref",
+        "temporal_validity",
+        "null_policy",
+        "orphan_policy",
+        "duplicate_policy",
+        "fanout",
+        "acl_propagation",
+        "schema_snapshot_digest"
+      ],
+      "properties": {
+        "contract_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "left_endpoint_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "right_endpoint_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "direction": {
+          "enum": [
+            "left_to_right",
+            "right_to_left",
+            "bidirectional"
+          ]
+        },
+        "semantic_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "cardinality": {
+          "enum": [
+            "one_to_one",
+            "one_to_many",
+            "many_to_one",
+            "many_to_many",
+            "stored_row_association"
+          ]
+        },
+        "optionality": {
+          "enum": [
+            "required",
+            "optional"
+          ]
+        },
+        "physical_keys": {
+          "$ref": "#/$defs/physicalKeys"
+        },
+        "relationship_identity_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "temporal_validity": {
+          "$ref": "#/$defs/temporalValidity"
+        },
+        "null_policy": {
+          "enum": [
+            "BLOCK",
+            "ALLOW",
+            "EXCLUDE_WITH_DISCLOSURE",
+            "QUARANTINE"
+          ]
+        },
+        "orphan_policy": {
+          "enum": [
+            "BLOCK",
+            "INCLUDE_UNMATCHED",
+            "EXCLUDE_WITH_DISCLOSURE",
+            "QUARANTINE"
+          ]
+        },
+        "duplicate_policy": {
+          "enum": [
+            "BLOCK",
+            "PRESERVE",
+            "DISTINCT_BY_RELATIONSHIP_IDENTITY",
+            "PRESERVE_DISTINCT_CHILDREN"
+          ]
+        },
+        "fanout": {
+          "$ref": "#/$defs/fanout"
+        },
+        "acl_propagation": {
+          "enum": [
+            "INTERSECTION",
+            "ROOT_ONLY",
+            "RELATIONSHIP_POLICY"
+          ]
+        },
+        "schema_snapshot_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "stored_row_semantics": {
+          "$ref": "#/$defs/storedRowSemantics"
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "cardinality": {
+                "const": "stored_row_association"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "stored_row_semantics"
+            ],
+            "properties": {
+              "duplicate_policy": {
+                "const": "PRESERVE"
+              },
+              "orphan_policy": {
+                "const": "INCLUDE_UNMATCHED"
+              },
+              "null_policy": {
+                "const": "ALLOW"
+              },
+              "acl_propagation": {
+                "const": "INTERSECTION"
+              },
+              "relationship_identity_ref": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "stored_row_semantics"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "aggregationSemantics": {
+      "type": "object",
+      "required": [
+        "reducer",
+        "target_ref",
+        "output_grain"
+      ],
+      "properties": {
+        "reducer": {
+          "enum": [
+            "count",
+            "count_distinct",
+            "sum",
+            "average",
+            "min",
+            "max",
+            "ratio"
+          ]
+        },
+        "target_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output_grain": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "orderPolicy": {
+      "type": "object",
+      "required": [
+        "deterministic",
+        "keys"
+      ],
+      "properties": {
+        "deterministic": {
+          "type": "boolean"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitPolicy": {
+      "type": "object",
+      "required": [
+        "kind",
+        "maximum_rows"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "NONE",
+            "EXPLICIT",
+            "PER_PARENT"
+          ]
+        },
+        "maximum_rows": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "resultShapeContract": {
+      "type": "object",
+      "required": [
+        "contract_id",
+        "shape",
+        "root_object_ref",
+        "exact_grain",
+        "relationship_refs",
+        "collection_semantics",
+        "aggregation_semantics",
+        "null_policy",
+        "duplicate_policy",
+        "order_policy",
+        "limit_policy",
+        "completeness_policy",
+        "fanout_semantics"
+      ],
+      "properties": {
+        "contract_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "shape": {
+          "enum": [
+            "ObjectSet",
+            "LinkedObjectSet",
+            "NestedCollection",
+            "Aggregate",
+            "FlatRelation",
+            "AttestedComputation"
+          ]
+        },
+        "root_object_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "exact_grain": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "relationship_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "collection_semantics": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "aggregation_semantics": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/aggregationSemantics"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "null_policy": {
+          "enum": [
+            "BLOCK",
+            "PRESERVE",
+            "EXCLUDE_WITH_DISCLOSURE"
+          ]
+        },
+        "duplicate_policy": {
+          "enum": [
+            "BLOCK",
+            "PRESERVE",
+            "DISTINCT_BY_GRAIN",
+            "APPROVED_FANOUT"
+          ]
+        },
+        "order_policy": {
+          "$ref": "#/$defs/orderPolicy"
+        },
+        "limit_policy": {
+          "$ref": "#/$defs/limitPolicy"
+        },
+        "completeness_policy": {
+          "enum": [
+            "COMPLETE",
+            "BOUNDED",
+            "QUALITY_SIDECAR_REQUIRED",
+            "PROVISIONAL_SNAPSHOT"
+          ]
+        },
+        "fanout_semantics": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "observedFanout": {
+      "type": "object",
+      "required": [
+        "observed_min",
+        "observed_p50",
+        "observed_p95",
+        "observed_max"
+      ],
+      "properties": {
+        "observed_min": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observed_p50": {
+          "type": "number",
+          "minimum": 0
+        },
+        "observed_p95": {
+          "type": "number",
+          "minimum": 0
+        },
+        "observed_max": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "dataQualityReceipt": {
+      "type": "object",
+      "required": [
+        "receipt_id",
+        "relationship_contract_digest",
+        "schema_snapshot_digest",
+        "scanned_rows",
+        "matched_rows",
+        "unmatched_rows",
+        "null_fk_rows",
+        "orphan_rows",
+        "duplicate_key_rows",
+        "fanout_distribution",
+        "excluded_rows",
+        "coverage_ratio",
+        "applied_orphan_policy",
+        "evidence_ref",
+        "evidence_digest"
+      ],
+      "properties": {
+        "receipt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relationship_contract_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "schema_snapshot_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "scanned_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "matched_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unmatched_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "null_fk_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "orphan_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duplicate_key_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fanout_distribution": {
+          "$ref": "#/$defs/observedFanout"
+        },
+        "excluded_rows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coverage_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "applied_orphan_policy": {
+          "enum": [
+            "BLOCK",
+            "INCLUDE_UNMATCHED",
+            "EXCLUDE_WITH_DISCLOSURE",
+            "QUARANTINE"
+          ]
+        },
+        "evidence_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "directional_scope": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/directionalQualityScope"
+            },
+            {
+              "$ref": "#/$defs/storedRowAssociationScope"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "storedRowSemantics": {
+      "additionalProperties": false,
+      "properties": {
+        "contract": {
+          "const": "boi/stored-row-association@1",
+          "title": "Contract",
+          "type": "string"
+        },
+        "equality": {
+          "const": "TYPED_BINARY_EQUALITY",
+          "title": "Equality",
+          "type": "string"
+        },
+        "occurrence_identity": {
+          "const": "RESULT_SNAPSHOT_ORDINAL",
+          "title": "Occurrence Identity",
+          "type": "string"
+        },
+        "unmatched_roots": {
+          "const": "PRESERVE",
+          "title": "Unmatched Roots",
+          "type": "string"
+        },
+        "multiplicity": {
+          "const": "ALL_PAIRS",
+          "title": "Multiplicity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract",
+        "equality",
+        "occurrence_identity",
+        "unmatched_roots",
+        "multiplicity"
+      ],
+      "title": "StoredRowSemantics",
+      "type": "object"
+    },
+    "storedRowAssociationScope": {
+      "additionalProperties": false,
+      "properties": {
+        "contract": {
+          "const": "boi/stored-row-association-quality@1",
+          "default": "boi/stored-row-association-quality@1",
+          "title": "Contract",
+          "type": "string"
+        },
+        "root_endpoint_ref": {
+          "title": "Root Endpoint Ref",
+          "type": "string"
+        },
+        "target_endpoint_ref": {
+          "title": "Target Endpoint Ref",
+          "type": "string"
+        },
+        "effective_cardinality": {
+          "const": "stored_row_association",
+          "default": "stored_row_association",
+          "title": "Effective Cardinality",
+          "type": "string"
+        },
+        "source_snapshot_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Snapshot Digest",
+          "type": "string"
+        },
+        "physical_schema_digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Physical Schema Digest"
+        },
+        "mapping_closure_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Mapping Closure Digest",
+          "type": "string"
+        },
+        "evaluator_code_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evaluator Code Digest",
+          "type": "string"
+        },
+        "acl_propagation": {
+          "const": "INTERSECTION",
+          "title": "Acl Propagation",
+          "type": "string"
+        },
+        "root_rows": {
+          "minimum": 0,
+          "title": "Root Rows",
+          "type": "integer"
+        },
+        "target_rows": {
+          "minimum": 0,
+          "title": "Target Rows",
+          "type": "integer"
+        },
+        "budget_per_root": {
+          "exclusiveMinimum": 0,
+          "title": "Budget Per Root",
+          "type": "integer"
+        },
+        "root_mapping_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Root Mapping Refs",
+          "type": "array"
+        },
+        "target_mapping_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Target Mapping Refs",
+          "type": "array"
+        },
+        "candidate_pair_count": {
+          "minimum": 0,
+          "title": "Candidate Pair Count",
+          "type": "integer"
+        },
+        "unmatched_root_rows": {
+          "minimum": 0,
+          "title": "Unmatched Root Rows",
+          "type": "integer"
+        },
+        "root_null_key_rows": {
+          "minimum": 0,
+          "title": "Root Null Key Rows",
+          "type": "integer"
+        },
+        "root_duplicate_key_rows": {
+          "minimum": 0,
+          "title": "Root Duplicate Key Rows",
+          "type": "integer"
+        },
+        "target_duplicate_key_rows": {
+          "minimum": 0,
+          "title": "Target Duplicate Key Rows",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "root_endpoint_ref",
+        "target_endpoint_ref",
+        "source_snapshot_digest",
+        "mapping_closure_digest",
+        "evaluator_code_digest",
+        "acl_propagation",
+        "root_rows",
+        "target_rows",
+        "budget_per_root",
+        "root_mapping_refs",
+        "target_mapping_refs",
+        "candidate_pair_count",
+        "unmatched_root_rows",
+        "root_null_key_rows",
+        "root_duplicate_key_rows",
+        "target_duplicate_key_rows"
+      ],
+      "title": "StoredRowAssociationScope",
+      "type": "object"
+    },
+    "directionalQualityScope": {
+      "additionalProperties": false,
+      "properties": {
+        "contract": {
+          "const": "boi/directional-relationship-quality@2",
+          "default": "boi/directional-relationship-quality@2",
+          "title": "Contract",
+          "type": "string"
+        },
+        "root_endpoint_ref": {
+          "minLength": 1,
+          "title": "Root Endpoint Ref",
+          "type": "string"
+        },
+        "target_endpoint_ref": {
+          "minLength": 1,
+          "title": "Target Endpoint Ref",
+          "type": "string"
+        },
+        "foreign_key_endpoint_ref": {
+          "minLength": 1,
+          "title": "Foreign Key Endpoint Ref",
+          "type": "string"
+        },
+        "unique_endpoint_ref": {
+          "minLength": 1,
+          "title": "Unique Endpoint Ref",
+          "type": "string"
+        },
+        "effective_cardinality": {
+          "enum": [
+            "one_to_many",
+            "many_to_one",
+            "one_to_one"
+          ],
+          "title": "Effective Cardinality",
+          "type": "string"
+        },
+        "scanned_endpoint_ref": {
+          "title": "Scanned Endpoint Ref",
+          "type": "string"
+        },
+        "source_snapshot_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Snapshot Digest",
+          "type": "string"
+        },
+        "physical_schema_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Physical Schema Digest"
+        },
+        "mapping_closure_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Mapping Closure Digest",
+          "type": "string"
+        },
+        "evaluator_code_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evaluator Code Digest",
+          "type": "string"
+        },
+        "acl_propagation": {
+          "enum": [
+            "INTERSECTION",
+            "ROOT_ONLY",
+            "RELATIONSHIP_POLICY"
+          ],
+          "title": "Acl Propagation",
+          "type": "string"
+        },
+        "root_rows": {
+          "minimum": 0,
+          "title": "Root Rows",
+          "type": "integer"
+        },
+        "unique_endpoint_null_key_rows": {
+          "minimum": 0,
+          "title": "Unique Endpoint Null Key Rows",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "root_endpoint_ref",
+        "target_endpoint_ref",
+        "foreign_key_endpoint_ref",
+        "unique_endpoint_ref",
+        "effective_cardinality",
+        "scanned_endpoint_ref",
+        "source_snapshot_digest",
+        "mapping_closure_digest",
+        "evaluator_code_digest",
+        "acl_propagation",
+        "root_rows",
+        "unique_endpoint_null_key_rows"
+      ],
+      "title": "DirectionalQualityScope",
+      "type": "object"
+    }
+  }
+}

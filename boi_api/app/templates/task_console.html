@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>업무 수행 화면 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script src="{{ asset_url('directory_picker.js') }}" defer></script>
+  <script src="{{ asset_url('a2ui_renderer.js') }}" defer></script>
+  <script type="module" src="{{ asset_url('dist/a2ui-runtime.js') }}"></script>
+</head>
+<body>
+  {% include "_app_shell.html" %}
+
+  {% set task = payload.task or {} %}
+  {% set evidence = payload.evidence_collection or {} %}
+  {% set completion = payload.completion or {} %}
+  {% set loop = payload.task_loop or {} %}
+  {% set workflow = payload.workflow_canvas or {} %}
+  {% set stage = payload.work_context_pack.sop_stage or {} %}
+  {% set dynamic = payload.a2ui_component_props or {} %}
+  {% set work_form = dynamic.WorkRecordForm or payload.work_form or {} %}
+  {% set evidence_picker = dynamic.EvidencePicker or {} %}
+  {% set runtime_outcome = payload.runtime_outcome or {} %}
+  {% set runtime_ledgers = payload.runtime_evidence_ledgers or [] %}
+
+  <main class="page-content task-console-page" data-a2ui-surface-ref="{{ payload.a2ui_surface.surface_id }}" data-a2ui-catalog="{{ payload.a2ui_surface.catalog_id }}">
+    {% with title=payload.title or "업무 수행 화면", description="사람과 AI가 같은 업무 맥락에서 완료된 모습과 확인할 자료를 보며 Task를 처리합니다.", eyebrow="업무 수행", primary_action=None %}
+      {% include "_section_intro.html" %}
+    {% endwith %}
+
+    {% if error %}
+    <section class="panel warning-panel">
+      <strong>저장하지 못했습니다.</strong>
+      <p>{{ error }}</p>
+    </section>
+    {% endif %}
+
+    <section class="panel task-console-summary" data-a2ui-component="TaskStatus" data-a2ui-mount="TaskStatus" data-a2ui-catalog="{{ payload.a2ui_surface.catalog_id }}">
+      <div>
+        <span class="eyebrow">현재 방식</span>
+        <strong>{{ payload.execution_mode|capitalize }}</strong>
+      </div>
+      <div>
+        <span class="eyebrow">상태</span>
+        <strong>{{ task.status_label or task.status or "확인 중" }}</strong>
+      </div>
+      <div>
+        <span class="eyebrow">확인할 자료</span>
+        <strong>{{ evidence.missing|length }}</strong>
+      </div>
+      <div>
+        <span class="eyebrow">Loop 판단</span>
+        <strong>{{ loop.decision or "continue" }}</strong>
+      </div>
+    </section>
+
+    {% if runtime_outcome %}
+    <section class="panel task-console-runtime-outcome" data-a2ui-component="DecisionSummary" data-a2ui-mount="DecisionSummary" data-a2ui-catalog="{{ payload.a2ui_surface.catalog_id }}">
+      <div class="mode-panel-heading">
+        <strong>실행 결과와 근거</strong>
+        <span>공통 Runtime이 검증한 Outcome과 Evidence Ledger입니다.</span>
+      </div>
+      <dl>
+        <div><dt>결과 상태</dt><dd>{{ runtime_outcome.status or "확인 중" }}</dd></div>
+        <div><dt>검증 상태</dt><dd>{{ runtime_outcome.quality_state or "확인 중" }}</dd></div>
+        {% if runtime_outcome.verifier %}<div><dt>검증 주체</dt><dd>{{ runtime_outcome.verifier }}</dd></div>{% endif %}
+      </dl>
+      {% for ledger in runtime_ledgers %}
+      <article>
+        <strong>{{ ledger.title or "실행 근거" }}</strong>
+        <p>{{ ledger.summary or ledger.verification or "검증됨" }}</p>
+      </article>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    <section class="task-console-layout">
+      <article class="panel task-console-main-panel">
+        <div
+          class="task-console-section task-assignment-editor"
+          data-task-assignment
+          data-task-ref="{{ task.task_ref or task.ui_task_id or task.task_id }}"
+          data-revision="{{ payload.assignment_design.revision or 0 }}"
+        >
+          <div class="mode-panel-heading">
+            <strong>누가 이 업무를 맡나요?</strong>
+            <span>담당자 한 명이 유효하게 완료하면 같은 Task를 보는 모든 담당자에게 반영됩니다.</span>
+          </div>
+          <div class="task-assignment-grid">
+            <label>담당자
+              <div class="directory-picker" data-directory-picker data-directory-kind="people">
+                <input type="search" data-directory-query placeholder="사번, 이름 또는 부서로 찾기" autocomplete="off" />
+                <input type="hidden" data-directory-value data-assignment-field="assignee_employee_ids" value="{{ payload.assignment_design.assignee_employee_ids|join(', ') }}" />
+                <div class="directory-picker-options" data-directory-options hidden></div>
+                <div class="directory-picker-chips" data-directory-chips></div>
+              </div>
+            </label>
+            <label>검토 담당자
+              <div class="directory-picker" data-directory-picker data-directory-kind="people">
+                <input type="search" data-directory-query placeholder="검토할 사람 찾기" autocomplete="off" />
+                <input type="hidden" data-directory-value data-assignment-field="reviewer_employee_ids" value="{{ payload.assignment_design.reviewer_employee_ids|join(', ') }}" />
+                <div class="directory-picker-options" data-directory-options hidden></div>
+                <div class="directory-picker-chips" data-directory-chips></div>
+              </div>
+            </label>
+            <label>유관 팀
+              <div class="directory-picker" data-directory-picker data-directory-kind="teams">
+                <input type="search" data-directory-query placeholder="팀 이름으로 찾기" autocomplete="off" />
+                <input type="hidden" data-directory-value data-assignment-field="related_team_ids" value="{{ payload.assignment_design.related_team_ids|join(', ') }}" />
+                <div class="directory-picker-options" data-directory-options hidden></div>
+                <div class="directory-picker-chips" data-directory-chips></div>
+              </div>
+            </label>
+          </div>
+          <div class="task-assignment-actions">
+            <p data-task-assignment-status aria-live="polite"></p>
+            <button class="button secondary" type="button" data-task-assignment-save>배정 저장</button>
+          </div>
+        </div>
+
+        <div class="mode-panel-heading">
+          <strong>어떻게 수행하나요?</strong>
+          <span>Task마다 사람이 직접 하거나, AI와 함께 하거나, 자동 실행 후 확인할 수 있습니다.</span>
+        </div>
+        <div class="task-console-mode-grid">
+          {% for mode in payload.mode_cards %}
+          <div class="task-console-mode-card {% if mode.active %}active{% endif %}">
+            <span class="badge {% if mode.active %}status{% endif %}">{{ mode.label }}</span>
+            <strong>{{ mode.title }}</strong>
+            <p>{{ mode.description }}</p>
+            <small>{{ mode.primary_action }}</small>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="task-console-section task-console-completion">
+          <div class="mode-panel-heading">
+            <strong>언제 이 일이 끝났다고 볼까요?</strong>
+            <span>
+              {% if payload.execution_mode == "manual" %}담당자가 확인한 완료 모습을 하나씩 체크합니다.
+              {% elif payload.execution_mode == "copilot" %}AI가 자료를 준비하고 담당자가 마지막으로 확인합니다.
+              {% else %}연결된 시스템의 결과로만 자동 확인합니다.{% endif %}
+            </span>
+          </div>
+          {% if payload.execution_mode == "autopilot" and completion.readiness.status == "needs_connection" %}
+          <div class="task-completion-guidance">
+            <strong>자동 확인 연결이 더 필요합니다.</strong>
+            <p>현재 Task는 자동 실행할 수 없습니다. SOP에서 연결을 보완하거나 Copilot으로 전환해 주세요.</p>
+          </div>
+          {% endif %}
+          <div class="task-console-check-list">
+            {% for check in completion.checks %}
+            <article class="{% if check.confirmed %}confirmed{% endif %}">
+              <span aria-hidden="true">{% if check.confirmed %}✓{% else %}{{ loop.index }}{% endif %}</span>
+              <div><strong>{{ check.label }}</strong><small>{{ check.status_label }}</small></div>
+            </article>
+            {% else %}
+            <p class="muted">아직 완료된 모습이 정해지지 않았습니다.</p>
+            {% endfor %}
+          </div>
+        </div>
+
+        {% if payload.execution_mode != "autopilot" %}
+        <div class="task-console-section task-console-work-record" data-a2ui-component="WorkRecordForm" data-a2ui-mount="WorkRecordForm" data-a2ui-catalog="boi-a2ui/v1">
+          <div class="mode-panel-heading">
+            <strong>이번 업무에서 확인하고 수행한 내용</strong>
+            <span>체크만 남기지 않고 실제로 본 내용, 조치와 판단을 함께 기록합니다.</span>
+          </div>
+          <form class="task-console-note-form" method="post" action="/tasks/console/work-record?employee_id={{ employee_id }}">
+            <input type="hidden" name="task_id" value="{{ task.ui_task_id or task.task_id }}" />
+            <input type="hidden" name="trace_id" value="{{ task.trace_id }}" />
+            <input type="hidden" name="event_id" value="{{ task.event_id }}" />
+            <input type="hidden" name="action_key" value="{{ task.action_key }}" />
+            <input type="hidden" name="sop_ref" value="{{ stage.sop_ref }}" />
+            <input type="hidden" name="sop_stage_id" value="{{ stage.sop_stage_id }}" />
+            <input type="hidden" name="workflow_definition_key" value="{{ stage.workflow_definition_key }}" />
+            <div class="task-console-dynamic-fields">
+              {% for field in work_form.fields or [] %}
+              <label>
+                {{ field.label }}
+                {% if field.control == "textarea" %}
+                <textarea name="{{ field.name }}" rows="{{ field.rows or 3 }}" {% if field.required %}required{% endif %} placeholder="{{ field.placeholder or '' }}"></textarea>
+                {% elif field.control == "select" %}
+                <select name="{{ field.name }}" {% if field.required %}required{% endif %}>
+                  {% for option in field.options or [] %}<option value="{{ option.value }}">{{ option.label }}</option>{% endfor %}
+                </select>
+                {% else %}
+                <input name="{{ field.name }}" type="text" {% if field.required %}required{% endif %} placeholder="{{ field.placeholder or '' }}" />
+                {% endif %}
+              </label>
+              {% endfor %}
+            </div>
+            {% if work_form.completion_checks %}
+            <fieldset class="task-work-record-checks">
+              <legend>기록으로 확인되는 완료된 모습</legend>
+              {% for check in work_form.completion_checks %}
+              <label>
+                <input type="checkbox" name="completed_check_ids" value="{{ check.check_id }}" {% if check.confirmed %}checked{% endif %} />
+                {{ check.label }}
+              </label>
+              {% endfor %}
+            </fieldset>
+            {% endif %}
+            {% if work_form.evidence_requirements %}
+            <fieldset class="task-work-record-checks">
+              <legend>실제 근거와 연결할 확인 자료</legend>
+              {% for item in work_form.evidence_requirements %}
+              <label>
+                {% if item.available %}
+                <input type="checkbox" checked disabled />
+                {% else %}
+                <input type="checkbox" name="satisfied_evidence_ids" value="{{ item.evidence_id }}" />
+                {% endif %}
+                {{ item.label }} · {{ item.status_label }}
+              </label>
+              {% endfor %}
+            </fieldset>
+            {% endif %}
+            <label class="task-console-confirm">
+              <input type="checkbox" name="user_confirmed" value="true" required />
+              위 내용이 실제로 확인하고 수행한 기록과 일치합니다.
+            </label>
+            <button class="button primary" type="submit">업무 기록 남기기</button>
+          </form>
+          {% if payload.work_records %}
+          <div class="task-work-record-history">
+            <h3>최근 업무 기록</h3>
+            {% for record in payload.work_records|reverse %}
+            <article>
+              <strong>{{ record.observation }}</strong>
+              {% if record.action_taken %}<p>{{ record.action_taken }}</p>{% endif %}
+              <small>{{ record.actor_employee_id }} · {{ record.recorded_at }}</small>
+            </article>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if workflow.source %}
+        <div class="task-console-section">
+          <div class="mode-panel-heading">
+            <strong>관련 업무 흐름</strong>
+            <span>현재 Task가 전체 업무 흐름의 어느 단계인지 함께 봅니다.</span>
+          </div>
+          <div class="mermaid-diagram task-console-workflow-canvas" data-mermaid-state="pending" data-mermaid-source="{{ workflow.source }}">
+            <div class="boi-agent-artifact-title">
+              <strong>{{ workflow.title }}</strong>
+              {% if workflow.current_stage_label %}<span>{{ workflow.current_stage_label }}</span>{% endif %}
+            </div>
+            <div class="mermaid">{{ workflow.source }}</div>
+            <p class="mermaid-status" aria-live="polite">업무 흐름 그림을 준비하고 있습니다.</p>
+          </div>
+          <div class="task-console-workflow-stage-list">
+            {% for stage in workflow.stages %}
+            <section class="{% if stage.stage_id == workflow.current_stage_id %}active{% endif %}">
+              <strong>{{ stage.label }}</strong>
+              {% if stage.evidence %}<p>{{ stage.evidence }}</p>{% endif %}
+              {% if stage.work_boi %}<span>{{ stage.work_boi }}</span>{% endif %}
+            </section>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="task-console-section">
+          <div class="mode-panel-heading">
+            <strong>무엇을 확인하면 될까요?</strong>
+            <span>이 Task를 마치기 전에 확인할 자료와 현재 확보 상태입니다.</span>
+          </div>
+          <div class="task-console-evidence-grid task-console-required-evidence" data-a2ui-component="EvidencePicker" data-a2ui-mount="EvidencePicker" data-a2ui-catalog="boi-a2ui/v1">
+            {% for item in evidence_picker["items"] or completion.evidence %}
+            <section class="{% if item.available %}available{% endif %}">
+              <span>{{ item.status_label }}</span>
+              <h3>{{ item.label }}</h3>
+              <p>{{ {"boi":"BoI 문서", "event":"업무 이벤트", "action_result":"Action 결과", "data_artifact":"데이터", "file":"파일", "human_note":"담당자 메모", "external_ai":"외부 AI 요약"}.get(item.source_kind, "확인 자료") }}</p>
+            </section>
+            {% else %}
+            <p class="muted">아직 확인할 자료가 정해지지 않았습니다.</p>
+            {% endfor %}
+          </div>
+          <details class="task-completion-connections">
+            <summary>연결 정보</summary>
+            <div>
+              {% for check in completion.checks %}
+              {% if check.binding and (check.binding.ref or check.binding.field) %}
+              <article><div><strong>{{ check.label }}</strong><span>자동 확인</span></div><code>{{ check.binding.ref or check.binding.field }}</code></article>
+              {% endif %}
+              {% endfor %}
+              {% for item in completion.evidence %}
+              {% if item.ref %}<article><div><strong>{{ item.label }}</strong><span>자료 연결</span></div><code>{{ item.ref }}</code></article>{% endif %}
+              {% endfor %}
+            </div>
+          </details>
+        </div>
+
+        <div class="task-console-section">
+          <div class="mode-panel-heading">
+            <strong>원본 근거 위치</strong>
+            <span>긴 로그, CSV, 파일 원본은 넣지 않고 요약 정보, 대표값, 체크섬, 링크만 업무 맥락에 연결합니다.</span>
+          </div>
+          <div class="task-console-artifact-list">
+            {% for item in evidence.data_lake_artifacts %}
+            {% set profile = item.profile or {} %}
+            <div class="task-console-artifact-card">
+              <div>
+                <strong>{{ item.display_label or item.artifact_id }}</strong>
+                <span>{{ item.validation_state or "확인 대기" }}</span>
+              </div>
+              {% if item.note %}<p>{{ item.note }}</p>{% endif %}
+              {% if profile.kind or profile.text_preview or profile.columns or profile.sample_rows or profile.sample %}
+              <dl>
+                {% if profile.kind %}
+                <div><dt>종류</dt><dd>{{ profile.kind }}</dd></div>
+                {% endif %}
+                {% if profile.columns %}
+                <div><dt>주요 컬럼</dt><dd>{{ profile.columns[:6]|join(", ") }}</dd></div>
+                {% endif %}
+                {% if profile.text_preview %}
+                <div><dt>대표 내용</dt><dd>{{ profile.text_preview[:180] }}{% if profile.text_preview|length > 180 %}...{% endif %}</dd></div>
+                {% elif profile.sample_rows %}
+                <div><dt>대표 row</dt><dd>{{ profile.sample_rows[0] }}</dd></div>
+                {% elif profile.sample %}
+                <div><dt>대표 sample</dt><dd>{{ profile.sample }}</dd></div>
+                {% endif %}
+              </dl>
+              {% endif %}
+              <div class="task-console-artifact-meta">
+                {% if item.checksum %}<span>체크섬 {{ item.checksum[:18] }}{% if item.checksum|length > 18 %}...{% endif %}</span>{% endif %}
+                {% if item.size_bytes %}<span>{{ item.size_bytes }} bytes</span>{% endif %}
+                {% if item.download_url %}<a href="{{ item.download_url }}" target="_blank" rel="noreferrer">원본 위치 열기</a>{% endif %}
+              </div>
+            </div>
+            {% else %}
+            <p class="muted">아직 연결된 원본 근거 위치가 없습니다.</p>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="task-console-section">
+          <div class="mode-panel-heading">
+            <strong>외부 AI 작업 요약</strong>
+            <span>별도 AI에서 작업한 내용은 전문 대신 요약과 원본 위치만 업무 맥락에 붙입니다.</span>
+          </div>
+          {% for item in evidence.external_ai_contributions %}
+          <div class="task-console-note">
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.summary }}</p>
+            {% if item.source_url %}<a href="{{ item.source_url }}" target="_blank" rel="noreferrer">원본 위치 열기</a>{% endif %}
+          </div>
+          {% else %}
+          <p class="muted">아직 연결된 외부 AI 작업 요약이 없습니다.</p>
+          {% endfor %}
+
+          <form class="task-console-note-form" method="post" action="/tasks/console/external-ai-note?employee_id={{ employee_id }}">
+            <input type="hidden" name="task_id" value="{{ task.ui_task_id or task.task_id }}" />
+            <input type="hidden" name="trace_id" value="{{ task.trace_id }}" />
+            <input type="hidden" name="event_id" value="{{ task.event_id }}" />
+            <input type="hidden" name="action_key" value="{{ task.action_key }}" />
+            <label>
+              제목
+              <input name="title" type="text" placeholder="예: 외부 AI Trend 검토" />
+            </label>
+            <label>
+              요약
+              <textarea name="summary" rows="4" required placeholder="전문을 붙이지 말고, 업무 판단에 필요한 요약만 적어주세요."></textarea>
+            </label>
+            <div class="task-console-form-grid">
+              <label>
+                사용한 AI
+                <input name="provider" type="text" placeholder="예: ChatGPT, Claude, 사내 AI" />
+              </label>
+              <label>
+                원본 위치
+                <input name="source_url" type="url" placeholder="https://..." />
+              </label>
+              <label>
+                체크섬
+                <input name="checksum" type="text" placeholder="sha256:..." />
+              </label>
+              <label>
+                대표 문장
+                <input name="sample" type="text" placeholder="긴 전문 대신 대표 문장만" />
+              </label>
+            </div>
+            <label class="task-console-confirm">
+              <input type="checkbox" name="user_confirmed" value="true" required />
+              이 요약을 업무 맥락으로 사용합니다.
+            </label>
+            <button class="button primary" type="submit">요약 붙이기</button>
+          </form>
+        </div>
+      </article>
+
+      <aside class="panel task-console-side-panel">
+        <div class="mode-panel-heading">
+          <strong>다음에 할 일</strong>
+          <span>반복이 아니라 진전이 남는 행동만 이어갑니다.</span>
+        </div>
+        <ul class="task-console-next-list">
+          {% for item in payload.next_actions %}
+          <li>
+            <strong>{{ item.label }}</strong>
+            {% if item.reason %}<span>{{ item.reason }}</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+
+        <details class="task-console-section task-console-context-policy">
+          <summary>업무 맥락 사용 원칙</summary>
+          <p>{{ payload.context_engineering.prompt_policy }}</p>
+          <p>{{ payload.context_engineering.large_original_policy }}</p>
+        </details>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>

@@ -9,17 +9,17 @@
       return;
     }
     if (button) button.disabled = true;
-    if (status) status.textContent = "Loading full metadata...";
+    if (status) status.textContent = "세부 정보를 불러오고 있습니다.";
     try {
       const response = await fetch(details.dataset.metadataUrl, { headers: { Accept: "text/html" } });
       if (!response.ok) throw new Error("HTTP " + response.status);
       content.innerHTML = await response.text();
       content.dataset.loaded = "true";
       content.hidden = false;
-      if (status) status.textContent = "Full metadata loaded.";
-      if (button) button.textContent = "Refresh Full Metadata";
+      if (status) status.textContent = "세부 정보를 불러왔습니다.";
+      if (button) button.textContent = "세부 정보 새로고침";
     } catch (error) {
-      if (status) status.textContent = "Metadata load failed: " + error.message;
+      if (status) status.textContent = "세부 정보를 불러오지 못했습니다.";
       content.hidden = false;
     } finally {
       if (button) button.disabled = false;

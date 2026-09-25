@@ -1,0 +1,1844 @@
+{
+  "$defs": {
+    "ApplicabilityContract": {
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "minLength": 1,
+          "title": "Scope",
+          "type": "string"
+        },
+        "conditions": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Conditions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "scope",
+        "conditions"
+      ],
+      "title": "ApplicabilityContract",
+      "type": "object"
+    },
+    "BusinessVersionIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_version": {
+          "const": "boi/business-version-identity@1",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "business_key_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Business Key Refs",
+          "type": "array"
+        },
+        "version_identity_ref": {
+          "minLength": 1,
+          "title": "Version Identity Ref",
+          "type": "string"
+        },
+        "recency_property_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Recency Property Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "contract_version",
+        "business_key_refs",
+        "version_identity_ref",
+        "recency_property_refs"
+      ],
+      "title": "BusinessVersionIdentity",
+      "type": "object"
+    },
+    "EffectiveWindow": {
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "format": "date-time",
+          "title": "Start",
+          "type": "string"
+        },
+        "end": {
+          "format": "date-time",
+          "title": "End",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "EffectiveWindow",
+      "type": "object"
+    },
+    "EvidenceUse": {
+      "additionalProperties": false,
+      "properties": {
+        "span_ref": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Span Ref",
+          "type": "string"
+        },
+        "span_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Span Digest",
+          "type": "string"
+        },
+        "content_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Content Digest",
+          "type": "string"
+        },
+        "record_identity_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Record Identity Digest",
+          "type": "string"
+        },
+        "source_revision_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Source Revision Digest",
+          "type": "string"
+        },
+        "snapshot_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Snapshot Digest",
+          "type": "string"
+        },
+        "field_pointer": {
+          "pattern": "^/",
+          "title": "Field Pointer",
+          "type": "string"
+        },
+        "representation": {
+          "enum": [
+            "raw",
+            "normalized",
+            "translated",
+            "extracted"
+          ],
+          "title": "Representation",
+          "type": "string"
+        },
+        "transformation_refs": {
+          "items": {
+            "$ref": "#/$defs/RevisionRef"
+          },
+          "title": "Transformation Refs",
+          "type": "array"
+        },
+        "supports_contract_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Supports Contract Digest",
+          "type": "string"
+        },
+        "supports_fields": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Supports Fields",
+          "type": "array"
+        },
+        "use_kind": {
+          "enum": [
+            "source_presence",
+            "reported_description",
+            "declared_definition",
+            "policy",
+            "physical_observation",
+            "review"
+          ],
+          "title": "Use Kind",
+          "type": "string"
+        },
+        "support_basis": {
+          "enum": [
+            "presence_only",
+            "model_proposed",
+            "approved_structured_contract",
+            "human_reviewed_interpretation"
+          ],
+          "title": "Support Basis",
+          "type": "string"
+        },
+        "review_receipt_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RevisionRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "span_ref",
+        "span_digest",
+        "content_digest",
+        "record_identity_digest",
+        "source_revision_digest",
+        "snapshot_digest",
+        "field_pointer",
+        "representation",
+        "transformation_refs",
+        "supports_contract_digest",
+        "supports_fields",
+        "use_kind",
+        "support_basis",
+        "review_receipt_ref"
+      ],
+      "title": "EvidenceUse",
+      "type": "object"
+    },
+    "MetricEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "Metric",
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "authority_basis": {
+          "enum": [
+            "policy",
+            "master_data",
+            "system_of_record",
+            "steward_review",
+            "observed",
+            "source_reported"
+          ],
+          "title": "Authority Basis",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/ApplicabilityContract"
+        },
+        "grain": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Grain",
+          "type": "array"
+        },
+        "unit": {
+          "minLength": 1,
+          "title": "Unit",
+          "type": "string"
+        },
+        "aggregation": {
+          "minLength": 1,
+          "title": "Aggregation",
+          "type": "string"
+        },
+        "time_semantics": {
+          "minLength": 1,
+          "title": "Time Semantics",
+          "type": "string"
+        },
+        "inclusion": {
+          "additionalProperties": true,
+          "title": "Inclusion",
+          "type": "object"
+        },
+        "exclusion": {
+          "additionalProperties": true,
+          "title": "Exclusion",
+          "type": "object"
+        },
+        "semantic_contract": {
+          "$ref": "#/$defs/SemanticDescriptor"
+        },
+        "semantic_evidence_uses": {
+          "items": {
+            "$ref": "#/$defs/EvidenceUse"
+          },
+          "title": "Semantic Evidence Uses",
+          "type": "array"
+        },
+        "semantic_reuse_declarations": {
+          "items": {
+            "$ref": "#/$defs/SemanticReuseDeclaration"
+          },
+          "title": "Semantic Reuse Declarations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "authority_basis",
+        "applicability",
+        "grain",
+        "unit",
+        "aggregation",
+        "time_semantics",
+        "inclusion",
+        "exclusion",
+        "semantic_contract",
+        "semantic_evidence_uses",
+        "semantic_reuse_declarations"
+      ],
+      "title": "MetricEntry",
+      "type": "object"
+    },
+    "ObjectTypeEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "ObjectType",
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "authority_basis": {
+          "enum": [
+            "policy",
+            "master_data",
+            "system_of_record",
+            "steward_review",
+            "observed",
+            "source_reported"
+          ],
+          "title": "Authority Basis",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/ApplicabilityContract"
+        },
+        "identity_property_ref": {
+          "minLength": 1,
+          "title": "Identity Property Ref",
+          "type": "string"
+        },
+        "property_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Property Refs",
+          "type": "array"
+        },
+        "logical_grain": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Logical Grain",
+          "type": "array"
+        },
+        "versioning": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BusinessVersionIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "semantic_contract": {
+          "$ref": "#/$defs/SemanticDescriptor"
+        },
+        "semantic_evidence_uses": {
+          "items": {
+            "$ref": "#/$defs/EvidenceUse"
+          },
+          "title": "Semantic Evidence Uses",
+          "type": "array"
+        },
+        "semantic_reuse_declarations": {
+          "items": {
+            "$ref": "#/$defs/SemanticReuseDeclaration"
+          },
+          "title": "Semantic Reuse Declarations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "authority_basis",
+        "applicability",
+        "identity_property_ref",
+        "property_refs",
+        "logical_grain",
+        "semantic_contract",
+        "semantic_evidence_uses",
+        "semantic_reuse_declarations"
+      ],
+      "title": "ObjectTypeEntry",
+      "type": "object"
+    },
+    "PropertyDefinitionEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "PropertyDefinition",
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "authority_basis": {
+          "enum": [
+            "policy",
+            "master_data",
+            "system_of_record",
+            "steward_review",
+            "observed",
+            "source_reported"
+          ],
+          "title": "Authority Basis",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/ApplicabilityContract"
+        },
+        "owner_ref": {
+          "minLength": 1,
+          "title": "Owner Ref",
+          "type": "string"
+        },
+        "value_type_ref": {
+          "minLength": 1,
+          "title": "Value Type Ref",
+          "type": "string"
+        },
+        "logical_role": {
+          "enum": [
+            "identity",
+            "attribute",
+            "event_time",
+            "effective_time"
+          ],
+          "title": "Logical Role",
+          "type": "string"
+        },
+        "unit_semantics": {
+          "enum": [
+            "not_applicable",
+            "dimensionless",
+            "declared"
+          ],
+          "title": "Unit Semantics",
+          "type": "string"
+        },
+        "time_semantics": {
+          "minLength": 1,
+          "title": "Time Semantics",
+          "type": "string"
+        },
+        "unit_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit Ref"
+        },
+        "semantic_contract": {
+          "$ref": "#/$defs/SemanticDescriptor"
+        },
+        "semantic_evidence_uses": {
+          "items": {
+            "$ref": "#/$defs/EvidenceUse"
+          },
+          "title": "Semantic Evidence Uses",
+          "type": "array"
+        },
+        "semantic_reuse_declarations": {
+          "items": {
+            "$ref": "#/$defs/SemanticReuseDeclaration"
+          },
+          "title": "Semantic Reuse Declarations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "authority_basis",
+        "applicability",
+        "owner_ref",
+        "value_type_ref",
+        "logical_role",
+        "unit_semantics",
+        "time_semantics",
+        "semantic_contract",
+        "semantic_evidence_uses",
+        "semantic_reuse_declarations"
+      ],
+      "title": "PropertyDefinitionEntry",
+      "type": "object"
+    },
+    "RelationTypeEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "RelationType",
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "authority_basis": {
+          "enum": [
+            "policy",
+            "master_data",
+            "system_of_record",
+            "steward_review",
+            "observed",
+            "source_reported"
+          ],
+          "title": "Authority Basis",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/ApplicabilityContract"
+        },
+        "semantic_name": {
+          "minLength": 1,
+          "title": "Semantic Name",
+          "type": "string"
+        },
+        "left_endpoint_ref": {
+          "minLength": 1,
+          "title": "Left Endpoint Ref",
+          "type": "string"
+        },
+        "right_endpoint_ref": {
+          "minLength": 1,
+          "title": "Right Endpoint Ref",
+          "type": "string"
+        },
+        "left_property_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Left Property Refs",
+          "type": "array"
+        },
+        "right_property_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Right Property Refs",
+          "type": "array"
+        },
+        "cardinality": {
+          "enum": [
+            "one_to_one",
+            "one_to_many",
+            "many_to_one",
+            "many_to_many"
+          ],
+          "title": "Cardinality",
+          "type": "string"
+        },
+        "left_optional": {
+          "title": "Left Optional",
+          "type": "boolean"
+        },
+        "right_optional": {
+          "title": "Right Optional",
+          "type": "boolean"
+        },
+        "relationship_identity_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Relationship Identity Ref"
+        },
+        "temporal_semantics": {
+          "minLength": 1,
+          "title": "Temporal Semantics",
+          "type": "string"
+        },
+        "semantic_contract": {
+          "$ref": "#/$defs/SemanticDescriptor"
+        },
+        "semantic_evidence_uses": {
+          "items": {
+            "$ref": "#/$defs/EvidenceUse"
+          },
+          "title": "Semantic Evidence Uses",
+          "type": "array"
+        },
+        "semantic_reuse_declarations": {
+          "items": {
+            "$ref": "#/$defs/SemanticReuseDeclaration"
+          },
+          "title": "Semantic Reuse Declarations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "authority_basis",
+        "applicability",
+        "semantic_name",
+        "left_endpoint_ref",
+        "right_endpoint_ref",
+        "left_property_refs",
+        "right_property_refs",
+        "cardinality",
+        "left_optional",
+        "right_optional",
+        "relationship_identity_ref",
+        "temporal_semantics",
+        "semantic_contract",
+        "semantic_evidence_uses",
+        "semantic_reuse_declarations"
+      ],
+      "title": "RelationTypeEntry",
+      "type": "object"
+    },
+    "RevisionRef": {
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Ref",
+          "type": "string"
+        },
+        "revision_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Revision Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "revision_digest"
+      ],
+      "title": "RevisionRef",
+      "type": "object"
+    },
+    "RuleEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "Rule",
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "authority_basis": {
+          "enum": [
+            "policy",
+            "master_data",
+            "system_of_record",
+            "steward_review",
+            "observed",
+            "source_reported"
+          ],
+          "title": "Authority Basis",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/ApplicabilityContract"
+        },
+        "priority": {
+          "title": "Priority",
+          "type": "integer"
+        },
+        "conflict_policy": {
+          "enum": [
+            "higher_priority_wins",
+            "deny_overrides",
+            "allow_overrides",
+            "manual_resolution"
+          ],
+          "title": "Conflict Policy",
+          "type": "string"
+        },
+        "effective_window": {
+          "$ref": "#/$defs/EffectiveWindow"
+        },
+        "expression": {
+          "additionalProperties": true,
+          "title": "Expression",
+          "type": "object"
+        },
+        "semantic_contract": {
+          "$ref": "#/$defs/SemanticDescriptor"
+        },
+        "semantic_evidence_uses": {
+          "items": {
+            "$ref": "#/$defs/EvidenceUse"
+          },
+          "title": "Semantic Evidence Uses",
+          "type": "array"
+        },
+        "semantic_reuse_declarations": {
+          "items": {
+            "$ref": "#/$defs/SemanticReuseDeclaration"
+          },
+          "title": "Semantic Reuse Declarations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "authority_basis",
+        "applicability",
+        "priority",
+        "conflict_policy",
+        "effective_window",
+        "expression",
+        "semantic_contract",
+        "semantic_evidence_uses",
+        "semantic_reuse_declarations"
+      ],
+      "title": "RuleEntry",
+      "type": "object"
+    },
+    "SemanticDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "Term",
+            "ObjectType",
+            "PropertyDefinition",
+            "RelationType",
+            "ValueType",
+            "Metric",
+            "Rule"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "definition": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Definition",
+          "type": "string"
+        },
+        "aliases": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "target_kind": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Target Kind",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "concept",
+            "entity",
+            "event",
+            "observation",
+            "measurement",
+            "setpoint",
+            "upper_limit",
+            "lower_limit",
+            "computed",
+            "rule",
+            "relationship"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "quantity_kind_ref": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Quantity Kind Ref"
+        },
+        "unit_semantics": {
+          "enum": [
+            "declared",
+            "dimensionless",
+            "not_applicable",
+            "unknown"
+          ],
+          "title": "Unit Semantics",
+          "type": "string",
+          "description": "declared requires a quantity reference and a version-pinned unit definition; a source unit label alone is not this binding."
+        },
+        "unit_ref": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Unit Ref"
+        },
+        "unit_revision_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Unit Revision Digest"
+        },
+        "value_semantics": {
+          "enum": [
+            "absolute",
+            "interval",
+            "categorical",
+            "not_applicable",
+            "unknown"
+          ],
+          "title": "Value Semantics",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/SemanticScope"
+        },
+        "conditions": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Conditions",
+          "type": "array"
+        },
+        "exceptions": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Exceptions",
+          "type": "array"
+        },
+        "authority_basis": {
+          "enum": [
+            "policy",
+            "master_data",
+            "system_of_record",
+            "steward_review",
+            "observed",
+            "source_reported"
+          ],
+          "title": "Authority Basis",
+          "type": "string",
+          "description": "Declared provenance of the definition, not an authority grant. source_reported means the source describes this definition; it does not establish a physical observation, verified equipment identity, live binding, release qualification or execution permission. Reading source text does not change source_reported into observed."
+        }
+      },
+      "required": [
+        "kind",
+        "definition",
+        "aliases",
+        "target_kind",
+        "role",
+        "quantity_kind_ref",
+        "unit_semantics",
+        "unit_ref",
+        "unit_revision_digest",
+        "value_semantics",
+        "scope",
+        "conditions",
+        "exceptions",
+        "authority_basis"
+      ],
+      "title": "SemanticDescriptor",
+      "type": "object",
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "Term",
+                "ObjectType",
+                "PropertyDefinition",
+                "RelationType",
+                "ValueType",
+                "Metric",
+                "Rule"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "definition": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Definition",
+              "type": "string"
+            },
+            "aliases": {
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "title": "Aliases",
+              "type": "array"
+            },
+            "target_kind": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Target Kind",
+              "type": "string"
+            },
+            "role": {
+              "enum": [
+                "concept",
+                "entity",
+                "event",
+                "observation",
+                "measurement",
+                "setpoint",
+                "upper_limit",
+                "lower_limit",
+                "computed",
+                "rule",
+                "relationship"
+              ],
+              "title": "Role",
+              "type": "string"
+            },
+            "quantity_kind_ref": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "unit_semantics": {
+              "const": "declared",
+              "type": "string"
+            },
+            "unit_ref": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            "unit_revision_digest": {
+              "pattern": "^sha256:[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "value_semantics": {
+              "enum": [
+                "absolute",
+                "interval",
+                "categorical",
+                "not_applicable",
+                "unknown"
+              ],
+              "title": "Value Semantics",
+              "type": "string"
+            },
+            "scope": {
+              "$ref": "#/$defs/SemanticScope"
+            },
+            "conditions": {
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "title": "Conditions",
+              "type": "array"
+            },
+            "exceptions": {
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "title": "Exceptions",
+              "type": "array"
+            },
+            "authority_basis": {
+              "description": "Declared provenance of the definition, not an authority grant. source_reported means the source describes this definition; it does not establish a physical observation, verified equipment identity, live binding, release qualification or execution permission. Reading source text does not change source_reported into observed.",
+              "enum": [
+                "policy",
+                "master_data",
+                "system_of_record",
+                "steward_review",
+                "observed",
+                "source_reported"
+              ],
+              "title": "Authority Basis",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "definition",
+            "aliases",
+            "target_kind",
+            "role",
+            "quantity_kind_ref",
+            "unit_semantics",
+            "unit_ref",
+            "unit_revision_digest",
+            "value_semantics",
+            "scope",
+            "conditions",
+            "exceptions",
+            "authority_basis"
+          ],
+          "title": "SemanticDescriptor",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "Term",
+                "ObjectType",
+                "PropertyDefinition",
+                "RelationType",
+                "ValueType",
+                "Metric",
+                "Rule"
+              ],
+              "title": "Kind",
+              "type": "string"
+            },
+            "definition": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Definition",
+              "type": "string"
+            },
+            "aliases": {
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "title": "Aliases",
+              "type": "array"
+            },
+            "target_kind": {
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Target Kind",
+              "type": "string"
+            },
+            "role": {
+              "enum": [
+                "concept",
+                "entity",
+                "event",
+                "observation",
+                "measurement",
+                "setpoint",
+                "upper_limit",
+                "lower_limit",
+                "computed",
+                "rule",
+                "relationship"
+              ],
+              "title": "Role",
+              "type": "string"
+            },
+            "quantity_kind_ref": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Quantity Kind Ref"
+            },
+            "unit_semantics": {
+              "enum": [
+                "dimensionless",
+                "not_applicable",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "unit_ref": {
+              "type": "null"
+            },
+            "unit_revision_digest": {
+              "type": "null"
+            },
+            "value_semantics": {
+              "enum": [
+                "absolute",
+                "interval",
+                "categorical",
+                "not_applicable",
+                "unknown"
+              ],
+              "title": "Value Semantics",
+              "type": "string"
+            },
+            "scope": {
+              "$ref": "#/$defs/SemanticScope"
+            },
+            "conditions": {
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "title": "Conditions",
+              "type": "array"
+            },
+            "exceptions": {
+              "items": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "type": "string"
+              },
+              "title": "Exceptions",
+              "type": "array"
+            },
+            "authority_basis": {
+              "description": "Declared provenance of the definition, not an authority grant. source_reported means the source describes this definition; it does not establish a physical observation, verified equipment identity, live binding, release qualification or execution permission. Reading source text does not change source_reported into observed.",
+              "enum": [
+                "policy",
+                "master_data",
+                "system_of_record",
+                "steward_review",
+                "observed",
+                "source_reported"
+              ],
+              "title": "Authority Basis",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "definition",
+            "aliases",
+            "target_kind",
+            "role",
+            "quantity_kind_ref",
+            "unit_semantics",
+            "unit_ref",
+            "unit_revision_digest",
+            "value_semantics",
+            "scope",
+            "conditions",
+            "exceptions",
+            "authority_basis"
+          ],
+          "title": "SemanticDescriptor",
+          "type": "object"
+        }
+      ]
+    },
+    "SemanticReuseDeclaration": {
+      "additionalProperties": false,
+      "properties": {
+        "declaration_id": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Declaration Id",
+          "type": "string"
+        },
+        "identity_basis": {
+          "enum": [
+            "approved_stable_identity",
+            "approved_scoped_alias"
+          ],
+          "title": "Identity Basis",
+          "type": "string"
+        },
+        "identity_ref": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Identity Ref",
+          "type": "string"
+        },
+        "policy_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Policy Digest",
+          "type": "string"
+        },
+        "source_system": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Source System",
+          "type": "string"
+        },
+        "dataset": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Dataset",
+          "type": "string"
+        },
+        "namespace": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Namespace",
+          "type": "string"
+        },
+        "source_profile_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Source Profile Digest",
+          "type": "string"
+        },
+        "semantic_input_digest": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "title": "Semantic Input Digest",
+          "type": "string"
+        },
+        "source_semantics": {
+          "$ref": "#/$defs/SemanticDescriptor"
+        },
+        "field_indices": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Field Indices",
+          "type": "array"
+        },
+        "allowed_evidence_content_digests": {
+          "items": {
+            "pattern": "^sha256:[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowed Evidence Content Digests",
+          "type": "array"
+        },
+        "required_dependency_refs": {
+          "items": {
+            "$ref": "#/$defs/RevisionRef"
+          },
+          "title": "Required Dependency Refs",
+          "type": "array"
+        },
+        "allow_scope_specialization": {
+          "title": "Allow Scope Specialization",
+          "type": "boolean"
+        },
+        "source_validity_policy": {
+          "enum": [
+            "metadata_revision_only",
+            "must_be_contained"
+          ],
+          "title": "Source Validity Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "declaration_id",
+        "identity_basis",
+        "identity_ref",
+        "policy_digest",
+        "source_system",
+        "dataset",
+        "namespace",
+        "source_profile_digest",
+        "semantic_input_digest",
+        "source_semantics",
+        "field_indices",
+        "allowed_evidence_content_digests",
+        "required_dependency_refs",
+        "allow_scope_specialization",
+        "source_validity_policy"
+      ],
+      "title": "SemanticReuseDeclaration",
+      "type": "object"
+    },
+    "SemanticScope": {
+      "additionalProperties": false,
+      "properties": {
+        "namespace": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Namespace",
+          "type": "string"
+        },
+        "process_refs": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Process Refs",
+          "type": "array"
+        },
+        "equipment_class_refs": {
+          "items": {
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "title": "Equipment Class Refs",
+          "type": "array"
+        },
+        "effective_from": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Effective From"
+        },
+        "effective_until": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Effective Until"
+        }
+      },
+      "required": [
+        "namespace",
+        "process_refs",
+        "equipment_class_refs",
+        "effective_from",
+        "effective_until"
+      ],
+      "title": "SemanticScope",
+      "type": "object"
+    },
+    "TermEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "Term",
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "authority_basis": {
+          "enum": [
+            "policy",
+            "master_data",
+            "system_of_record",
+            "steward_review",
+            "observed",
+            "source_reported"
+          ],
+          "title": "Authority Basis",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/ApplicabilityContract"
+        },
+        "term": {
+          "minLength": 1,
+          "title": "Term",
+          "type": "string"
+        },
+        "definition": {
+          "minLength": 1,
+          "title": "Definition",
+          "type": "string"
+        },
+        "semantic_contract": {
+          "$ref": "#/$defs/SemanticDescriptor"
+        },
+        "semantic_evidence_uses": {
+          "items": {
+            "$ref": "#/$defs/EvidenceUse"
+          },
+          "title": "Semantic Evidence Uses",
+          "type": "array"
+        },
+        "semantic_reuse_declarations": {
+          "items": {
+            "$ref": "#/$defs/SemanticReuseDeclaration"
+          },
+          "title": "Semantic Reuse Declarations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "authority_basis",
+        "applicability",
+        "term",
+        "definition",
+        "semantic_contract",
+        "semantic_evidence_uses",
+        "semantic_reuse_declarations"
+      ],
+      "title": "TermEntry",
+      "type": "object"
+    },
+    "UnitConversion": {
+      "additionalProperties": false,
+      "properties": {
+        "from_unit_ref": {
+          "minLength": 1,
+          "title": "From Unit Ref",
+          "type": "string"
+        },
+        "scale": {
+          "minLength": 1,
+          "title": "Scale",
+          "type": "string"
+        },
+        "offset": {
+          "default": "0",
+          "title": "Offset",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_unit_ref",
+        "scale"
+      ],
+      "title": "UnitConversion",
+      "type": "object"
+    },
+    "ValueTypeEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "ValueType",
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "aliases": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Aliases",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "authority_basis": {
+          "enum": [
+            "policy",
+            "master_data",
+            "system_of_record",
+            "steward_review",
+            "observed",
+            "source_reported"
+          ],
+          "title": "Authority Basis",
+          "type": "string"
+        },
+        "applicability": {
+          "$ref": "#/$defs/ApplicabilityContract"
+        },
+        "primitive_type": {
+          "enum": [
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "date",
+            "datetime",
+            "duration"
+          ],
+          "title": "Primitive Type",
+          "type": "string"
+        },
+        "unit_semantics": {
+          "enum": [
+            "not_applicable",
+            "dimensionless",
+            "declared"
+          ],
+          "title": "Unit Semantics",
+          "type": "string"
+        },
+        "time_semantics": {
+          "minLength": 1,
+          "title": "Time Semantics",
+          "type": "string"
+        },
+        "unit_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit Ref"
+        },
+        "unit_conversions": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/UnitConversion"
+          },
+          "title": "Unit Conversions",
+          "type": "array"
+        },
+        "semantic_contract": {
+          "$ref": "#/$defs/SemanticDescriptor"
+        },
+        "semantic_evidence_uses": {
+          "items": {
+            "$ref": "#/$defs/EvidenceUse"
+          },
+          "title": "Semantic Evidence Uses",
+          "type": "array"
+        },
+        "semantic_reuse_declarations": {
+          "items": {
+            "$ref": "#/$defs/SemanticReuseDeclaration"
+          },
+          "title": "Semantic Reuse Declarations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "authority_basis",
+        "applicability",
+        "primitive_type",
+        "unit_semantics",
+        "time_semantics",
+        "semantic_contract",
+        "semantic_evidence_uses",
+        "semantic_reuse_declarations"
+      ],
+      "title": "ValueTypeEntry",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "Metric": "#/$defs/MetricEntry",
+      "ObjectType": "#/$defs/ObjectTypeEntry",
+      "PropertyDefinition": "#/$defs/PropertyDefinitionEntry",
+      "RelationType": "#/$defs/RelationTypeEntry",
+      "Rule": "#/$defs/RuleEntry",
+      "Term": "#/$defs/TermEntry",
+      "ValueType": "#/$defs/ValueTypeEntry"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/TermEntry"
+    },
+    {
+      "$ref": "#/$defs/ObjectTypeEntry"
+    },
+    {
+      "$ref": "#/$defs/PropertyDefinitionEntry"
+    },
+    {
+      "$ref": "#/$defs/RelationTypeEntry"
+    },
+    {
+      "$ref": "#/$defs/ValueTypeEntry"
+    },
+    {
+      "$ref": "#/$defs/MetricEntry"
+    },
+    {
+      "$ref": "#/$defs/RuleEntry"
+    }
+  ]
+}

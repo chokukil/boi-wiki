@@ -1,0 +1,398 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from typing import Any
+
+from .models import AgentTurnResponse
+
+
+A2UI_PROTOCOL_VERSION = "0.9.1"
+A2UI_MESSAGE_VERSION = "v0.9"
+BOI_CATALOG_ID = "boi-a2ui/v1"
+BOI_CATALOG_URL = "/api/v2/a2ui/catalogs/boi/v1"
+ALLOWED_COMPONENTS = {
+    "Answer",
+    "CitationList",
+    "EvidencePicker",
+    "WorkRecordForm",
+    "DecisionSummary",
+    "TaskStatus",
+    "Timeline",
+    "DataTable",
+    "MermaidArtifact",
+    "OntologyExplorer",
+    "ActionPreview",
+    "Confirmation",
+    "RelatedQuestions",
+}
+COMPONENT_PROP_SCHEMAS: dict[str, dict[str, type]] = {
+    "Answer": {"summary": str, "markdown": str},
+    "CitationList": {"items": list},
+    "EvidencePicker": {"items": list},
+    "WorkRecordForm": {"fields": list},
+    "DecisionSummary": {"summary": str, "items": list},
+    "TaskStatus": {"title": str, "completion": dict},
+    "RelatedQuestions": {"items": list},
+    "DataTable": {"artifact_id": str},
+    "Timeline": {"artifact_id": str},
+    "MermaidArtifact": {"artifact_id": str},
+    "OntologyExplorer": {"artifact_id": str},
+    "ActionPreview": {"artifact_id": str},
+    "Confirmation": {"title": str, "message": str, "plan_ref": str},
+}
+
+_UNSAFE_HTML = re.compile(r"<(?:script|iframe|object|embed)\b|\son[a-z]+\s*=", re.IGNORECASE)
+
+
+def capability_catalog(surfaces: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Return the live catalog and observed component use."""
+
+    rows = [item for item in (surfaces or []) if isinstance(item, dict)]
+    usage: dict[str, int] = {name: 0 for name in ALLOWED_COMPONENTS}
+    for surface in rows:
+        observed = {
+            str(item.get("component") or "")
+            for item in surface.get("components") or []
+            if isinstance(item, dict) and str(item.get("component") or "") in ALLOWED_COMPONENTS
+        }
+        for name in observed:
+            usage[name] += 1
+    return {
+        "catalog_id": BOI_CATALOG_URL,
+        "compatibility_id": BOI_CATALOG_ID,
+        "protocol_version": A2UI_PROTOCOL_VERSION,
+        "message_version": A2UI_MESSAGE_VERSION,
+        "surface_count": len(rows),
+        "components": [
+            {
+                "name": name,
+                "props": {
+                    key: expected.__name__
+                    for key, expected in COMPONENT_PROP_SCHEMAS.get(name, {}).items()
+                },
+                "observed_surface_count": usage[name],
+            }
+            for name in sorted(ALLOWED_COMPONENTS)
+        ],
+        "mutation_policy": "preview_harness_confirmation",
+    }
+
+
+def _official_data_model(surface: dict[str, Any]) -> dict[str, Any]:
+    surface_id = str(surface["surface_id"])
+    components = list(surface.get("components") or [])
+    initial_work_record: dict[str, Any] = {}
+    for item in components:
+        if item.get("component") != "WorkRecordForm":
+            continue
+        for field in (item.get("props") or {}).get("fields") or []:
+            if isinstance(field, dict) and field.get("name"):
+                initial_work_record[str(field["name"])] = field.get("value") or ""
+    return {
+        "surface": {"id": surface_id, "catalog": BOI_CATALOG_ID},
+        "workRecord": initial_work_record,
+    }
+
+
+def _official_messages(surface: dict[str, Any]) -> list[dict[str, Any]]:
+    surface_id = str(surface["surface_id"])
+    components = list(surface.get("components") or [])
+    root = {
+        "id": "root",
+        "component": "BoiSurface",
+        "children": [str(item["id"]) for item in components],
+    }
+    official_components = [root]
+    for item in components:
+        official_components.append(
+            {
+                "id": str(item["id"]),
+                "component": str(item["component"]),
+                **dict(item.get("props") or {}),
+            }
+        )
+    data_model = _official_data_model(surface)
+    return [
+        {
+            "version": A2UI_MESSAGE_VERSION,
+            "createSurface": {
+                "surfaceId": surface_id,
+                "catalogId": BOI_CATALOG_URL,
+                "sendDataModel": True,
+            },
+        },
+        {
+            "version": A2UI_MESSAGE_VERSION,
+            "updateComponents": {"surfaceId": surface_id, "components": official_components},
+        },
+        {
+            "version": A2UI_MESSAGE_VERSION,
+            "updateDataModel": {"surfaceId": surface_id, "path": "/", "value": data_model},
+        },
+    ]
+
+
+def finalize_surface(surface: dict[str, Any]) -> dict[str, Any]:
+    validate_surface(surface)
+    messages = _official_messages(surface)
+    surface.update(
+        {
+            "data_model": _official_data_model(surface),
+            "canonical_catalog_id": BOI_CATALOG_URL,
+            "message_version": A2UI_MESSAGE_VERSION,
+            "messages": messages,
+            "jsonl": "\n".join(json.dumps(item, ensure_ascii=False) for item in messages),
+        }
+    )
+    return surface
+
+
+def _validate_props(value: Any, *, key: str = "") -> None:
+    if isinstance(value, dict):
+        for child_key, child_value in value.items():
+            _validate_props(child_value, key=str(child_key))
+        return
+    if isinstance(value, list):
+        for child in value:
+            _validate_props(child, key=key)
+        return
+    if not isinstance(value, str):
+        return
+    if key in {"displayHtml", "html"} and _UNSAFE_HTML.search(value):
+        raise ValueError("unsafe_a2ui_html")
+    if key.lower() in {"url", "href", "downloadurl", "action", "endpoint"} and value and not value.startswith(("/", "#")):
+        raise ValueError("external_a2ui_url")
+
+
+def validate_surface(surface: dict[str, Any]) -> dict[str, Any]:
+    if surface.get("protocol_version") != A2UI_PROTOCOL_VERSION or surface.get("catalog_id") != BOI_CATALOG_ID:
+        raise ValueError("unsupported_a2ui_contract")
+    events = surface.get("events") or []
+    if events:
+        raise ValueError("unsupported_a2ui_event")
+    components = surface.get("components") or []
+    component_ids: set[str] = set()
+    for item in components:
+        if not isinstance(item, dict) or item.get("component") not in ALLOWED_COMPONENTS:
+            raise ValueError("unsupported_a2ui_component")
+        component_id = str(item.get("id") or "")
+        if not component_id or component_id in component_ids:
+            raise ValueError("invalid_a2ui_component_id")
+        component_ids.add(component_id)
+        props = item.get("props") or {}
+        schema = COMPONENT_PROP_SCHEMAS.get(str(item.get("component") or ""), {})
+        for prop_name, expected_type in schema.items():
+            if prop_name not in props or not isinstance(props[prop_name], expected_type):
+                raise ValueError("invalid_a2ui_component_props")
+        _validate_props(props)
+    return surface
+
+
+def presentation_plan(response: AgentTurnResponse) -> dict[str, Any]:
+    components = ["Answer"]
+    if response.citations:
+        components.append("CitationList")
+    for artifact in response.artifact_refs[:3]:
+        if artifact.artifact_type == "mermaid_diagram":
+            components.append("MermaidArtifact")
+        elif artifact.artifact_type in {"ontology_graph", "knowledge_graph"}:
+            presentation = str((artifact.metadata or {}).get("presentation") or "explorer")
+            components.append({"table": "DataTable", "timeline": "Timeline", "mermaid": "MermaidArtifact"}.get(presentation, "OntologyExplorer"))
+        elif artifact.artifact_type in {"action_plan", "action_preview"}:
+            components.append("ActionPreview")
+    if response.plan_ref:
+        components.append("Confirmation")
+    if response.related_questions:
+        components.append("RelatedQuestions")
+    components = list(dict.fromkeys(item for item in components if item in ALLOWED_COMPONENTS))
+    return {
+        "catalog_id": BOI_CATALOG_ID,
+        "protocol_version": A2UI_PROTOCOL_VERSION,
+        "components": components,
+        "fallback": "agent_turn_response",
+    }
+
+
+def compile_surface(response: AgentTurnResponse) -> dict[str, Any]:
+    plan = presentation_plan(response)
+    surface_id = "surface-" + hashlib.sha256(
+        f"{response.run_id}:{response.turn_id}:{','.join(plan['components'])}".encode("utf-8")
+    ).hexdigest()[:20]
+    components: list[dict[str, Any]] = [
+        {
+            "id": "answer",
+            "component": "Answer",
+            "props": {
+                "summary": response.answer.summary,
+                "displayHtml": response.answer.display_html,
+                "markdown": response.answer.markdown,
+                "groundingStatus": response.grounding_status,
+            },
+        }
+    ]
+    if response.citations:
+        components.append(
+            {
+                "id": "citations",
+                "component": "CitationList",
+                "props": {"items": [item.model_dump(mode="json") for item in response.citations]},
+            }
+        )
+    for index, artifact in enumerate(response.artifact_refs[:3]):
+        component = {
+            "mermaid_diagram": "MermaidArtifact",
+            "action_plan": "ActionPreview",
+            "action_preview": "ActionPreview",
+        }.get(artifact.artifact_type)
+        if artifact.artifact_type in {"ontology_graph", "knowledge_graph"}:
+            presentation = str((artifact.metadata or {}).get("presentation") or "explorer")
+            component = {"table": "DataTable", "timeline": "Timeline", "mermaid": "MermaidArtifact"}.get(presentation, "OntologyExplorer")
+        if component:
+            components.append(
+                {
+                    "id": f"artifact-{index + 1}",
+                    "component": component,
+                    "props": artifact.model_dump(mode="json"),
+                }
+            )
+    if response.plan_ref:
+        action = next(
+            (item for item in response.next_actions if item.action_kind == "confirm_plan"),
+            None,
+        )
+        components.append(
+            {
+                "id": "confirmation",
+                "component": "Confirmation",
+                "props": {
+                    "title": action.label if action else "실행 전 확인",
+                    "message": "표시된 대상, 조건과 근거를 확인한 뒤에만 실제 업무에 반영합니다.",
+                    "plan_ref": response.plan_ref,
+                },
+            }
+        )
+    if response.related_questions:
+        components.append(
+            {
+                "id": "related-questions",
+                "component": "RelatedQuestions",
+                "props": {"items": [item.model_dump(mode="json") for item in response.related_questions]},
+            }
+        )
+    surface = {
+        "surface_id": surface_id,
+        "protocol_version": A2UI_PROTOCOL_VERSION,
+        "catalog_id": BOI_CATALOG_ID,
+        "components": components,
+        "events": [],
+        "fallback": response.model_dump(mode="json", exclude={"presentation_plan", "a2ui_surface_ref"}),
+    }
+    return finalize_surface(surface)
+
+
+def compile_harness_review_surface(
+    candidate: dict[str, Any],
+    *,
+    failure_patterns: list[dict[str, Any]],
+    shadow_run: dict[str, Any] | None = None,
+    evaluation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compile an inspectable, non-mutating review surface for a Harness candidate."""
+    candidate_id = str(candidate.get("candidate_id") or "")
+    pattern_items = [
+        {
+            "label": str(item.get("summary") or "반복 실패"),
+            "value": f"{int(item.get('occurrence_count') or 0)}회",
+            "status": str(item.get("status") or "open"),
+        }
+        for item in failure_patterns[:10]
+    ]
+    changes = candidate.get("changes") if isinstance(candidate.get("changes"), dict) else {}
+    hypothesis = candidate.get("hypothesis") if isinstance(candidate.get("hypothesis"), dict) else {}
+    predicted = candidate.get("predicted_impact") if isinstance(candidate.get("predicted_impact"), dict) else {}
+    actual = (evaluation or {}).get("actual_impact") if isinstance((evaluation or {}).get("actual_impact"), dict) else {}
+    hypothesis_items = [
+        {"label": "변경 범위", "value": str(hypothesis.get("editable_surface") or "확인 필요")},
+        {
+            "label": "보존할 기존 성공",
+            "value": f"{len(candidate.get('preservation_run_ids') or [])}건",
+        },
+        {
+            "label": "회귀 위험",
+            "value": ", ".join(str(item) for item in candidate.get("at_risk_regressions") or []) or "확인 필요",
+        },
+        {"label": "만료", "value": str(candidate.get("expires_at") or "확인 필요")},
+        {"label": "되돌릴 버전", "value": str(candidate.get("rollback_target") or "확인 필요")},
+    ]
+    prediction_items = [
+        {
+            "label": str(metric),
+            "value": f"예상 {expected:g} · 실제 {float(actual.get(metric) or 0):g}",
+        }
+        for metric, expected in sorted(predicted.items())
+        if isinstance(expected, (int, float)) and not isinstance(expected, bool)
+    ]
+    trial_items = [
+        {"label": "서버 사전 점검", "value": str((shadow_run or {}).get("status") or "아직 실행하지 않음")},
+        {"label": "회귀·안전 평가", "value": "통과" if (evaluation or {}).get("qualified") else "미통과 또는 대기"},
+        {"label": "운영 반영", "value": "반영되지 않음"},
+    ]
+    components = [
+        {
+            "id": "candidate-summary",
+            "component": "Answer",
+            "props": {
+                "summary": "업무 실행 품질 개선 후보",
+                "markdown": str(candidate.get("rationale") or "반복 실패를 줄이기 위한 제한된 개선 후보입니다."),
+            },
+        },
+        {
+            "id": "failure-patterns",
+            "component": "DecisionSummary",
+            "props": {"summary": "반복해서 막힌 이유", "items": pattern_items},
+        },
+        {
+            "id": "bounded-change",
+            "component": "DecisionSummary",
+            "props": {
+                "summary": "다음 실행에서 시험할 변경",
+                "items": [{"label": key, "value": value} for key, value in sorted(changes.items())],
+            },
+        },
+        {
+            "id": "change-hypothesis",
+            "component": "DecisionSummary",
+            "props": {"summary": "변경 가설과 보존 경계", "items": hypothesis_items},
+        },
+        {
+            "id": "prediction-result",
+            "component": "DecisionSummary",
+            "props": {
+                "summary": "예측과 실제 결과",
+                "items": prediction_items or [{"label": "평가", "value": "아직 측정하지 않음"}],
+            },
+        },
+        {
+            "id": "trial-result",
+            "component": "DecisionSummary",
+            "props": {"summary": "시험과 운영 경계", "items": trial_items},
+        },
+    ]
+    surface_id = "surface-harness-" + hashlib.sha256(
+        f"{candidate_id}:{candidate.get('updated_at') or candidate.get('created_at')}".encode("utf-8")
+    ).hexdigest()[:20]
+    surface = {
+        "surface_id": surface_id,
+        "protocol_version": A2UI_PROTOCOL_VERSION,
+        "catalog_id": BOI_CATALOG_ID,
+        "components": components,
+        "events": [],
+        "fallback": {
+            "candidate_id": candidate_id,
+            "status": candidate.get("status"),
+            "production_changed": False,
+        },
+    }
+    return finalize_surface(surface)

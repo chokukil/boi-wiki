@@ -51,11 +51,11 @@
             </tbody>
           </table>
         </div>
-        <div class="trace-link-row">
-          <a href="{{ item.status_page_url }}">Timeline 보기</a>
-          <a href="{{ item.tat_url }}">TAT 성과 보기</a>
-          <a href="{{ item.trace_events_url }}">Event 발생 이력</a>
-          <a href="{{ event_pattern_preview_url }}">반복 패턴으로 Event 초안 검토</a>
+        <div class="trace-link-row button-row sop-history-actions">
+          <a class="button primary" href="{{ item.status_page_url }}">실행 흐름 보기</a>
+          <a class="button secondary" href="{{ item.tat_url }}">TAT 성과</a>
+          <a class="button secondary" href="{{ item.trace_events_url }}">관련 Event</a>
+          {% if item.repeat_candidate %}<a class="button secondary" href="{{ event_pattern_preview_url }}">반복 패턴 검토</a>{% endif %}
         </div>
       </article>
       {% else %}

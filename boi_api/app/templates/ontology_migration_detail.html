@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ontology Migration 검토 · BoI Wiki</title>
+  <link rel="stylesheet" href="{{ asset_url('style.css') }}" />
+  <script defer src="{{ asset_url('ontology_migration_workbench.js') }}"></script>
+</head>
+<body>
+{% include "_app_shell.html" %}
+<main class="page-content" id="main-content"
+  data-migration-job-id="{{ view.job.job_id }}"
+  data-revision="{{ view.staging.revision }}"
+  data-candidate-digest="{{ view.staging.candidate_digest }}"
+  data-preview-digest="{{ view.staging.preview_digest }}"
+  data-plan-digest="{{ view.staging.logical_plan_digest }}"
+  data-schema-digest="{{ view.staging.schema_digest }}"
+  data-qualification-receipt-id="{{ view.staging.qualification_receipt_id }}"
+  data-approval-receipt-digest="{{ view.staging.approval_receipt_digest }}">
+  <nav aria-label="Breadcrumb"><a href="/ontology/migrations">Ontology migrations</a> / <span aria-current="page">{{ view.job.job_id }}</span></nav>
+  <header class="section-intro">
+    <p class="eyebrow">{{ view.candidate.skill_id }}</p>
+    <h1>Migration candidate 검토</h1>
+    <p><span class="status-chip">{{ view.job.state }}</span> Candidate와 검증 결과는 Release와 분리되어 있습니다.</p>
+    {% if view.mcp_reproduction %}
+    <details><summary>Safe MCP reproduction reference</summary><pre><code>{{ view.mcp_reproduction | tojson(indent=2) }}</code></pre></details>
+    {% endif %}
+  </header>
+
+  {% if view.bulk %}
+  <section class="panel" aria-labelledby="bulk-run-title" data-bulk-run-digest="{{ view.bulk.run_digest }}">
+    <div class="section-heading">
+      <div><h2 id="bulk-run-title">Bulk run console</h2><p class="muted">Project → ImportRun → Shard → TaskPackage → Candidate → Receipt</p></div>
+      <span class="status-chip">{{ view.bulk.progress.completion_percent }}%</span>
+    </div>
+    <progress value="{{ view.bulk.progress.completed_shards }}" max="{{ view.bulk.progress.total_shards }}" aria-label="Completed shards"></progress>
+    <p>{{ view.bulk.progress.completed_shards }} completed · {{ view.bulk.progress.failed_shards }} failed · {{ view.bulk.progress.queued_shards }} queued / {{ view.bulk.progress.total_shards }} total</p>
+    <div class="button-row" aria-label="Bulk run controls">
+      <button type="button" class="button secondary" data-bulk-action="pause" {% if not view.bulk.can_pause %}disabled{% endif %}>Pause</button>
+      <button type="button" class="button secondary" data-bulk-action="resume" {% if not view.bulk.can_resume %}disabled{% endif %}>Resume</button>
+      <button type="button" class="button secondary" data-bulk-action="cancel" {% if not view.bulk.can_cancel %}disabled{% endif %}>Cancel</button>
+    </div>
+    {% if view.bulk.attention_groups %}
+    <h3>Attention reason groups</h3>
+    <ul>{% for group in view.bulk.attention_groups %}<li><code>{{ group.reason_code }}</code> · {{ group.count }}</li>{% endfor %}</ul>
+    {% endif %}
+    <div class="table-wrap" tabindex="0" aria-label="Bulk migration shards">
+      <table>
+        <thead><tr><th scope="col">Shard</th><th scope="col">Objects</th><th scope="col">State</th><th scope="col">Attempts</th><th scope="col">Reason</th><th scope="col">Action</th></tr></thead>
+        <tbody>{% for shard in view.bulk.shards %}<tr><td><code>{{ shard.shard_id }}</code></td><td>{{ shard.atomic_object_count }}</td><td>{{ shard.state }}</td><td>{{ shard.execution_count }} / retry {{ shard.retry_count }}</td><td>{{ shard.reason_code or '-' }}</td><td><button type="button" class="button secondary" data-bulk-action="retry_shard" data-shard-id="{{ shard.shard_id }}" {% if shard.state != 'failed' %}disabled{% endif %}>Retry exact shard</button></td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+    <details><summary>TaskPackage evidence drawer</summary><pre><code>{{ view.bulk.task_packages | tojson(indent=2) }}</code></pre></details>
+    <details><summary>Receipt drawer</summary><pre><code>{{ view.bulk.receipts | tojson(indent=2) }}</code></pre></details>
+  </section>
+  {% endif %}
+
+  <section class="panel" aria-labelledby="input-title">
+    <h2 id="input-title">1. 입력</h2>
+    <p>{{ view.input.goal }}</p>
+    <p class="muted">원문 본문·raw row 표시: {% if view.input.raw_content_present %}있음{% else %}없음{% endif %}. 등록된 ref와 digest만 표시합니다.</p>
+    <dl>
+      <dt>Source ref</dt><dd><code>{{ view.input.references.get('source_ref') or view.input.references.get('sql_source_ref') or '-' }}</code></dd>
+      <dt>Source digest</dt><dd><code>{{ view.input.references.get('source_digest') or '-' }}</code></dd>
+      <dt>Source role</dt><dd>{{ view.input.references.get('source_role') or '-' }}</dd>
+      <dt>Catalog snapshot</dt><dd><code>{{ view.input.references.get('catalog_snapshot_ref') or view.input.references.get('catalog_snapshot') or '-' }}</code></dd>
+    </dl>
+    {% set system_context = view.input.references.get('system_context') or {} %}
+    {% if system_context %}
+    <div class="table-wrap" tabindex="0" aria-label="System module menu purpose">
+      <table><thead><tr><th scope="col">System</th><th scope="col">Module</th><th scope="col">Menu</th><th scope="col">Purpose</th></tr></thead><tbody><tr><td>{{ system_context.get('system') }}</td><td>{{ system_context.get('module') }}</td><td>{{ system_context.get('menu') }}</td><td>{{ system_context.get('purpose') }}</td></tr></tbody></table>
+    </div>
+    {% endif %}
+    <details><summary>등록 ref manifest</summary><pre><code>{{ view.input.references | tojson(indent=2) }}</code></pre></details>
+  </section>
+
+  <section class="panel" aria-labelledby="candidate-title">
+    <h2 id="candidate-title">2. 후보 비교</h2>
+    <dl>
+      <dt>Candidate digest</dt><dd><code>{{ view.candidate.candidate_digest }}</code></dd>
+      <dt>Output authority</dt><dd>{{ view.candidate.output_authority }}</dd>
+      <dt>후보 outputs</dt><dd>{{ view.candidate.outputs | join(', ') }}</dd>
+    </dl>
+    <details><summary>금지된 권한</summary><p>{{ view.candidate.forbidden_actions | join(', ') }}</p></details>
+    <h3>Existing concept match</h3>
+    {% if view.concept_matches %}
+    <div class="table-wrap" tabindex="0" aria-label="Existing concept match">
+      <table>
+        <thead><tr><th scope="col">Concept</th><th scope="col">결정</th><th scope="col">근거</th><th scope="col">중복 위험</th></tr></thead>
+        <tbody>{% for match in view.concept_matches %}<tr><td><code>{{ match.concept_ref }}</code></td><td>{{ match.action }}</td><td>{{ match.rationale }}<br><code>{{ match.evidence_digest }}</code></td><td>{{ match.duplicate_risk }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+    {% else %}<p role="status">아직 existing-concept match가 없습니다.</p>{% endif %}
+    <h3>Domain · Mapping · Query 3분할 diff</h3>
+    <div class="migration-profile-grid">
+    {% for profile_name in ['domain', 'data-mapping', 'query'] %}
+      <article class="subpanel" aria-label="{{ profile_name }} profile diff">
+        <h4>{{ profile_name }}</h4>
+        {% set matches = view.profile_diffs | selectattr('profile', 'equalto', profile_name) | list %}
+        {% if matches %}{% for diff in matches %}
+          <p class="muted"><code>{{ diff.before_digest or 'new' }}</code> → <code>{{ diff.after_digest }}</code></p>
+          <ul>{% for change in diff.changes %}<li><code>{{ change.path }}</code><br>{{ change.before | tojson }} → {{ change.after | tojson }}<br><span class="muted">{{ change.impact }}</span></li>{% endfor %}</ul>
+        {% endfor %}{% else %}<p class="muted">변경 없음</p>{% endif %}
+      </article>
+    {% endfor %}
+    </div>
+    {% if view.logical_domain_candidates %}
+    <h3>Logical Domain proposals</h3>
+    <p class="muted">논리 구조 검증과 의미 승인은 다릅니다. 아래 필드 근거는 model-proposed이며, Mapping·실행·Release 권한을 부여하지 않습니다.</p>
+    {% for logical in view.logical_domain_candidates %}
+    <details aria-label="Logical Domain candidate">
+      <summary>{{ logical.logical_definition.kind }} · {{ logical.logical_definition.name or logical.logical_definition.id }} · {{ logical.logical_contract_status }}</summary>
+      <dl>
+        <dt>Profile</dt><dd><code>{{ logical.logical_profile }}</code></dd>
+        <dt>Definition digest</dt><dd><code>{{ logical.logical_definition_digest }}</code></dd>
+        <dt>Structure check</dt><dd>{{ logical.logical_structure_check.status }} · <code>{{ logical.logical_structure_check.evidence_digest }}</code></dd>
+        <dt>Grounding</dt><dd>{{ logical.logical_grounding_status }}</dd>
+        <dt>Semantic validation</dt><dd>{{ logical.semantic_validation_status }}</dd>
+      </dl>
+      <pre><code>{{ logical.logical_definition | tojson(indent=2) }}</code></pre>
+      <details><summary>Logical field EvidenceUse</summary><pre><code>{{ logical.logical_evidence_uses | tojson(indent=2) }}</code></pre></details>
+    </details>
+    {% endfor %}
+    {% endif %}
+    {% if view.interpretation_reviews %}
+    <section aria-labelledby="interpretation-review-title">
+      <h3 id="interpretation-review-title">의미 해석 검토</h3>
+      <p>위 후보의 정의와 필드별 근거를 확인한 뒤 검토 결과를 기록합니다. 각 shard에 포함된 후보 전체가 대상이며, 질의 준비와 최종 이관 승인은 별도로 검증됩니다.</p>
+      {% for review in view.interpretation_reviews %}
+      {% if review.recorded %}
+      <p data-recorded-interpretation>검토 완료: {{ {'accept_interpretation':'원문에 따른 해석으로 확인', 'request_changes':'수정 필요', 'reject_interpretation':'해석 기각'}.get(review.recorded.disposition, review.recorded.disposition) }}</p>
+      <details><summary>검토 기록 근거</summary><p><code>{{ review.shard_id }}</code> · <code>{{ review.recorded.receipt_digest }}</code></p></details>
+      {% elif review.record_error %}
+      <p role="alert">검토 기록을 확인할 수 없습니다. {{ review.record_error }}</p>
+      {% else %}
+      <form method="post" data-interpretation-review data-shard-id="{{ review.shard_id }}" data-preview-digest="{{ review.expected_preview_digest }}">
+        <p>검토 대상 <code>{{ review.shard_id }}</code></p>
+        <label>검토 결과
+          <select name="disposition" required>
+            <option value="">결과를 선택하세요</option>
+            <option value="accept_interpretation">원문에 따른 해석으로 확인</option>
+            <option value="request_changes">수정 필요</option>
+            <option value="reject_interpretation">해석 기각</option>
+          </select>
+        </label>
+        <label>판단 근거 <textarea name="reason" required maxlength="2000" rows="3"></textarea></label>
+        <button type="submit" class="button secondary" disabled>검토 기록</button>
+        <p data-interpretation-status role="status" aria-live="polite"></p>
+      </form>
+      {% endif %}
+      {% endfor %}
+    </section>
+    {% endif %}
+    <h3>Physical mapping browser</h3>
+    {% if view.mappings %}
+    <div class="table-wrap" tabindex="0" aria-label="Physical mapping browser">
+      <table>
+        <thead><tr><th scope="col">Logical</th><th scope="col">Source</th><th scope="col">Table · Column</th><th scope="col">Key · Type · Unit</th><th scope="col">Cardinality</th><th scope="col">검증</th></tr></thead>
+        <tbody>{% for mapping in view.mappings %}<tr data-mapping-id="{{ mapping.mapping_id }}"><td><code>{{ mapping.logical_ref }}</code></td><td><code>{{ mapping.source_ref }}</code></td><td><code>{{ mapping.table_ref }}</code><br><code>{{ mapping.column_ref }}</code></td><td>{{ mapping.key_role }} · {{ mapping.data_type }} · {{ mapping.unit or '-' }}</td><td>{{ mapping.cardinality }}</td><td>{{ mapping.status }}<br><code>{{ mapping.evidence_digest }}</code></td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+    {% for mapping in view.mappings %}
+    {% if mapping.get('editable', true) %}
+    <details class="mapping-edit-panel">
+      <summary><code>{{ mapping.mapping_id }}</code> candidate mapping 수정</summary>
+      <form data-mapping-edit-form data-mapping-id="{{ mapping.mapping_id }}">
+        <div class="form-grid">
+          <label>Table ref<input name="table_ref" value="{{ mapping.table_ref }}" required pattern="table:[^;]+" /></label>
+          <label>Column ref<input name="column_ref" value="{{ mapping.column_ref }}" required pattern="column:[^;]+" /></label>
+          <label>Data type<input name="data_type" value="{{ mapping.data_type }}" required /></label>
+          <label>Key role<select name="key_role">{% for value in ['primary', 'foreign', 'attribute', 'none'] %}<option value="{{ value }}"{% if mapping.key_role == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+          <label>Unit<input name="unit" value="{{ mapping.unit or '' }}" /></label>
+          <label>Cardinality<select name="cardinality">{% for value in ['one', 'many', 'unknown'] %}<option value="{{ value }}"{% if mapping.cardinality == value %} selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+        </div>
+        <label>수정 근거<textarea name="reason" required>catalog snapshot 검토에 따른 candidate mapping 수정</textarea></label>
+        <button type="submit" class="button secondary">수정 후 재검증 요청</button>
+      </form>
+    </details>
+    {% else %}<p class="muted"><code>{{ mapping.mapping_id }}</code>: source metadata·Domain contract에 결박된 후보입니다. 직접 수정은 지원하지 않으며 검증 전 데이터 실행 권한은 없습니다.</p>{% endif %}
+    {% endfor %}
+    <p class="muted">수정은 candidate-only입니다. Candidate digest가 바뀌며 기존 qualification·approval·Release proposal은 자동 무효화됩니다.</p>
+    {% else %}<p role="status">아직 mapping candidate가 없습니다.</p>{% endif %}
+    {% if view.relation_mapping_dependencies %}
+    <h3>관계 키 결속 후보</h3>
+    <p class="muted">이 표는 원천 후보·정의 revision과 양쪽 물리 키의 연결만 표시합니다. 관계 실행 정책과 데이터 품질은 별도 영수증으로 확인해야 합니다.</p>
+    {% if view.relation_quality_preview_action %}<details><summary>명시된 관계 정책의 품질 미리보기</summary><p>아래 의존성 digest와 현재 preview digest, 전체 관계 정책을 제출하면 보호된 읽기 전용 데이터 품질을 후보로 측정합니다. 의미 승인·실행·게시 권한은 생기지 않습니다.</p><p><code>{{ view.relation_quality_preview_action.mcp_tool }}</code> · <code>{{ view.relation_quality_preview_action.mcp_action }}</code></p></details>{% endif %}
+    <div class="table-wrap" tabindex="0" aria-label="관계 키 결속 후보">
+      <table>
+        <thead><tr><th scope="col">관계 후보</th><th scope="col">왼쪽 논리 키 → 물리 매핑</th><th scope="col">오른쪽 논리 키 → 물리 매핑</th><th scope="col">결속 상태</th></tr></thead>
+        <tbody>{% for relation in view.relation_mapping_dependencies %}<tr><td><code>{{ relation.relation_ref }}</code><br><small>{{ relation.definition_origin }}{% if relation.definition_revision_digest %}<br><code>{{ relation.definition_revision_digest }}</code>{% endif %}</small></td><td>{% for item in relation.left_key_mappings %}<code>{{ item.logical_property_ref }} → {{ item.mapping_ref }}</code><br>{% endfor %}</td><td>{% for item in relation.right_key_mappings %}<code>{{ item.logical_property_ref }} → {{ item.mapping_ref }}</code><br>{% endfor %}</td><td>{{ relation.status }}<br>{% for code in relation.reason_codes %}<code>{{ code }}</code><br>{% endfor %}<code>{{ relation.dependency_digest }}</code></td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+    {% if view.relation_quality_recorded_receipts %}
+    <h3>기록된 관계 품질 후보</h3>
+    <p class="muted">현재 실행·후보 폐쇄와 일치하는 저장 영수증입니다. 저장 시점의 물리 원천 측정이며 현재 원천 재검사, 의미 승인 또는 질의 실행을 뜻하지 않습니다.</p>
+    {% for item in view.relation_quality_recorded_receipts %}<p><code>{{ item.relationship_contract.contract_id }}</code> · {{ item.status }} · 영수증 <code>{{ item.receipt_digest }}</code> · Gateway <code>{{ item.quality_audit_receipt.receipt_digest }}</code></p>{% endfor %}
+    {% endif %}
+    {% for warning in view.relation_quality_recorded_warnings %}<p role="status">기록된 관계 품질 영수증을 현재 후보에 사용할 수 없습니다: <code>{{ warning.relation_ref }}</code> · <code>{{ warning.reason_code }}</code></p>{% endfor %}
+    {% endif %}
+    <h3>ResultShape 비교</h3>
+    {% if view.shape_preview.options %}
+    <div class="table-wrap" tabindex="0" aria-label="ResultShape 후보 비교">
+      <table>
+        <thead><tr><th scope="col">선택</th><th scope="col">Shape</th><th scope="col">정확한 Grain</th><th scope="col">Fanout 의미</th><th scope="col">상태</th></tr></thead>
+        <tbody>
+        {% for option in view.shape_preview.options %}
+          <tr{% if option.selected %} aria-current="true"{% endif %}>
+            <td>{% if option.selected %}<strong>선택됨</strong>{% else %}대안{% endif %}</td>
+            <td><code>{{ option.shape }}</code><br><span class="muted">{{ option.shape_contract_id }}</span></td>
+            <td>{{ option.exact_grain | join(', ') }}</td>
+            <td>{{ option.fanout_semantics or option.collection_semantics or '-' }}</td>
+            <td>{{ option.readiness_status }}{% if option.reason_codes %}: {{ option.reason_codes | join(', ') }}{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<p role="status">아직 ResultShape preview가 없습니다.</p>{% endif %}
+  </section>
+
+  {% if view.reviewed_query_options %}
+  <section class="panel" aria-labelledby="reviewed-query-title">
+    <h2 id="reviewed-query-title">검토된 데이터 조회</h2>
+    <p>자연어 질문을 입력하거나, 질문을 비운 경우 조회할 속성과 최대 행 수를 선택하세요. 결과는 PROVISIONAL이며, 실행 시 원문·검토 상태·데이터 접근 권한을 다시 확인합니다.</p>
+    {% for option in view.reviewed_query_options %}
+    <form method="post" data-reviewed-query data-query-option='{{ option | tojson }}'>
+      <h3>{{ option.root_object_label or option.root_object_ref }}</h3>
+      {% if option.root_object_label and option.root_object_label != option.root_object_ref %}<p class="muted"><code>{{ option.root_object_ref }}</code></p>{% endif %}
+      <label>자연어 질문 (선택)
+        <textarea name="question" rows="2" maxlength="8192" data-query-question placeholder="예: 조건에 맞는 레코드 키를 최대 10개 보여 줘."></textarea>
+      </label>
+      <p>질문을 입력하면 기존 정의와 query contract로 의미를 해석합니다. 비워 두면 아래 속성과 최대 행 수 선택을 그대로 조회합니다.</p>
+      <div data-query-fallback>
+      <fieldset><legend>조회 속성</legend>
+      {% for prop in option.properties %}
+      <label><input type="checkbox" name="property_ref" value="{{ prop.ref }}" checked {% if prop.ref in option.key_refs %}disabled{% endif %}>{{ prop.label or prop.ref }}{% if prop.ref in option.key_refs %} (식별 키){% endif %}{% if prop.unit %} · {{ prop.unit }}{% endif %}</label>
+      {% if prop.ref in option.key_refs %}<input type="hidden" name="property_ref" value="{{ prop.ref }}">{% endif %}
+      {% endfor %}
+      </fieldset>
+      <p>직접 선택 정렬 기준: {{ (option.key_labels or option.key_refs) | join(', ') }}</p>
+      <label class="query-limit">최대 행 수 (질문을 비운 경우) <input name="maximum_rows" type="number" value="10" min="1" max="1000" required></label>
+      </div>
+      <div class="button-row">
+        <button type="submit" data-query-prepare disabled>조회 준비</button>
+        <button type="button" data-query-execute disabled>조회</button>
+      </div>
+      <p role="status" data-query-status>화면 준비 중입니다.</p>
+      <details><summary>계획·근거 확인</summary><pre data-query-evidence></pre></details>
+      <div class="table-wrap" data-query-result aria-live="polite"></div>
+    </form>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <section class="panel" aria-labelledby="validation-title">
+    <h2 id="validation-title">3. 검증·영향·Dry Run</h2>
+    <p>Gate: <strong>{{ view.validation.gate }}</strong> · 이 검증 영역은 dry-run 결과입니다. 위의 데이터 조회는 별도 실행 권한을 확인합니다.</p>
+    <ul aria-label="Deterministic checks">
+    {% for check in view.validation.checks %}
+      <li><code>{{ check.check_id }}</code>: <strong>{{ check.status }}</strong>{% if check.required %} (필수){% endif %}{% if check.evidence_digest %} · evidence <code>{{ check.evidence_digest }}</code>{% endif %}{% if check.reason_codes %} · {{ check.reason_codes | join(', ') }}{% endif %}</li>
+    {% endfor %}
+    </ul>
+    {% if view.validation.attention_reasons %}<p role="alert">Attention: {{ view.validation.attention_reasons | join(', ') }}</p>{% endif %}
+    {% if view.validation.blockers %}<p role="alert">Blocked: {{ view.validation.blockers | join(', ') }}</p>{% endif %}
+    {% if view.validation.gate != 'ready' %}<p role="alert">필수 check가 pass가 아니므로 approval·Release gate는 차단됩니다.</p>{% endif %}
+    <h3>DataQualityReceipt 영향</h3>
+    {% if view.object_key_quality_preview %}
+    <div class="table-wrap" tabindex="0" aria-label="Object key 데이터 품질">
+      <table>
+        <thead><tr><th scope="col">Object / exact grain</th><th scope="col">Scanned</th><th scope="col">Null key / duplicate key</th><th scope="col">검증 근거</th></tr></thead>
+        <tbody>{% for quality in view.object_key_quality_preview %}<tr>
+          <td><code>{{ quality.object_ref }}</code><br>{{ quality.exact_grain | join(', ') }}</td>
+          <td>{{ quality.scanned_rows }}</td><td>{{ quality.null_key_rows }} / {{ quality.duplicate_key_rows }}</td>
+          <td>{{ quality.status }}<br><code>{{ quality.evidence_digest }}</code></td>
+        </tr>{% endfor %}</tbody>
+      </table>
+      <p class="muted">선언된 Object key의 실제 snapshot 검사입니다. 관계의 orphan/fanout 검사, 질의 실행, 의미 승인과는 다릅니다.</p>
+    </div>
+    {% endif %}
+    {% if view.value_type_quality_preview %}
+    <div class="table-wrap" tabindex="0" aria-label="Property ValueType 저장 값 품질">
+      <table>
+        <thead><tr><th scope="col">Property / ValueType</th><th scope="col">Scanned / null</th><th scope="col">타입 불일치</th><th scope="col">검증 근거</th></tr></thead>
+        <tbody>{% for quality in view.value_type_quality_preview %}<tr>
+          <td><code>{{ quality.logical_property_ref }}</code><br>{{ quality.value_type_ref }} · {{ quality.logical_primitive_type }}</td>
+          <td>{{ quality.scanned_rows }} / {{ quality.null_rows }}</td><td>{{ quality.invalid_storage_type_rows }}</td>
+          <td>{{ quality.status }}<br><code>{{ quality.evidence_digest }}</code></td>
+        </tr>{% endfor %}</tbody>
+      </table>
+      <p class="muted">선언된 논리 타입과 실제 저장 값의 호환 검사입니다. Null 허용·단위·시간 의미와 관계 품질을 대신하지 않습니다.</p>
+    </div>
+    {% endif %}
+    {% if view.quality_preview %}
+    <div class="table-wrap" tabindex="0" aria-label="관계 데이터 품질 영향">
+      <table>
+        <thead><tr><th scope="col">Relationship</th><th scope="col">Scanned / Matched</th><th scope="col">Null FK / Orphan</th><th scope="col">Fanout min·p50·p95·max</th><th scope="col">정책</th></tr></thead>
+        <tbody>
+        {% for quality in view.quality_preview %}
+          <tr>
+            <td><code>{{ quality.relationship_contract_id }}</code></td>
+            <td>{{ quality.scanned_rows }} / {{ quality.matched_rows }} ({{ '%.2f'|format(quality.coverage_ratio * 100) }}%)</td>
+            <td>{{ quality.null_fk_rows }} / {{ quality.orphan_rows }} · excluded {{ quality.excluded_rows }}</td>
+            <td>{{ quality.fanout_min }} · {{ quality.fanout_p50 }} · {{ quality.fanout_p95 }} · {{ quality.fanout_max }}</td>
+            <td>{{ quality.applied_orphan_policy }}<br><span class="muted"><code>{{ quality.receipt_digest }}</code></span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}<p role="status">아직 관계 quality receipt가 없습니다.</p>{% endif %}
+    <h3>1-hop graph</h3>
+    {% if view.graph_preview.nodes %}
+      <ul>{% for node in view.graph_preview.nodes %}<li><code>{{ node.node_ref }}</code> · {{ node.label }} · {{ node.kind }}</li>{% endfor %}</ul>
+      <ul>{% for edge in view.graph_preview.edges %}<li><code>{{ edge.source_ref }}</code> — {{ edge.relation }} → <code>{{ edge.target_ref }}</code> · evidence <code>{{ edge.evidence_digest }}</code></li>{% endfor %}</ul>
+    {% else %}<p role="status">아직 1-hop graph preview가 없습니다.</p>{% endif %}
+    <details open><summary>Evidence / Grounding</summary>
+      {% if view.grounding %}<ul>{% for evidence in view.grounding %}<li>{{ evidence.label }} · {{ evidence.relation }} · <code>{{ evidence.locator }}</code> · <code>{{ evidence.evidence_digest }}</code></li>{% endfor %}</ul>{% else %}<p>근거가 없습니다.</p>{% endif %}
+    </details>
+    <h3>Logical plan · typed params · execution receipt</h3>
+    {% if view.dry_run %}
+      <dl>
+        <dt>Logical plan</dt><dd><code>{{ view.dry_run.logical_plan_digest }}</code></dd>
+        <dt>Typed parameters</dt><dd><pre><code>{{ view.dry_run.typed_parameters | tojson(indent=2) }}</code></pre></dd>
+        <dt>Protected SQL ref</dt><dd><code>{{ view.dry_run.protected_sql_ref }}</code></dd>
+        <dt>Result digest</dt><dd><code>{{ view.dry_run.result_digest }}</code></dd>
+        <dt>Execution receipt</dt><dd><code>{{ view.dry_run.execution_receipt_digest }}</code></dd>
+        <dt>Attestation</dt><dd>{{ view.dry_run.attestation_status }} · <code>{{ view.dry_run.attestation_receipt_digest }}</code></dd>
+      </dl>
+    {% else %}<p role="status">Dry Run은 아직 실행되지 않았습니다.</p>{% endif %}
+    <h3>Attention / repair</h3>
+    {% if view.repairs %}<ul>{% for repair in view.repairs %}<li><code>{{ repair.reason_code }}</code> · {{ repair.action }} · candidate-only={{ repair.candidate_only }}</li>{% endfor %}</ul>{% else %}<p class="muted">추가 repair candidate가 없습니다.</p>{% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="staging-title">
+    <h2 id="staging-title">4. Staging·Release</h2>
+    <dl>
+      <dt>Plan checksum</dt><dd><code>{{ view.staging.plan_checksum }}</code></dd>
+      <dt>Run ID</dt><dd><code>{{ view.staging.run_id }}</code></dd>
+      <dt>Preview digest</dt><dd><code>{{ view.staging.preview_digest }}</code></dd>
+      <dt>Logical plan digest</dt><dd><code>{{ view.staging.logical_plan_digest }}</code></dd>
+      <dt>Schema digest</dt><dd><code>{{ view.staging.schema_digest }}</code></dd>
+      <dt>Profile binding digest</dt><dd><code>{{ view.staging.profile_binding_digest }}</code></dd>
+      <dt>Qualification receipt</dt><dd><code>{{ view.staging.qualification_receipt_id }}</code></dd>
+      <dt>Approved</dt><dd>{{ view.staging.approved }}</dd>
+      <dt>Release proposal recorded</dt><dd>{{ view.staging.release_proposal_recorded }}</dd>
+      <dt>ReleaseManifest created</dt><dd>{{ view.staging.release_manifest_created }}</dd>
+      <dt>Active transition</dt><dd>{{ view.staging.active_transition }}</dd>
+    </dl>
+    <div class="button-row" aria-label="Migration actions">
+      <button type="button" class="button secondary" data-migration-action="approve" {% if not view.actions.approve_enabled %}disabled{% endif %}>Exact preview 승인</button>
+      <button type="button" class="button primary" data-migration-action="release-proposal" {% if not view.actions.release_proposal_enabled %}disabled{% endif %}>Release proposal 기록</button>
+    </div>
+    <p id="migration-action-status" role="status" aria-live="polite" class="muted"></p>
+    <p class="muted">Release proposal은 ReleaseManifest가 아닙니다. Active pointer 전환과 rollback은 실제 ReleaseManifest가 생긴 뒤 별도 권한 경계에서 수행합니다.</p>
+  </section>
+</main>
+</body>
+</html>

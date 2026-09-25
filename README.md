@@ -549,3 +549,7 @@ PoC 요소는 다음 기업 내부 서비스로 교체합니다.
 - Private BoI는 사번 단위로 scope가 제한됩니다.
 - Team/Public promotion은 copy-not-move입니다.
 - Team/Public promotion은 사용자 승인과 자동 검증 후 `review_status: user_confirmed`, `hotl.status: watching`으로 게시됩니다.
+
+## DB 기반 MCP 지식 기능
+
+새 SQLite/조회 게이트웨이 자료를 OKF·Profile 지식으로 준비하고, 게시 후 MCP에서 질문·관계 조회·계산에 재사용하는 배포 안내는 [DB MCP 사용 안내](docs/database-mcp-release.md)에 있습니다. 설치형 에이전트 키트는 `agent_kit/`에 있으며 원자료와 접속 정보는 포함하지 않습니다.
